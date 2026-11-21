@@ -16,9 +16,16 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * v10 = ticket 44: v9 plus the repository's declared environment (`.factory/environment.yaml`) already installed: never reinstalled or
  * swapped, extras the Ticket needs installed and recorded; v11 = ticket 56: v10 plus each documented gate run exactly, alone, as the last
  * command before the handoff, never inside a compound command). */
-const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
-  directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
-export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as { readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>> };
+const pack = <T extends string>(id: T) =>
+  Object.freeze({
+    id,
+    seedName: `factory/skill-pack/${id}`,
+    guestDirectory: `/artifacts/factory/skill-pack/${id}`,
+    directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)),
+  });
+export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as {
+  readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>>;
+};
 export type SkillPackId = FactorySkillPackId;
 export const skillPackIds = factorySkillPackIds as unknown as [SkillPackId, ...SkillPackId[]];
 /** Alias used by the ticket 12 compositions. */
@@ -27,18 +34,43 @@ export const builderSkillPacks = skillPacks;
 export const builderSkillPack = skillPacks['factory-skills-v2'];
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
-const relative = z.string().regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/).refine(path => !path.split('/').some(part => part === '..' || part === '.'));
-const manifestSchema = z.object({ id: z.enum(skillPackIds), version: z.string(), guestDirectory: z.string(),
-  skills: z.array(z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024), modelInvocation: z.boolean() })).min(1),
+const relative = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
+  .refine(path => !path.split('/').some(part => part === '..' || part === '.'));
+const manifestSchema = z.object({
+  id: z.enum(skillPackIds),
+  version: z.string(),
+  guestDirectory: z.string(),
+  skills: z
+    .array(
+      z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024), modelInvocation: z.boolean() }),
+    )
+    .min(1),
   prompts: z.array(z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024) })).min(1),
-  credits: relative, licenses: z.array(z.object({ license: z.string() })).min(1),
+  credits: relative,
+  licenses: z.array(z.object({ license: z.string() })).min(1),
   /** Session protocols the pack's texts define (a pack without `continuation` cannot continue a preserved session). */
   capabilities: z.strictObject({ continuation: z.boolean().optional() }).optional(),
-  files: z.array(z.object({ path: relative, sha256, change: z.enum(['verbatim', 'adapted', 'factory-own']),
-    origin: z.object({ package: z.string(), license: z.string() }).passthrough() })).min(1) });
+  files: z
+    .array(
+      z.object({
+        path: relative,
+        sha256,
+        change: z.enum(['verbatim', 'adapted', 'factory-own']),
+        origin: z.object({ package: z.string(), license: z.string() }).passthrough(),
+      }),
+    )
+    .min(1),
+});
 export type SkillPackManifest = z.infer<typeof manifestSchema>;
-export type LoadedSkillPack = { id: SkillPackId; version: string; manifestSha256: string; manifest: SkillPackManifest;
-  prompts: { name: string; description: string; content: string; path: string }[] };
+export type LoadedSkillPack = {
+  id: SkillPackId;
+  version: string;
+  manifestSha256: string;
+  manifest: SkillPackManifest;
+  prompts: { name: string; description: string; content: string; path: string }[];
+};
 
 const strip = (text: string) => text.replace(/^---\n[\s\S]*?\n---\n+/, '');
 async function listFiles(directory: string, prefix = ''): Promise<string[]> {
@@ -47,7 +79,7 @@ async function listFiles(directory: string, prefix = ''): Promise<string[]> {
     const path = prefix ? `${prefix}/${name}` : name;
     const info = await lstat(join(directory, path));
     if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) throw new Error('WORKER_SKILL_PACK_DRIFT');
-    if (info.isDirectory()) result.push(...await listFiles(directory, path));
+    if (info.isDirectory()) result.push(...(await listFiles(directory, path)));
     else result.push(path);
   }
   return result;
@@ -66,17 +98,32 @@ export async function loadSkillPack(directory: string = builderSkillPack.directo
     const bytes = await readFile(join(directory, 'manifest.json'));
     const manifest = manifestSchema.parse(JSON.parse(bytes.toString('utf8')));
     // Identity and guest location must be exactly those of the declared version (and of the expected one, when given).
-    if ((expected !== undefined && manifest.id !== expected) || manifest.guestDirectory !== skillPacks[manifest.id].guestDirectory) throw new Error('WORKER_SKILL_PACK_DRIFT');
+    if ((expected !== undefined && manifest.id !== expected) || manifest.guestDirectory !== skillPacks[manifest.id].guestDirectory)
+      throw new Error('WORKER_SKILL_PACK_DRIFT');
     const listed = manifest.files.map(file => file.path).sort();
-    if (JSON.stringify(listed) !== JSON.stringify((await listFiles(directory)).filter(path => path !== 'manifest.json').sort())) throw new Error('WORKER_SKILL_PACK_DRIFT');
+    if (JSON.stringify(listed) !== JSON.stringify((await listFiles(directory)).filter(path => path !== 'manifest.json').sort()))
+      throw new Error('WORKER_SKILL_PACK_DRIFT');
     for (const file of manifest.files) {
-      if (createHash('sha256').update(await readFile(join(directory, file.path))).digest('hex') !== file.sha256) throw new Error('WORKER_SKILL_PACK_DRIFT');
+      if (
+        createHash('sha256')
+          .update(await readFile(join(directory, file.path)))
+          .digest('hex') !== file.sha256
+      )
+        throw new Error('WORKER_SKILL_PACK_DRIFT');
     }
     for (const entry of [...manifest.skills, ...manifest.prompts]) if (!listed.includes(entry.path)) throw new Error('WORKER_SKILL_PACK_DRIFT');
-    const prompts = await Promise.all(manifest.prompts.map(async prompt => ({ name: prompt.name, description: prompt.description, path: prompt.path,
-      content: strip(await readFile(join(directory, prompt.path), 'utf8')) })));
+    const prompts = await Promise.all(
+      manifest.prompts.map(async prompt => ({
+        name: prompt.name,
+        description: prompt.description,
+        path: prompt.path,
+        content: strip(await readFile(join(directory, prompt.path), 'utf8')),
+      })),
+    );
     return { id: manifest.id, version: manifest.version, manifestSha256: createHash('sha256').update(bytes).digest('hex'), manifest, prompts };
-  } catch { throw new Error('WORKER_SKILL_PACK_DRIFT'); }
+  } catch {
+    throw new Error('WORKER_SKILL_PACK_DRIFT');
+  }
 }
 
 /** Whether this pack version's texts define the `continue` protocol (spec §5.5: continue a preserved compatible session). */

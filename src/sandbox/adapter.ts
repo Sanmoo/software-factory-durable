@@ -7,8 +7,19 @@ import { inspectGuestAssets } from './guest-assets.js';
 import { createBootMarkers } from './boot-markers.js';
 import { createWorkspaceProvider } from './workspace-provider.js';
 import { guestStorageReadiness } from './guest-storage.js';
-import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirectory, processStartTicks,
-  startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
+import {
+  currentSchema,
+  identitySchema,
+  metadata,
+  ownedEnvironment,
+  privateDirectory,
+  processStartTicks,
+  startupFailureCodeSchema,
+  supervisionHierarchy,
+  unitState,
+  type BootRef,
+  type StartupFailure,
+} from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
 import type { EnvironmentRef } from './prepare.js';
 import { serveOwnerRegistration } from './owner-registration.js';
@@ -37,9 +48,17 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   const cgroup = `/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}`;
   const hostBoot = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
   const state = await unitState(unit);
-  if (identity.boot !== boot || identity.environment !== environment || identity.unit !== unit || identity.hostBoot !== hostBoot ||
-      state.MainPID !== String(process.pid) || state.ControlGroup !== cgroup || !/^[a-f0-9]{32}$/.test(state.InvocationID ?? '') ||
-      (await readFile('/proc/self/cgroup', 'utf8')).trim() !== `0::${cgroup}`) throw new Error('ADAPTER_SUPERVISION_MISMATCH');
+  if (
+    identity.boot !== boot ||
+    identity.environment !== environment ||
+    identity.unit !== unit ||
+    identity.hostBoot !== hostBoot ||
+    state.MainPID !== String(process.pid) ||
+    state.ControlGroup !== cgroup ||
+    !/^[a-f0-9]{32}$/.test(state.InvocationID ?? '') ||
+    (await readFile('/proc/self/cgroup', 'utf8')).trim() !== `0::${cgroup}`
+  )
+    throw new Error('ADAPTER_SUPERVISION_MISMATCH');
   const namespaces = { cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') };
   await supervisionHierarchy(namespaces);
   await durableJson(join(path, 'started.json'), { version: 1, boot, unit, invocation: state.InvocationID, cgroup, ...namespaces });
@@ -51,25 +70,36 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let markerPublication: Promise<void> | undefined;
   const publishMarkers = () => {
     const snapshot = markers.seal();
-    try { vm?.setDebugLog(null); } catch { /* Never let optional diagnostics skip owned close. */ }
+    try {
+      vm?.setDebugLog(null);
+    } catch {
+      /* Never let optional diagnostics skip owned close. */
+    }
     markerPublication ??= durableJson(join(path, 'boot-markers.json'), snapshot).catch(() => {});
     return markerPublication;
   };
   let shutdown: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
-  const closeVm = () => closing ??= Promise.resolve().then(() => vm?.close());
+  const closeVm = () => (closing ??= Promise.resolve().then(() => vm?.close()));
   let stopping = false;
   let finished!: () => void;
-  const stopped = new Promise<void>(resolve => { finished = resolve; });
+  const stopped = new Promise<void>(resolve => {
+    finished = resolve;
+  });
   const booting = (async () => {
     const runtime = bootRuntimePaths(await realpath(root), boot);
     for (const path of [dirname(runtime.directory), runtime.directory, runtime.temporary, runtime.cache, runtime.sessions]) {
       await privateDirectory(path);
     }
     const runtimeOwner = await metadata(join(runtime.directory, 'owner.json'), currentSchema);
-    if (runtimeOwner.environment !== environment || runtimeOwner.boot !== boot ||
-        process.env.TMPDIR !== runtime.temporary || process.env.XDG_CACHE_HOME !== runtime.cache ||
-        process.env.GONDOLIN_SESSIONS_DIR !== runtime.sessions) throw new Error('ADAPTER_RUNTIME_MISMATCH');
+    if (
+      runtimeOwner.environment !== environment ||
+      runtimeOwner.boot !== boot ||
+      process.env.TMPDIR !== runtime.temporary ||
+      process.env.XDG_CACHE_HOME !== runtime.cache ||
+      process.env.GONDOLIN_SESSIONS_DIR !== runtime.sessions
+    )
+      throw new Error('ADAPTER_RUNTIME_MISMATCH');
     phase = 'assets';
     if ((await inspectGuestAssets(owner.guestAssets)).some(check => check.status !== 'ok')) throw new Error('GUEST_ASSETS_INVALID');
     phase = 'sdk-import';
@@ -95,21 +125,46 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     phase = 'vm-create';
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
-    vm = await VM.create({ autoStart: true, memory: `${identity.configuration.memoryMiB}M`, cpus: identity.configuration.vcpus,
+    vm = await VM.create({
+      autoStart: true,
+      memory: `${identity.configuration.memoryMiB}M`,
+      cpus: identity.configuration.vcpus,
       // Diagnostic VM allowance is consumed. Do not bind guest console/protocol
       // logging for operational callers: SDK serial buffering is not bounded by
       // our old marker callback. No worker flag can reactivate that diagnostic.
-      tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: null,
+      tmpfs: {},
+      startTimeoutMs: 30000,
+      sessionLabel: boot,
+      debugLog: null,
       // No fetch override: retain SDK native DNS/connect and redirect guards.
-      httpHooks, dns: { mode: 'synthetic' }, allowWebSockets: false,
+      httpHooks,
+      dns: { mode: 'synthetic' },
+      allowWebSockets: false,
       // No SSH, raw TCP mappings or ingress; VM-local Docker ports remain separate.
-      sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host',
-        imagePath: owner.guestAssets.directory, rootDiskPath: join(directory, 'root.qcow2'), rootDiskFormat: 'qcow2',
-        rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: true, mitmCertDir, autoRestart: false,
-        console: 'none', debug: false,
-        ...runtime.sockets },
-      vfs: { mounts: { '/workspace': createWorkspaceProvider(RealFSProvider, join(directory, 'workspace')),
-        '/artifacts': createWorkspaceProvider(RealFSProvider, join(directory, 'artifacts')) } } });
+      sandbox: {
+        vmm: 'qemu',
+        qemuPath: '/usr/bin/qemu-system-x86_64',
+        accel: 'kvm',
+        cpu: 'host',
+        imagePath: owner.guestAssets.directory,
+        rootDiskPath: join(directory, 'root.qcow2'),
+        rootDiskFormat: 'qcow2',
+        rootDiskReadOnly: false,
+        rootDiskDeleteOnClose: false,
+        netEnabled: true,
+        mitmCertDir,
+        autoRestart: false,
+        console: 'none',
+        debug: false,
+        ...runtime.sockets,
+      },
+      vfs: {
+        mounts: {
+          '/workspace': createWorkspaceProvider(RealFSProvider, join(directory, 'workspace')),
+          '/artifacts': createWorkspaceProvider(RealFSProvider, join(directory, 'artifacts')),
+        },
+      },
+    });
     phase = 'vm-start';
     await vm.start();
     // Freeze before any guest command; queued/late callbacks cannot add content.
@@ -117,19 +172,35 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     phase = 'guest-profile';
     // The pinned image must provide Alpine and its own Docker daemon with vfs.
     // Readiness does not exercise mediated networking, pulls or layered TLS trust.
-    const ready = await vm.exec(['/bin/sh', '-c', guestStorageReadiness(environment, boot)],
-    { signal: AbortSignal.timeout(10000), stdout: 'ignore', stderr: 'ignore' });
+    const ready = await vm.exec(['/bin/sh', '-c', guestStorageReadiness(environment, boot)], {
+      signal: AbortSignal.timeout(10000),
+      stdout: 'ignore',
+      stderr: 'ignore',
+    });
     if (ready.exitCode !== 0) throw new Error('GUEST_PROFILE_NOT_OPERATIONAL');
     if (stopping) return;
     phase = 'operational-evidence';
     const pid = vm.getHostPid();
     if (!pid) throw new Error('VMM_IDENTITY_UNAVAILABLE');
     const ticks = processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8'));
-    if ((await readFile(`/proc/${pid}/cgroup`, 'utf8')).trim() !== `0::${cgroup}` ||
-        processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks) throw new Error('VMM_SUPERVISION_MISMATCH');
-    readTools = await serveOwnerRegistration(await realpath(root), { workId: owner.workId, environmentRef: environment, bootRef: boot }, vm,
-      { workId: owner.workId, environmentRef: environment, bootRef: boot, unit, invocation: state.InvocationID!, cgroup,
-        ...namespaces, runtimeDirectory: runtime.directory }, { profileOrigin, copyOutput: true });
+    if ((await readFile(`/proc/${pid}/cgroup`, 'utf8')).trim() !== `0::${cgroup}` || processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks)
+      throw new Error('VMM_SUPERVISION_MISMATCH');
+    readTools = await serveOwnerRegistration(
+      await realpath(root),
+      { workId: owner.workId, environmentRef: environment, bootRef: boot },
+      vm,
+      {
+        workId: owner.workId,
+        environmentRef: environment,
+        bootRef: boot,
+        unit,
+        invocation: state.InvocationID!,
+        cgroup,
+        ...namespaces,
+        runtimeDirectory: runtime.directory,
+      },
+      { profileOrigin, copyOutput: true },
+    );
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
   })().catch(async error => {
@@ -137,8 +208,11 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     // normal close and a concurrent stop; failed writes do not suppress closure.
     await publishMarkers();
     if (!operational) {
-      try { await durableJson(join(path, 'failure.json'), { version: 1, boot, phase, code: startupCode(error) }); }
-      catch { /* Diagnostic failure must not skip owned-resource shutdown or invent evidence. */ }
+      try {
+        await durableJson(join(path, 'failure.json'), { version: 1, boot, phase, code: startupCode(error) });
+      } catch {
+        /* Diagnostic failure must not skip owned-resource shutdown or invent evidence. */
+      }
     }
     // Both normal failure handling and a concurrent stop await this publication
     // attempt before either requests close. SDK/manager cleanup remains independent.
@@ -146,7 +220,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   });
   function terminate() {
     stopping = true;
-    void readTools?.close().catch(() => { process.exitCode = 1; });
+    void readTools?.close().catch(() => {
+      process.exitCode = 1;
+    });
     shutdown ??= (async () => {
       try {
         await booting;
@@ -154,27 +230,48 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
           // Ticket 47: the guest stops its own writers, syncs and remounts its root read-only BEFORE the VMM is closed below. The result
           // is recorded for the next boot (no record = a boot that never became operational or an abrupt end: forced, never guessed).
           const stop = await stopGuestCleanly((argv, options) => vm!.exec(argv, options), identity.configuration.shutdownGraceSeconds);
-          try { await durableJson(join(path, guestStopRecord), { version: 1, boot, ...stop }); } catch { /* read as an abrupt end */ }
+          try {
+            await durableJson(join(path, guestStopRecord), { version: 1, boot, ...stop });
+          } catch {
+            /* read as an abrupt end */
+          }
           if (stop.result === 'clean') await durableJson(join(path, 'guest-synced.json'), { version: 1, boot });
         }
-      } catch { /* No claim of graceful shutdown after a failed guest finalization. */ }
-      finally {
-        try { await readTools?.close(); } finally {
-          try { await closeVm(); } finally { finished(); }
+      } catch {
+        /* No claim of graceful shutdown after a failed guest finalization. */
+      } finally {
+        try {
+          await readTools?.close();
+        } finally {
+          try {
+            await closeVm();
+          } finally {
+            finished();
+          }
         }
       }
     })();
-    void shutdown.catch(() => { process.exitCode = 1; });
+    void shutdown.catch(() => {
+      process.exitCode = 1;
+    });
   }
   process.on('SIGTERM', terminate);
   process.on('SIGINT', terminate);
-  try { await booting; await stopped; await shutdown; }
-  catch {
+  try {
+    await booting;
+    await stopped;
+    await shutdown;
+  } catch {
     // Systemd retains responsibility for any surviving group members, not SDK.close alone.
-    try { await readTools?.close(); } finally { await closeVm(); }
+    try {
+      await readTools?.close();
+    } finally {
+      await closeVm();
+    }
     throw new Error('ADAPTER_BOOT_FAILED');
   } finally {
     await readTools?.close();
-    process.off('SIGTERM', terminate); process.off('SIGINT', terminate);
+    process.off('SIGTERM', terminate);
+    process.off('SIGINT', terminate);
   }
 }

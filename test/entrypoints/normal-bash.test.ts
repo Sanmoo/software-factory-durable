@@ -17,8 +17,16 @@ test('public normal Builder Bash -> SAME owner VM -> new Node24 -> filtered nati
     env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'normal-worker', TASK85_NATIVE_BASH: '1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  t.after(() => { if (child.exitCode === null) child.kill(); });
-  let output = ''; child.stdout?.on('data', data => { output += data; }); child.stderr?.on('data', data => { output += data; });
+  t.after(() => {
+    if (child.exitCode === null) child.kill();
+  });
+  let output = '';
+  child.stdout?.on('data', data => {
+    output += data;
+  });
+  child.stderr?.on('data', data => {
+    output += data;
+  });
   const [code] = await once(child, 'exit');
   assert.equal(code, 0, output);
   const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');

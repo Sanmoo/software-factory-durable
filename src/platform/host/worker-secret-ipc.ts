@@ -12,11 +12,17 @@ type Wire = Pick<EventEmitter, 'on' | 'removeListener'> & {
   send?: (message: Record<string, unknown>, callback: (error: Error | null) => void) => boolean;
 };
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-  role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
+const contextSchema = z.strictObject({
+  workId: identifier,
+  executionId: identifier,
+  invocationId: identifier,
+  role: z.enum(['standards', 'spec', 'builder']),
+  environmentRef: identifier,
+  bootRef: identifier,
+  phaseId: identifier,
+});
 const correlation = { version: z.literal(1), id: z.uuid(), context: contextSchema };
-const requestSchema = z.strictObject({ kind: z.literal('worker-secret-register'), ...correlation,
-  values: z.array(z.string().min(1).max(4096)).min(1).max(3) });
+const requestSchema = z.strictObject({ kind: z.literal('worker-secret-register'), ...correlation, values: z.array(z.string().min(1).max(4096)).min(1).max(3) });
 const responseSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('worker-secret-ack'), ...correlation }),
   z.strictObject({ kind: z.literal('worker-secret-error'), ...correlation, code: z.literal('SECRET_SYNC_DENIED') }),
@@ -29,30 +35,57 @@ const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-started'), receipt, invocation: z.strictObject({ executionId: identifier, invocationId: identifier }).optional() }),
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   // Ticket 11: a Builder result names its exact session tool set (the owner observes the preserved session itself).
-  z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional(),
-    sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(),
+  z.strictObject({
+    kind: z.literal('worker-result'),
+    status: z.enum(['completed', 'interrupted']),
+    receipt,
+    sessionFile: z.string().nullable().optional(),
+    sessionTools: z
+      .array(z.string().regex(/^[a-z_]{1,32}$/))
+      .max(16)
+      .optional(),
+    opinion: z.record(z.string(), z.json()).optional(),
     // Ticket 48: an interrupted Builder whose own request/tool budget count closed the session. Ticket 57: one whose model request failed
     // without a Host abort.
-    budgetExhausted: z.enum(['requests', 'tools']).optional(), providerUnavailable: z.literal(true).optional() }),
+    budgetExhausted: z.enum(['requests', 'tools']).optional(),
+    providerUnavailable: z.literal(true).optional(),
+  }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
-  z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt, sessionFile: z.string().nullable().optional(),
-    sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
+  z.strictObject({
+    kind: z.literal('worker-result'),
+    status: z.literal('question'),
+    receipt,
+    sessionFile: z.string().nullable().optional(),
+    sessionTools: z
+      .array(z.string().regex(/^[a-z_]{1,32}$/))
+      .max(16)
+      .optional(),
+    question: workerQuestionSchema.extend({ acknowledged: z.boolean() }),
+  }),
   // Ticket 12 lifecycle: the suspended Builder's handoff notice (validated in full by the owner's launcher, not here).
   z.strictObject({ kind: z.literal('worker-handoff'), event: z.record(z.string(), z.json()) }),
 ]);
 const abortSchema = z.strictObject({ kind: z.literal('abort') });
 const findingId = z.string().regex(/^[A-Za-z0-9_.-]{1,32}$/);
 /** Host directive to a suspended Builder (ticket 12); demultiplexed by the fixed entrypoint like abort. */
-export const deliverSchema = z.strictObject({ kind: z.literal('deliver'), directive: z.strictObject({ kind: z.literal('review-results'),
-  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000), end: z.literal(true).optional(),
-  // Ticket 13: the finding ids each reviewer listed for that round (the handoff refuses treatments of unlisted findings).
-  findings: z.strictObject({ standards: z.array(findingId).max(40), spec: z.array(findingId).max(40) }).optional() }) });
+export const deliverSchema = z.strictObject({
+  kind: z.literal('deliver'),
+  directive: z.strictObject({
+    kind: z.literal('review-results'),
+    round: z.number().int().min(1).max(99),
+    prompt: z.string().min(1).max(40000),
+    end: z.literal(true).optional(),
+    // Ticket 13: the finding ids each reviewer listed for that round (the handoff refuses treatments of unlisted findings).
+    findings: z.strictObject({ standards: z.array(findingId).max(40), spec: z.array(findingId).max(40) }).optional(),
+  }),
+});
 
 /** Pure construction is allowed before durable start; publication is not. The
  * callback is usable by the future OAuth observer, but no producer is activated. */
 export function createSecretPublisher(wire: Wire, input: Context, signal: AbortSignal, timeoutMs = 5000, revoke: () => void = () => {}) {
   const context = Object.freeze(contextSchema.parse(input));
-  let ready = false, failed = false;
+  let ready = false,
+    failed = false;
   // Ticket 59: values the owner of THIS session already acknowledged (registered in its Records). Re-sending them would spend the owner's
   // bounded syncs on every model request; only a new value (a token refresh) needs a sync. Never logged, persisted or sent elsewhere.
   const acknowledged = new Set<string>();
@@ -66,15 +99,26 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
   function fail() {
     if (failed) return;
     failed = true;
-    const current = pending; pending = undefined;
-    if (current) { clearTimeout(current.timer); current.reject(denied()); }
+    const current = pending;
+    pending = undefined;
+    if (current) {
+      clearTimeout(current.timer);
+      current.reject(denied());
+    }
     cleanup();
-    try { revoke(); } catch { /* Never propagate parent/private diagnostics. */ }
+    try {
+      revoke();
+    } catch {
+      /* Never propagate parent/private diagnostics. */
+    }
   }
   function finish() {
     const current = pending;
     if (!current || !current.ack || !current.sent) return;
-    if (!active()) { fail(); return; }
+    if (!active()) {
+      fail();
+      return;
+    }
     pending = undefined;
     clearTimeout(current.timer);
     current.resolve();
@@ -84,20 +128,33 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
     if (abortSchema.safeParse(value).success || isQuestionMessage(value) || deliverSchema.safeParse(value).success) return;
     try {
       const parsed = responseSchema.safeParse(value);
-      if (!withinBudget(value) || !parsed.success || !pending || pending.ack || !active() ||
-          parsed.data.id !== pending.id || !same(parsed.data.context, context) || parsed.data.kind !== 'worker-secret-ack') {
-        fail(); return;
+      if (
+        !withinBudget(value) ||
+        !parsed.success ||
+        !pending ||
+        pending.ack ||
+        !active() ||
+        parsed.data.id !== pending.id ||
+        !same(parsed.data.context, context) ||
+        parsed.data.kind !== 'worker-secret-ack'
+      ) {
+        fail();
+        return;
       }
       pending.ack = true;
       finish();
-    } catch { fail(); }
+    } catch {
+      fail();
+    }
   }
   wire.on('message', message);
   for (const event of ['disconnect', 'exit', 'error', 'close']) wire.on(event, fail);
   signal.addEventListener('abort', fail, { once: true });
   if (signal.aborted || wire.connected !== true) fail();
   return {
-    protectedStarted() { if (!failed && !signal.aborted) ready = true; },
+    protectedStarted() {
+      if (!failed && !signal.aborted) ready = true;
+    },
     async acknowledgeSecrets(values: readonly string[]): Promise<void> {
       try {
         const send = wire.send?.bind(wire);
@@ -115,17 +172,25 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
           pending = { id, ack: false, sent: false, resolve, reject, timer: setTimeout(fail, timeoutMs) };
           try {
             send(request.data, error => {
-              if (error || !active()) { fail(); return; }
+              if (error || !active()) {
+                fail();
+                return;
+              }
               if (pending?.id !== id) return; // failed/closed callbacks cannot resurrect
               pending.sent = true;
               finish();
             });
-          } catch { fail(); }
+          } catch {
+            fail();
+          }
         });
         // Recheck the ORIGINAL scope after the awaited ACK, before credential use.
         if (!active()) throw denied();
         for (const value of request.data.values) acknowledged.add(value);
-      } catch { fail(); throw denied(); }
+      } catch {
+        fail();
+        throw denied();
+      }
     },
     close: fail,
   };
@@ -135,9 +200,21 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
  * Ticket 59: why the owner closed a secret channel. A closed set, never a value, prefix or exception text. `closed` is the owner's own normal
  * close (after a result or a lost child); `disconnect`/`abort` are channel or lifetime loss; every other reason is a refusal of a sync.
  */
-export const secretChannelFailures = ['schema', 'context', 'replay', 'limit', 'busy', 'not-started', 'register', 'timeout', 'send',
-  'disconnect', 'abort', 'closed'] as const;
-export type SecretChannelFailure = typeof secretChannelFailures[number];
+export const secretChannelFailures = [
+  'schema',
+  'context',
+  'replay',
+  'limit',
+  'busy',
+  'not-started',
+  'register',
+  'timeout',
+  'send',
+  'disconnect',
+  'abort',
+  'closed',
+] as const;
+export type SecretChannelFailure = (typeof secretChannelFailures)[number];
 /** Ticket 59: syncs of one session before its first model request (credential read/list before the runtime's first auth) and slack. */
 export const secretSyncSetupMargin = 16;
 /**
@@ -154,16 +231,24 @@ export function secretSyncLimit(maxRequests: number): number {
  * process id. The sink must synchronously register in the SAME owner Records
  * used by tool bindings. Failure revokes only this invocation, never the VM.
  * Ticket 59: `revoke` receives the closed reason; `syncLimit` comes from `secretSyncLimit` of the launch's budget. */
-export function createOwnerSecretReceiver(wire: Wire, input: Context, signal: AbortSignal,
-  started: () => boolean, registerSecret: (value: string) => void, revoke: (reason: SecretChannelFailure) => void, syncLimit: number,
-  timeoutMs = 5000) {
+export function createOwnerSecretReceiver(
+  wire: Wire,
+  input: Context,
+  signal: AbortSignal,
+  started: () => boolean,
+  registerSecret: (value: string) => void,
+  revoke: (reason: SecretChannelFailure) => void,
+  syncLimit: number,
+  timeoutMs = 5000,
+) {
   const context = Object.freeze(contextSchema.parse(input));
   if (!Number.isSafeInteger(syncLimit) || syncLimit < 1) throw new Error('WORKER_BUDGET_INVALID');
   const seen = new Set<string>(); // bounded replay tombstones (by id), no queue/retries
-  let failed = false, pending = false;
+  let failed = false,
+    pending = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const active = () => !failed && !signal.aborted && wire.connected === true && started();
-  const inactive = (): SecretChannelFailure => signal.aborted ? 'abort' : wire.connected !== true ? 'disconnect' : 'not-started';
+  const inactive = (): SecretChannelFailure => (signal.aborted ? 'abort' : wire.connected !== true ? 'disconnect' : 'not-started');
   function cleanup() {
     signal.removeEventListener('abort', aborted);
     for (const event of ['disconnect', 'exit', 'error', 'close']) wire.removeListener(event, lost);
@@ -174,7 +259,11 @@ export function createOwnerSecretReceiver(wire: Wire, input: Context, signal: Ab
     failed = true;
     clearTimeout(timer);
     cleanup();
-    try { revoke(reason); } catch { /* Never propagate parent/private diagnostics. */ }
+    try {
+      revoke(reason);
+    } catch {
+      /* Never propagate parent/private diagnostics. */
+    }
   }
   const aborted = () => fail('abort');
   const lost = () => fail('disconnect');
@@ -194,31 +283,54 @@ export function createOwnerSecretReceiver(wire: Wire, input: Context, signal: Ab
     if (ownerLifecycleSchema.safeParse(value).success || isQuestionMessage(value)) return;
     try {
       const refused = refusal(value);
-      if (refused) { fail(refused); return; }
+      if (refused) {
+        fail(refused);
+        return;
+      }
       const request = requestSchema.parse(value);
       pending = true;
       seen.add(request.id);
       // NO awaits between validation, same-instance registration and ACK send.
       // Partial registrations on capacity/error intentionally remain registered.
-      try { for (const secret of request.values) registerSecret(secret); }
-      catch {
+      try {
+        for (const secret of request.values) registerSecret(secret);
+      } catch {
         // Closed correlated failure, never the Records/SDK exception or cause.
-        try { wire.send!({ kind: 'worker-secret-error', version: 1, id: request.id, context, code: 'SECRET_SYNC_DENIED' }, () => {}); }
-        finally { fail('register'); }
+        try {
+          wire.send!({ kind: 'worker-secret-error', version: 1, id: request.id, context, code: 'SECRET_SYNC_DENIED' }, () => {});
+        } finally {
+          fail('register');
+        }
         return;
       }
-      if (!active()) { fail(inactive()); return; }
-      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) { fail('timeout'); return; }
+      if (!active()) {
+        fail(inactive());
+        return;
+      }
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        fail('timeout');
+        return;
+      }
       timer = setTimeout(expired, timeoutMs);
       try {
         wire.send!({ kind: 'worker-secret-ack', version: 1, id: request.id, context }, error => {
-          if (error) { fail('send'); return; }
-          if (!active()) { fail(inactive()); return; }
+          if (error) {
+            fail('send');
+            return;
+          }
+          if (!active()) {
+            fail(inactive());
+            return;
+          }
           clearTimeout(timer);
           pending = false;
         });
-      } catch { fail('send'); }
-    } catch { fail('schema'); }
+      } catch {
+        fail('send');
+      }
+    } catch {
+      fail('schema');
+    }
   }
   wire.on('message', message);
   for (const event of ['disconnect', 'exit', 'error', 'close']) wire.on(event, lost);

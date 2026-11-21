@@ -13,10 +13,14 @@ const sha = /^[0-9a-f]{64}$/;
  * proven only by a complete listing; anything partial, corrupt, multiple or unreadable is `uncertain` — never a question and never
  * "nothing was asked". The content is returned as recorded; the Control re-checks its hash. Not proof of cessation.
  */
-export type QuestionObservation = { kind: 'question'; request: WorkerQuestion; askedAt: string | null } | { kind: 'absent' } | { kind: 'uncertain'; code: string };
+export type QuestionObservation =
+  { kind: 'question'; request: WorkerQuestion; askedAt: string | null } | { kind: 'absent' } | { kind: 'uncertain'; code: string };
 
 /** Locates the preserved `ask_user` request of an invocation whose notification/ACK was lost, without that notification and without rerunning anything. */
-export async function observeQuestionRecord(records: Records, input: { workId: string; executionId: string; invocationId: string }): Promise<QuestionObservation> {
+export async function observeQuestionRecord(
+  records: Records,
+  input: { workId: string; executionId: string; invocationId: string },
+): Promise<QuestionObservation> {
   const found = await records.find({ workId: input.workId, executionId: input.executionId, invocationId: input.invocationId }).catch(() => null);
   if (!found || found.completeness !== 'complete') return { kind: 'uncertain', code: 'QUESTION_LISTING_INCOMPLETE' };
   const asked = found.captures.filter(capture => capture.context.callId?.startsWith('ask-user-'));
@@ -39,12 +43,31 @@ export async function observeQuestionRecord(records: Records, input: { workId: s
     const stored = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { context?: Record<string, unknown>; event?: Record<string, unknown> };
     const context = stored.context ?? {};
     const event = stored.event ?? {};
-    if (context.workId !== input.workId || context.executionId !== input.executionId || context.invocationId !== input.invocationId || event.kind !== 'ask-user' ||
-        typeof event.questionId !== 'string' || !uuid.test(event.questionId) || context.callId !== `ask-user-${event.questionId}`) return { kind: 'uncertain', code: 'QUESTION_RECORD_MISMATCH' };
+    if (
+      context.workId !== input.workId ||
+      context.executionId !== input.executionId ||
+      context.invocationId !== input.invocationId ||
+      event.kind !== 'ask-user' ||
+      typeof event.questionId !== 'string' ||
+      !uuid.test(event.questionId) ||
+      context.callId !== `ask-user-${event.questionId}`
+    )
+      return { kind: 'uncertain', code: 'QUESTION_RECORD_MISMATCH' };
     if (typeof event.question !== 'string' || typeof event.context !== 'string' || typeof event.sha256 !== 'string' || !sha.test(event.sha256)) {
       return { kind: 'uncertain', code: 'QUESTION_RECORD_INVALID' };
     }
-    return { kind: 'question', askedAt: typeof event.askedAt === 'string' ? event.askedAt : null,
-      request: { questionId: event.questionId, question: event.question, context: event.context, sha256: event.sha256, reference: { workId: capture.reference.workId, id: capture.reference.id } } };
-  } catch { return { kind: 'uncertain', code: 'QUESTION_RECORD_INVALID' }; }
+    return {
+      kind: 'question',
+      askedAt: typeof event.askedAt === 'string' ? event.askedAt : null,
+      request: {
+        questionId: event.questionId,
+        question: event.question,
+        context: event.context,
+        sha256: event.sha256,
+        reference: { workId: capture.reference.workId, id: capture.reference.id },
+      },
+    };
+  } catch {
+    return { kind: 'uncertain', code: 'QUESTION_RECORD_INVALID' };
+  }
 }

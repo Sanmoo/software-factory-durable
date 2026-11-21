@@ -10,67 +10,114 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
 
-const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'standards-05',
-  role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
+const context: ToolContext = {
+  workId: 'work-05',
+  executionId: 'execution-05',
+  invocationId: 'standards-05',
+  role: 'standards',
+  environmentRef: 'environment-05',
+  bootRef: 'boot-05',
+  phaseId: 'review-1',
+};
 
 test('fixed worker entrypoint runs native SDK in a new Node process; private receipt precedes filtered native JSONL', async t => {
   let guestCalls = 0;
   const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
-  const f = await nativeOwner(context, { exec(argv) {
-    guestCalls++;
-    assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
-    assert.equal(argv.length, 8); assert.equal(argv[5], '/workspace/source.txt');
-    return { async *output() {
-      for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout' as const, data: Buffer.from(text.slice(i, i + 11)) };
-    }, result: Promise.resolve({ exitCode: 0 }) };
-  } });
+  const f = await nativeOwner(context, {
+    exec(argv) {
+      guestCalls++;
+      assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+      assert.equal(argv.length, 8);
+      assert.equal(argv[5], '/workspace/source.txt');
+      return {
+        async *output() {
+          for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout' as const, data: Buffer.from(text.slice(i, i + 11)) };
+        },
+        result: Promise.resolve({ exitCode: 0 }),
+      };
+    },
+  });
   t.after(() => f.close());
   // Distinct Records owners must know secrets before any capture/use.
   f.records.registerSecret('synthetic-key');
-  const directory = join(f.root, 'profile'); await mkdir(directory, { mode: 0o700 });
+  const directory = join(f.root, 'profile');
+  await mkdir(directory, { mode: 0o700 });
   await mkdir(join(directory, 'sessions'), { mode: 0o700 });
-  const recordsRoot = join(f.root, 'worker-records'); await mkdir(recordsRoot, { mode: 0o700 });
-  const bootstrap = { version: 1, context, endpoint: f.owner.endpoint, recordsRoot,
-    knownSecrets: ['synthetic-secret', 'synthetic-key'], prompt: 'Read source.txt at offset 5001, limit 2.',
-    profile: { id: sdkProfile.id, directory, systemPrompt: 'Private read-only fixture. No personal resources.',
-      providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
-      provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
-        { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 },
-      ] } } };
+  const recordsRoot = join(f.root, 'worker-records');
+  await mkdir(recordsRoot, { mode: 0o700 });
+  const bootstrap = {
+    version: 1,
+    context,
+    endpoint: f.owner.endpoint,
+    recordsRoot,
+    knownSecrets: ['synthetic-secret', 'synthetic-key'],
+    prompt: 'Read source.txt at offset 5001, limit 2.',
+    profile: {
+      id: sdkProfile.id,
+      directory,
+      systemPrompt: 'Private read-only fixture. No personal resources.',
+      providerId: 'offline-fixture',
+      modelId: 'reader',
+      apiKey: 'synthetic-key',
+      provider: {
+        api: 'openai-completions',
+        baseUrl: 'https://offline.invalid',
+        models: [
+          {
+            id: 'reader',
+            name: 'Reader',
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 100000,
+            maxTokens: 1000,
+          },
+        ],
+      },
+    },
+  };
 
   for (const name of ['t', 'c']) await mkdir(join(f.root, name), { mode: 0o700 });
   async function child(input: object, abortAfterStart = false) {
     const processChild = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
-      execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url))],
-      env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1',
-        TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: true,
+      execPath: process.execPath,
+      execArgv: ['--import', fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url))],
+      env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      detached: true,
     });
     const messages: Array<Record<string, unknown>> = [];
     let output = '';
-    processChild.stdout!.on('data', chunk => { output += String(chunk); });
-    processChild.stderr!.on('data', chunk => { output += String(chunk); });
+    processChild.stdout!.on('data', chunk => {
+      output += String(chunk);
+    });
+    processChild.stderr!.on('data', chunk => {
+      output += String(chunk);
+    });
     let receiptAtRequest = false;
     const checks: Promise<void>[] = [];
     processChild.on('message', message => {
       messages.push(message as Record<string, unknown>);
       if (abortAfterStart && (message as { kind: string }).kind === 'worker-started') processChild.send({ kind: 'abort' });
-      if ((message as { kind: string }).kind === 'provider-request') checks.push((async () => {
-        const evidence = join(recordsRoot, context.workId, 'evidence');
-        for (const id of await readdir(evidence)) {
-          const stored = await readFile(join(evidence, id, 'output'), 'utf8');
-          await readFile(join(evidence, id, 'complete.json'));
-          if (JSON.parse(stored).event.kind === 'worker-start') receiptAtRequest = true;
-        }
-      })());
+      if ((message as { kind: string }).kind === 'provider-request')
+        checks.push(
+          (async () => {
+            const evidence = join(recordsRoot, context.workId, 'evidence');
+            for (const id of await readdir(evidence)) {
+              const stored = await readFile(join(evidence, id, 'output'), 'utf8');
+              await readFile(join(evidence, id, 'complete.json'));
+              if (JSON.parse(stored).event.kind === 'worker-start') receiptAtRequest = true;
+            }
+          })(),
+        );
     });
     // No fixed 30 s timeout over the 19 worker spawns (it expired once at ci load 19): each child's own end, bounded by the runner budget.
     const exited = ended(processChild, () => `worker child; messages so far: ${messages.map(message => String(message.kind)).join(',')}`);
     processChild.send(input);
     const { code, signal } = await exited;
     await Promise.all(checks);
-    assert.equal(signal, null); assert.equal(output, '', 'no raw bootstrap, credential, or SDK diagnostics on stdio');
+    assert.equal(signal, null);
+    assert.equal(output, '', 'no raw bootstrap, credential, or SDK diagnostics on stdio');
     return { code, messages, pid: processChild.pid, receiptAtRequest };
   }
 
@@ -82,7 +129,8 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   const completed = success.messages.find(message => message.kind === 'worker-result')!;
   assert.equal(completed.status, 'completed');
   const stored = await readFile(String(completed.sessionFile), 'utf8');
-  assert.match(stored, /█/); assert.match(stored, /target/);
+  assert.match(stored, /█/);
+  assert.match(stored, /target/);
   assert.doesNotMatch(stored, /synthetic-secret|synthetic-key|prefix/);
   const reopened = SessionManager.open(String(completed.sessionFile), join(directory, 'sessions'));
   assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult' && JSON.stringify(message).includes('█')));
@@ -114,7 +162,11 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   // The successful child's EOF now closes its listener. Use a distinct live
   // binding so this still tests pending abort during SDK setup, not connect failure.
   const abortContext = { ...context, invocationId: 'abort-05' };
-  const abortOwner = await nativeOwner(abortContext, { exec() { assert.fail('aborted setup reached guest'); } });
+  const abortOwner = await nativeOwner(abortContext, {
+    exec() {
+      assert.fail('aborted setup reached guest');
+    },
+  });
   t.after(() => abortOwner.close());
   const aborted = await child({ ...bootstrap, context: abortContext, endpoint: abortOwner.owner.endpoint }, true);
   assert.equal(aborted.code, 1);
@@ -131,7 +183,11 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   assert.equal(guestCalls, 1, 'failed receipt must not execute guest tools');
   assert.equal((await readdir(join(directory, 'sessions'))).length, 1, 'failed receipt must not create another SDK session');
 
-  for (const [escape, secret] of [['newline', 'line\nsecret'], ['quote', 'quoted"secret'], ['backslash', 'back\\secret']] as const) {
+  for (const [escape, secret] of [
+    ['newline', 'line\nsecret'],
+    ['quote', 'quoted"secret'],
+    ['backslash', 'back\\secret'],
+  ] as const) {
     for (const source of ['knownSecrets', 'apiKey']) {
       for (const field of ['prompt', 'systemPrompt', 'modelName']) {
         await t.test(`rejects ${escape} ${source} in original public ${field}`, async () => {
@@ -147,23 +203,30 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
           const evidenceBefore = await readdir(join(recordsRoot, context.workId, 'evidence'));
           const callsBefore = guestCalls;
           const rejected = await child(input);
-          assert.deepEqual({
-            code: rejected.code,
-            messages: rejected.messages,
-            providerRequests: rejected.messages.filter(message => message.kind === 'provider-request').length,
-            guestCalls: guestCalls - callsBefore,
-            sessions: await readdir(join(directory, 'sessions')),
-            evidence: await readdir(join(recordsRoot, context.workId, 'evidence')),
-          }, {
-            code: 1,
-            messages: [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }],
-            providerRequests: 0,
-            guestCalls: 0,
-            sessions: sessionsBefore,
-            evidence: evidenceBefore,
-          }, 'reject before start publication, HTTP, guest execution or any native session/raw-secret persistence');
-          assert.deepEqual(await Promise.all(sessionsBefore.map(name => readFile(join(directory, 'sessions', name), 'utf8'))),
-            sessionContentsBefore, 'rejection must not append raw secrets to an existing native session');
+          assert.deepEqual(
+            {
+              code: rejected.code,
+              messages: rejected.messages,
+              providerRequests: rejected.messages.filter(message => message.kind === 'provider-request').length,
+              guestCalls: guestCalls - callsBefore,
+              sessions: await readdir(join(directory, 'sessions')),
+              evidence: await readdir(join(recordsRoot, context.workId, 'evidence')),
+            },
+            {
+              code: 1,
+              messages: [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }],
+              providerRequests: 0,
+              guestCalls: 0,
+              sessions: sessionsBefore,
+              evidence: evidenceBefore,
+            },
+            'reject before start publication, HTTP, guest execution or any native session/raw-secret persistence',
+          );
+          assert.deepEqual(
+            await Promise.all(sessionsBefore.map(name => readFile(join(directory, 'sessions', name), 'utf8'))),
+            sessionContentsBefore,
+            'rejection must not append raw secrets to an existing native session',
+          );
         });
       }
     }

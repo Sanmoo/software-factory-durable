@@ -28,14 +28,23 @@ export async function fakeRelease(root: string, id: string, options: { storage?:
   await writeFile(join(directory, 'dist', 'marker.txt'), `release ${id}\n`, { mode: 0o644 });
   const assets = join(root, 'assets', 'guest', assetsSha256);
   const launcher = releaseLauncher(id);
-  const manifest = { schemaVersion: 1, kind: 'software-factory-release', release: id, builtAt: '2026-11-14T00:00:00.000Z',
-    node: { version: '24.21.0', path: 'node/bin/node', sha256: 'a'.repeat(64), license: 'node/LICENSE' }, launcher: { path: 'factory', sha256: sha(launcher) },
+  const manifest = {
+    schemaVersion: 1,
+    kind: 'software-factory-release',
+    release: id,
+    builtAt: '2026-11-14T00:00:00.000Z',
+    node: { version: '24.21.0', path: 'node/bin/node', sha256: 'a'.repeat(64), license: 'node/LICENSE' },
+    launcher: { path: 'factory', sha256: sha(launcher) },
     guestAssets: { path: `assets/guest/${assetsSha256}`, manifestSha256: assetsSha256, files: await inventoryTree(assets) },
     production: { id: productionProfile.id, sdkProfileId: productionProfile.sdkProfileId, builder: { skillPack: options.skillPack ?? 'factory-skills-v5' } },
     qualification: { status: 'unqualified', statement: 'synthetic' },
-    metadata: { protocol: { version: 1 }, ...(options.configurationSchema === null ? {} : { formats: { configuration: options.configurationSchema ?? 1 } }),
-      ...(options.storage === false ? {} : { storage: { format: 2, migratesFrom: [1] } }) },
-    files: await inventoryTree(directory) };
+    metadata: {
+      protocol: { version: 1 },
+      ...(options.configurationSchema === null ? {} : { formats: { configuration: options.configurationSchema ?? 1 } }),
+      ...(options.storage === false ? {} : { storage: { format: 2, migratesFrom: [1] } }),
+    },
+    files: await inventoryTree(directory),
+  };
   const bytes = JSON.stringify(manifest) + '\n';
   await writeFile(join(directory, 'release-manifest.json'), bytes, { mode: 0o644 });
   const parsed = parseReleaseManifest(bytes);
@@ -50,16 +59,31 @@ export async function installation(options: { previousStorage?: boolean; previou
   const assets = join(root, 'assets', 'guest', assetsSha256);
   await mkdir(assets, { recursive: true, mode: 0o700 });
   await writeFile(join(assets, 'manifest.json'), await readFile('test/sandbox/asset-manifest.fixture.json'), { mode: 0o644 });
-  for (const [name, text] of [['vmlinuz-virt', 'kernel fixture\n'], ['initramfs.cpio.lz4', 'initramfs fixture\n'], ['rootfs.ext4', 'rootfs fixture\n']] as const) {
+  for (const [name, text] of [
+    ['vmlinuz-virt', 'kernel fixture\n'],
+    ['initramfs.cpio.lz4', 'initramfs fixture\n'],
+    ['rootfs.ext4', 'rootfs fixture\n'],
+  ] as const) {
     await writeFile(join(assets, name), text, { mode: 0o644 });
   }
   await writeFile(join(root, 'config.yaml'), configuration, { mode: 0o600 });
-  const previous = await fakeRelease(root, 'mvp-32.1', { storage: options.previousStorage ?? false, skillPack: 'factory-skills-v4',
-    ...(options.previousConfigurationSchema !== undefined ? { configurationSchema: options.previousConfigurationSchema } : {}) });
+  const previous = await fakeRelease(root, 'mvp-32.1', {
+    storage: options.previousStorage ?? false,
+    skillPack: 'factory-skills-v4',
+    ...(options.previousConfigurationSchema !== undefined ? { configurationSchema: options.previousConfigurationSchema } : {}),
+  });
   await writeFile(join(root, 'factory'), previous.launcher, { mode: 0o755 });
   const target = await fakeRelease(root, 'mvp-33.1');
-  const context: UpgradeContext = { root, storagePath: join(root, 'data', 'control.sqlite'),
-    target: { directory: target.directory, manifest: target.manifest, manifestSha256: target.manifestSha256, checks: [],
-      guestAssets: { directory: assets, manifestSha256: assetsSha256 } } };
+  const context: UpgradeContext = {
+    root,
+    storagePath: join(root, 'data', 'control.sqlite'),
+    target: {
+      directory: target.directory,
+      manifest: target.manifest,
+      manifestSha256: target.manifestSha256,
+      checks: [],
+      guestAssets: { directory: assets, manifestSha256: assetsSha256 },
+    },
+  };
   return { root, previous, target, context, assets };
 }

@@ -2,14 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { budgetExceeded, budgetsMs, concurrencyFor, formatReport, parseManifest, planLanes, shuffle, type RunSummary } from '../../scripts/test-runner/lib.ts';
 
-const present = (...files: string[]) => (file: string) => files.includes(file);
+const present =
+  (...files: string[]) =>
+  (file: string) =>
+    files.includes(file);
 
 test('manifest lists only exceptions: slow and/or serial with a justification, quarantine with a ticket', () => {
-  const manifest = parseManifest({ schemaVersion: 1, files: {
-    'test/a/slow.test.ts': { slow: true, reason: 'builds a release' },
-    'test/a/both.test.ts': { slow: true, serial: true, reason: 'mutates shared staging' },
-    'test/a/flaky.test.ts': { quarantine: 'ticket 99', reason: 'races on load' },
-  } }, present('test/a/slow.test.ts', 'test/a/both.test.ts', 'test/a/flaky.test.ts'));
+  const manifest = parseManifest(
+    {
+      schemaVersion: 1,
+      files: {
+        'test/a/slow.test.ts': { slow: true, reason: 'builds a release' },
+        'test/a/both.test.ts': { slow: true, serial: true, reason: 'mutates shared staging' },
+        'test/a/flaky.test.ts': { quarantine: 'ticket 99', reason: 'races on load' },
+      },
+    },
+    present('test/a/slow.test.ts', 'test/a/both.test.ts', 'test/a/flaky.test.ts'),
+  );
   assert.deepEqual(manifest.get('test/a/slow.test.ts'), { slow: true, serial: false, full: false, reason: 'builds a release' });
   assert.deepEqual(manifest.get('test/a/both.test.ts'), { slow: true, serial: true, full: false, reason: 'mutates shared staging' });
   assert.deepEqual(manifest.get('test/a/flaky.test.ts'), { slow: false, serial: false, full: false, quarantine: 'ticket 99', reason: 'races on load' });
@@ -18,11 +27,17 @@ test('manifest lists only exceptions: slow and/or serial with a justification, q
 
 test('manifest refuses a missing file, an entry without a flag or reason, unknown keys and non-test paths', () => {
   const problems = (value: unknown, exists = present('test/ok.test.ts')) => {
-    try { parseManifest(value, exists); } catch (error) { return (error as Error).message; }
+    try {
+      parseManifest(value, exists);
+    } catch (error) {
+      return (error as Error).message;
+    }
     return 'accepted';
   };
-  assert.match(problems({ schemaVersion: 1, files: { 'test/gone.test.ts': { slow: true, reason: 'x' } } }),
-    /TIERS_MANIFEST_INVALID[\s\S]*test\/gone\.test\.ts: listed file does not exist/);
+  assert.match(
+    problems({ schemaVersion: 1, files: { 'test/gone.test.ts': { slow: true, reason: 'x' } } }),
+    /TIERS_MANIFEST_INVALID[\s\S]*test\/gone\.test\.ts: listed file does not exist/,
+  );
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { reason: 'x' } } }), /needs slow, serial, full or quarantine/);
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { slow: true } } }), /needs a non-empty reason/);
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { slow: true, reason: 'x', fast: true } } }), /unknown key "fast"/);
@@ -34,12 +49,18 @@ test('manifest refuses a missing file, an entry without a flag or reason, unknow
 });
 
 test('lanes: fast excludes slow, ci includes everything, serial runs after, quarantine never runs', () => {
-  const manifest = parseManifest({ schemaVersion: 1, files: {
-    'test/slow.test.ts': { slow: true, reason: 'r' },
-    'test/serial.test.ts': { serial: true, reason: 'r' },
-    'test/slow-serial.test.ts': { slow: true, serial: true, reason: 'r' },
-    'test/flaky.test.ts': { quarantine: 'ticket 1', reason: 'r' },
-  } }, () => true);
+  const manifest = parseManifest(
+    {
+      schemaVersion: 1,
+      files: {
+        'test/slow.test.ts': { slow: true, reason: 'r' },
+        'test/serial.test.ts': { serial: true, reason: 'r' },
+        'test/slow-serial.test.ts': { slow: true, serial: true, reason: 'r' },
+        'test/flaky.test.ts': { quarantine: 'ticket 1', reason: 'r' },
+      },
+    },
+    () => true,
+  );
   const files = ['test/b.test.ts', 'test/a.test.ts', 'test/slow.test.ts', 'test/serial.test.ts', 'test/slow-serial.test.ts', 'test/flaky.test.ts'];
   const fast = planLanes('fast', files, manifest, 8, {});
   assert.deepEqual(fast.parallel, ['test/a.test.ts', 'test/b.test.ts']);
@@ -53,15 +74,24 @@ test('lanes: fast excludes slow, ci includes everything, serial runs after, quar
   assert.equal(ci.concurrency, 8);
   assert.deepEqual(ci.skippedSlow, []);
   assert.deepEqual(planLanes('full', files, manifest, 8, {}).parallel, ci.parallel);
-  assert.deepEqual(planLanes('ci', files, manifest, 8, { 'test/b.test.ts': 30, 'test/a.test.ts': 2, 'test/slow.test.ts': 9 }).parallel,
-    ['test/b.test.ts', 'test/slow.test.ts', 'test/a.test.ts'], 'longest known first');
+  assert.deepEqual(
+    planLanes('ci', files, manifest, 8, { 'test/b.test.ts': 30, 'test/a.test.ts': 2, 'test/slow.test.ts': 9 }).parallel,
+    ['test/b.test.ts', 'test/slow.test.ts', 'test/a.test.ts'],
+    'longest known first',
+  );
 });
 
 test('lanes: a full-only file runs only in full (both passes), never in fast or ci, and the report names it', () => {
-  const manifest = parseManifest({ schemaVersion: 1, files: {
-    'test/nightly.test.ts': { full: true, reason: 'r' },
-    'test/nightly-serial.test.ts': { full: true, serial: true, reason: 'r' },
-  } }, () => true);
+  const manifest = parseManifest(
+    {
+      schemaVersion: 1,
+      files: {
+        'test/nightly.test.ts': { full: true, reason: 'r' },
+        'test/nightly-serial.test.ts': { full: true, serial: true, reason: 'r' },
+      },
+    },
+    () => true,
+  );
   const files = ['test/a.test.ts', 'test/nightly.test.ts', 'test/nightly-serial.test.ts'];
   for (const tier of ['fast', 'ci'] as const) {
     const plan = planLanes(tier, files, manifest, 8, {});
@@ -70,8 +100,20 @@ test('lanes: a full-only file runs only in full (both passes), never in fast or 
   }
   const full = planLanes('full', files, manifest, 8, {});
   assert.deepEqual([full.parallel.sort(), full.serial, full.skippedFull], [['test/a.test.ts', 'test/nightly.test.ts'], ['test/nightly-serial.test.ts'], []]);
-  const report = formatReport({ tier: 'ci', lockWaitMs: 0, totalMs: 1, budgetMs: 600_000, load: { start: [0], end: [0] }, static: [], lanes: [],
-    quarantined: [], skippedSlow: [], skippedFull: ['test/nightly.test.ts'], filtered: false, failures: [] });
+  const report = formatReport({
+    tier: 'ci',
+    lockWaitMs: 0,
+    totalMs: 1,
+    budgetMs: 600_000,
+    load: { start: [0], end: [0] },
+    static: [],
+    lanes: [],
+    quarantined: [],
+    skippedSlow: [],
+    skippedFull: ['test/nightly.test.ts'],
+    filtered: false,
+    failures: [],
+  });
   assert.match(report, /full only, left to the nightly: test\/nightly\.test\.ts/);
 });
 
@@ -102,12 +144,31 @@ test('shuffle is a seeded permutation, reproducible from the reported seed', () 
 });
 
 test('report carries static, per-lane, lock-wait timings and the 10 slowest files', () => {
-  const files = Array.from({ length: 12 }, (_, i) => ({ file: `test/f${i}.test.ts`, ms: (i + 1) * 1000, ok: i !== 3,
-    counts: { tests: 2, pass: i === 3 ? 1 : 2, fail: i === 3 ? 1 : 0, cancelled: 0, skipped: 0, todo: 0 } }));
-  const summary: RunSummary = { tier: 'ci', lockWaitMs: 12_300, totalMs: 200_000, budgetMs: 600_000,
-    load: { start: [1, 2, 3], end: [4, 5, 6] }, static: [{ name: 'tsc', ms: 9000, ok: true }, { name: 'eslint', ms: 4500, ok: true }],
-    lanes: [{ name: 'parallel', concurrency: 8, ms: 150_000, files: files.slice(0, 11) }, { name: 'serial', concurrency: 1, ms: 12_000, files: files.slice(11) }],
-    quarantined: ['test/q.test.ts'], skippedSlow: [], filtered: false, failures: ['test/f3.test.ts failed'] };
+  const files = Array.from({ length: 12 }, (_, i) => ({
+    file: `test/f${i}.test.ts`,
+    ms: (i + 1) * 1000,
+    ok: i !== 3,
+    counts: { tests: 2, pass: i === 3 ? 1 : 2, fail: i === 3 ? 1 : 0, cancelled: 0, skipped: 0, todo: 0 },
+  }));
+  const summary: RunSummary = {
+    tier: 'ci',
+    lockWaitMs: 12_300,
+    totalMs: 200_000,
+    budgetMs: 600_000,
+    load: { start: [1, 2, 3], end: [4, 5, 6] },
+    static: [
+      { name: 'tsc', ms: 9000, ok: true },
+      { name: 'eslint', ms: 4500, ok: true },
+    ],
+    lanes: [
+      { name: 'parallel', concurrency: 8, ms: 150_000, files: files.slice(0, 11) },
+      { name: 'serial', concurrency: 1, ms: 12_000, files: files.slice(11) },
+    ],
+    quarantined: ['test/q.test.ts'],
+    skippedSlow: [],
+    filtered: false,
+    failures: ['test/f3.test.ts failed'],
+  };
   const report = formatReport(summary);
   assert.match(report, /lock wait: 12\.3 s \(not counted in the budget\)/);
   assert.match(report, /static: tsc 9\.0 s, eslint 4\.5 s/);

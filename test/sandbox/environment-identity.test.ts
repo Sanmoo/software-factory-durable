@@ -8,7 +8,15 @@ import { environmentIdentityDiagnostic } from '../../src/sandbox/index.js';
 
 // Ticket 50: doctor's read-only warning before a restart — which retained prepared environments the new configuration would invalidate.
 // Synthetic owner records only (no disk, VM or controller).
-const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 3072, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };
+const configuration = {
+  schemaVersion: 1,
+  profile: 'gondolin-qemu-alpine-dev-v1',
+  memoryMiB: 3072,
+  vcpus: 2,
+  diskGiB: 40,
+  shutdownGraceSeconds: 30,
+  minFreeSpaceGiB: 4,
+};
 const pin = { directory: '/release/assets/guest/a', manifestSha256: 'a'.repeat(64) };
 
 async function environment(root: string, workId: string, options: { cleanup?: boolean } = {}) {

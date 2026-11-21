@@ -8,7 +8,15 @@ import { createRecords } from '../../src/records/index.js';
 
 // Ticket 26 finding (real run q26-recovery-v1): what an incremental text capture has on disk WHILE a command still runs. Characterization of
 // the approved Q8 behaviour ("pode reter a cauda necessária à filtragem de segredos fragmentados"), not a new contract.
-const context = { workId: 'retention-work', executionId: 'e1', invocationId: 'builder-e1', role: 'builder' as const, environmentRef: 'environment', bootRef: 'boot', callId: 'bash-1' };
+const context = {
+  workId: 'retention-work',
+  executionId: 'e1',
+  invocationId: 'builder-e1',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  callId: 'bash-1',
+};
 
 test('a running text capture writes each filtered chunk to its output file at once (no sync), but holds back up to (longest registered secret - 1) characters', async () => {
   const root = await mkdtemp(join(tmpdir(), 'records-retention-'));
@@ -26,5 +34,7 @@ test('a running text capture writes each filtered chunk to its output file at on
     await held.write(Buffer.from('q26-a1-c1-start\n'));
     assert.equal(await readFile(join(root, context.workId, 'evidence', held.reference.id, 'output'), 'utf8'), '', 'retained for fragmented-secret filtering');
     await held.abort();
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

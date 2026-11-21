@@ -26,7 +26,7 @@ const observed = async (dir: string) => {
   return value as Extract<typeof value, { status: 'observed' }>;
 };
 
-test('ticket 48: same checkout, same fingerprint; a commit changes HEAD\'s ref; an edit changes the tree; build output does not', async t => {
+test("ticket 48: same checkout, same fingerprint; a commit changes HEAD's ref; an edit changes the tree; build output does not", async t => {
   const { dir, checkout } = await environment(t);
   const first = await observed(dir);
   assert.deepEqual([first.head, first.ref], ['ref: refs/heads/factory/3-x', 'a'.repeat(40)]);

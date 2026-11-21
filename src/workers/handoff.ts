@@ -224,7 +224,11 @@ export const handoffCommand = (round: number, baseCommit: string, preserve?: str
 /** Ticket 13: the same constant program in probe mode (Host content snapshot before/after a Builder command; writes nothing). */
 export const contentProbeCommand = (baseCommit: string) => command(1, baseCommit, 'probe');
 
-const guestPath = (prefix: string) => z.string().max(4096).refine(path => path.startsWith(prefix) && !path.split('/').includes('..'));
+const guestPath = (prefix: string) =>
+  z
+    .string()
+    .max(4096)
+    .refine(path => path.startsWith(prefix) && !path.split('/').includes('..'));
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 /** Host parse of a probe's stdout; anything else is an unavailable snapshot (never a guessed identity). */
 export const contentProbeSchema = z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() });
@@ -232,24 +236,37 @@ const count = z.number().int().nonnegative().max(1_000_000);
 const patch = z.strictObject({ path: guestPath('/artifacts/review/r'), bytes: count.max(Number.MAX_SAFE_INTEGER), sha256 });
 const version = z.strictObject({ version: z.string().regex(/^v[1-9][0-9]{0,3}$/), sources: guestPath('/artifacts/'), sha256 }).nullable();
 export const handoffSummarySchema = z.strictObject({
-  version: z.literal(1), round: z.number().int().min(1).max(99), index: guestPath('/artifacts/review/r'), indexSha256: sha256,
-  head: z.string().regex(hex40), branch: z.string().max(512).nullable(), base: z.string().regex(hex40), mergeBase: z.string().regex(hex40).nullable(),
+  version: z.literal(1),
+  round: z.number().int().min(1).max(99),
+  index: guestPath('/artifacts/review/r'),
+  indexSha256: sha256,
+  head: z.string().regex(hex40),
+  branch: z.string().max(512).nullable(),
+  base: z.string().regex(hex40),
+  mergeBase: z.string().regex(hex40).nullable(),
   counts: z.strictObject({ entries: count, committed: count, staged: count, unstaged: count, untracked: count, removed: count }),
-  patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch, own: patch.optional() }), spec: version, instructions: version,
-  changed: z.array(guestPath('/workspace/checkout/')).max(20), changedTruncated: z.boolean(),
-  ownChanged: z.array(guestPath('/workspace/checkout/')).max(20).optional(), ownChangedTruncated: z.boolean().optional(),
+  patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch, own: patch.optional() }),
+  spec: version,
+  instructions: version,
+  changed: z.array(guestPath('/workspace/checkout/')).max(20),
+  changedTruncated: z.boolean(),
+  ownChanged: z.array(guestPath('/workspace/checkout/')).max(20).optional(),
+  ownChangedTruncated: z.boolean().optional(),
   content: z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() }).optional(),
   preserved: z.strictObject({ commit: z.string().regex(hex40), ancestor: z.boolean() }).optional(),
 });
 /** Strict parse of the program's stdout (already filtered by Records); anything else is a failed capture, never a guessed handoff. */
 export function parseHandoffSummary(stdout: string, round: number, baseCommit: string, preserve?: string): ProposalHandoff {
   const parsed = handoffSummarySchema.parse(JSON.parse(stdout));
-  if (parsed.round !== round || parsed.base !== baseCommit || parsed.index !== `/artifacts/review/r${round}/index.json`) throw new Error('HANDOFF_CAPTURE_INVALID');
+  if (parsed.round !== round || parsed.base !== baseCommit || parsed.index !== `/artifacts/review/r${round}/index.json`)
+    throw new Error('HANDOFF_CAPTURE_INVALID');
   // Ticket 21: the ancestry answer must be about exactly the requested commit, and present only when requested.
   if ((parsed.preserved?.commit ?? null) !== (preserve ?? null)) throw new Error('HANDOFF_CAPTURE_INVALID');
   // q34-ghadv-v2/v3: an own patch/listing exists only together, and only when the authorized tip is an ancestor of HEAD.
-  const own = parsed.patches.own !== undefined, listed = parsed.ownChanged !== undefined;
-  if (own !== listed || listed !== (parsed.ownChangedTruncated !== undefined) || (own && parsed.preserved?.ancestor !== true)) throw new Error('HANDOFF_CAPTURE_INVALID');
+  const own = parsed.patches.own !== undefined,
+    listed = parsed.ownChanged !== undefined;
+  if (own !== listed || listed !== (parsed.ownChangedTruncated !== undefined) || (own && parsed.preserved?.ancestor !== true))
+    throw new Error('HANDOFF_CAPTURE_INVALID');
   if (own && parsed.patches.own!.path !== `/artifacts/review/r${round}/own.patch`) throw new Error('HANDOFF_CAPTURE_INVALID');
   return parsed as ProposalHandoff;
 }

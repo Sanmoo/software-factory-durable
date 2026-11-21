@@ -4,7 +4,7 @@ import { attribute, failingGates } from '../../scripts/test-runner/proof-attribu
 
 const report = (...failures: string[]) => [...failures.map(line => `FAILURE: ${line}`), failures.length ? 'RESULT: FAIL' : 'RESULT: PASS'].join('\n');
 
-test('a red run is a proof only for the gate it names, at the violation\'s location', () => {
+test("a red run is a proof only for the gate it names, at the violation's location", () => {
   const run = { exitCode: 1, report: report('quality gate Dependency rule (boundaries): pure-rules-imports at src/control/rules/budget.ts → node:fs') };
   assert.deepEqual(attribute(run, 'Dependency rule', 'src/control/rules/budget.ts').proved, true);
   assert.match(attribute(run, 'Context boundaries', 'src/control/rules/budget.ts').reason, /are Dependency rule, not only Context boundaries/);

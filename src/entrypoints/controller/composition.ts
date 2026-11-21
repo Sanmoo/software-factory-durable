@@ -5,7 +5,15 @@ import { createCodeRepository } from '../../code-repository/index.js';
 import { createPreparationVm, createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
+import {
+  forgetWorkRecords,
+  inspectWorkRecords,
+  listDetails,
+  createRecords,
+  preserveEvidence,
+  preserveSessionCopy,
+  removeRecordsDetail,
+} from '../../records/index.js';
 import { readConfinedFile, readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
@@ -19,11 +27,20 @@ export function inspectionRecords(root: string): NonNullable<ExecutionPorts['rec
   let opened: ReturnType<typeof createRecords> | undefined;
   const records = async () => {
     opened ??= createRecords({ root });
-    try { return await opened; } catch (error) { opened = undefined; throw error; }
+    try {
+      return await opened;
+    } catch (error) {
+      opened = undefined;
+      throw error;
+    }
   };
   return {
-    async find(selection) { return (await records()).find(selection); },
-    async read(input) { return (await records()).read(input); },
+    async find(selection) {
+      return (await records()).find(selection);
+    },
+    async read(input) {
+      return (await records()).read(input);
+    },
   };
 }
 
@@ -31,9 +48,14 @@ type Role = 'builder' | 'standards' | 'spec';
 export type ProductionInput = {
   root: string;
   /** Validated effective configuration (subset used here); sandbox stays opaque, interpreted by the Sandbox only. */
-  effective: { models: Record<Role, { provider: string; model: string }>; repositories: readonly GitHubScope[]; concurrency: number; sandbox: unknown;
+  effective: {
+    models: Record<Role, { provider: string; model: string }>;
+    repositories: readonly GitHubScope[];
+    concurrency: number;
+    sandbox: unknown;
     /** Ticket 30: configuration `retentionDays` (default 30). */
-    retentionDays?: number };
+    retentionDays?: number;
+  };
   /** Guest asset pin of the VERIFIED running release (trusted composition data, never YAML). */
   guestAssets: GuestAssetPin;
   github: GitHubAccess;
@@ -45,13 +67,28 @@ export type ProductionInput = {
  * blocked_by, with their own installation; operators answer Questions; the Factory App bot identity is resolved lazily (ticket 14), never
  * configured. One function for the controller owner, the composed journey test and the ticket 18 recipe (no per-ticket wiring).
  */
-export function composeProductionAccess(input: { github: GitHubAccess; effective: { repositories: ConfiguredRepository[];
-  dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[] } }): AccessDependencies {
+export function composeProductionAccess(input: {
+  github: GitHubAccess;
+  effective: {
+    repositories: ConfiguredRepository[];
+    dependencyRepositories: readonly { repository: string; installationId: number }[];
+    operators: (string | { login: string; id?: number })[];
+  };
+}): AccessDependencies {
   const { github, effective } = input;
-  const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
-  return { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
-    repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
-    factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null };
+  const dependencyScopes = effective.dependencyRepositories.map(entry => ({
+    repository: entry.repository,
+    installationId: entry.installationId,
+    workflows: false,
+  }));
+  return {
+    tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }),
+    repository: createCodeRepository({ github }),
+    repositories: effective.repositories,
+    dependencyRepositories: dependencyScopes,
+    operators: effective.operators,
+    factoryApp: async () => (effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null),
+  };
 }
 
 /**
@@ -65,11 +102,20 @@ export function detailPorts(root: string): DetailPorts {
     async runtimeSessions({ boot }) {
       const canonical = await realpath(root);
       const runtime = workerRuntimeDirectory(canonical, boot);
-      const workers = await readdir(runtime).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
+      const workers = await readdir(runtime).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return [] as string[];
+        throw error;
+      });
       const found: ({ ref: string; sha256: string; bytes: number } | { ref: string; code: string })[] = [];
       for (const worker of workers.filter(name => /^w-[A-Za-z0-9]{1,64}$/.test(name)).sort()) {
         const directory = join(runtime, worker, 'profile', 'sessions');
-        if (!await lstat(directory).then(() => true, () => false)) continue;
+        if (
+          !(await lstat(directory).then(
+            () => true,
+            () => false,
+          ))
+        )
+          continue;
         for (const name of (await readdir(directory)).filter(file => file.endsWith('.jsonl')).sort()) {
           const ref = relative(canonical, join(directory, name));
           // Review LOW: an empty or non-session file is kept as an opaque, hashed byte copy (never interpreted, never blocking); only an unsafe
@@ -82,7 +128,9 @@ export function detailPorts(root: string): DetailPorts {
     },
     async preserveSession({ workId, executionId, name, session }) {
       // The recorded Builder session must keep its header; another agent's session (named copy) is copied as opaque bytes at its hash.
-      const read = name ? await readConfinedFile(await realpath(root), session.ref, { allowEmpty: true }) : await readSessionFile(await realpath(root), session.ref);
+      const read = name
+        ? await readConfinedFile(await realpath(root), session.ref, { allowEmpty: true })
+        : await readSessionFile(await realpath(root), session.ref);
       if (read.state === 'lost') return { status: 'lost', code: read.code };
       if (read.state !== 'read') return { status: 'failed', code: read.code };
       if (read.sha256 !== session.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
@@ -108,35 +156,60 @@ export function productionSkillPack(): Promise<SkillPackId> {
  * release profile refuses the whole composition (spec §6.1: explicit per role, no default or fallback, no partial application).
  */
 export async function composeProductionExecution(input: ProductionInput): Promise<
-  { status: 'composed'; ports: ExecutionPorts; summary: { guestAssets: GuestAssetPin; artifactSeeds: string[];
-    profiles: Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }> } } |
-  { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }> {
+  | {
+      status: 'composed';
+      ports: ExecutionPorts;
+      summary: {
+        guestAssets: GuestAssetPin;
+        artifactSeeds: string[];
+        profiles: Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }>;
+      };
+    }
+  | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }
+> {
   const roles = ['builder', 'standards', 'spec'] as const;
-  const unsupported = roles.filter(role => input.effective.models[role].provider !== productionProfile.model.providerId ||
-    input.effective.models[role].model !== productionProfile.model.modelId);
+  const unsupported = roles.filter(
+    role =>
+      input.effective.models[role].provider !== productionProfile.model.providerId || input.effective.models[role].model !== productionProfile.model.modelId,
+  );
   if (unsupported.length > 0) return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: unsupported };
-  const profile = (role: Role) => ({ id: productionProfile.sdkProfileId, systemPrompt: productionProfile.prompts[role],
-    auth: productionProfile.model.auth, providerId: productionProfile.model.providerId, modelId: productionProfile.model.modelId, api: productionProfile.model.api });
+  const profile = (role: Role) => ({
+    id: productionProfile.sdkProfileId,
+    systemPrompt: productionProfile.prompts[role],
+    auth: productionProfile.model.auth,
+    providerId: productionProfile.model.providerId,
+    modelId: productionProfile.model.modelId,
+    api: productionProfile.model.api,
+  });
   const profiles = { builder: profile('builder'), standards: profile('standards'), spec: profile('spec') };
   const skillPack = await productionSkillPack();
   const pack = skillPacks[skillPack];
-  const sandbox = createSandbox({ root: input.root, guestAssets: input.guestAssets,
+  const sandbox = createSandbox({
+    root: input.root,
+    guestAssets: input.guestAssets,
     repositoryFetch: createRepositoryFetchCredentials({ github: input.github, repositories: input.effective.repositories }),
     artifactSeeds: [{ name: pack.seedName, directory: pack.directory }],
     // Ticket 44: environment bases are prepared in their own supervised preparation VM (transient unit), never in the controller process.
-    preparationVm: createPreparationVm({ root: input.root }) });
+    preparationVm: createPreparationVm({ root: input.root }),
+  });
   // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
   const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt });
   const ports: ExecutionPorts = {
-    sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
+    sandbox: {
+      prepare: input => sandbox.prepare(input),
+      start: input => sandbox.start(input),
+      stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),
       // Ticket 48: Host fingerprint of the checkout (start of the Execution / after a budget end): progress decides continuation vs recovery.
       observeCheckout: input => sandbox.observeCheckout(input),
       // Ticket 13: confined Host confirmation of preserved-source authorizations (absent = none would ever correlate).
       verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
       // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.
-      observe: input => sandbox.observe(input) },
-    workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
+      observe: input => sandbox.observe(input),
+    },
+    workers: {
+      activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events),
+      deliver: (worker, directive) => workers.deliver(worker, directive),
       observe: input => workers.observe(input),
       // Ticket 26: protected start receipt of an invocation, discovered without its notification.
       observeStart: input => workers.observeStart(input),
@@ -145,7 +218,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       observeQuestion: input => workers.observeQuestion(input),
 
       // Ticket 29: model usage of preserved sessions, for `factory usage` (read-only).
-      observeUsage: input => workers.observeUsage(input) },
+      observeUsage: input => workers.observeUsage(input),
+    },
     // Ticket 29: read-only `Records.read(selection)` of the protected Records for `factory logs` (opened lazily; a failed open is retried).
     records: inspectionRecords(input.root),
     // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
@@ -163,11 +237,16 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       remove: input => sandbox.remove(input),
       async preserve({ workId, environment }) {
         let absent = false;
-        const result = await preserveEvidence({ root: input.root, workId, label: environment, stage: async destination => {
-          const exported = await sandbox.exportEvidence({ environment, destination });
-          if (exported.status === 'absent') absent = true;
-          else if (exported.status === 'failure') throw new Error(exported.code);
-        } });
+        const result = await preserveEvidence({
+          root: input.root,
+          workId,
+          label: environment,
+          stage: async destination => {
+            const exported = await sandbox.exportEvidence({ environment, destination });
+            if (exported.status === 'absent') absent = true;
+            else if (exported.status === 'failure') throw new Error(exported.code);
+          },
+        });
         return absent && result.status === 'preserved' ? { status: 'absent' } : result;
       },
       retrySeconds: 86400,
@@ -178,7 +257,18 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     },
   };
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');
-  return { status: 'composed', ports, summary: { guestAssets: input.guestAssets, artifactSeeds: [pack.seedName],
-    profiles: Object.fromEntries(roles.map(role => { const { systemPrompt, ...rest } = profiles[role]; return [role, { ...rest, systemPromptSha256: sha(systemPrompt) }]; })) as
-      Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }> } };
+  return {
+    status: 'composed',
+    ports,
+    summary: {
+      guestAssets: input.guestAssets,
+      artifactSeeds: [pack.seedName],
+      profiles: Object.fromEntries(
+        roles.map(role => {
+          const { systemPrompt, ...rest } = profiles[role];
+          return [role, { ...rest, systemPromptSha256: sha(systemPrompt) }];
+        }),
+      ) as Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }>,
+    },
+  };
 }

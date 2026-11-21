@@ -9,11 +9,17 @@ export { contextSchema } from './tool-binding.js';
 export type { ToolContext, ReadResult, GuestOwner, ReadBinding } from './tool-binding.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-const pageCall = z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
-  offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), callId: identifier });
+const pageCall = z.strictObject({
+  name: z.literal('read'),
+  operation: z.literal('page'),
+  reference: referenceSchema,
+  offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  callId: identifier,
+});
 const readCallSchema = z.union([
   z.strictObject({ name: z.literal('read'), operation: z.literal('capture'), path: z.string().min(1).max(4096), callId: identifier }),
-  pageCall, pageCall.extend({ format: z.literal('raw') }),
+  pageCall,
+  pageCall.extend({ format: z.literal('raw') }),
 ]);
 export type ReadCall = z.infer<typeof readCallSchema>;
 const editSourceBinding = { name: z.literal('edit-source'), path: z.string().min(1).max(4096), callId: identifier };
@@ -27,7 +33,9 @@ const editSourceCallSchema = z.union([
 export type EditSourceCall = z.infer<typeof editSourceCallSchema>;
 const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema, editSourceCallSchema]);
 export type ToolCall = ReadCall | WriteCall | BashCall | EditSourceCall;
-export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void | Promise<void>, signal?: AbortSignal): Promise<ReadResult> }
+export interface ToolProjection {
+  executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void | Promise<void>, signal?: AbortSignal): Promise<ReadResult>;
+}
 // Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
 // are profile prerequisites, NOT established by this helper. Frozen runtime remains
 // unqualified. This authorizes the opened regular FD's resolved target at check time;
@@ -72,9 +80,11 @@ finally:
 // Closed edit-source mode shares the SAME stdout/read loop with legacy read.
 // Only FD acquisition/authorization changes; no filesystem writes. Trusted guest
 // TCB prerequisite, not a coherent snapshot or continuous-root guarantee.
-const guestEditSourceProgram = guestReadProgram.replace('fd = None', 'fd = None\nfds = []').replace(
-  '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
-  `    parts = path.split("/")
+const guestEditSourceProgram = guestReadProgram
+  .replace('fd = None', 'fd = None\nfds = []')
+  .replace(
+    '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
+    `    parts = path.split("/")
     if any(part in ("", ".", "..") for part in parts[1:]):
         raise ValueError()
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -97,19 +107,27 @@ const guestEditSourceProgram = guestReadProgram.replace('fd = None', 'fd = None\
         authorize_parent(parent)
     authorize_parent(parent)
     fd = os.open(parts[-1], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)`,
-).replace('    while True:', '    authorize_parent(parent)\n    while True:').replace(
-  '        os.close(fd)', '        os.close(fd)\n    for parent in reversed(fds):\n        os.close(parent)',
-);
+  )
+  .replace('    while True:', '    authorize_parent(parent)\n    while True:')
+  .replace('        os.close(fd)', '        os.close(fd)\n    for parent in reversed(fds):\n        os.close(parent)');
 // Read-only derived mode; Edit's original FD/source/budget semantics above stay
 // byte-for-byte unchanged. Bounded Host data, never model-supplied Python code.
-const guestCopyAwareReadProgram = guestReadProgram.replace('import os, stat, sys', 'import os, stat, sys, json').replace(
-  // Ticket 14 real run: a NONEXISTENT path has its own status (4), decided at open time before any source byte.
-  'directory = False', 'directory = False\nmissing = False').replace(
-  '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
-  '    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)\n    except FileNotFoundError:\n        missing = True\n        raise').replace(
-  'sys.exit(3 if directory else 1)', 'sys.exit(3 if directory else 4 if missing else 1)').replace(
-  'len(sys.argv) != 2', 'len(sys.argv) != 4',
-).replace('    while True:', `    selected = json.loads(sys.argv[3])
+const guestCopyAwareReadProgram = guestReadProgram
+  .replace('import os, stat, sys', 'import os, stat, sys, json')
+  .replace(
+    // Ticket 14 real run: a NONEXISTENT path has its own status (4), decided at open time before any source byte.
+    'directory = False',
+    'directory = False\nmissing = False',
+  )
+  .replace(
+    '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
+    '    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)\n    except FileNotFoundError:\n        missing = True\n        raise',
+  )
+  .replace('sys.exit(3 if directory else 1)', 'sys.exit(3 if directory else 4 if missing else 1)')
+  .replace('len(sys.argv) != 2', 'len(sys.argv) != 4')
+  .replace(
+    '    while True:',
+    `    selected = json.loads(sys.argv[3])
     if (sys.argv[2] not in ("builder", "reviewer") or not isinstance(selected, list)
             or len(selected) > 32 or any(not isinstance(item, str) for item in selected)):
         raise ValueError()
@@ -118,9 +136,13 @@ const guestCopyAwareReadProgram = guestReadProgram.replace('import os, stat, sys
             raise ValueError()
     elif target.startswith("/artifacts/factory-output-") and target not in selected:
         raise ValueError()
-    while True:`);
+    while True:`,
+  );
 /** Seeded pack file of exactly one known version; no `..`, no empty/dot segments. */
-export const skillPackFilePath = z.string().max(512).regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
+export const skillPackFilePath = z
+  .string()
+  .max(512)
+  .regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
   .refine(path => !path.split('/').some(part => part === '.' || part === '..'));
 const copyPath = z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/);
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
@@ -128,24 +150,40 @@ function sameContext(left: ToolContext, right: ToolContext): boolean {
   return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
 }
 function envelope(messageId: string, kind: string, payload: unknown, replyTo: string | null = null): Envelope {
-  return { protocol_version: protocolVersion, controller_run_id: null, message_id: messageId, reply_to: replyTo, kind,
-    payload: z.record(z.string(), z.json()).parse(payload) };
+  return {
+    protocol_version: protocolVersion,
+    controller_run_id: null,
+    message_id: messageId,
+    reply_to: replyTo,
+    kind,
+    payload: z.record(z.string(), z.json()).parse(payload),
+  };
 }
 
 /** Private component of the existing owner. Authority is a host snapshot with a
  * revocation signal, never a guest file, handshake claim, Records fact or current() callback. */
 export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) {
   const bound = Object.freeze(contextSchema.parse(options.context));
-  const imageSourceMaxBytes = options.imageSourceMaxBytes === undefined ? undefined
-    : z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(options.imageSourceMaxBytes);
+  const imageSourceMaxBytes =
+    options.imageSourceMaxBytes === undefined ? undefined : z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(options.imageSourceMaxBytes);
   // Snapshot trusted policy before first await. Call schemas cannot override it.
-  const editSourceMaxBytes = options.editSourceMaxBytes === undefined ? undefined
-    : z.number().int().nonnegative().max(8192).parse(options.editSourceMaxBytes);
-  const selectedCopies = new Set(z.array(copyPath).max(32).parse(options.selectedOutputCopies ?? []));
+  const editSourceMaxBytes = options.editSourceMaxBytes === undefined ? undefined : z.number().int().nonnegative().max(8192).parse(options.editSourceMaxBytes);
+  const selectedCopies = new Set(
+    z
+      .array(copyPath)
+      .max(32)
+      .parse(options.selectedOutputCopies ?? []),
+  );
   if (bound.role === 'builder' && options.selectedOutputCopies !== undefined) throw new Error('READ_SELECTION_ROLE_DENIED');
-  const packFiles = new Set(z.array(skillPackFilePath).max(64).parse(options.skillPackFiles ?? []));
+  const packFiles = new Set(
+    z
+      .array(skillPackFilePath)
+      .max(64)
+      .parse(options.skillPackFiles ?? []),
+  );
   const packCaptures = new Set<string>();
-  if (packFiles.size && (bound.role !== 'builder' || new Set([...packFiles].map(path => path.split('/')[4])).size !== 1)) throw new Error('READ_PACK_POLICY_INVALID');
+  if (packFiles.size && (bound.role !== 'builder' || new Set([...packFiles].map(path => path.split('/')[4])).size !== 1))
+    throw new Error('READ_PACK_POLICY_INVALID');
   // Created ONLY here: no caller set/callback, Records receipt or persisted path
   // can grant Builder access in this or a subsequent invocation.
   const publishedCopies = new Set<string>();
@@ -159,11 +197,26 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   // hashes are not grants. Capture does not reserve or authorize mutation.
   const versions = new Map<string, { path: string; reference: { workId: string; id: string }; bytes: number; digest: string }>();
   let pendingSources = 0;
-  signal.addEventListener('abort', () => { versions.clear(); captures.clear(); publishedCopies.clear(); selectedCopies.clear(); }, { once: true });
-  const revoke = () => { mutationRevoked = true; publishedCopies.clear(); selectedCopies.clear(); captures.clear(); };
-  const details = (format: 'text' | 'raw') => format === 'raw'
-    ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
-    : { format: 'text' as const, encoding: 'base64' as const };
+  signal.addEventListener(
+    'abort',
+    () => {
+      versions.clear();
+      captures.clear();
+      publishedCopies.clear();
+      selectedCopies.clear();
+    },
+    { once: true },
+  );
+  const revoke = () => {
+    mutationRevoked = true;
+    publishedCopies.clear();
+    selectedCopies.clear();
+    captures.clear();
+  };
+  const details = (format: 'text' | 'raw') =>
+    format === 'raw'
+      ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
+      : { format: 'text' as const, encoding: 'base64' as const };
   const write = boundWriteTools({ ...options, signal }, valid, revoke);
   const commit = boundConditionalEditTools({ ...options, signal }, valid, revoke);
   const bash = boundBashTools({ ...options, signal }, valid, revoke, publishedCopies);
@@ -172,50 +225,90 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     if (call.name === 'write') return write(context, call);
     const editSource = call.name === 'edit-source';
     // Builder Read without the copy qualification: only its pack files, and the pages of captures they produced.
-    if (!editSource && bound.role === 'builder' && !builderRead && !('path' in call ? packFiles.has(call.path)
-      : call.operation === 'page' && packCaptures.has(call.reference.id))) return failure(packFiles.size ? 'READ_PATH_DENIED' : 'READ_ROLE_DENIED');
+    if (
+      !editSource &&
+      bound.role === 'builder' &&
+      !builderRead &&
+      !('path' in call ? packFiles.has(call.path) : call.operation === 'page' && packCaptures.has(call.reference.id))
+    )
+      return failure(packFiles.size ? 'READ_PATH_DENIED' : 'READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
     if (editSource && (bound.role !== 'builder' || editSourceMaxBytes === undefined)) return failure('EDIT_SOURCE_DENIED');
     if (editSource && call.operation !== 'capture') {
       const version = versions.get(call.sourceVersion);
-      if (!version || version.path !== call.path || version.reference.id !== call.reference.id ||
-          version.reference.workId !== call.reference.workId) return failure('EDIT_SOURCE_VERSION_DENIED');
+      if (!version || version.path !== call.path || version.reference.id !== call.reference.id || version.reference.workId !== call.reference.workId)
+        return failure('EDIT_SOURCE_VERSION_DENIED');
       if (call.operation === 'commit') {
-        if (Buffer.byteLength(call.replacement) > 8192 || Buffer.byteLength(JSON.stringify(call)) > 49152)
-          return failure('EDIT_SOURCE_PAYLOAD_TOO_LARGE');
+        if (Buffer.byteLength(call.replacement) > 8192 || Buffer.byteLength(JSON.stringify(call)) > 49152) return failure('EDIT_SOURCE_PAYLOAD_TOO_LARGE');
         // Reservation is synchronous and precedes the FIRST await. Pages,
         // releases and competing channels can no longer find this version.
         versions.delete(call.sourceVersion);
         try {
           const page = await options.records.read({ reference: version.reference, offset: 0, limit: 8192 });
           if (!valid()) return failure('STALE_TOOL_CONTEXT');
-          if (page.state !== 'complete' || page.bytes !== version.bytes || page.nextOffset !== version.bytes ||
-              page.data.length !== version.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest)
+          if (
+            page.state !== 'complete' ||
+            page.bytes !== version.bytes ||
+            page.nextOffset !== version.bytes ||
+            page.data.length !== version.bytes ||
+            createHash('sha256').update(page.data).digest('hex') !== version.digest
+          )
             throw new Error('protected source unavailable');
         } catch {
           revoke();
           return failure('PROTECTED_EDIT_SOURCE_UNAVAILABLE');
         }
-        return commit(context, { name: 'edit-source', operation: 'commit', path: version.path, callId: call.callId,
-          replacement: call.replacement, expectedBytes: version.bytes, expectedDigest: version.digest });
+        return commit(context, {
+          name: 'edit-source',
+          operation: 'commit',
+          path: version.path,
+          callId: call.callId,
+          replacement: call.replacement,
+          expectedBytes: version.bytes,
+          expectedDigest: version.digest,
+        });
       }
       if (call.operation === 'release') {
         versions.delete(call.sourceVersion);
-        return { status: 'success', format: 'text', encoding: 'base64', reference: version.reference,
-          bytes: version.bytes, data: '', nextOffset: 0, sourceVersion: call.sourceVersion };
+        return {
+          status: 'success',
+          format: 'text',
+          encoding: 'base64',
+          reference: version.reference,
+          bytes: version.bytes,
+          data: '',
+          nextOffset: 0,
+          sourceVersion: call.sourceVersion,
+        };
       }
       try {
         const page = await options.records.read({ reference: version.reference, offset: call.offset, limit: 8192 });
         if (!valid() || versions.get(call.sourceVersion) !== version) return failure('EDIT_SOURCE_VERSION_DENIED');
-        if (page.state !== 'complete' || page.bytes !== version.bytes || call.offset > page.bytes ||
-            page.nextOffset !== call.offset + page.data.length || page.nextOffset > page.bytes ||
-            (call.offset === 0 && (page.nextOffset !== page.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest))) {
+        if (
+          page.state !== 'complete' ||
+          page.bytes !== version.bytes ||
+          call.offset > page.bytes ||
+          page.nextOffset !== call.offset + page.data.length ||
+          page.nextOffset > page.bytes ||
+          (call.offset === 0 && (page.nextOffset !== page.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest))
+        ) {
           versions.delete(call.sourceVersion);
           return failure('PROTECTED_READ_UNAVAILABLE');
         }
-        return { status: 'success', format: 'text', encoding: 'base64', reference: version.reference, sourceVersion: call.sourceVersion,
-          bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
-      } catch { versions.delete(call.sourceVersion); return failure('PROTECTED_READ_UNAVAILABLE'); }
+        return {
+          status: 'success',
+          format: 'text',
+          encoding: 'base64',
+          reference: version.reference,
+          sourceVersion: call.sourceVersion,
+          bytes: page.bytes,
+          data: page.data.toString('base64'),
+          nextOffset: page.nextOffset,
+        };
+      } catch {
+        versions.delete(call.sourceVersion);
+        return failure('PROTECTED_READ_UNAVAILABLE');
+      }
     }
     if (editSource && versions.size + pendingSources >= 32) return failure('EDIT_SOURCE_LIMIT');
     if (editSource) pendingSources++;
@@ -226,16 +319,39 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         if ((format === 'raw') !== ('format' in call && call.format === 'raw')) return failure('READ_REFERENCE_DENIED');
         const request = { reference: call.reference, offset: call.offset, limit: 24576 };
         const page = format === 'raw' ? await options.records.read({ ...request, format: 'raw' }) : await options.records.read(request);
-        if (page.state !== 'complete' || (format === 'raw' && (call.offset > page.bytes || page.nextOffset > page.bytes ||
-            page.nextOffset !== call.offset + page.data.length))) return failure('PROTECTED_READ_UNAVAILABLE');
+        if (
+          page.state !== 'complete' ||
+          (format === 'raw' && (call.offset > page.bytes || page.nextOffset > page.bytes || page.nextOffset !== call.offset + page.data.length))
+        )
+          return failure('PROTECTED_READ_UNAVAILABLE');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
-        return { status: 'success', ...details(format), reference: call.reference, bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
+        return {
+          status: 'success',
+          ...details(format),
+          reference: call.reference,
+          bytes: page.bytes,
+          data: page.data.toString('base64'),
+          nextOffset: page.nextOffset,
+        };
       }
-      if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..') ||
-          (editSource && (call.path.split('/').slice(1).some(part => part === '' || part === '.') || /[\x00-\x1f\x7f]/.test(call.path)))) return failure('READ_PATH_DENIED');
+      if (
+        !/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) ||
+        call.path.split('/').includes('..') ||
+        (editSource &&
+          (call.path
+            .split('/')
+            .slice(1)
+            .some(part => part === '' || part === '.') ||
+            /[\x00-\x1f\x7f]/.test(call.path)))
+      )
+        return failure('READ_PATH_DENIED');
       const copies = bound.role === 'builder' ? publishedCopies : selectedCopies;
-      if (!editSource && ((bound.role === 'builder' && !copies.has(call.path) && !packFiles.has(call.path)) ||
-          (call.path.startsWith('/artifacts/factory-output-') && !copies.has(call.path)))) return failure('READ_PATH_DENIED');
+      if (
+        !editSource &&
+        ((bound.role === 'builder' && !copies.has(call.path) && !packFiles.has(call.path)) ||
+          (call.path.startsWith('/artifacts/factory-output-') && !copies.has(call.path)))
+      )
+        return failure('READ_PATH_DENIED');
       const copyText = !editSource && copies.has(call.path);
       const { phaseId: _phaseId, ...captureContext } = bound;
       let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'text', preserveBOM: true });
@@ -253,15 +369,24 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
           const text = await output.write(data);
           if (editSource) {
             if (typeof text !== 'string') throw new Error('EDIT_SOURCE_NOT_TEXT');
-            protectedHash.update(text, 'utf8'); protectedBytes += Buffer.byteLength(text);
+            protectedHash.update(text, 'utf8');
+            protectedBytes += Buffer.byteLength(text);
           }
         };
         const argv = ['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestCopyAwareReadProgram, call.path];
-        if (!editSource) argv.push(bound.role === 'builder' ? 'builder' : 'reviewer', JSON.stringify(bound.role === 'builder' && packFiles.has(call.path) ? [call.path] : [...copies]));
+        if (!editSource)
+          argv.push(
+            bound.role === 'builder' ? 'builder' : 'reviewer',
+            JSON.stringify(bound.role === 'builder' && packFiles.has(call.path) ? [call.path] : [...copies]),
+          );
         // Native output() requires both pipes. stderr chunks are drained and
         // discarded below; diagnostics never reach captures, SDK or display.
-        const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
-          signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
+        const process = options.vm.exec(argv, {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          signal: AbortSignal.any([signal, commandLifetime.signal]),
+          windowBytes: 65536,
+        });
         // Observe rejection immediately, even when the stream itself fails first.
         void process.result.catch(() => {});
         let prefix = Buffer.alloc(0);
@@ -269,10 +394,10 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         // Existing coarse magic routes capture format ONLY; native Workers MIME
         // detection of completed protected bytes remains authoritative.
         const routePrefix = async (): Promise<'text' | 'raw' | false> => {
-          const pngOrJpeg = prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
-            prefix.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
-          const otherImage = /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) ||
-            (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
+          const pngOrJpeg =
+            prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || prefix.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+          const otherImage =
+            /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) || (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
           const imageCandidate = !copyText && (pngOrJpeg || otherImage);
           if (imageCandidate && (editSource || imageSourceMaxBytes === undefined)) return false;
           if (imageCandidate) {
@@ -289,7 +414,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             sourceBytes += data.length;
             // Every original stdout FD byte, not the decoded input or excerpt.
             sourceHash.update(data);
-            if (sourceBytes > editSourceMaxBytes! || data.some(byte => byte < 32 && byte !== 9 && byte !== 10 && byte !== 13 || byte === 127))
+            if (sourceBytes > editSourceMaxBytes! || data.some(byte => (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) || byte === 127))
               return failure('EDIT_SOURCE_NOT_LOSSLESS');
           }
           if (!inspected) {
@@ -300,7 +425,8 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             const routed = await routePrefix();
             if (!routed) return failure('READ_BINARY_UNSUPPORTED');
             format = routed;
-            await append(prefix); inspected = true;
+            await append(prefix);
+            inspected = true;
           }
           for (let offset = 0; offset < data.length; offset += 65536) await append(data.subarray(offset, offset + 65536));
         }
@@ -321,49 +447,87 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         if (editSource) {
           if (!('tail' in capture)) return failure('EDIT_SOURCE_NOT_LOSSLESS');
-          protectedHash.update(capture.tail, 'utf8'); protectedBytes += Buffer.byteLength(capture.tail);
+          protectedHash.update(capture.tail, 'utf8');
+          protectedBytes += Buffer.byteLength(capture.tail);
           const digest = sourceHash.digest('hex');
           if (sourceBytes !== protectedBytes || protectedBytes !== capture.bytes || digest !== protectedHash.digest('hex'))
             return failure('EDIT_SOURCE_NOT_LOSSLESS');
           const sourceVersion = randomUUID();
           versions.set(sourceVersion, { path: call.path, reference: capture.reference, bytes: capture.bytes, digest });
           completed = true;
-          return { status: 'success', format: 'text', encoding: 'base64', reference: capture.reference, bytes: capture.bytes,
-            sourceVersion, data: '', nextOffset: 0 };
+          return {
+            status: 'success',
+            format: 'text',
+            encoding: 'base64',
+            reference: capture.reference,
+            bytes: capture.bytes,
+            sourceVersion,
+            data: '',
+            nextOffset: 0,
+          };
         }
-        captures.set(capture.reference.id, format); completed = true;
+        captures.set(capture.reference.id, format);
+        completed = true;
         if (bound.role === 'builder' && packFiles.has(call.path)) packCaptures.add(capture.reference.id);
         return { status: 'success', ...details(format), reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
       } finally {
         commandLifetime.abort();
         if (!completed) await output.abort();
       }
-    } catch { return failure('PROTECTED_READ_UNAVAILABLE'); }
-    finally { if (editSource) pendingSources--; }
+    } catch {
+      return failure('PROTECTED_READ_UNAVAILABLE');
+    } finally {
+      if (editSource) pendingSources--;
+    }
   }
   const active = new Set<Promise<void>>();
-  const server = await listen(options.endpoint, { async message(request, channel) {
-    const task = (async () => {
-      const parsed = z.strictObject({ context: contextSchema, call: callSchema }).safeParse(request.payload);
-      const result = request.kind !== 'execute-tool' || !parsed.success || request.message_id !== parsed.data.call.callId
-        ? failure('INVALID_TOOL_CALL') : await executeTool(parsed.data.context, parsed.data.call, async frame => {
-          await channel.send(envelope(request.message_id, 'tool-progress', frame, request.message_id));
-        });
-      await channel.send(envelope(request.message_id, 'tool-result', result, request.message_id));
-    })();
-    active.add(task);
-    try { await task; } finally { active.delete(task); }
-  }, closed() { lifetime.abort(); } }, { kind: 'worker-tool', binding: bound });
+  const server = await listen(
+    options.endpoint,
+    {
+      async message(request, channel) {
+        const task = (async () => {
+          const parsed = z.strictObject({ context: contextSchema, call: callSchema }).safeParse(request.payload);
+          const result =
+            request.kind !== 'execute-tool' || !parsed.success || request.message_id !== parsed.data.call.callId
+              ? failure('INVALID_TOOL_CALL')
+              : await executeTool(parsed.data.context, parsed.data.call, async frame => {
+                  await channel.send(envelope(request.message_id, 'tool-progress', frame, request.message_id));
+                });
+          await channel.send(envelope(request.message_id, 'tool-result', result, request.message_id));
+        })();
+        active.add(task);
+        try {
+          await task;
+        } finally {
+          active.delete(task);
+        }
+      },
+      closed() {
+        lifetime.abort();
+      },
+    },
+    { kind: 'worker-tool', binding: bound },
+  );
   let closing: Promise<void> | undefined;
   function close() {
     // Publish the single cleanup promise before abort dispatch can re-enter close.
     closing ??= Promise.resolve().then(async () => {
-      try { await server.close(); } finally { await Promise.allSettled([...active]); }
+      try {
+        await server.close();
+      } finally {
+        await Promise.allSettled([...active]);
+      }
     });
     lifetime.abort();
     return closing;
   }
-  signal.addEventListener('abort', () => { void close().catch(() => {}); }, { once: true });
+  signal.addEventListener(
+    'abort',
+    () => {
+      void close().catch(() => {});
+    },
+    { once: true },
+  );
   // Covers an already-revoked binding and revocation during listen/chmod awaits.
   if (signal.aborted) await close();
   return { endpoint: options.endpoint, close };
@@ -374,11 +538,14 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
 export async function serveReadToolBindings(bindings: readonly ReadBinding[], vm: GuestOwner) {
   const owners: Awaited<ReturnType<typeof serveReadTools>>[] = [];
   let closing: Promise<void> | undefined;
-  const close = () => closing ??= Promise.all(owners.map(owner => owner.close())).then(() => {});
+  const close = () => (closing ??= Promise.all(owners.map(owner => owner.close())).then(() => {}));
   const add = async (binding: ReadBinding) => {
     if (closing || binding.signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
     const owner = await serveReadTools({ ...binding, vm });
-    if (closing || binding.signal.aborted) { await owner.close(); throw new Error('STALE_TOOL_CONTEXT'); }
+    if (closing || binding.signal.aborted) {
+      await owner.close();
+      throw new Error('STALE_TOOL_CONTEXT');
+    }
     owners.push(owner);
   };
   try {
@@ -404,7 +571,10 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
       const call = callSchema.safeParse(input);
       if (!call.success) return failure('INVALID_TOOL_CALL');
       busy = true;
-      const abort = () => { closed = true; channel.close(); };
+      const abort = () => {
+        closed = true;
+        channel.close();
+      };
       signal?.addEventListener('abort', abort, { once: true });
       try {
         if (signal?.aborted) throw new Error('aborted');
@@ -413,30 +583,60 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
         let bytes = 0;
         while (true) {
           const response = await messages.next();
-          if (response.done || response.value.reply_to !== call.data.callId || response.value.message_id !== call.data.callId ||
-              response.value.controller_run_id !== null) throw new Error('TOOL_CHANNEL_CLOSED');
+          if (
+            response.done ||
+            response.value.reply_to !== call.data.callId ||
+            response.value.message_id !== call.data.callId ||
+            response.value.controller_run_id !== null
+          )
+            throw new Error('TOOL_CHANNEL_CLOSED');
           if (response.value.kind === 'tool-progress') {
             if (call.data.name !== 'bash' || !onData) throw new Error('INVALID_TOOL_PROGRESS');
             const frame = bashProgressSchema.parse(response.value.payload);
             const chunk = Buffer.from(frame.data, 'base64');
-            if (Object.keys(frame.context).length !== Object.keys(bound).length ||
-                Object.keys(bound).some(key => bound[key as keyof ToolContext] !== frame.context[key]) || frame.sequence !== sequence++ ||
-                chunk.length > 24576 || chunk.toString('base64') !== frame.data ||
-                frame.bytes !== bytes + chunk.length || !Number.isSafeInteger(frame.bytes)) throw new Error('INVALID_TOOL_PROGRESS');
+            if (
+              Object.keys(frame.context).length !== Object.keys(bound).length ||
+              Object.keys(bound).some(key => bound[key as keyof ToolContext] !== frame.context[key]) ||
+              frame.sequence !== sequence++ ||
+              chunk.length > 24576 ||
+              chunk.toString('base64') !== frame.data ||
+              frame.bytes !== bytes + chunk.length ||
+              !Number.isSafeInteger(frame.bytes)
+            )
+              throw new Error('INVALID_TOOL_PROGRESS');
             bytes = frame.bytes;
             await onData(chunk);
             continue;
           }
           if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
           const result = readResultSchema.parse(response.value.payload);
-          if (call.data.name === 'bash' && !('operation' in call.data) && result.status === 'success' && (result.format !== 'text' ||
-              result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes ||
-              result.reference.workId !== bound.workId || result.data !== '' || result.nextOffset !== 0)) throw new Error('INVALID_TOOL_RESULT');
+          if (
+            call.data.name === 'bash' &&
+            !('operation' in call.data) &&
+            result.status === 'success' &&
+            (result.format !== 'text' ||
+              result.exitCode === undefined ||
+              result.progressFrames !== sequence ||
+              result.bytes !== bytes ||
+              result.reference.workId !== bound.workId ||
+              result.data !== '' ||
+              result.nextOffset !== 0)
+          )
+            throw new Error('INVALID_TOOL_RESULT');
           return result;
         }
-      } catch { closed = true; channel.close(); return failure('TOOL_CHANNEL_CLOSED'); }
-      finally { signal?.removeEventListener('abort', abort); busy = false; }
+      } catch {
+        closed = true;
+        channel.close();
+        return failure('TOOL_CHANNEL_CLOSED');
+      } finally {
+        signal?.removeEventListener('abort', abort);
+        busy = false;
+      }
     },
-    close() { closed = true; channel.close(); },
+    close() {
+      closed = true;
+      channel.close();
+    },
   };
 }

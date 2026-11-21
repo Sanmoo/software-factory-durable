@@ -3,16 +3,37 @@ import { mock, test } from 'node:test';
 
 // Import and --plan of the ticket 17 real-run recipe must be inert: no process, socket, filesystem or SDK effect.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, request: deny, open: deny, mkdir: deny, readFile: deny, access: deny,
-    readdir: deny, copyFile: deny, stat: deny, lstat: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+      copyFile: deny,
+      stat: deny,
+      lstat: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./delivery17-qualification.js');
 
 test('AC7 recipe: import and --plan are inert; the plan declares the human merge as an operator step and the exact GitHub/host effects', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
@@ -21,8 +42,15 @@ test('AC7 recipe: import and --plan are inert; the plan declares the human merge
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q17-delivery-v4');
   assert.equal(plan.source, '/home/sanmoo/software-factory-test/y5/q14-publication-v8', 'the v8 storage is only copied');
   assert.deepEqual(plan.expectedPullRequest, { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' });
-  assert.match(plan.operatorStep.steps.join('\n'), /Do NOT convert the PR from draft yourself[\s\S]*approving review is REQUIRED[\s\S]*Merge PR #5 with merge commit, squash or rebase[\s\S]*Do NOT click "Delete branch"/);
-  assert.doesNotMatch(plan.operatorStep.steps.join('\n'), /Click "Ready for review"|gh pr ready/, 'readiness is the Factory\'s (ticket 16), never an operator step');
+  assert.match(
+    plan.operatorStep.steps.join('\n'),
+    /Do NOT convert the PR from draft yourself[\s\S]*approving review is REQUIRED[\s\S]*Merge PR #5 with merge commit, squash or rebase[\s\S]*Do NOT click "Delete branch"/,
+  );
+  assert.doesNotMatch(
+    plan.operatorStep.steps.join('\n'),
+    /Click "Ready for review"|gh pr ready/,
+    "readiness is the Factory's (ticket 16), never an operator step",
+  );
   assert.equal(plan.operatorStep.readyBy, 'factory (ticket 16), never the operator');
   assert.match(plan.operatorStep.deliverPreconditions[0], /merged .* head bfdd439/);
   assert.deepEqual(plan.operatorStep.acceptableMergeMethods, ['merge', 'squash', 'rebase']);
@@ -41,9 +69,18 @@ test('AC7 recipe: import and --plan are inert; the plan declares the human merge
 
 test('AC7 recipe: EVERY branch deletion is guarded: none reaches GitHub in deliver, at most one in retry; refs diff shows only what disappeared', async () => {
   let real = 0;
-  const cleanupBranch = async () => { real++; return { outcome: 'removed' as const, code: 'BRANCH_DELETED', observedAt: 'x', tip: null, revocation: 'revoked', nextStep: '', effectId: 'e' }; };
-  const selection = { repo: { repository: 'a/b', installationId: 1, workflows: false }, repositoryId: 1, branch: 'factory/3-x', base: 'main', expectedTip: 'a'.repeat(40),
-    pullRequest: { number: 1, pullRequestId: 1 } };
+  const cleanupBranch = async () => {
+    real++;
+    return { outcome: 'removed' as const, code: 'BRANCH_DELETED', observedAt: 'x', tip: null, revocation: 'revoked', nextStep: '', effectId: 'e' };
+  };
+  const selection = {
+    repo: { repository: 'a/b', installationId: 1, workflows: false },
+    repositoryId: 1,
+    branch: 'factory/3-x',
+    base: 'main',
+    expectedTip: 'a'.repeat(40),
+    pullRequest: { number: 1, pullRequestId: 1 },
+  };
   const deliver = recipe.branchGuard(cleanupBranch, 'deliver');
   assert.equal((await deliver.cleanupBranch(selection, { effectId: 'e1' })).code, 'RECIPE_PROVOKED_FAILURE');
   assert.equal((await deliver.cleanupBranch(selection, { effectId: 'e2' })).code, 'RECIPE_PROVOKED_FAILURE', 'every call in deliver, not only the first');
@@ -52,9 +89,14 @@ test('AC7 recipe: EVERY branch deletion is guarded: none reaches GitHub in deliv
   assert.equal((await retry.cleanupBranch(selection, { effectId: 'e3' })).outcome, 'removed');
   assert.equal((await retry.cleanupBranch(selection, { effectId: 'e4' })).code, 'RECIPE_ONE_DELETE_GUARD');
   assert.equal(real, 1, 'at most one real deletion attempt per recipe');
-  assert.deepEqual(retry.calls.map(item => item.real), [true, false]);
-  assert.deepEqual(recipe.refsDiff({ 'refs/heads/main': 'm', 'refs/heads/factory/3-x': 'a', 'refs/tags/v1': 't' }, { 'refs/heads/main': 'm', 'refs/tags/v1': 't' }),
-    { removed: ['refs/heads/factory/3-x'], added: [], moved: [] });
+  assert.deepEqual(
+    retry.calls.map(item => item.real),
+    [true, false],
+  );
+  assert.deepEqual(
+    recipe.refsDiff({ 'refs/heads/main': 'm', 'refs/heads/factory/3-x': 'a', 'refs/tags/v1': 't' }, { 'refs/heads/main': 'm', 'refs/tags/v1': 't' }),
+    { removed: ['refs/heads/factory/3-x'], added: [], moved: [] },
+  );
   assert.equal(recipe.plan().execution.capacity, 0, 'deliver/retry never reserve a Slot or hold another Work');
   assert.equal(forbidden, 0);
 });

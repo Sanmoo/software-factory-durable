@@ -17,7 +17,10 @@ export const unconsumedScope = (work: Pick<WorkRecord, 'scopeUpdates'>) => (work
  * currency and where the change lands (next activation; never the running one) share ONE commit. Nothing is delivered to a live Builder
  * and nothing is launched: an idle Work after a completed Execution only re-enters its queue position (same category/sequence).
  */
-export async function acceptScopeUpdate(session: Session, input: Extract<ControlInput, { operation: 'update-scope' }>): Promise<Receipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+export async function acceptScopeUpdate(
+  session: Session,
+  input: Extract<ControlInput, { operation: 'update-scope' }>,
+): Promise<Receipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   return session.commit(async tx => {
     const request = await tx.doc(requests, input.request_id, null);
     if (request.input) {
@@ -28,29 +31,60 @@ export async function acceptScopeUpdate(session: Session, input: Extract<Control
     const work = document.work;
     const index = await tx.doc(ticketIndex);
     const hash = sha256(input.reason);
-    const refuse = (code: string): Receipt => ({ kind: 'durable', request_id: input.request_id, operation: 'update-scope', work_id: input.work_id, outcome: 'not-applied',
-      reason: code, scopeUpdateId: null, appliesAt: null });
+    const refuse = (code: string): Receipt => ({
+      kind: 'durable',
+      request_id: input.request_id,
+      operation: 'update-scope',
+      work_id: input.work_id,
+      outcome: 'not-applied',
+      reason: code,
+      scopeUpdateId: null,
+      appliesAt: null,
+    });
     let receipt: Receipt;
     const reason = scopeReasonDecision(input.reason);
     if (!work) receipt = refuse('WORK_NOT_FOUND');
     else if (!reason.concrete) receipt = refuse(reason.code);
     else {
       const execution = work.execution ?? null;
-      const decision = scopeUpdateDecision({ result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id,
-        pending: unconsumedScope(work).map(update => update.sha256), sha256: hash,
-        execution: execution ? { state: execution.state, slotHeld: execution.slot.held, outcome: execution.end?.outcome ?? null } : null });
+      const decision = scopeUpdateDecision({
+        result: work.result,
+        current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id,
+        pending: unconsumedScope(work).map(update => update.sha256),
+        sha256: hash,
+        execution: execution ? { state: execution.state, slotHeld: execution.slot.held, outcome: execution.end?.outcome ?? null } : null,
+      });
       if (decision.outcome === 'not-applied') receipt = refuse(decision.code);
       else {
         const now = new Date().toISOString();
-        const update: ScopeUpdateView = { scopeUpdateId: `scope-${input.request_id}`, reason: input.reason, sha256: hash, acceptedAt: now,
-          origin: { kind: 'local-cli', request_id: input.request_id }, acceptedDuring: decision.during, state: 'pending', executionId: null, deliveredAt: null,
-          consumedAt: null, consumption: null, reoffers: 0 };
+        const update: ScopeUpdateView = {
+          scopeUpdateId: `scope-${input.request_id}`,
+          reason: input.reason,
+          sha256: hash,
+          acceptedAt: now,
+          origin: { kind: 'local-cli', request_id: input.request_id },
+          acceptedDuring: decision.during,
+          state: 'pending',
+          executionId: null,
+          deliveredAt: null,
+          consumedAt: null,
+          consumption: null,
+          reoffers: 0,
+        };
         work.scopeUpdates = [...(work.scopeUpdates ?? []), update];
         // Only an idle Work whose last Execution COMPLETED re-enters the queue, at its own category/sequence; impediments still apply.
         if (decision.requeue) work.queue = { ...work.queue, pending: true };
         work.history.push({ at: now, event: 'scope-update-accepted', origin: 'local-cli', scopeUpdateId: update.scopeUpdateId, detail: decision.outcome });
-        receipt = { kind: 'durable', request_id: input.request_id, operation: 'update-scope', work_id: work.work_id, outcome: decision.outcome, reason: null,
-          scopeUpdateId: update.scopeUpdateId, appliesAt: 'next-activation' };
+        receipt = {
+          kind: 'durable',
+          request_id: input.request_id,
+          operation: 'update-scope',
+          work_id: work.work_id,
+          outcome: decision.outcome,
+          reason: null,
+          scopeUpdateId: update.scopeUpdateId,
+          appliesAt: 'next-activation',
+        };
       }
     }
     request.input = input;

@@ -14,6 +14,10 @@ process.once('message', async (input: { root: string; context: Parameters<typeof
     const { phaseId: _phase, ...context } = input.context;
     const reference = await records.record({ ...context, callId: 'local-proof' }, { value: input.values[0] });
     if (process.connected) process.send!({ kind: 'fixture-result', uses, reference }, () => {});
-  } catch { if (process.connected) process.send!({ kind: 'fixture-result', uses, code: 'SECRET_SYNC_DENIED' }, () => {}); }
-  finally { publisher.close(); if (process.connected) process.disconnect(); }
+  } catch {
+    if (process.connected) process.send!({ kind: 'fixture-result', uses, code: 'SECRET_SYNC_DENIED' }, () => {});
+  } finally {
+    publisher.close();
+    if (process.connected) process.disconnect();
+  }
 });

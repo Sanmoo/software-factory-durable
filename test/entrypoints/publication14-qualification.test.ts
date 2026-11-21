@@ -3,15 +3,34 @@ import { mock, test } from 'node:test';
 
 // Import and --plan of the real-run recipe must be inert: no process, socket, filesystem or SDK effect.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, request: deny, open: deny, mkdir: deny, readFile: deny, access: deny, readdir: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./publication14-qualification.js');
 
 test('AC7 recipe: import and --plan are inert and declare the exact GitHub effects and bounds of the one-shot publication run', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
@@ -20,8 +39,13 @@ test('AC7 recipe: import and --plan are inert and declare the exact GitHub effec
   assert.deepEqual(plan.phases, ['preflight', 'run', 'discover', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.equal(plan.github.writes.filter((item: string) => item.startsWith('Builder')).length, 2, 'one push and one draft PR');
-  assert.ok(plan.github.writes.some((item: string) => item.startsWith('discover (only in the PR-only recovery): at most 1 draft pull request creation by the Builder, never a push')));
-  for (const never of ['merge', 'approval', 'ready-for-review conversion', 'push to main or any other branch']) assert.ok(plan.github.never.includes(never), never);
+  assert.ok(
+    plan.github.writes.some((item: string) =>
+      item.startsWith('discover (only in the PR-only recovery): at most 1 draft pull request creation by the Builder, never a push'),
+    ),
+  );
+  for (const never of ['merge', 'approval', 'ready-for-review conversion', 'push to main or any other branch'])
+    assert.ok(plan.github.never.includes(never), never);
   assert.match(plan.requires, /factory-skills-v5 and factory-skills-v6/);
   assert.ok(plan.effects[0].includes('no `factory/3-` branch') && plan.effects[0].includes('NO bypass for the App'));
   assert.match(plan.github.appIdentity, /GET \/app/);
@@ -60,9 +84,24 @@ test('AC7 recipe guards: one implementation Builder, its reviewers, then ONE pub
 });
 
 test('AC5 recipe inspect: bash command texts are kept from the native JSONL, with tokens never copied', () => {
-  const jsonl = [JSON.stringify({ message: { role: 'assistant', content: [{ type: 'toolCall', name: 'bash',
-    arguments: { command: 'git push --force-with-lease=refs/heads/factory/3-x: origin d:refs/heads/factory/3-x # ghs_abcdefghijklmnopqrstuvwx' } }] } }), 'junk'].join('\n');
-  assert.deepEqual(recipe.sessionCommands(jsonl), [{ name: 'bash', command: 'git push --force-with-lease=refs/heads/factory/3-x: origin d:refs/heads/factory/3-x # [TOKEN-PATTERN]' }]);
+  const jsonl = [
+    JSON.stringify({
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolCall',
+            name: 'bash',
+            arguments: { command: 'git push --force-with-lease=refs/heads/factory/3-x: origin d:refs/heads/factory/3-x # ghs_abcdefghijklmnopqrstuvwx' },
+          },
+        ],
+      },
+    }),
+    'junk',
+  ].join('\n');
+  assert.deepEqual(recipe.sessionCommands(jsonl), [
+    { name: 'bash', command: 'git push --force-with-lease=refs/heads/factory/3-x: origin d:refs/heads/factory/3-x # [TOKEN-PATTERN]' },
+  ]);
 });
 
 test('real-run fix recipe: the v6 leftover branch is tolerated only at its exact tip; the discover phase allows ONE PR-only continuation only', () => {
@@ -72,7 +111,11 @@ test('real-run fix recipe: the v6 leftover branch is tolerated only at its exact
   assert.deepEqual(recipe.unexpectedFactoryBranches({ 'refs/heads/factory/3-0b9c6a52': 'e'.repeat(40) }), ['refs/heads/factory/3-0b9c6a52']);
   const head = 'd'.repeat(40);
   const guard = recipe.recoveryGuard();
-  assert.equal(guard.prepare({ state: 'requested', expectedRemote: { state: 'absent' }, verified: { head } }), false, 'a pushing request is never allowed in discover');
+  assert.equal(
+    guard.prepare({ state: 'requested', expectedRemote: { state: 'absent' }, verified: { head } }),
+    false,
+    'a pushing request is never allowed in discover',
+  );
   assert.equal(guard.issue('builder-publish', { state: 'requested', expectedRemote: { state: 'absent' }, verified: { head } }, false), false);
   assert.equal(guard.activate({ role: 'builder', phaseId: 'builder-publication' }), false, 'not before its own prepare');
   const prOnly = { state: 'requested', expectedRemote: { state: 'present', sha: head }, verified: { head } };

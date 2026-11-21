@@ -11,7 +11,9 @@ import { readHost, recoveryDoubles, type RecoveryScript } from './recovery-doubl
 const [dir, mode] = [process.argv[2]!, process.argv[3]!];
 const questionIds = { 'question-lost': '0b9c6a52-3d3e-4c8f-9a51-000000000271', 'question-post': '0b9c6a52-3d3e-4c8f-9a51-000000000272' } as const;
 const scripts: Record<string, RecoveryScript[]> = {
-  'question-lost': [{ kind: 'ask-preserved', questionId: questionIds['question-lost'], question: 'Which port should the service use?', context: 'Checked the docs.' }],
+  'question-lost': [
+    { kind: 'ask-preserved', questionId: questionIds['question-lost'], question: 'Which port should the service use?', context: 'Checked the docs.' },
+  ],
   'question-post': [{ kind: 'ask', questionId: questionIds['question-post'], question: 'Which database?', hangAfterAck: true }],
 };
 if (!scripts[mode]) throw new Error('UNKNOWN_MODE');
@@ -30,8 +32,13 @@ if (mode === 'question-post') {
   };
 }
 const time = manualClock();
-const control = await openControl({ storagePath: `${dir}/control.sqlite`, runtimeInventory: 'empty', execution: doubles.ports,
-  access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+const control = await openControl({
+  storagePath: `${dir}/control.sqlite`,
+  runtimeInventory: 'empty',
+  execution: doubles.ports,
+  access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] },
+  polling: { intervalSeconds: 60, clock: time.clock },
+});
 void control.run(new AbortController().signal);
 const reached = () => cut || (mode === 'question-lost' && readHost(dir).log.some(item => item.kind === 'question-preserved'));
 for (;;) {

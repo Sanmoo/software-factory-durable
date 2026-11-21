@@ -20,18 +20,23 @@ export function guardFixtureNetwork(root: string, worker = false, mode: 'deny-al
   assert.ok(isAbsolute(root) && normalize(root) === root && root !== '/' && !root.includes('\0'), 'private normalized fixture root required');
   assert.ok(!worker || mode === 'deny-all', 'Workers never receive SDK graph authority');
   const sdk = mode === 'audited-owned-vfs' ? createAuditedVfsGuard() : undefined;
-  const hooks = registerHooks(sdk?.hooks ?? {
-    resolve(specifier, context, nextResolve) {
-      if (specifier.includes('@earendil-works/gondolin') || specifier.includes('/gondolin/') || specifier.includes('/factory-development-gondolin-v1/')) throw new Error('SDK_EVALUATION_FORBIDDEN');
-      return nextResolve(specifier, context);
+  const hooks = registerHooks(
+    sdk?.hooks ?? {
+      resolve(specifier, context, nextResolve) {
+        if (specifier.includes('@earendil-works/gondolin') || specifier.includes('/gondolin/') || specifier.includes('/factory-development-gondolin-v1/'))
+          throw new Error('SDK_EVALUATION_FORBIDDEN');
+        return nextResolve(specifier, context);
+      },
+      load(url, context, nextLoad) {
+        if (url.includes('/gondolin/') || url.includes('/factory-development-gondolin-v1/')) throw new Error('SDK_EVALUATION_FORBIDDEN');
+        return nextLoad(url, context);
+      },
     },
-    load(url, context, nextLoad) {
-      if (url.includes('/gondolin/') || url.includes('/factory-development-gondolin-v1/')) throw new Error('SDK_EVALUATION_FORBIDDEN');
-      return nextLoad(url, context);
-    },
-  });
+  );
   const unixArgs = (args: unknown[], connection: boolean): unknown[] => {
-    const allowed: (condition: unknown) => asserts condition = condition => { assert.ok(condition, 'external networking forbidden'); };
+    const allowed: (condition: unknown) => asserts condition = condition => {
+      assert.ok(condition, 'external networking forbidden');
+    };
     let values = args;
     if (Array.isArray(args[0])) {
       // createConnection uses Node's internal [options, callback] normalization.
@@ -74,17 +79,20 @@ export function guardFixtureNetwork(root: string, worker = false, mode: 'deny-al
     return callback === undefined ? [path] : [path, callback];
   };
   const connect = net.Socket.prototype.connect;
-  mock.method(net.Socket.prototype, 'connect', function(this: net.Socket, ...args: unknown[]) {
+  mock.method(net.Socket.prototype, 'connect', function (this: net.Socket, ...args: unknown[]) {
     return Reflect.apply(connect, this, unixArgs(args, true));
   });
   const listen = net.Server.prototype.listen;
-  mock.method(net.Server.prototype, 'listen', function(this: net.Server, ...args: unknown[]) {
+  mock.method(net.Server.prototype, 'listen', function (this: net.Server, ...args: unknown[]) {
     return Reflect.apply(listen, this, unixArgs(args, false));
   });
-  const deny = () => { throw new Error('EXTERNAL_NETWORK_OR_COMMAND_FORBIDDEN'); };
+  const deny = () => {
+    throw new Error('EXTERNAL_NETWORK_OR_COMMAND_FORBIDDEN');
+  };
   mock.method(tls, 'connect', deny);
   for (const module of [http, https]) {
-    mock.method(module, 'request', deny); mock.method(module, 'get', deny);
+    mock.method(module, 'request', deny);
+    mock.method(module, 'get', deny);
   }
   mock.method(dgram, 'createSocket', deny);
   // Include specialized resolvers and Resolver construction, not just lookup().
@@ -110,7 +118,8 @@ export function guardFixtureNetwork(root: string, worker = false, mode: 'deny-al
     if (restored) return;
     restored = true;
     process.removeListener('exit', restore);
-    hooks.deregister(); mock.restoreAll();
+    hooks.deregister();
+    mock.restoreAll();
     for (const { module, name, value } of dnsOriginals) Reflect.set(module, name, value);
     if (worker) commands.forEach((command, index) => Reflect.set(cp, command, originals[index]));
     syncBuiltinESMExports();

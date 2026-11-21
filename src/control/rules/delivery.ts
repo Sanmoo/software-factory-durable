@@ -1,5 +1,17 @@
-import type { BranchCleanupResult, CleanupOutcome, CleanupResourceKind, CleanupResourceView, CleanupView, DeliveryView, ExecutionView, MergeFacts,
-  OwnPullRequestIdentity, PlannedCleanupResource, PublicationView, OwnPullRequestFacts } from '../types.js';
+import type {
+  BranchCleanupResult,
+  CleanupOutcome,
+  CleanupResourceKind,
+  CleanupResourceView,
+  CleanupView,
+  DeliveryView,
+  ExecutionView,
+  MergeFacts,
+  OwnPullRequestIdentity,
+  PlannedCleanupResource,
+  PublicationView,
+  OwnPullRequestFacts,
+} from '../types.js';
 
 // Ticket 17 pure rules (spec §12.3): delivery is a confirmed merge of the Work's own pull request; cleanup removes only resources the
 // Factory owns and can prove, after merge, confirmed cessation and preserved evidence; results are per resource and never undo delivery.
@@ -15,22 +27,35 @@ const positive = (value: unknown): value is number => typeof value === 'number' 
 export function ownPullRequestOf(work: { publication?: PublicationView | null }): OwnPullRequestIdentity | null {
   const publication = work.publication;
   const pull = publication?.pullRequest;
-  if (!pull || !positive(pull.pullRequestId) || !text(pull.nodeId, 256) || !positive(pull.number) || !text(pull.url, 2048) || !text(pull.headRef) || !text(pull.base)) return null;
+  if (
+    !pull ||
+    !positive(pull.pullRequestId) ||
+    !text(pull.nodeId, 256) ||
+    !positive(pull.number) ||
+    !text(pull.url, 2048) ||
+    !text(pull.headRef) ||
+    !text(pull.base)
+  )
+    return null;
   const sha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
   const heads = [...new Set([...(publication.linkedHeads ?? []), pull.headSha].filter(sha))];
   if (!heads.length) return null;
   return { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, url: pull.url, headRef: pull.headRef, base: pull.base, heads };
 }
 
-export type MergeDecision = { outcome: 'merged'; merge: MergeFacts } |
-  { outcome: 'open' | 'closed-unmerged' | 'identity-mismatch' | 'merge-unconfirmed'; reasons: string[] };
+export type MergeDecision =
+  { outcome: 'merged'; merge: MergeFacts } | { outcome: 'open' | 'closed-unmerged' | 'identity-mismatch' | 'merge-unconfirmed'; reasons: string[] };
 
 /**
  * Delivery of THIS cycle: the observed pull request must be the linked own one (id, node, own branch of this repository, base) and
  * GitHub must report it merged with its merge instant and commit. A closure without merge, an open PR, another identity or incomplete
  * merge evidence never deliver. Ticket/issue state and agent messages are not inputs at all.
  */
-export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId: number; branch: string | null; base: string }, facts: OwnPullRequestFacts): MergeDecision {
+export function decideMerge(
+  own: OwnPullRequestIdentity,
+  expect: { repositoryId: number; branch: string | null; base: string },
+  facts: OwnPullRequestFacts,
+): MergeDecision {
   const reasons: string[] = [];
   if (facts.pullRequestId !== own.pullRequestId || facts.number !== own.number) reasons.push('PULL_REQUEST_ID_MISMATCH');
   if (facts.nodeId !== own.nodeId) reasons.push('PULL_REQUEST_NODE_MISMATCH');
@@ -45,16 +70,34 @@ export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId:
   if (facts.state !== 'closed' || !facts.mergedAt) return { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] };
   // A merged head the Factory never published (e.g. a third-party push) is not the own content of this cycle.
   if (!own.heads.includes(facts.headSha)) return { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] };
-  return { outcome: 'merged', merge: { mergedAt: facts.mergedAt, mergeCommitSha: facts.mergeCommitSha, headSha: facts.headSha, pullRequestId: facts.pullRequestId,
-    number: facts.number, url: facts.url, mergeCommitShaReport: facts.reported.mergeCommitSha } };
+  return {
+    outcome: 'merged',
+    merge: {
+      mergedAt: facts.mergedAt,
+      mergeCommitSha: facts.mergeCommitSha,
+      headSha: facts.headSha,
+      pullRequestId: facts.pullRequestId,
+      number: facts.number,
+      url: facts.url,
+      mergeCommitShaReport: facts.reported.mergeCommitSha,
+    },
+  };
 }
 
-type CleanupWork = { result: string; branch: string | null; repository: { repository: string; repositoryId: number; base: string };
-  delivery?: Pick<DeliveryView, 'state'> & { merge: Pick<MergeFacts, 'headSha'> | null } | null; execution: ExecutionView | null; previousExecutions: ExecutionView[];
+type CleanupWork = {
+  result: string;
+  branch: string | null;
+  repository: { repository: string; repositoryId: number; base: string };
+  delivery?: (Pick<DeliveryView, 'state'> & { merge: Pick<MergeFacts, 'headSha'> | null }) | null;
+  execution: ExecutionView | null;
+  previousExecutions: ExecutionView[];
   /** Ticket 30: a cancelled Work is cleaned only by an operator-confirmed explicit plan, after its cancellation ceased. */
-  cancellation?: { state: 'stopping' | 'ceased' } | null; cleanup?: Pick<CleanupView, 'explicit'> | null };
+  cancellation?: { state: 'stopping' | 'ceased' } | null;
+  cleanup?: Pick<CleanupView, 'explicit'> | null;
+};
 /** Ticket 30: the resource cleanup of a cancelled Work exists only as an explicit, confirmed, not yet swept operator plan. */
-export const explicitCancelledCleanup = (work: Pick<CleanupWork, 'result' | 'cleanup'>) => work.result === 'cancelled' && Boolean(work.cleanup?.explicit && !work.cleanup.explicit.consumed);
+export const explicitCancelledCleanup = (work: Pick<CleanupWork, 'result' | 'cleanup'>) =>
+  work.result === 'cancelled' && Boolean(work.cleanup?.explicit && !work.cleanup.explicit.consumed);
 const executionsOf = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'>) => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
 
 /**
@@ -63,8 +106,9 @@ const executionsOf = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'
  */
 export function cleanupEligibility(work: CleanupWork, running: boolean): { eligible: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (explicitCancelledCleanup(work)) { if (work.cancellation?.state !== 'ceased') reasons.push('CANCELLATION_NOT_CEASED'); }
-  else if (work.result !== 'delivered' || work.delivery?.state !== 'delivered' || !work.delivery.merge) reasons.push('NOT_DELIVERED');
+  if (explicitCancelledCleanup(work)) {
+    if (work.cancellation?.state !== 'ceased') reasons.push('CANCELLATION_NOT_CEASED');
+  } else if (work.result !== 'delivered' || work.delivery?.state !== 'delivered' || !work.delivery.merge) reasons.push('NOT_DELIVERED');
   if (running) reasons.push('ACTIVITY_RUNNING');
   for (const execution of executionsOf(work)) {
     if (execution.slot.held) reasons.push(`SLOT_HELD:${execution.executionId}`);
@@ -76,35 +120,59 @@ export function cleanupEligibility(work: CleanupWork, running: boolean): { eligi
 
 const environmentRef = /^env-[a-f0-9]{64}$/;
 /** Environments the Work's own Executions recorded (Sandbox re-proves ownership by its owner record before deleting anything). */
-export const ownEnvironments = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'>) =>
-  [...new Set(executionsOf(work).map(execution => execution.dispatch.environment).filter((ref): ref is string => typeof ref === 'string' && environmentRef.test(ref)))];
+export const ownEnvironments = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'>) => [
+  ...new Set(
+    executionsOf(work)
+      .map(execution => execution.dispatch.environment)
+      .filter((ref): ref is string => typeof ref === 'string' && environmentRef.test(ref)),
+  ),
+];
 
 /**
  * Concrete plan of the Work's OWN resources: per own environment its disk, the Work checkout (worktree) and the local branch in it, the
  * temporaries (artifacts copy area and per-boot runtime directories); and the Work's remote branch. Protected, never targets: the base,
  * the Factory's shared bare cache, other Works/unknown resources, any Docker (host or guest daemon) and the retained history/records.
  */
-export function planCleanup(work: CleanupWork, input: { repositoryConfigured: boolean }): { resources: PlannedCleanupResource[]; protected: { target: string; reason: string }[] } {
+export function planCleanup(
+  work: CleanupWork,
+  input: { repositoryConfigured: boolean },
+): { resources: PlannedCleanupResource[]; protected: { target: string; reason: string }[] } {
   const resources: PlannedCleanupResource[] = [];
   const branch = work.branch;
   for (const environment of ownEnvironments(work)) {
     const ownership = `Sandbox owner record of ${environment} names this Work (re-verified before removal)`;
-    resources.push({ id: `environment:${environment}`, kind: 'environment', target: `${environment}/root.qcow2`, environment, ownership },
+    resources.push(
+      { id: `environment:${environment}`, kind: 'environment', target: `${environment}/root.qcow2`, environment, ownership },
       { id: `checkout:${environment}`, kind: 'checkout', target: `${environment}/workspace/checkout`, environment, ownership },
-      { id: `local-branch:${environment}`, kind: 'local-branch', target: `${environment}/workspace/checkout:refs/heads/${branch ?? '?'}`, environment, ownership },
-      { id: `temporaries:${environment}`, kind: 'temporaries', target: `${environment}/artifacts + boot runtime directories`, environment, ownership });
+      {
+        id: `local-branch:${environment}`,
+        kind: 'local-branch',
+        target: `${environment}/workspace/checkout:refs/heads/${branch ?? '?'}`,
+        environment,
+        ownership,
+      },
+      { id: `temporaries:${environment}`, kind: 'temporaries', target: `${environment}/artifacts + boot runtime directories`, environment, ownership },
+    );
   }
   // Ticket 30: a cancelled Work's branch is never deleted (cancellation never undoes GitHub); only a delivered Work's own branch.
-  if (branch && branch !== work.repository.base && input.repositoryConfigured && work.result === 'delivered') resources.push({ id: `remote-branch:${branch}`, kind: 'remote-branch',
-    target: `${work.repository.repository}:refs/heads/${branch}`, environment: null,
-    ownership: `The Work's own branch; deleted only while its tip is exactly the merged own pull request head ${work.delivery?.merge?.headSha ?? '?'}` });
-  return { resources, protected: [
-    { target: `${work.repository.repository}:refs/heads/${work.repository.base}`, reason: 'BASE_BRANCH' },
-    { target: `cache/git/${work.repository.repositoryId}.git`, reason: 'SHARED_FACTORY_CACHE' },
-    { target: 'environments, branches and pull requests of other Works or unknown origin', reason: 'NOT_OWNED' },
-    { target: 'Docker images/containers/volumes (host and guest daemons)', reason: 'NO_GLOBAL_DOCKER_CLEANUP' },
-    { target: 'controller history, records (sessions/logs/evidence), reviews and decisions', reason: 'RETAINED_HISTORY' },
-  ] };
+  if (branch && branch !== work.repository.base && input.repositoryConfigured && work.result === 'delivered')
+    resources.push({
+      id: `remote-branch:${branch}`,
+      kind: 'remote-branch',
+      target: `${work.repository.repository}:refs/heads/${branch}`,
+      environment: null,
+      ownership: `The Work's own branch; deleted only while its tip is exactly the merged own pull request head ${work.delivery?.merge?.headSha ?? '?'}`,
+    });
+  return {
+    resources,
+    protected: [
+      { target: `${work.repository.repository}:refs/heads/${work.repository.base}`, reason: 'BASE_BRANCH' },
+      { target: `cache/git/${work.repository.repositoryId}.git`, reason: 'SHARED_FACTORY_CACHE' },
+      { target: 'environments, branches and pull requests of other Works or unknown origin', reason: 'NOT_OWNED' },
+      { target: 'Docker images/containers/volumes (host and guest daemons)', reason: 'NO_GLOBAL_DOCKER_CLEANUP' },
+      { target: 'controller history, records (sessions/logs/evidence), reviews and decisions', reason: 'RETAINED_HISTORY' },
+    ],
+  };
 }
 
 export const concluded = (state: CleanupResourceView['state']) => state === 'removed' || state === 'absent';
@@ -118,7 +186,11 @@ export function recoverLostIntents(resources: CleanupResourceView[], at: string)
   return resources.map(item => {
     const last = item.attempts.at(-1);
     if (!last || last.outcome !== 'intended') return item;
-    return { ...item, state: 'indeterminate', attempts: [...item.attempts.slice(0, -1), { ...last, resultAt: at, outcome: 'indeterminate', code: 'RESULT_NOT_RECORDED' }] };
+    return {
+      ...item,
+      state: 'indeterminate',
+      attempts: [...item.attempts.slice(0, -1), { ...last, resultAt: at, outcome: 'indeterminate', code: 'RESULT_NOT_RECORDED' }],
+    };
   });
 }
 /** Retried automatically after revalidation. `refused`/`kept` wait for an explicit operator decision (no fresh write grant for them). */
@@ -129,48 +201,68 @@ export const selectPending = (resources: CleanupResourceView[]) => resources.fil
  * whatever their state (a refused/kept one gets its single fresh attempt). The recorded state is never rewritten to make it retryable, so a plan
  * dropped at execution leaves nothing for the automatic retries.
  */
-export const explicitPending = (resources: CleanupResourceView[], explicit: { resources: string[]; at: string }) => resources.filter(item => explicit.resources.includes(item.id) &&
-  !concluded(item.state) && !item.attempts.some(attempt => attempt.intentAt >= explicit.at));
+export const explicitPending = (resources: CleanupResourceView[], explicit: { resources: string[]; at: string }) =>
+  resources.filter(item => explicit.resources.includes(item.id) && !concluded(item.state) && !item.attempts.some(attempt => attempt.intentAt >= explicit.at));
 export function cleanupState(input: { eligible: boolean; resources: CleanupResourceView[] }): CleanupView['state'] {
   if (input.resources.length && input.resources.every(item => concluded(item.state))) return 'complete';
   return input.eligible ? 'pending' : 'waiting';
 }
 
-type Removal = { status: 'success'; resources: { resource: string; status: string }[] } | { status: string; code: string; resources: { resource: string; status: string }[] };
+type Removal =
+  | { status: 'success'; resources: { resource: string; status: string }[] }
+  | { status: string; code: string; resources: { resource: string; status: string }[] };
 const fromSandbox = (status: string | undefined): CleanupOutcome | undefined =>
   status === 'removed' || status === 'absent' || status === 'refused' || status === 'failed' ? status : undefined;
 /** Per-resource outcome of ONE Sandbox removal of an own environment (disk, workspace with checkout/local branch, artifacts + runtime). */
 export function environmentOutcomes(result: Removal): Record<Exclude<CleanupResourceKind, 'remote-branch'>, { outcome: CleanupOutcome; code: string | null }> {
   const code = 'code' in result ? result.code : null;
-  const whole: CleanupOutcome | undefined = result.status === 'indeterminate' ? 'indeterminate'
-    : result.status === 'failure' ? (code === 'CLEANUP_WORK_MISMATCH' ? 'refused' : 'failed') : undefined;
+  const whole: CleanupOutcome | undefined =
+    result.status === 'indeterminate' ? 'indeterminate' : result.status === 'failure' ? (code === 'CLEANUP_WORK_MISMATCH' ? 'refused' : 'failed') : undefined;
   const of = (...names: string[]) => {
     if (whole) return { outcome: whole, code };
     const states = names.map(name => fromSandbox(result.resources.find(item => item.resource === name)?.status));
-    const outcome: CleanupOutcome = states.some(item => item === undefined) ? 'indeterminate' : states.includes('failed') ? 'failed' : states.includes('refused') ? 'refused'
-      : states.every(item => item === 'absent') ? 'absent' : 'removed';
-    return { outcome, code: outcome === 'removed' || outcome === 'absent' ? null : code ?? 'ENVIRONMENT_REMOVAL_INCOMPLETE' };
+    const outcome: CleanupOutcome = states.some(item => item === undefined)
+      ? 'indeterminate'
+      : states.includes('failed')
+        ? 'failed'
+        : states.includes('refused')
+          ? 'refused'
+          : states.every(item => item === 'absent')
+            ? 'absent'
+            : 'removed';
+    return { outcome, code: outcome === 'removed' || outcome === 'absent' ? null : (code ?? 'ENVIRONMENT_REMOVAL_INCOMPLETE') };
   };
   return { environment: of('disk'), checkout: of('workspace'), 'local-branch': of('workspace'), temporaries: of('artifacts', 'runtime') };
 }
-export const branchOutcome = (result: BranchCleanupResult): { outcome: CleanupOutcome; code: string | null } => ({ outcome: result.outcome, code: result.code });
+export const branchOutcome = (result: BranchCleanupResult): { outcome: CleanupOutcome; code: string | null } => ({
+  outcome: result.outcome,
+  code: result.code,
+});
 
 /** Separate, operator-facing explanations (spec §12.1): delivery never depends on cleanup. */
 export function deliveryNextStep(state: DeliveryView['state'], last: string | null): string {
-  if (state === 'delivered') return 'Delivered: a human merged the own pull request and the Factory confirmed it. No new agent action follows; cleanup is reported separately.';
-  if (last === 'closed-unmerged') return 'The own pull request was closed WITHOUT merge: the Work is not delivered (no automatic reopening, replacement or resumption).';
-  if (last === 'identity-mismatch') return 'The observed pull request is not the linked own pull request of this cycle: nothing is delivered. Operator must inspect it on GitHub.';
+  if (state === 'delivered')
+    return 'Delivered: a human merged the own pull request and the Factory confirmed it. No new agent action follows; cleanup is reported separately.';
+  if (last === 'closed-unmerged')
+    return 'The own pull request was closed WITHOUT merge: the Work is not delivered (no automatic reopening, replacement or resumption).';
+  if (last === 'identity-mismatch')
+    return 'The observed pull request is not the linked own pull request of this cycle: nothing is delivered. Operator must inspect it on GitHub.';
   if (last === 'unavailable') return 'The own pull request could not be read: nothing is concluded; it is read again on a later cycle.';
   return 'Waiting for a human to merge the own pull request; the Factory never merges it. Ticket or pull request closure alone is not delivery.';
 }
 export function cleanupNextStep(view: Pick<CleanupView, 'state' | 'eligibility' | 'resources'>): string {
-  if (view.state === 'complete') return 'Cleanup complete: every own resource is removed or proven absent. History, reviews, decisions and protected records are kept.';
+  if (view.state === 'complete')
+    return 'Cleanup complete: every own resource is removed or proven absent. History, reviews, decisions and protected records are kept.';
   if (view.state === 'waiting') return `Cleanup waits (${view.eligibility.reasons.join(', ')}). Delivery is not affected.`;
   const open = view.resources.filter(item => !concluded(item.state));
   const automatic = open.filter(item => retryable(item.state));
   const operator = open.filter(item => !retryable(item.state));
-  return `Cleanup pending for ${open.length} own resource(s) (${open.map(item => `${item.kind}:${item.state}`).join(', ')}). Delivery stands.` +
+  return (
+    `Cleanup pending for ${open.length} own resource(s) (${open.map(item => `${item.kind}:${item.state}`).join(', ')}). Delivery stands.` +
     (automatic.length ? ` ${automatic.length} retried automatically after revalidation (next controller boot or daily sweep).` : '') +
-    (operator.length ? ` ${operator.length} refused/kept: never retried automatically and they do not hold the logs/sessions; an operator decides with ` +
-      '`factory cleanup <work> --select environment|remote-branch` (one fresh revalidated attempt) or leaves them (e.g. kept: atomic delete unavailable).' : '');
+    (operator.length
+      ? ` ${operator.length} refused/kept: never retried automatically and they do not hold the logs/sessions; an operator decides with ` +
+        '`factory cleanup <work> --select environment|remote-branch` (one fresh revalidated attempt) or leaves them (e.g. kept: atomic delete unavailable).'
+      : '')
+  );
 }

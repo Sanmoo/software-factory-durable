@@ -15,7 +15,13 @@ async function owned(root: string, workId: string, ready = true) {
   const directory = join(root, 'environments', environment);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const json = (path: string, value: unknown) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
-  await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration, guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) } });
+  await json(join(directory, 'owner.json'), {
+    version: 1,
+    workId,
+    environment,
+    configuration,
+    guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) },
+  });
   if (ready) await json(join(directory, 'ready.json'), { environment });
   return environment as EnvironmentRef;
 }
@@ -27,7 +33,8 @@ test('inventoryRuntime attributes own environments from their metadata, reports 
     const environment = await owned(root, 'work-a');
     await mkdir(join(root, 'environments', `env-${'0'.repeat(64)}`), { mode: 0o700 });
     await mkdir(join(root, 'environments', 'stray'), { mode: 0o700 });
-    const own = net.createServer(); await new Promise<void>(resolve => own.listen(join(root, 'run', 'factory.sock'), resolve));
+    const own = net.createServer();
+    await new Promise<void>(resolve => own.listen(join(root, 'run', 'factory.sock'), resolve));
     await writeFile(join(root, 'run', 'control.sock'), ''); // not a socket: unknown
     await writeFile(join(root, 'run', 'leftover'), '');
     await mkdir(join(root, 'cache', 'git'), { recursive: true, mode: 0o700 });
@@ -36,12 +43,24 @@ test('inventoryRuntime attributes own environments from their metadata, reports 
     await writeFile(join(root, 'cache', 'git', '5.state.json'), 'garbage', { mode: 0o600 });
     const before = await readdir(join(root, 'environments'));
     const listed = await inventoryRuntime(root);
-    assert.deepEqual(listed.environments, [{ environment: `env-${'0'.repeat(64)}`, workId: null }, { environment, workId: 'work-a' }].sort((a, b) => a.environment.localeCompare(b.environment)));
-    assert.deepEqual(listed.cache, [{ repositoryId: 3, state: 'preparing' }, { repositoryId: 4, state: 'idle' }, { repositoryId: 5, state: 'unknown' }]);
+    assert.deepEqual(
+      listed.environments,
+      [
+        { environment: `env-${'0'.repeat(64)}`, workId: null },
+        { environment, workId: 'work-a' },
+      ].sort((a, b) => a.environment.localeCompare(b.environment)),
+    );
+    assert.deepEqual(listed.cache, [
+      { repositoryId: 3, state: 'preparing' },
+      { repositoryId: 4, state: 'idle' },
+      { repositoryId: 5, state: 'unknown' },
+    ]);
     assert.deepEqual(listed.unknown, ['environments/stray', 'run/control.sock', 'run/leftover'], 'an own socket is known; a non-socket under its name is not');
     await new Promise(resolve => own.close(resolve));
     assert.deepEqual(await readdir(join(root, 'environments')), before);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.observe without a boot: an owned prepared environment that never published a boot is not-booted; an incomplete one stays indeterminate', async () => {
@@ -54,5 +73,7 @@ test('Sandbox.observe without a boot: an owned prepared environment that never p
     const incomplete = await owned(root, 'work-c', false);
     const { storage: _t, ...unknown } = await sandbox.observe({ environment: incomplete });
     assert.deepEqual(unknown, { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' });
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -13,15 +13,30 @@ const v7 = builderSkillPacks['factory-skills-v7'];
 test('factory-skills-v7: a finding the reviewed content already satisfies is not-adopted with a justification (a requirement one asks first), never fixed without a change', async () => {
   const pack = await loadSkillPack(v7.directory, 'factory-skills-v7');
   assert.deepEqual([pack.id, pack.version, pack.manifest.guestDirectory], ['factory-skills-v7', '7.0.0', '/artifacts/factory/skill-pack/factory-skills-v7']);
-  for (const file of pack.manifest.files) assert.equal(createHash('sha256').update(await readFile(join(v7.directory, file.path))).digest('hex'), file.sha256, file.path);
+  for (const file of pack.manifest.files)
+    assert.equal(
+      createHash('sha256')
+        .update(await readFile(join(v7.directory, file.path)))
+        .digest('hex'),
+      file.sha256,
+      file.path,
+    );
   const implement = await readFile(join(v7.directory, 'skills/implement/SKILL.md'), 'utf8');
   const flat = implement.replace(/\s+/g, ' '); // rules may wrap across lines
-  for (const rule of ['`fixed` means you changed the content after that round', 'already satisfies the finding',
-    'is `not-adopted` with a justification and evidence', 'a REQUIREMENT finding of that kind is still a question for the operator first',
+  for (const rule of [
+    '`fixed` means you changed the content after that round',
+    'already satisfies the finding',
+    'is `not-adopted` with a justification and evidence',
+    'a REQUIREMENT finding of that kind is still a question for the operator first',
     'Never declare `fixed` without a change',
     // carried over from v6 (ticket 14), v5 (ticket 13) and v4 (ticket 11)
-    'PUBLISH-ONLY activation', 'Treat ONLY the findings the delivered results list', '`review-rounds=multi`',
-    'Continue in the SAME session (`continue` message)', 'call the `ask_user` tool once']) assert.ok(flat.includes(rule), rule);
+    'PUBLISH-ONLY activation',
+    'Treat ONLY the findings the delivered results list',
+    '`review-rounds=multi`',
+    'Continue in the SAME session (`continue` message)',
+    'call the `ask_user` tool once',
+  ])
+    assert.ok(flat.includes(rule), rule);
   assert.match(pack.prompts.find(item => item.name === 'implement')!.content, /factory-skills-v7\/skills\/implement\/SKILL\.md/);
   const files = await skillPackGuestFiles('factory-skills-v7');
   for (const text of [implement, ...pack.prompts.map(item => item.content)]) {

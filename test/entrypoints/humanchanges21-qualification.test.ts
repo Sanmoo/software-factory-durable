@@ -3,32 +3,67 @@ import { mock, test } from 'node:test';
 
 // Import and --plan of the real-run recipe must be inert: no process, socket, filesystem or SDK effect. Guards on controlled data only.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, spawn: deny, request: deny, open: deny, mkdir: deny, readFile: deny,
-    access: deny, readdir: deny, copyFile: deny, chmod: deny, rm: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      spawn: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+      copyFile: deny,
+      chmod: deny,
+      rm: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./humanchanges21-qualification.js');
 
 test('ticket 21 recipe: import and --plan are inert; own namespace and access root, pinned NEW issue, explicit human steps and leases', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q21-human-v9');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v9 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.match(
+    plan.github.accessRoot,
+    /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v9 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/,
+  );
   assert.deepEqual(plan.phases, ['preflight', 'run', 'race', 'reconcile', 'finish', 'inspect', 'stop-environment']);
   assert.equal(plan.ticket.pinned, false, 'the supervisor pins the NEW issue number in a reviewed commit before any phase');
   assert.match(plan.ticket.body, /docs\/FACTORY_HUMAN_CHANGES\.md/);
   assert.match(plan.ticket.body, /Documentation only/);
   assert.equal(plan.github.human.length, 4, 'two human pushes and two answers, all with the operator account');
   assert.ok(plan.github.human.every((item: string) => /operator/.test(item)));
-  for (const never of ['merge', 'approval', 'ready-for-review conversion', 'bare --force or a lease without an explicit oid', 'rewrite of the base', 'any write by this recipe itself']) {
+  for (const never of [
+    'merge',
+    'approval',
+    'ready-for-review conversion',
+    'bare --force or a lease without an explicit oid',
+    'rewrite of the base',
+    'any write by this recipe itself',
+  ]) {
     assert.ok(plan.github.never.includes(never), never);
   }
-  assert.ok(plan.expected.some((item: string) => item.includes('LEASE_FAILED')) && plan.expected.some((item: string) => item.includes('--force-with-lease=refs/heads/<branch>:C2')));
+  assert.ok(
+    plan.expected.some((item: string) => item.includes('LEASE_FAILED')) &&
+      plan.expected.some((item: string) => item.includes('--force-with-lease=refs/heads/<branch>:C2')),
+  );
   assert.deepEqual([plan.model.providerRetries, plan.model.sdkRetries], [0, 0]);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['preflight']), /TICKET_NOT_PINNED/, 'refused before any effect while the issue is not pinned');
@@ -46,7 +81,16 @@ test('phase guard: each phase once, in order, only after the previous one succee
   assert.equal(recipe.phaseGuard('finish', { reconcile: { status: 'success' } }, none, true), null);
   // Real run q21-human-v9: inspect runs after ANY held phase (it observes, it never continues), but never while a phase is still running.
   const ok = { preflight: { status: 'success' } };
-  assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent', 'race-intent', 'reconcile-intent']), true, new Set(['preflight', 'run', 'race', 'reconcile'])), null);
+  assert.equal(
+    recipe.phaseGuard(
+      'inspect',
+      ok,
+      new Set(['preflight-intent', 'run-intent', 'race-intent', 'reconcile-intent']),
+      true,
+      new Set(['preflight', 'run', 'race', 'reconcile']),
+    ),
+    null,
+  );
   assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent']), true, new Set(['preflight'])), 'PHASE_NOT_ENDED:run');
   assert.equal(recipe.phaseGuard('inspect', {}, none, true), 'PREFLIGHT_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('stop-environment', {}, none, true), 'PREFLIGHT_SUCCESS_REQUIRED');
@@ -82,24 +126,55 @@ test('activation guard: the exact Builder sequence of each phase; reviewers only
 test('human step detection: only ONE fast-forward commit on top of the expected tip is the planned human push; push commands must name their exact lease', () => {
   const expected = 'd'.repeat(40);
   assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: expected }, undefined), { kind: 'waiting' });
-  assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'complete', status: 'ahead', aheadBy: 1, behindBy: 0 }),
-    { kind: 'observed', sha: '1'.repeat(40) });
-  assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'complete', status: 'diverged', aheadBy: 1, behindBy: 1 }),
-    { kind: 'unexpected', reason: 'NOT_ONE_FAST_FORWARD_COMMIT:diverged' }, 'a force-push by the human is not the planned step');
-  assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'unknown' }), { kind: 'unexpected', reason: 'COMPARISON_UNKNOWN' });
+  assert.deepEqual(
+    recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'complete', status: 'ahead', aheadBy: 1, behindBy: 0 }),
+    { kind: 'observed', sha: '1'.repeat(40) },
+  );
+  assert.deepEqual(
+    recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'complete', status: 'diverged', aheadBy: 1, behindBy: 1 }),
+    { kind: 'unexpected', reason: 'NOT_ONE_FAST_FORWARD_COMMIT:diverged' },
+    'a force-push by the human is not the planned step',
+  );
+  assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'unknown' }), {
+    kind: 'unexpected',
+    reason: 'COMPARISON_UNKNOWN',
+  });
   const branch = 'factory/9-0b9c6a52';
   const h2 = 'e'.repeat(40);
-  const leased = (oid: string) => `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${oid} ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`;
-  const recorded = [{ branch, expected: expected, head: h2 }, { branch, expected: null, head: h2 }];
-  assert.deepEqual(recipe.pushViolations([leased(expected), `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`,
-    'git ls-remote origin', 'git fetch origin', 'gh pr edit 4 --body-file x'], recorded), []);
+  const leased = (oid: string) =>
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${oid} ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`;
+  const recorded = [
+    { branch, expected: expected, head: h2 },
+    { branch, expected: null, head: h2 },
+  ];
+  assert.deepEqual(
+    recipe.pushViolations(
+      [
+        leased(expected),
+        `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`,
+        'git ls-remote origin',
+        'git fetch origin',
+        'gh pr edit 4 --body-file x',
+      ],
+      recorded,
+    ),
+    [],
+  );
   assert.equal(recipe.pushViolations([leased('1'.repeat(40))], recorded).length, 1, 'a recaptured oid is a violation even with an explicit lease');
-  for (const command of [`git push --force origin HEAD:refs/heads/${branch}`, `git push origin +HEAD:refs/heads/${branch}`, `git push -u origin ${branch}`, `git push -f origin ${branch}`,
-    `git push --force-with-lease origin HEAD:refs/heads/${branch}`, `gh api -X PATCH repos/a/b/git/refs/heads/${branch} -f sha=${h2}`]) {
+  for (const command of [
+    `git push --force origin HEAD:refs/heads/${branch}`,
+    `git push origin +HEAD:refs/heads/${branch}`,
+    `git push -u origin ${branch}`,
+    `git push -f origin ${branch}`,
+    `git push --force-with-lease origin HEAD:refs/heads/${branch}`,
+    `gh api -X PATCH repos/a/b/git/refs/heads/${branch} -f sha=${h2}`,
+  ]) {
     assert.equal(recipe.pushViolations([command], recorded).length, 1, command);
   }
   const script = recipe.humanCommands(1, branch, expected);
-  assert.ok(script.startsWith('set -euo pipefail\n') && script.includes(`if [ "$(git rev-parse HEAD)" != "${expected}" ]; then`) && script.includes('exit 1; fi'));
+  assert.ok(
+    script.startsWith('set -euo pipefail\n') && script.includes(`if [ "$(git rev-parse HEAD)" != "${expected}" ]; then`) && script.includes('exit 1; fi'),
+  );
   assert.ok(script.trimEnd().endsWith(`git push origin HEAD:refs/heads/${branch}`) && !/--force|\s\+HEAD/.test(script), 'a plain fast-forward push only');
 });
 
@@ -107,8 +182,15 @@ test('controller write guard: only Question comments on the pinned issue reach t
   const sent: unknown[] = [];
   const logged: unknown[] = [];
   type Tracker = Parameters<typeof recipe.guardTracker>[0];
-  const guarded = recipe.guardTracker({ async postComment(ticket: { number: number }, comment: { kind: string }) { sent.push([ticket.number, comment.kind]); return { kind: 'published' }; } } as unknown as Tracker,
-    entry => logged.push(entry));
+  const guarded = recipe.guardTracker(
+    {
+      async postComment(ticket: { number: number }, comment: { kind: string }) {
+        sent.push([ticket.number, comment.kind]);
+        return { kind: 'published' };
+      },
+    } as unknown as Tracker,
+    entry => logged.push(entry),
+  );
   const post = (number: number, kind: string) => guarded.postComment({ number } as never, { kind } as never, {} as never);
   // The pinned number is 0 in this revision: every comment is refused (nothing sent).
   await assert.rejects(post(3, 'question'), /RECIPE_WRITE_GUARD/);
@@ -118,25 +200,70 @@ test('controller write guard: only Question comments on the pinned issue reach t
 });
 
 test('real-run q21-human-v1 race fix: a Work still PUBLISHED at its starting basis (scope update accepted, not dispatched yet) does not end the race phase', () => {
-  const work = (state: string, basisExecutionId: string, divergences: unknown[] = []) => ({ publication: { state, basisExecutionId, divergences }, execution: { state: 'ended' } }) as never;
+  const work = (state: string, basisExecutionId: string, divergences: unknown[] = []) =>
+    ({ publication: { state, basisExecutionId, divergences }, execution: { state: 'ended' } }) as never;
   const none = () => false;
-  assert.deepEqual(recipe.settled('race', work('published', 'run-basis'), none, 'run-basis'), { done: false, success: false }, 'the update has not been dispatched yet');
+  assert.deepEqual(
+    recipe.settled('race', work('published', 'run-basis'), none, 'run-basis'),
+    { done: false, success: false },
+    'the update has not been dispatched yet',
+  );
   assert.deepEqual(recipe.settled('race', work('awaiting-discovery', 'update-basis'), none, 'run-basis'), { done: false, success: false });
-  assert.deepEqual(recipe.settled('race', work('published', 'update-basis'), none, 'run-basis'), { done: true, success: false }, 'updated without any divergence: not the expected race');
-  assert.deepEqual(recipe.settled('race', work('diverged', 'update-basis', [{ questionId: 'q', trigger: 'lease-failed' }]), () => true, 'run-basis'), { done: true, success: true });
+  assert.deepEqual(
+    recipe.settled('race', work('published', 'update-basis'), none, 'run-basis'),
+    { done: true, success: false },
+    'updated without any divergence: not the expected race',
+  );
+  assert.deepEqual(
+    recipe.settled('race', work('diverged', 'update-basis', [{ questionId: 'q', trigger: 'lease-failed' }]), () => true, 'run-basis'),
+    { done: true, success: true },
+  );
   assert.deepEqual(recipe.settled('run', work('published', 'run-basis'), none, null), { done: true, success: true });
 });
 
 test('v2 review: at every phase end the boots the phase started are stopped and their cessation confirmed; anything else is unconfirmed', async () => {
   const calls: string[] = [];
   const conditions: Record<string, string[]> = { b1: ['active', 'stopped'], b2: ['stopped'], b3: ['active', 'active'] };
-  const sandbox = { async observe(input: { boot: never }) { calls.push(`observe:${input.boot}`); return { condition: conditions[input.boot as string]!.shift()! }; },
-    async stop(input: { boot: never }) { calls.push(`stop:${input.boot}`); return { status: 'success', cessationConfirmed: input.boot !== 'b3' }; } };
-  const results = await recipe.ceaseStartedBoots(sandbox, [{ environment: 'e', boot: 'b1' }, { environment: 'e', boot: 'b2' }, { environment: 'e', boot: 'b3' }], () => {});
-  assert.deepEqual(results.map(item => [item.boot, item.stopped, item.confirmed]), [['b1', true, true], ['b2', false, true], ['b3', true, false]]);
+  const sandbox = {
+    async observe(input: { boot: never }) {
+      calls.push(`observe:${input.boot}`);
+      return { condition: conditions[input.boot as string]!.shift()! };
+    },
+    async stop(input: { boot: never }) {
+      calls.push(`stop:${input.boot}`);
+      return { status: 'success', cessationConfirmed: input.boot !== 'b3' };
+    },
+  };
+  const results = await recipe.ceaseStartedBoots(
+    sandbox,
+    [
+      { environment: 'e', boot: 'b1' },
+      { environment: 'e', boot: 'b2' },
+      { environment: 'e', boot: 'b3' },
+    ],
+    () => {},
+  );
+  assert.deepEqual(
+    results.map(item => [item.boot, item.stopped, item.confirmed]),
+    [
+      ['b1', true, true],
+      ['b2', false, true],
+      ['b3', true, false],
+    ],
+  );
   assert.deepEqual(calls, ['observe:b1', 'stop:b1', 'observe:b1', 'observe:b2', 'observe:b3', 'stop:b3', 'observe:b3']);
-  const failing = await recipe.ceaseStartedBoots({ async observe() { throw new Error('SANDBOX_UNAVAILABLE'); }, async stop() { return { status: 'success' }; } },
-    [{ environment: 'e', boot: 'b4' }], () => {});
+  const failing = await recipe.ceaseStartedBoots(
+    {
+      async observe() {
+        throw new Error('SANDBOX_UNAVAILABLE');
+      },
+      async stop() {
+        return { status: 'success' };
+      },
+    },
+    [{ environment: 'e', boot: 'b4' }],
+    () => {},
+  );
   assert.deepEqual(failing, [{ boot: 'b4', before: 'unknown', stopped: false, confirmed: false, code: 'SANDBOX_UNAVAILABLE' }]);
   assert.match(recipe.plan().guards.join(' '), /human steps wait at most 60 min/);
 });
@@ -153,11 +280,19 @@ test('real run q21-human-v4: the reconcile phase allows ONE operational recovery
 });
 
 test('real run q21-human-v7: a Builder Question keeps the phase waiting (surfaced, not auto-answered), and its question-resumed activation is the one allowed extra', () => {
-  const work = (impediments: unknown[], divergences: unknown[] = []) => ({ impediments, publication: { state: 'reconciling', basisExecutionId: 'b', divergences }, execution: { state: 'ended' } }) as never;
+  const work = (impediments: unknown[], divergences: unknown[] = []) =>
+    ({ impediments, publication: { state: 'reconciling', basisExecutionId: 'b', divergences }, execution: { state: 'ended' } }) as never;
   const pending = work([{ code: 'QUESTION_PENDING', questionId: 'builder-q' }], [{ questionId: 'divergence-q', trigger: 'lease-failed' }]);
   assert.equal(recipe.builderQuestion(pending), 'builder-q');
-  assert.equal(recipe.builderQuestion(work([{ code: 'QUESTION_PENDING', questionId: 'divergence-q' }], [{ questionId: 'divergence-q' }])), null, 'a divergence Question is not the Builder\'s');
-  assert.deepEqual(recipe.settled('reconcile', pending, () => true, 'b'), { done: false, success: false });
+  assert.equal(
+    recipe.builderQuestion(work([{ code: 'QUESTION_PENDING', questionId: 'divergence-q' }], [{ questionId: 'divergence-q' }])),
+    null,
+    "a divergence Question is not the Builder's",
+  );
+  assert.deepEqual(
+    recipe.settled('reconcile', pending, () => true, 'b'),
+    { done: false, success: false },
+  );
   const guard = recipe.activationGuard('reconcile');
   const c = (executionId: string, phaseId: string) => ({ role: 'builder', workId: 'w', executionId, phaseId });
   assert.equal(guard(c('r1', 'builder-reconciliation')), true);
@@ -168,12 +303,22 @@ test('real run q21-human-v7: a Builder Question keeps the phase waiting (surface
 test('real run q21-human-v9: the three exact leased pushes to the configured URL match the Control-recorded attempts (not violations); the verdict is computed', () => {
   const url = 'https://github.com/Sanmoo/java-springboot-event-sourcing.git';
   const branch = 'factory/29-b167feaa';
-  const [h1, h2, c2, h4] = ['54f4cf4f5981d5be5bdfaf6371203264084bb2b1', 'd345e3e1a6c931853606b565b3a14bce675c9e2d', '1cd38d7797ad2504e0161332f13082cce0d61ab5',
-    '140a1baf19d109079688cdd0ba6f2dd071692d5f'];
-  const pushed = [`git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${url} ${h1}:refs/heads/${branch}`,
+  const [h1, h2, c2, h4] = [
+    '54f4cf4f5981d5be5bdfaf6371203264084bb2b1',
+    'd345e3e1a6c931853606b565b3a14bce675c9e2d',
+    '1cd38d7797ad2504e0161332f13082cce0d61ab5',
+    '140a1baf19d109079688cdd0ba6f2dd071692d5f',
+  ];
+  const pushed = [
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${url} ${h1}:refs/heads/${branch}`,
     `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${h1} ${url} ${h2}:refs/heads/${branch}`,
-    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${c2} ${url} ${h4}:refs/heads/${branch}`];
-  const recorded = [{ branch, expected: null, head: h1 }, { branch, expected: h1, head: h2 }, { branch, expected: c2, head: h4 }];
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${c2} ${url} ${h4}:refs/heads/${branch}`,
+  ];
+  const recorded = [
+    { branch, expected: null, head: h1 },
+    { branch, expected: h1, head: h2 },
+    { branch, expected: c2, head: h4 },
+  ];
   assert.deepEqual(recipe.pushViolations(pushed, recorded, url), []);
   assert.equal(recipe.pushViolations([pushed[1]!.replace(`:${h1} `, `:${c2} `)], recorded, url).length, 1, 'a recaptured oid stays a violation');
   assert.equal(recipe.pushViolations([pushed[0]!.replace(url, 'origin')], recorded, url).length, 1, 'another remote token than Control emitted');

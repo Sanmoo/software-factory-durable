@@ -20,12 +20,21 @@ const batch = 50;
  * the eligible details of delivered Works (past the deadline fixed by the confirmed merge, unprotected, not in use), intent before effect and
  * result after it; nothing is retried implicitly. Confirmed explicit plans are executed item by item after a fresh revalidation.
  */
-export function createRetentionDesk(deps: { session: Session; details?: DetailPorts | undefined;
+export function createRetentionDesk(deps: {
+  session: Session;
+  details?: DetailPorts | undefined;
   /** D-07: the controller storage's scrub (absent: forgotten Works stay `pending`, shown by status). */ storage?: StorageScrub | undefined;
-  repositories: ConfiguredRepository[]; days?: number | undefined;
-  sweepSeconds?: number | undefined; readWorks(): Promise<WorkRecord[]>; readQuestions(work: WorkRecord): Promise<QuestionView[]>; running(work_id: string): boolean;
+  repositories: ConfiguredRepository[];
+  days?: number | undefined;
+  sweepSeconds?: number | undefined;
+  readWorks(): Promise<WorkRecord[]>;
+  readQuestions(work: WorkRecord): Promise<QuestionView[]>;
+  running(work_id: string): boolean;
   /** False while the boot reconciliation has not settled the installation: nothing is swept before it. */
-  settled(): boolean; stopped(): boolean; now?: () => number }) {
+  settled(): boolean;
+  stopped(): boolean;
+  now?: () => number;
+}) {
   const now = deps.now ?? Date.now;
   const days = deps.days ?? defaultRetentionDays;
   const sweepMs = (deps.sweepSeconds ?? 86400) * 1000;
@@ -34,28 +43,45 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
   let lastSweepAt: string | null = null;
   const failures: { at: string; work_id: string | null; step: string; code: string }[] = [];
   const failed = (work_id: string | null, step: string, error: unknown) => {
-    failures.push({ at: new Date().toISOString(), work_id, step, code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'UNEXPECTED_FAILURE' });
+    failures.push({
+      at: new Date().toISOString(),
+      work_id,
+      step,
+      code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'UNEXPECTED_FAILURE',
+    });
     failures.splice(0, Math.max(0, failures.length - 50));
   };
   const configured = (repository: string) => deps.repositories.some(scope => scope.repository.toLowerCase() === repository.toLowerCase());
-  const inventory = async (work_id: string): Promise<DetailInventory | null> => deps.details ? deps.details.list({ workId: work_id }).catch(() => null) : null;
+  const inventory = async (work_id: string): Promise<DetailInventory | null> =>
+    deps.details ? deps.details.list({ workId: work_id }).catch(() => null) : null;
 
   /** Facts of a plan or revalidation, read just before the commit that uses them. */
   async function factsOf(work: WorkRecord, withInventory: boolean): Promise<PlanFacts> {
-    return { running: deps.running(work.work_id), questions: await deps.readQuestions(work), inventory: withInventory ? await inventory(work.work_id) : null,
+    return {
+      running: deps.running(work.work_id),
+      questions: await deps.readQuestions(work),
+      inventory: withInventory ? await inventory(work.work_id) : null,
       repositoryConfigured: configured(work.repository.repository),
-      plannedResources: plannedResourcesOf(work, planCleanup(work, { repositoryConfigured: configured(work.repository.repository) }).resources) };
+      plannedResources: plannedResourcesOf(work, planCleanup(work, { repositoryConfigured: configured(work.repository.repository) }).resources),
+    };
   }
 
   /** Review LOW: the Work's Questions as the intent commit sees them, and whether an activity runs NOW (not values read before the commit). */
   async function commitFacts(work: WorkRecord, tx: Tx): Promise<Pick<PlanFacts, 'running' | 'questions'>> {
     const found: QuestionView[] = [];
-    for (const id of work.questions ?? []) { const question = (await tx.doc(questionDocs, id, null)).question; if (question) found.push(question); }
+    for (const id of work.questions ?? []) {
+      const question = (await tx.doc(questionDocs, id, null)).question;
+      if (question) found.push(question);
+    }
     return { running: deps.running(work.work_id), questions: found };
   }
 
-  async function remove(work: WorkRecord, items: Removable[],
-    origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null }, recheck: (work: WorkRecord, tx: Tx) => Promise<string | null>) {
+  async function remove(
+    work: WorkRecord,
+    items: Removable[],
+    origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null },
+    recheck: (work: WorkRecord, tx: Tx) => Promise<string | null>,
+  ) {
     for (let index = 0; index < items.length && !deps.stopped(); index += batch) {
       const slice = items.slice(index, index + batch);
       const intent = await recordDetailIntent(deps.session, work.work_id, slice, origin, recheck);
@@ -63,9 +89,13 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       const results: { effectId: string; result: DetailRemoval }[] = [];
       for (const item of slice) {
         // A session copy is removed only while it still has the hash the inventory (or the confirmed plan) saw.
-        const expectedSha256 = item.kind === 'session' ? item.sha256 ?? null : null;
-        const result = item.kind === 'session' && !expectedSha256 ? { outcome: 'refused' as const, code: 'SESSION_HASH_UNKNOWN' }
-          : await deps.details!.remove({ workId: work.work_id, item, expectedSha256 }).catch(() => ({ outcome: 'indeterminate' as const, code: 'DETAIL_REMOVAL_UNAVAILABLE' }));
+        const expectedSha256 = item.kind === 'session' ? (item.sha256 ?? null) : null;
+        const result =
+          item.kind === 'session' && !expectedSha256
+            ? { outcome: 'refused' as const, code: 'SESSION_HASH_UNKNOWN' }
+            : await deps
+                .details!.remove({ workId: work.work_id, item, expectedSha256 })
+                .catch(() => ({ outcome: 'indeterminate' as const, code: 'DETAIL_REMOVAL_UNAVAILABLE' }));
         results.push({ effectId: intent.effects[item.id]!, result });
       }
       await recordDetailResults(deps.session, work.work_id, results, now());
@@ -79,11 +109,20 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     const instant = now();
     // Revalidated inside the intent commit against the record, its Questions and the activity as they are then (delivery, deadline, protections, use).
     const ids = new Set(recorded.eligible.map(item => item.item.id));
-    await remove(work, recorded.eligible.map(item => item.item), { kind: 'retention', request_id: null, planId: null }, async (current, tx) => {
-      const protections = retentionProtections(current, await commitFacts(current, tx));
-      const decisions = classifyDetails(current, { items: recorded.eligible.map(item => item.item) }, { protections, now: instant, dueAtMs: dueAtMsOf(current, days) });
-      return decisions.every(item => item.decision === 'eligible' && ids.has(item.item.id)) ? null : 'RETENTION_REVALIDATION_REFUSED';
-    });
+    await remove(
+      work,
+      recorded.eligible.map(item => item.item),
+      { kind: 'retention', request_id: null, planId: null },
+      async (current, tx) => {
+        const protections = retentionProtections(current, await commitFacts(current, tx));
+        const decisions = classifyDetails(
+          current,
+          { items: recorded.eligible.map(item => item.item) },
+          { protections, now: instant, dueAtMs: dueAtMsOf(current, days) },
+        );
+        return decisions.every(item => item.decision === 'eligible' && ids.has(item.item.id)) ? null : 'RETENTION_REVALIDATION_REFUSED';
+      },
+    );
   }
 
   /**
@@ -96,17 +135,25 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     for (const work of works) {
       if (deps.stopped()) return;
       const plans = work.forget?.plans ?? [];
-      if (plans.some(plan => plan.state === 'removing' && plan.effect?.outcome === 'intended' && !inFlight.has(plan.effect.effectId))) await settleLostForget(deps.session, work.work_id, inFlight);
+      if (plans.some(plan => plan.state === 'removing' && plan.effect?.outcome === 'intended' && !inFlight.has(plan.effect.effectId)))
+        await settleLostForget(deps.session, work.work_id, inFlight);
       const plan = plans.find(item => item.state === 'confirmed');
       if (!plan || !deps.details) continue;
       const details = deps.details;
       const tree = details.inspectTree ? await details.inspectTree({ workId: work.work_id }).catch(() => null) : null;
-      const facts = (current: WorkRecord) => ({ running: deps.running(current.work_id), tree, repositoryConfigured: configured(current.repository.repository) });
+      const facts = (current: WorkRecord) => ({
+        running: deps.running(current.work_id),
+        tree,
+        repositoryConfigured: configured(current.repository.repository),
+      });
       const intent = await beginForget(deps.session, work.work_id, plan.planId, facts);
       if (intent === 'stale' || intent.kind !== 'removing') continue;
       inFlight.add(intent.effectId);
       try {
-        const result = details.forget ? await details.forget({ workId: work.work_id }).catch(() => ({ outcome: 'indeterminate' as const, code: 'RECORDS_FORGET_UNAVAILABLE', files: 0, bytes: 0 }))
+        const result = details.forget
+          ? await details
+              .forget({ workId: work.work_id })
+              .catch(() => ({ outcome: 'indeterminate' as const, code: 'RECORDS_FORGET_UNAVAILABLE', files: 0, bytes: 0 }))
           : { outcome: 'refused' as const, code: 'RECORDS_FORGET_NOT_COMPOSED', files: 0, bytes: 0 };
         // Content-bearing request receipts that exist (read before the commit, so none is created by looking).
         const current = await deps.readQuestions(work);
@@ -114,7 +161,9 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
         const existing: string[] = [];
         for (const id of candidates) if ((await deps.session.snapshot(requests, id, BACKGROUND_CONTEXT))?.input) existing.push(id);
         await finishForget(deps.session, work.work_id, plan.planId, intent.effectId, result, existing);
-      } finally { inFlight.delete(intent.effectId); }
+      } finally {
+        inFlight.delete(intent.effectId);
+      }
     }
   }
 
@@ -131,12 +180,20 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     const pending = (await readForgotten(deps.session)).filter(memory => memory.scrub?.state !== 'scrubbed');
     if (!pending.length) return;
     const fresh = pending.some(memory => !memory.scrub || memory.scrub.attempts === 0);
-    const last = Math.max(0, ...pending.map(memory => memory.scrub?.lastAttemptAt ? Date.parse(memory.scrub.lastAttemptAt) : 0));
+    const last = Math.max(0, ...pending.map(memory => (memory.scrub?.lastAttemptAt ? Date.parse(memory.scrub.lastAttemptAt) : 0)));
     if (scrubTried && !fresh && now() - last < sweepMs) return;
     scrubTried = true;
     const result = await deps.storage.vacuum();
-    await recordScrub(deps.session, pending.map(memory => memory.work_id), result, new Date(now()).toISOString());
-    if (result.outcome !== 'scrubbed') { failed(null, 'storage-scrub', new Error(result.code)); return; }
+    await recordScrub(
+      deps.session,
+      pending.map(memory => memory.work_id),
+      result,
+      new Date(now()).toISOString(),
+    );
+    if (result.outcome !== 'scrubbed') {
+      failed(null, 'storage-scrub', new Error(result.code));
+      return;
+    }
     // The result commit itself only rewrote the minimal memory; its WAL frames are cut too.
     const tail = await deps.storage.checkpoint();
     if (tail.outcome !== 'scrubbed') failed(null, 'storage-scrub-checkpoint', new Error(tail.code));
@@ -158,13 +215,23 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
           const code = !complete ? 'INVENTORY_INCOMPLETE' : revalidateItem(work, item, facts);
           if (code) settle.push({ id: item.id, state: 'dropped', code });
           else if (!present) settle.push({ id: item.id, state: 'absent', code: 'ABSENT_IN_COMPLETE_INVENTORY' });
-          else allowed.push({ id: item.id, kind: item.kind as 'log' | 'session', executionId: present.executionId, bytes: present.bytes, sha256: item.sha256 ?? null });
+          else
+            allowed.push({
+              id: item.id,
+              kind: item.kind as 'log' | 'session',
+              executionId: present.executionId,
+              bytes: present.bytes,
+              sha256: item.sha256 ?? null,
+            });
         }
         if (settle.length) await settlePlanItems(deps.session, work.work_id, plan.planId, settle, now());
         if (!allowed.length) continue;
         await remove(work, allowed, { kind: 'explicit', request_id: plan.confirmedBy, planId: plan.planId }, async (current, tx) => {
-          const live = { ...facts, ...await commitFacts(current, tx) };
-          for (const item of pending.filter(entry => allowed.some(candidate => candidate.id === entry.id))) { const code = revalidateItem(current, item, live); if (code) return code; }
+          const live = { ...facts, ...(await commitFacts(current, tx)) };
+          for (const item of pending.filter(entry => allowed.some(candidate => candidate.id === entry.id))) {
+            const code = revalidateItem(current, item, live);
+            if (code) return code;
+          }
           return null;
         });
       }
@@ -172,26 +239,60 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
   }
 
   return {
-    view: (): { failures: typeof failures; status: Omit<RetentionStatus, 'works' | 'details' | 'removed' | 'unsettled'> } =>
-      ({ failures: [...failures], status: { sweeps, lastSweepAt, days: deps.details ? days : null } }),
+    view: (): { failures: typeof failures; status: Omit<RetentionStatus, 'works' | 'details' | 'removed' | 'unsettled'> } => ({
+      failures: [...failures],
+      status: { sweeps, lastSweepAt, days: deps.details ? days : null },
+    }),
     /** Never throws: the desks and the dispatcher after it run in the same owner cycle. */
     async cycle() {
       // No detail ports composed (e.g. a development controller without execution): no retention at all, nothing written to any Work.
       if (deps.stopped() || !deps.settled() || !deps.details) return;
       let works: WorkRecord[];
-      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
-      try { await executeForgets(works); } catch (error) { failed(null, 'forget', error); }
-      try { await scrubForgotten(); } catch (error) { failed(null, 'storage-scrub', error); }
-      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
-      try { await executePlans(works); } catch (error) { failed(null, 'explicit-cleanup', error); }
+      try {
+        works = await deps.readWorks();
+      } catch (error) {
+        failed(null, 'read-works', error);
+        return;
+      }
+      try {
+        await executeForgets(works);
+      } catch (error) {
+        failed(null, 'forget', error);
+      }
+      try {
+        await scrubForgotten();
+      } catch (error) {
+        failed(null, 'storage-scrub', error);
+      }
+      try {
+        works = await deps.readWorks();
+      } catch (error) {
+        failed(null, 'read-works', error);
+        return;
+      }
+      try {
+        await executePlans(works);
+      } catch (error) {
+        failed(null, 'explicit-cleanup', error);
+      }
       if (lastSweep !== null && now() - lastSweep < sweepMs) return;
       lastSweep = now();
-      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
+      try {
+        works = await deps.readWorks();
+      } catch (error) {
+        failed(null, 'read-works', error);
+        return;
+      }
       for (const work of works) {
         if (deps.stopped()) return;
-        try { await sweepWork(work); } catch (error) { failed(work.work_id, 'retention-sweep', error); }
+        try {
+          await sweepWork(work);
+        } catch (error) {
+          failed(work.work_id, 'retention-sweep', error);
+        }
       }
-      sweeps++; lastSweepAt = new Date(now()).toISOString();
+      sweeps++;
+      lastSweepAt = new Date(now()).toISOString();
     },
   };
 }

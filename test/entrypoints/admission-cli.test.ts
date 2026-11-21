@@ -10,14 +10,24 @@ import { ended, killTree, until } from '../runner/budget.js';
 // Composition: real CLI, controller owner under flock, protocol socket, Pi Durable/SQLite, adapters, issuer and gh transport.
 // Only gh/GitHub (and the App HTTPS endpoints) are substituted by the local world fixture: NOT evidence of the real GitHub boundary.
 function invoke(root: string, args: string[], fixturePath: string) {
-  const child = spawn(process.execPath, ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
-    env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
-    // Own process group: a failed test kills the owner with everything it started, so the file always ends.
-    stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+  const child = spawn(
+    process.execPath,
+    ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'],
+    {
+      env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
+      // Own process group: a failed test kills the owner with everything it started, so the file always ends.
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    },
+  );
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', data => {
+    stdout += String(data);
   });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += String(data); });
-  child.stderr.on('data', data => { stderr += String(data); });
+  child.stderr.on('data', data => {
+    stderr += String(data);
+  });
   return { child, result: ended(child, () => `factory ${args[0]} (stderr: ${stderr.slice(-300)})`).then(({ code }) => ({ code, stdout, stderr })) };
 }
 type Json = Record<string, any>;
@@ -26,12 +36,15 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   const world = await githubWorld(t, { issues: [issue(1), issue(2), issue(3, { labels: [] })], pulls: [pull(20, { body: 'Fixes #2' })] });
   const root = world.root;
   await prepareController(root);
-  await writeFile(join(root, 'config.yaml'), (await readFile(join(root, 'config.yaml'), 'utf8'))
-    .replace('credentials/unused.pem', 'credentials/app.pem')
-    .replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]\npollingSeconds: 1'));
+  await writeFile(
+    join(root, 'config.yaml'),
+    (await readFile(join(root, 'config.yaml'), 'utf8'))
+      .replace('credentials/unused.pem', 'credentials/app.pem')
+      .replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]\npollingSeconds: 1'),
+  );
   const cli = async (...args: string[]) => {
     const result = await invoke(root, args, root).result;
-    return { ...result, json: result.stdout ? JSON.parse(result.stdout) as Json : undefined };
+    return { ...result, json: result.stdout ? (JSON.parse(result.stdout) as Json) : undefined };
   };
   const unavailable = await cli('list');
   assert.equal(unavailable.code, 3);
@@ -41,32 +54,53 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
     const process = invoke(root, ['run'], root);
     let stopped = false;
     // A failed assertion must not leave the owner running (the file would never end): kill its tree, no graceful wait.
-    t.after(async () => { if (!stopped) { killTree(process.child); await process.result.catch(() => undefined); } });
-    await until(`${minimumCycles} polling cycles`, async () => {
-      const status = await cli('status');
-      return status.code === 0 && status.json!.polling.cycles >= minimumCycles ? true : undefined;
-    }, 50);
-    return { async stop() {
-      stopped = true; process.child.kill('SIGTERM'); const end = await process.result; assert.equal(end.code, 0, end.stderr);
-    } };
+    t.after(async () => {
+      if (!stopped) {
+        killTree(process.child);
+        await process.result.catch(() => undefined);
+      }
+    });
+    await until(
+      `${minimumCycles} polling cycles`,
+      async () => {
+        const status = await cli('status');
+        return status.code === 0 && status.json!.polling.cycles >= minimumCycles ? true : undefined;
+      },
+      50,
+    );
+    return {
+      async stop() {
+        stopped = true;
+        process.child.kill('SIGTERM');
+        const end = await process.result;
+        assert.equal(end.code, 0, end.stderr);
+      },
+    };
   }
   // The owner polls every second, and a new round renews the current attempt before it re-evaluates dependencies: a `list` landing
   // mid-round rightly reports DEPENDENCIES_NOT_CURRENT. Assertions about a settled round take a list whose own snapshot shows the
   // poller sleeping: its polling view is computed with the Works' reasons, after the Works were read with only one storage read in
   // between, which no polling round (several gh calls) can start and finish within.
-  const settledList = () => until('a list between two polling rounds', async () => {
-    const listed = await cli('list');
-    assert.equal(listed.code, 0, listed.stderr);
-    return listed.json!.polling.state === 'sleeping' ? listed : undefined;
-  }, 10);
+  const settledList = () =>
+    until(
+      'a list between two polling rounds',
+      async () => {
+        const listed = await cli('list');
+        assert.equal(listed.code, 0, listed.stderr);
+        return listed.json!.polling.state === 'sleeping' ? listed : undefined;
+      },
+      10,
+    );
 
   let running = await owner(3);
   const listed = await settledList();
   const view = listed.json!;
   assert.equal(view.kind, 'list');
   assert.equal(view.dispatch, 'closed');
-  assert.deepEqual(view.works.map((work: Json) => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
-    [[1, 7001, 'I_node1', 3, 1]]);
+  assert.deepEqual(
+    view.works.map((work: Json) => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
+    [[1, 7001, 'I_node1', 3, 1]],
+  );
   const work = view.works[0];
   assert.deepEqual(work.dispatch.reasons, ['EXECUTION_NOT_ENABLED'], 'no native blocker: only the execution barrier holds');
   assert.equal(work.dependencies.latest.conclusion, 'satisfied');
@@ -74,8 +108,14 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   const foreign = candidates.find(candidate => candidate.ticket.number === 2)!;
   assert.equal(foreign.outcome, 'held');
   assert.equal(foreign.holds[0].code, 'FOREIGN_PULL_REQUEST');
-  assert.deepEqual(foreign.holds[0].pullRequests.map((pr: Json) => [pr.number, pr.pullRequestId]), [[20, 9020]]);
-  assert.equal(candidates.some(candidate => candidate.ticket.number === 3), false);
+  assert.deepEqual(
+    foreign.holds[0].pullRequests.map((pr: Json) => [pr.number, pr.pullRequestId]),
+    [[20, 9020]],
+  );
+  assert.equal(
+    candidates.some(candidate => candidate.ticket.number === 3),
+    false,
+  );
   const shown = await cli('show', work.work_id);
   assert.equal(shown.code, 0, shown.stderr);
   assert.equal(shown.json!.kind, 'work');
@@ -87,10 +127,18 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   await running.stop();
 
   // Operator resolves the foreign PR on GitHub; the restarted owner admits Ticket 2 once, Ticket 1 is not duplicated.
-  await world.update(state => { state.pulls = []; });
+  await world.update(state => {
+    state.pulls = [];
+  });
   running = await owner(3);
   const after = (await cli('list')).json!;
-  assert.deepEqual(after.works.map((item: Json) => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]), [[true, 1, 1], [false, 2, 2]]);
+  assert.deepEqual(
+    after.works.map((item: Json) => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]),
+    [
+      [true, 1, 1],
+      [false, 2, 2],
+    ],
+  );
   const status = (await cli('status')).json!;
   assert.deepEqual([status.works.total, status.queues.normal, status.historyLength, status.polling.intervalSeconds], [2, 2, 0, 1]);
   await running.stop();
@@ -98,12 +146,20 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   const trace = await world.trace();
   assert.ok(trace.filter(entry => entry.credential === 'installation').every(entry => entry.method === 'GET'));
   assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => entry.endpoint === '/app/installations/2/access_tokens'));
-  assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => !Object.values(entry.permissions ?? {}).includes('write')), 'polling grants are read-only');
+  assert.ok(
+    trace.filter(entry => entry.method === 'POST').every(entry => !Object.values(entry.permissions ?? {}).includes('write')),
+    'polling grants are read-only',
+  );
   assert.ok(!trace.some(entry => /\/(labels|assignees|projects|comments)\b/.test(entry.endpoint.split('?')[0]!)));
-  assert.ok(trace.filter(entry => entry.method === 'POST').length <= 10,
-    'grants are reused across polls of one owner (tracker-read, repository-read, association-read, dependency-read, ticket 44 environment-read per owner)');
+  assert.ok(
+    trace.filter(entry => entry.method === 'POST').length <= 10,
+    'grants are reused across polls of one owner (tracker-read, repository-read, association-read, dependency-read, ticket 44 environment-read per owner)',
+  );
   // Ticket 44: the environment declaration is read at the base tip commit, never at a moving branch name.
   assert.ok(trace.some(entry => /\/contents\/\.factory\/environment\.yaml\?ref=[0-9a-f]{40}$/.test(entry.endpoint)));
-  const database = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => readFile(join(root, 'data', name)).catch(() => Buffer.alloc(0)))));
-  for (const forbidden of ['SPEC-BODY', 'synthetic-installation-secret', 'PRIVATE KEY']) assert.equal(database.includes(Buffer.from(forbidden)), false, forbidden);
+  const database = Buffer.concat(
+    await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => readFile(join(root, 'data', name)).catch(() => Buffer.alloc(0)))),
+  );
+  for (const forbidden of ['SPEC-BODY', 'synthetic-installation-secret', 'PRIVATE KEY'])
+    assert.equal(database.includes(Buffer.from(forbidden)), false, forbidden);
 });

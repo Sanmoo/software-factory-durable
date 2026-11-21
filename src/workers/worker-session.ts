@@ -4,8 +4,18 @@ import { lstat, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openFactoryOAuth } from './factory-oauth.js';
 import { budgetFor, qualifyOAuth } from './oauth-qualification.js';
-import { createAgentSession, createExtensionRuntime, createSyntheticSourceInfo, ModelRuntime, SessionManager, SettingsManager,
-  type PromptTemplate, type ResourceLoader, type Skill, type ToolDefinition } from '#factory-pi';
+import {
+  createAgentSession,
+  createExtensionRuntime,
+  createSyntheticSourceInfo,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type PromptTemplate,
+  type ResourceLoader,
+  type Skill,
+  type ToolDefinition,
+} from '#factory-pi';
 import { loadSkillPack, skillPacks } from './skill-pack.js';
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
@@ -22,33 +32,53 @@ import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 
-type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awaited<ReturnType<typeof createRecords>>;
-  oauth?: { factoryRoot: string; acknowledgeSecrets(values: readonly string[]): Promise<void>;
-    registerSecret(value: string): void; publicInputIsSafe(): boolean };
+type Options = {
+  profile: ReviewerProfile;
+  sandbox: ToolProjection;
+  records: Awaited<ReturnType<typeof createRecords>>;
+  oauth?: {
+    factoryRoot: string;
+    acknowledgeSecrets(values: readonly string[]): Promise<void>;
+    registerSecret(value: string): void;
+    publicInputIsSafe(): boolean;
+  };
   /** Builder ask_user: notification to the host (bounded wait for the Control ACK) and the known-secret check of the question text. */
-  questions?: { send(question: WorkerQuestionRequest): Promise<{ status: 'recorded' } | { status: 'refused'; code: string } | { status: 'unacknowledged' }>;
-    containsSecret(text: string): boolean };
+  questions?: {
+    send(question: WorkerQuestionRequest): Promise<{ status: 'recorded' } | { status: 'refused'; code: string } | { status: 'unacknowledged' }>;
+    containsSecret(text: string): boolean;
+  };
   /** Builder with a `handoff` policy: notifies the suspended handoff and waits for the Host directive (review results). */
-  onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective> };
+  onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective>;
+};
 
 /** Opens the owner's copy of a preserved Builder session only if it is the expected file (name, private regular file, hash and header id). */
 async function reopenSession(sessionsDirectory: string, expected: { file: string; sha256: string; sessionId: string }) {
-  if (dirname(expected.file) !== sessionsDirectory || !/^[A-Za-z0-9._-]{1,200}\.jsonl$/.test(basename(expected.file))) throw new Error('WORKER_SESSION_INVALID');
+  if (dirname(expected.file) !== sessionsDirectory || !/^[A-Za-z0-9._-]{1,200}\.jsonl$/.test(basename(expected.file)))
+    throw new Error('WORKER_SESSION_INVALID');
   const info = await lstat(expected.file);
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o022)) throw new Error('WORKER_SESSION_INVALID');
-  if (createHash('sha256').update(await readFile(expected.file)).digest('hex') !== expected.sha256) throw new Error('WORKER_SESSION_INVALID');
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== process.getuid?.() || info.mode & 0o022)
+    throw new Error('WORKER_SESSION_INVALID');
+  if (
+    createHash('sha256')
+      .update(await readFile(expected.file))
+      .digest('hex') !== expected.sha256
+  )
+    throw new Error('WORKER_SESSION_INVALID');
   const manager = SessionManager.open(expected.file, sessionsDirectory, '/workspace');
-  if (manager.getSessionId() !== expected.sessionId || manager.getSessionFile() !== expected.file || manager.getHeader()?.version !== 3) throw new Error('WORKER_SESSION_INVALID');
+  if (manager.getSessionId() !== expected.sessionId || manager.getSessionFile() !== expected.file || manager.getHeader()?.version !== 3)
+    throw new Error('WORKER_SESSION_INVALID');
   return manager;
 }
 
 /** Private SDK component seam; not host activation or process proof. */
 export function createWorkerSession(options: Options) {
-  return { async activate(invocation: Invocation) {
-    const snapshot = { ...invocation, copyOutput: invocation.copyOutput === true };
-    const receipt = await startWorker(options.profile, options.records, snapshot);
-    return executeSession(options, snapshot, receipt);
-  } };
+  return {
+    async activate(invocation: Invocation) {
+      const snapshot = { ...invocation, copyOutput: invocation.copyOutput === true };
+      const receipt = await startWorker(options.profile, options.records, snapshot);
+      return executeSession(options, snapshot, receipt);
+    },
+  };
 }
 
 /** Called only after the worker composition has synced its start evidence. */
@@ -73,23 +103,57 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const pack = selected ? await loadSkillPack(selected.directory, selected.id) : undefined;
   if (pack && pack.id !== selected!.id) throw new Error('WORKER_SKILL_PACK_DRIFT');
   const builderSkillPack = selected ?? skillPacks['factory-skills-v2'];
-  const source = (path: string) => createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, { source: `factory:${builderSkillPack.id}`, scope: 'temporary', origin: 'package' });
-  const skills: Skill[] = pack ? pack.manifest.skills.map(skill => ({ name: skill.name, description: skill.description,
-    filePath: `${builderSkillPack.guestDirectory}/${skill.path}`, baseDir: `${builderSkillPack.guestDirectory}/${skill.path.replace(/\/SKILL\.md$/, '')}`,
-    sourceInfo: source(skill.path), disableModelInvocation: !skill.modelInvocation })) : [];
-  const prompts: PromptTemplate[] = pack ? pack.prompts.map(prompt => ({ name: prompt.name, description: prompt.description, content: prompt.content,
-    filePath: `${builderSkillPack.guestDirectory}/${prompt.path}`, sourceInfo: source(prompt.path) })) : [];
-  const store = oauth ? await openFactoryOAuth({ factoryRoot: options.oauth!.factoryRoot,
-    excludedRoots: { source: fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, ''),
-      guest: join(options.oauth!.factoryRoot, 'environments'), profiles: [join(options.oauth!.factoryRoot, 'r')] },
-    records: { registerSecret: options.oauth!.registerSecret },
-    acknowledgeSecrets: async values => {
-      await options.oauth!.acknowledgeSecrets(values);
-      if (!options.oauth!.publicInputIsSafe()) throw new Error('WORKER_BOOTSTRAP_INVALID');
-    }, profileDirectory: profile.directory, signal }) : undefined;
+  const source = (path: string) =>
+    createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, {
+      source: `factory:${builderSkillPack.id}`,
+      scope: 'temporary',
+      origin: 'package',
+    });
+  const skills: Skill[] = pack
+    ? pack.manifest.skills.map(skill => ({
+        name: skill.name,
+        description: skill.description,
+        filePath: `${builderSkillPack.guestDirectory}/${skill.path}`,
+        baseDir: `${builderSkillPack.guestDirectory}/${skill.path.replace(/\/SKILL\.md$/, '')}`,
+        sourceInfo: source(skill.path),
+        disableModelInvocation: !skill.modelInvocation,
+      }))
+    : [];
+  const prompts: PromptTemplate[] = pack
+    ? pack.prompts.map(prompt => ({
+        name: prompt.name,
+        description: prompt.description,
+        content: prompt.content,
+        filePath: `${builderSkillPack.guestDirectory}/${prompt.path}`,
+        sourceInfo: source(prompt.path),
+      }))
+    : [];
+  const store = oauth
+    ? await openFactoryOAuth({
+        factoryRoot: options.oauth!.factoryRoot,
+        excludedRoots: {
+          source: fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, ''),
+          guest: join(options.oauth!.factoryRoot, 'environments'),
+          profiles: [join(options.oauth!.factoryRoot, 'r')],
+        },
+        records: { registerSecret: options.oauth!.registerSecret },
+        acknowledgeSecrets: async values => {
+          await options.oauth!.acknowledgeSecrets(values);
+          if (!options.oauth!.publicInputIsSafe()) throw new Error('WORKER_BOOTSTRAP_INVALID');
+        },
+        profileDirectory: profile.directory,
+        signal,
+      })
+    : undefined;
   try {
-    const runtime = await ModelRuntime.create({ ...(store ? { credentials: store.credentials } : { authPath: join(profile.directory, 'auth.json') }), modelsPath: null,
-      modelsStorePath: join(profile.directory, 'models-store.json'), allowModelNetwork: false, refreshOnCreate: false, signal });
+    const runtime = await ModelRuntime.create({
+      ...(store ? { credentials: store.credentials } : { authPath: join(profile.directory, 'auth.json') }),
+      modelsPath: null,
+      modelsStorePath: join(profile.directory, 'models-store.json'),
+      allowModelNetwork: false,
+      refreshOnCreate: false,
+      signal,
+    });
     try {
       if ('apiKey' in profile) {
         runtime.registerProvider(profile.providerId, profile.provider);
@@ -98,16 +162,25 @@ export async function executeSession(options: Options, invocation: Invocation, r
       const qualification = oauth ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort(), limits) : undefined;
       // After a question: no further model request of this activation, whatever the profile (outermost wrapper, before any auth/network).
       const stream = runtime.streamSimple.bind(runtime);
-      runtime.streamSimple = (...args: Parameters<typeof stream>) => { if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION'); return stream(...args); };
+      runtime.streamSimple = (...args: Parameters<typeof stream>) => {
+        if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
+        return stream(...args);
+      };
       qualification?.check();
       const model = runtime.getModel(profile.providerId, profile.modelId);
       if (!model || (oauth && model.api !== 'openai-responses')) throw new Error('WORKER_MODEL_UNAVAILABLE');
       const resourceLoader: ResourceLoader = {
         getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-        getSkills: () => ({ skills, diagnostics: [] }), getPrompts: () => ({ prompts, diagnostics: [] }),
-        getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }),
-        getSystemPrompt: () => profile.systemPrompt, getSystemPromptSource: () => undefined,
-        getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, async reload() {},
+        getSkills: () => ({ skills, diagnostics: [] }),
+        getPrompts: () => ({ prompts, diagnostics: [] }),
+        getThemes: () => ({ themes: [], diagnostics: [] }),
+        getAgentsFiles: () => ({ agentsFiles: [] }),
+        getSystemPrompt: () => profile.systemPrompt,
+        getSystemPromptSource: () => undefined,
+        getAppendSystemPrompt: () => [],
+        getAppendSystemPromptSources: () => [],
+        extendResources() {},
+        async reload() {},
       };
       // Ticket 11: a Builder continuation reopens the owner's copy of the preserved session (same identity/hash, inside THIS profile only).
       // Ticket 13: a later reviewer round continues its earlier session (owner-copied into this profile) when it opens as a /workspace session.
@@ -115,29 +188,49 @@ export async function executeSession(options: Options, invocation: Invocation, r
       const sessions = join(profile.directory, 'sessions');
       const requested = role !== 'builder' ? invocation.review?.session : undefined;
       let sessionMode: { mode: 'new' | 'continued' | 'replaced'; from: string | null; code: string | null } = requested
-        ? { mode: requested.mode, from: requested.from, code: requested.mode === 'replaced' ? requested.code : null } : { mode: 'new', from: null, code: null };
+        ? { mode: requested.mode, from: requested.from, code: requested.mode === 'replaced' ? requested.code : null }
+        : { mode: 'new', from: null, code: null };
       let manager: SessionManager;
       if (invocation.continuedSession) manager = await reopenSession(sessions, invocation.continuedSession);
-      else try {
-        if (requested?.mode !== 'continued' || !requested.file.startsWith(`${sessions}/`)) throw new Error('new');
-        manager = SessionManager.open(requested.file, sessions);
-        if (manager.getCwd() !== '/workspace' || manager.getSessionFile() !== requested.file) throw new Error('SESSION_INCOMPATIBLE');
-      } catch (error) {
-        if (requested?.mode === 'continued') sessionMode = { mode: 'replaced', from: requested.from, code: error instanceof Error && error.message === 'SESSION_INCOMPATIBLE' ? 'SESSION_INCOMPATIBLE' : 'SESSION_OPEN_FAILED' };
-        manager = SessionManager.create('/workspace', sessions);
-      }
+      else
+        try {
+          if (requested?.mode !== 'continued' || !requested.file.startsWith(`${sessions}/`)) throw new Error('new');
+          manager = SessionManager.open(requested.file, sessions);
+          if (manager.getCwd() !== '/workspace' || manager.getSessionFile() !== requested.file) throw new Error('SESSION_INCOMPATIBLE');
+        } catch (error) {
+          if (requested?.mode === 'continued')
+            sessionMode = {
+              mode: 'replaced',
+              from: requested.from,
+              code: error instanceof Error && error.message === 'SESSION_INCOMPATIBLE' ? 'SESSION_INCOMPATIBLE' : 'SESSION_OPEN_FAILED',
+            };
+          manager = SessionManager.create('/workspace', sessions);
+        }
       let interrupted = false;
       let abortSession = () => {};
-      const critical = () => { interrupted = true; abortSession(); };
+      const critical = () => {
+        interrupted = true;
+        abortSession();
+      };
       const observer = createReadObserver();
       // Ticket 13: the Host ledger of the Builder's own tool calls and real Bash results (the only source of gate evidence).
       const ledger = invocation.handoff?.rounds ? createToolLedger() : undefined;
       const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
-      const customTools: ToolDefinition[] = invocation.context.role === 'builder'
-        ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
-          ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined,
-          ledger ? () => probeContent(invocation.context, options.sandbox, invocation.handoff!.baseCommit, signal) : undefined, invocation.pushPolicy)]
-        : [reviewerRead(invocation.context, options.sandbox, critical)];
+      const customTools: ToolDefinition[] =
+        invocation.context.role === 'builder'
+          ? [
+              builderWrite(invocation.context, options.sandbox, critical),
+              builderBash(
+                invocation.context,
+                options.sandbox,
+                critical,
+                copyOutput,
+                ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined,
+                ledger ? () => probeContent(invocation.context, options.sandbox, invocation.handoff!.baseCommit, signal) : undefined,
+                invocation.pushPolicy,
+              ),
+            ]
+          : [reviewerRead(invocation.context, options.sandbox, critical)];
       const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
       // Builder Read: selected output copies (copyOutput) and/or the files of its own pack version (owner-enforced exact paths).
       if (invocation.context.role === 'builder' && (copyOutput || invocation.skillPack !== undefined)) {
@@ -151,51 +244,108 @@ export async function executeSession(options: Options, invocation: Invocation, r
       // Reviewer with a review input: the SAME native read, observed by the Host (reads, failures, truncation) for the opinion checks.
       if (invocation.context.role !== 'builder' && invocation.review) {
         const reviewer = customTools[0]!;
-        customTools[0] = { ...reviewer, async execute(...args: Parameters<ToolDefinition['execute']>) {
-          try { const result = await reviewer.execute(...args); observer.observe(args[1], { details: result.details, content: result.content as { type: string; text?: string }[], ...(result.isError === undefined ? {} : { isError: result.isError }) }); return result; }
-          catch (error) { observer.observe(args[1], { error }); throw error; }
-        } };
+        customTools[0] = {
+          ...reviewer,
+          async execute(...args: Parameters<ToolDefinition['execute']>) {
+            try {
+              const result = await reviewer.execute(...args);
+              observer.observe(args[1], {
+                details: result.details,
+                content: result.content as { type: string; text?: string }[],
+                ...(result.isError === undefined ? {} : { isError: result.isError }),
+              });
+              return result;
+            } catch (error) {
+              observer.observe(args[1], { error });
+              throw error;
+            }
+          },
+        };
       }
 
       if (invocation.context.role === 'builder' && options.questions) {
         const { phaseId, ...recordContext } = invocation.context;
-        customTools.push(builderAskUser(invocation.context, {
-          preserve: (question, toolCallId) => options.records.record({ ...recordContext, callId: `ask-user-${question.questionId}` },
-            { version: 1, kind: 'ask-user', ...question, phaseId, toolCallId, askedAt: new Date().toISOString() }),
-          send: question => options.questions!.send(question), containsSecret: text => options.questions!.containsSecret(text),
-          asked: question => { asked = question; setImmediate(() => abortSession()); }, onCritical: critical }));
+        customTools.push(
+          builderAskUser(invocation.context, {
+            preserve: (question, toolCallId) =>
+              options.records.record(
+                { ...recordContext, callId: `ask-user-${question.questionId}` },
+                { version: 1, kind: 'ask-user', ...question, phaseId, toolCallId, askedAt: new Date().toISOString() },
+              ),
+            send: question => options.questions!.send(question),
+            containsSecret: text => options.questions!.containsSecret(text),
+            asked: question => {
+              asked = question;
+              setImmediate(() => abortSession());
+            },
+            onCritical: critical,
+          }),
+        );
         tools.push('ask_user');
       }
       // Gate: once a question is asked, every other tool call of this activation is refused before any effect.
-      const gated = customTools.map(tool => tool.name === 'ask_user' ? tool : { ...tool, async execute(...args: Parameters<ToolDefinition['execute']>) {
-        if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
-        ledger?.begin(tool.name, args[0]);
-        return tool.execute(...args);
-      } } as ToolDefinition);
+      const gated = customTools.map(tool =>
+        tool.name === 'ask_user'
+          ? tool
+          : ({
+              ...tool,
+              async execute(...args: Parameters<ToolDefinition['execute']>) {
+                if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
+                ledger?.begin(tool.name, args[0]);
+                return tool.execute(...args);
+              },
+            } as ToolDefinition),
+      );
       // Host suspension (spec §5.6): once the Builder hands off, EVERY Builder tool refuses and terminates the batch until the Host
       // delivers the review results; a new model turn while suspended interrupts the session (it is not merely a model phrase/agent_end).
       // Ticket 18: declared gates must carry a command their cited preserved source documents (checked at the handoff, in session).
-      const gate = invocation.handoff ? builderHandoff(invocation.handoff.rounds, ledger, invocation.handoff.rounds
-        ? path => readGateSource(invocation.context, options.sandbox, path, signal) : undefined) : undefined;
+      const gate = invocation.handoff
+        ? builderHandoff(
+            invocation.handoff.rounds,
+            ledger,
+            invocation.handoff.rounds ? path => readGateSource(invocation.context, options.sandbox, path, signal) : undefined,
+          )
+        : undefined;
       const sessionTools = gate ? [...gated.map(tool => suspendable(tool, gate)), gate.tool] : gated;
       if (gate) {
         // Synchronous backstop: no provider request can even start while suspended (the request itself is refused, not just aborted later).
         const nativeStream = runtime.streamSimple.bind(runtime);
         runtime.streamSimple = (...args: Parameters<typeof nativeStream>) => {
-          if (gate.suspended()) { critical(); throw new Error('BUILDER_SUSPENDED_FOR_REVIEW'); }
+          if (gate.suspended()) {
+            critical();
+            throw new Error('BUILDER_SUSPENDED_FOR_REVIEW');
+          }
           return nativeStream(...args);
         };
       }
       if (gate) tools.push(gate.tool.name);
-      const { session } = await createAgentSession({ cwd: '/workspace', agentDir: profile.directory, modelRuntime: runtime,
-        model, thinkingLevel: 'off', tools, customTools: qualification ? sessionTools.map(tool => qualification.tool(tool)) : sessionTools, resourceLoader, sessionManager: manager,
-        settingsManager: SettingsManager.inMemory({ retry: { enabled: false, provider: { maxRetries: 0 } },
-          compaction: { enabled: false }, cacheWarming: 'off' }) });
+      const { session } = await createAgentSession({
+        cwd: '/workspace',
+        agentDir: profile.directory,
+        modelRuntime: runtime,
+        model,
+        thinkingLevel: 'off',
+        tools,
+        customTools: qualification ? sessionTools.map(tool => qualification.tool(tool)) : sessionTools,
+        resourceLoader,
+        sessionManager: manager,
+        settingsManager: SettingsManager.inMemory({
+          retry: { enabled: false, provider: { maxRetries: 0 } },
+          compaction: { enabled: false },
+          cacheWarming: 'off',
+        }),
+      });
       if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) {
-        session.dispose(); throw new Error('WORKER_MODEL_MISMATCH');
+        session.dispose();
+        throw new Error('WORKER_MODEL_MISMATCH');
       }
-      abortSession = () => { void session.abort().catch(() => {}); };
-      const abort = () => { interrupted = true; abortSession(); };
+      abortSession = () => {
+        void session.abort().catch(() => {});
+      };
+      const abort = () => {
+        interrupted = true;
+        abortSession();
+      };
       signal.addEventListener('abort', abort, { once: true });
       const unsubscribe = session.subscribe(event => {
         if (event.type === 'turn_start' && gate?.suspended()) abort();
@@ -207,8 +357,11 @@ export async function executeSession(options: Options, invocation: Invocation, r
         qualification?.check();
         let prompt = invocation.prompt;
         while (true) {
-          await session.prompt(prompt).catch(error => { if (!asked) throw error; });
-          if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort(), question: asked };
+          await session.prompt(prompt).catch(error => {
+            if (!asked) throw error;
+          });
+          if (asked)
+            return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort(), question: asked };
           if (!gate || signal.aborted || interrupted || qualification?.failed()) break;
           // Ticket 13: after the session ended without a pending handoff, the Host captures once more (closing), with no model request.
           const closing = gate.pending() ? null : gate.closing();
@@ -216,32 +369,64 @@ export async function executeSession(options: Options, invocation: Invocation, r
           // Suspended: the Host (not the model) captures the proposal through the Builder's own binding, then waits for the directive.
           const round = closing ?? gate.round();
           const raw = closing === null ? gate.declarations() : undefined;
-          const captured = await captureHandoff(invocation.context, options.sandbox, round, invocation.handoff!.baseCommit, signal, invocation.handoff!.preserve);
+          const captured = await captureHandoff(
+            invocation.context,
+            options.sandbox,
+            round,
+            invocation.handoff!.baseCommit,
+            signal,
+            invocation.handoff!.preserve,
+          );
           // Gates are resolved only now, against the content the capture actually recorded (review fix 1); no capture = no content.
-          const declarations = raw && ledger ? ledger.resolve(raw, { captureContentSha: captured.status === 'captured' ? captured.summary.content?.sha256 ?? null : null }) : undefined;
+          const declarations =
+            raw && ledger
+              ? ledger.resolve(raw, { captureContentSha: captured.status === 'captured' ? (captured.summary.content?.sha256 ?? null) : null })
+              : undefined;
           const event: HandoffEvent = { ...captured, ...(closing === null ? {} : { closing: true as const }), ...(declarations ? { declarations } : {}) };
           const directive = await options.onHandoff!(event);
-          if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== round || (directive.end && closing === null)) { interrupted = true; break; }
+          if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== round || (directive.end && closing === null)) {
+            interrupted = true;
+            break;
+          }
           if (directive.end) break;
           gate.listed(round, directive.findings);
           gate.resume();
           prompt = directive.prompt;
         }
-        const status = signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const;
+        const status = signal.aborted || interrupted || qualification?.failed() ? ('interrupted' as const) : ('completed' as const);
         const sessionFile = manager.getSessionFile() ?? null;
         // Ticket 48: a session closed by its own request/tool count says so (the Host's count, never a model claim). Ticket 57: so does a session
         // whose model request failed without a Host abort (reviewers too: their cause reaches Control in the opinion code).
-        const budgetExhausted = status === 'interrupted' ? qualification?.exhausted() ?? null : null;
+        const budgetExhausted = status === 'interrupted' ? (qualification?.exhausted() ?? null) : null;
         const providerUnavailable = status === 'interrupted' && !budgetExhausted && qualification?.providerFailed() === true;
-        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile(), ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}),
-          ...(role === 'builder' && budgetExhausted ? { budgetExhausted } : {}), ...(role === 'builder' && providerUnavailable ? { providerUnavailable: true as const } : {}) };
+        if (role === 'builder' || !invocation.review)
+          return {
+            status,
+            receipt,
+            sessionFile: manager.getSessionFile(),
+            ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}),
+            ...(role === 'builder' && budgetExhausted ? { budgetExhausted } : {}),
+            ...(role === 'builder' && providerUnavailable ? { providerUnavailable: true as const } : {}),
+          };
         // Reviewer: the complete opinion from the FINAL assistant message is preserved durably BEFORE any notification.
         const last = [...session.messages].reverse().find(message => message.role === 'assistant');
-        const finalText = last && 'content' in last && Array.isArray(last.content)
-          ? last.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : null;
-        const composed = composeOpinion({ role, invocationId: invocation.context.invocationId, review: invocation.review, status, finalText, sessionFile, sessionMode,
-          model: { providerId: profile.providerId, modelId: profile.modelId }, profile: { id: profile.id, modelBudget: invocation.modelBudget ?? null },
-          host: observer.summary(invocation.review.required), ...(budgetExhausted ? { closedBy: budgetExhausted } : providerUnavailable ? { closedBy: 'provider' as const } : {}) });
+        const finalText =
+          last && 'content' in last && Array.isArray(last.content)
+            ? last.content.flatMap(block => (block.type === 'text' ? [block.text] : [])).join('\n')
+            : null;
+        const composed = composeOpinion({
+          role,
+          invocationId: invocation.context.invocationId,
+          review: invocation.review,
+          status,
+          finalText,
+          sessionFile,
+          sessionMode,
+          model: { providerId: profile.providerId, modelId: profile.modelId },
+          profile: { id: profile.id, modelBudget: invocation.modelBudget ?? null },
+          host: observer.summary(invocation.review.required),
+          ...(budgetExhausted ? { closedBy: budgetExhausted } : providerUnavailable ? { closedBy: 'provider' as const } : {}),
+        });
         const { phaseId: _phase, ...context } = invocation.context;
         const recordedAt = new Date().toISOString();
         const reference = await options.records.record({ ...context, callId: 'review-opinion' }, { kind: 'review-opinion', ...composed, recordedAt });
@@ -251,7 +436,15 @@ export async function executeSession(options: Options, invocation: Invocation, r
         const { kind: _kind, ...stored } = (JSON.parse(page.data.toString('utf8')) as { event: Record<string, unknown> }).event;
         const opinion: ReviewOpinion = opinionSchema.parse({ ...stored, reference }) as ReviewOpinion;
         return { status, receipt, sessionFile: manager.getSessionFile(), opinion };
-      } finally { unsubscribe(); signal.removeEventListener('abort', abort); session.dispose(); }
-    } finally { await runtime.settleCredentialWrites(); }
-  } finally { await store?.settleCredentialWrites(); }
+      } finally {
+        unsubscribe();
+        signal.removeEventListener('abort', abort);
+        session.dispose();
+      }
+    } finally {
+      await runtime.settleCredentialWrites();
+    }
+  } finally {
+    await store?.settleCredentialWrites();
+  }
 }

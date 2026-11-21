@@ -5,8 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 
-const context = { workId: 'work-05', executionId: 'execution-05', invocationId: 'builder-05',
-  role: 'builder' as const, environmentRef: 'environment-05', bootRef: 'boot-05', callId: 'call-05' };
+const context = {
+  workId: 'work-05',
+  executionId: 'execution-05',
+  invocationId: 'builder-05',
+  role: 'builder' as const,
+  environmentRef: 'environment-05',
+  bootRef: 'boot-05',
+  callId: 'call-05',
+};
 
 test('Records filters a known secret across chunks before returning or writing any output', async () => {
   const root = await mkdtemp(join(tmpdir(), 'records-05-'));
@@ -23,5 +30,7 @@ test('Records filters a known secret across chunks before returning or writing a
     assert.equal(page.state, 'complete');
     assert.equal(Buffer.from(page.data).toString(), delivered);
     assert.equal((await readFile(join(root, 'work-05', 'evidence', finished.reference.id, 'output'))).toString(), delivered);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

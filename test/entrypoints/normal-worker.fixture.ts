@@ -9,38 +9,76 @@ import { untilHolds } from '../runner/budget.js';
 
 async function listenerClosed(endpoint: string) {
   // Bounded by the runner budget, not by 100 probes (ticket 40).
-  await untilHolds(`invocation listener closed: ${endpoint}`, async () => {
-    // Do not create a probe peer whose EOF could itself trigger binding closure.
-    try { await lstat(endpoint); return false; }
-    catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-    }
-    await assert.rejects(new Promise<void>((resolve, reject) => {
-      const socket = createConnection(endpoint);
-      socket.once('error', reject);
-      socket.once('connect', () => { socket.destroy(); resolve(); });
-    }), { code: 'ENOENT' });
-    return true;
-  }, 10);
+  await untilHolds(
+    `invocation listener closed: ${endpoint}`,
+    async () => {
+      // Do not create a probe peer whose EOF could itself trigger binding closure.
+      try {
+        await lstat(endpoint);
+        return false;
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      }
+      await assert.rejects(
+        new Promise<void>((resolve, reject) => {
+          const socket = createConnection(endpoint);
+          socket.once('error', reject);
+          socket.once('connect', () => {
+            socket.destroy();
+            resolve();
+          });
+        }),
+        { code: 'ENOENT' },
+      );
+      return true;
+    },
+    10,
+  );
 }
 
 /** Trusted Host composition: Q6 admission/reservation is a caller precondition.
  * This local fixture grants no production Control authority. */
 export async function normalWorker(root: string, context: { workId: string; environmentRef: string; bootRef: string }) {
-  const configuration = { root, knownSecrets: ['synthetic-secret'], profile: {
-    id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', systemPrompt: 'Read only, no personal resources.',
-    providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
-    provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
-      { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 },
-    ] },
-  } } as const;
-  const mutableConfiguration = { ...configuration, knownSecrets: [...configuration.knownSecrets], profile: {
-    ...configuration.profile, provider: { ...configuration.profile.provider, models: configuration.profile.provider.models.map(model => ({ ...model, input: [...model.input] })) },
-  } };
+  const configuration = {
+    root,
+    knownSecrets: ['synthetic-secret'],
+    profile: {
+      id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3',
+      systemPrompt: 'Read only, no personal resources.',
+      providerId: 'offline-fixture',
+      modelId: 'reader',
+      apiKey: 'synthetic-key',
+      provider: {
+        api: 'openai-completions',
+        baseUrl: 'https://offline.invalid',
+        models: [
+          {
+            id: 'reader',
+            name: 'Reader',
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 100000,
+            maxTokens: 1000,
+          },
+        ],
+      },
+    },
+  } as const;
+  const mutableConfiguration = {
+    ...configuration,
+    knownSecrets: [...configuration.knownSecrets],
+    profile: {
+      ...configuration.profile,
+      provider: { ...configuration.profile.provider, models: configuration.profile.provider.models.map(model => ({ ...model, input: [...model.input] })) },
+    },
+  };
   const workers = createWorkers(mutableConfiguration);
-  const invocation = { context: { ...context, executionId: 'execution-05', invocationId: 'standards-05',
-    role: 'standards' as const, phaseId: 'review-1' }, prompt: 'Read source.txt offset 5001 limit 2.', signal: new AbortController().signal };
+  const invocation = {
+    context: { ...context, executionId: 'execution-05', invocationId: 'standards-05', role: 'standards' as const, phaseId: 'review-1' },
+    prompt: 'Read source.txt offset 5001 limit 2.',
+    signal: new AbortController().signal,
+  };
   const worker = await workers.activate(invocation);
   try {
     // The once-only claim must already exist, before any child SDK turn.
@@ -62,7 +100,8 @@ export async function normalWorker(root: string, context: { workId: string; envi
     const files = await readdir(sessions, { recursive: true });
     const session = files.find(name => name.endsWith('.jsonl'))!;
     const transcript = await readFile(join(sessions, session), 'utf8');
-    assert.match(transcript, /toolResult/); assert.match(transcript, /█/);
+    assert.match(transcript, /toolResult/);
+    assert.match(transcript, /█/);
     assert.doesNotMatch(transcript, /synthetic-secret|synthetic-key/);
     const reopened = SessionManager.open(join(sessions, session));
     assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult'));
@@ -73,7 +112,8 @@ export async function normalWorker(root: string, context: { workId: string; envi
     const specContext = { ...invocation.context, invocationId: 'spec-live', role: 'spec' as const };
     const read = { name: 'read' as const, operation: 'capture' as const, path: '/workspace/source.txt', callId: 'spec-before' };
     assert.equal((await spec.executeTool(specContext, read)).status, 'success');
-    worker.close(); worker.close();
+    worker.close();
+    worker.close();
     await listenerClosed(join(runtime, 'b1'));
     await assert.rejects(workers.activate(invocation), /STALE_TOOL_CONTEXT/);
     assert.equal((await spec.executeTool(specContext, { ...read, callId: 'spec-after-close' })).status, 'success');
@@ -88,7 +128,11 @@ export async function normalWorker(root: string, context: { workId: string; envi
       await listenerClosed(join(runtime, 'b3'));
       await assert.rejects(failingWorkers.activate(failedInvocation), /STALE_TOOL_CONTEXT/);
       assert.equal((await spec.executeTool(specContext, { ...read, callId: 'spec-after-failure' })).status, 'success');
-    } finally { failed.close(); }
+    } finally {
+      failed.close();
+    }
     return { receipt: started.receipt, pid: receipt.observedProcess.pid };
-  } finally { worker.close(); }
+  } finally {
+    worker.close();
+  }
 }

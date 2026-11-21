@@ -25,7 +25,9 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, scenario = '
   const executable = join(root, 'gh');
   const ghTraceFile = join(root, 'operational-gh-trace');
   await writeFile(ghTraceFile, '');
-  await writeFile(executable, `#!${process.execPath}
+  await writeFile(
+    executable,
+    `#!${process.execPath}
 import { verify } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 if (process.env.NATIVE_FIXTURE!=='1') appendFileSync(${JSON.stringify(ghTraceFile)}, 'gh api\\n');
@@ -93,20 +95,30 @@ if (scenario==='bad-payload' && endpoint.includes('/issues')) body=[{id:1}];
 if (scenario==='denied' && endpoint.includes('/issues')) {status=403; body={message:'synthetic-installation-secret'};}
 process.stdout.write('HTTP/2.0 '+status+' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n'+headers+'\\r\\n'+JSON.stringify(body));
 process.exit(status>=200&&status<300?0:1);
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const preload = join(root, 'native-fixture.mjs');
-  await writeFile(preload, `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)},${JSON.stringify(scenario)});`);
-  await writeFile(join(root, 'flock'), `#!${process.execPath}
+  await writeFile(
+    preload,
+    `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)},${JSON.stringify(scenario)});`,
+  );
+  await writeFile(
+    join(root, 'flock'),
+    `#!${process.execPath}
 import { spawn } from 'node:child_process';
 const args=process.argv.slice(2); args.splice(7,0,'--import',${JSON.stringify(preload)});
 const child=spawn('/usr/bin/flock',args,{stdio:'inherit'});
 process.on('SIGTERM',()=>child.kill('SIGTERM')); process.on('SIGINT',()=>child.kill('SIGINT'));
 child.on('exit',code=>{process.exitCode=code??1;});
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const restore = installNativeAppFixture(executable, scenario);
-  t.after(async () => { restore(); });
+  t.after(async () => {
+    restore();
+  });
   return { root, executable, native: restore.observation, ghTrace: () => readFile(ghTraceFile, 'utf8') };
-
 }
 const scope = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent' };
 
@@ -114,10 +126,30 @@ test('local GitHub fixture requires explicit REST selectors and grants only sele
   const { root, executable } = await fixture(t);
   const unsigned = `${Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url')}.${Buffer.from(JSON.stringify({ iss: '1', iat: 1, exp: 601 })).toString('base64url')}`;
   const jwt = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), await readFile(join(root, 'credentials/app.pem'))).toString('base64url')}`;
-  const request = (selector: object) => spawnSync(executable, ['api', '--hostname', 'github.com', '--method', 'POST', '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--input', '-', '--', '/app/installations/2/access_tokens'], {
-    input: JSON.stringify({ ...selector, permissions: { metadata: 'read', issues: 'write' } }),
-    encoding: 'utf8', env: { GH_TOKEN: jwt, NATIVE_FIXTURE: '1' }, timeout: remainingMs(),
-  });
+  const request = (selector: object) =>
+    spawnSync(
+      executable,
+      [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'POST',
+        '--include',
+        '-H',
+        'X-GitHub-Api-Version: 2026-03-10',
+        '--input',
+        '-',
+        '--',
+        '/app/installations/2/access_tokens',
+      ],
+      {
+        input: JSON.stringify({ ...selector, permissions: { metadata: 'read', issues: 'write' } }),
+        encoding: 'utf8',
+        env: { GH_TOKEN: jwt, NATIVE_FIXTURE: '1' },
+        timeout: remainingMs(),
+      },
+    );
   for (const selector of [{}, { repository_names: ['project'] }, { repositories: [] }]) {
     const rejected = request(selector);
     assert.equal(rejected.status, 10, `must reject ${JSON.stringify(selector)}`);
@@ -130,7 +162,10 @@ test('local GitHub fixture requires explicit REST selectors and grants only sele
     const granted = request(selector);
     assert.equal(granted.status, 0, granted.stderr);
     const body = JSON.parse(granted.stdout.split('\r\n\r\n')[1]!);
-    assert.deepEqual(body.repositories.map((repo: { full_name: string }) => repo.full_name), [expected]);
+    assert.deepEqual(
+      body.repositories.map((repo: { full_name: string }) => repo.full_name),
+      [expected],
+    );
   }
 });
 
@@ -169,29 +204,46 @@ test('IssueTracker.checkAccess fails closed on denied reads without exposing res
 });
 
 function invoke(root: string, args: string[], fixturePath: string) {
-  const child = spawn(process.execPath, ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
-    env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(
+    process.execPath,
+    ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'],
+    {
+      env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', data => {
+    stdout += String(data);
   });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += String(data); });
-  child.stderr.on('data', data => { stderr += String(data); });
-  return { child, result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr }));
-  }) };
+  child.stderr.on('data', data => {
+    stderr += String(data);
+  });
+  return {
+    child,
+    result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', code => resolve({ code, stdout, stderr }));
+    }),
+  };
 }
 
 test('authenticated doctor is owned by the controller and never persists grants or uses the CLI personal identity', { timeout: remainingMs() }, async t => {
   const options = await fixture(t, 'controller');
   await prepareController(options.root);
   const config = (await readFile(join(options.root, 'config.yaml'), 'utf8'))
-    .replace('credentials/unused.pem', 'credentials/app.pem').replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]');
+    .replace('credentials/unused.pem', 'credentials/app.pem')
+    .replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]');
   await writeFile(join(options.root, 'config.yaml'), config);
   const unavailable = await invoke(options.root, ['doctor', '--authenticated'], options.root).result;
   assert.equal(unavailable.code, 3);
   assert.match(unavailable.stderr, /CONTROLLER_UNAVAILABLE/);
   const owner = invoke(options.root, ['run'], options.root);
-  t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
+  t.after(async () => {
+    owner.child.kill('SIGTERM');
+    await owner.result;
+  });
   await untilHolds('controller available', async () => (await invoke(options.root, ['status'], options.root).result).code === 0, 20);
   const result = await invoke(options.root, ['doctor', '--authenticated'], options.root).result;
   assert.equal(result.code, 0, result.stdout + result.stderr);
@@ -228,31 +280,38 @@ for (const [scenario, code] of [
   ['off-host-page', 'INVALID_PAGINATION'],
   ['bad-payload', 'INVALID_GITHUB_PAYLOAD'],
   ['rate-limit', 'GITHUB_RATE_LIMITED'],
-]) test(`IssueTracker.checkAccess rejects ${scenario} without partial success or secret leakage`, async t => {
-  const options = await fixture(t, scenario);
-  const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
-  assert.equal(report.status, 'blocked');
-  assert.equal(report.code, code);
-  assert.equal(report.completeness, 'incomplete');
-  assert.ok(report.nextStep);
-  if (scenario === 'rate-limit') {
-    assert.equal(report.waitSeconds, 37);
-    assert.equal(report.purpose, 'tracker');
-    assert.equal(report.repository, 'acme/project');
-  }
-  assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret|synthetic-secret|PRIVATE KEY/);
-});
+])
+  test(`IssueTracker.checkAccess rejects ${scenario} without partial success or secret leakage`, async t => {
+    const options = await fixture(t, scenario);
+    const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.code, code);
+    assert.equal(report.completeness, 'incomplete');
+    assert.ok(report.nextStep);
+    if (scenario === 'rate-limit') {
+      assert.equal(report.waitSeconds, 37);
+      assert.equal(report.purpose, 'tracker');
+      assert.equal(report.repository, 'acme/project');
+    }
+    assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret|synthetic-secret|PRIVATE KEY/);
+  });
 
-for (const unsafe of ['permissions', 'symlink']) test(`IssueTracker.checkAccess refuses ${unsafe} key without trying another identity`, async t => {
-  const options = await fixture(t);
-  const key = join(options.root, 'credentials/app.pem');
-  if (unsafe === 'permissions') await chmod(key, 0o644);
-  else { await rm(key); await symlink('absent.pem', key); }
-  const report = await createIssueTracker({ github: createGitHubAccess({ ...options, executable: '/does-not-exist', appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
-  assert.equal(report.status, 'blocked');
-  assert.notEqual(report.code, 'GITHUB_TRANSPORT_UNAVAILABLE');
-  assert.doesNotMatch(JSON.stringify(report), /PRIVATE KEY/);
-});
+for (const unsafe of ['permissions', 'symlink'])
+  test(`IssueTracker.checkAccess refuses ${unsafe} key without trying another identity`, async t => {
+    const options = await fixture(t);
+    const key = join(options.root, 'credentials/app.pem');
+    if (unsafe === 'permissions') await chmod(key, 0o644);
+    else {
+      await rm(key);
+      await symlink('absent.pem', key);
+    }
+    const report = await createIssueTracker({
+      github: createGitHubAccess({ ...options, executable: '/does-not-exist', appId: 1, privateKeyFile: 'credentials/app.pem' }),
+    }).checkAccess(scope);
+    assert.equal(report.status, 'blocked');
+    assert.notEqual(report.code, 'GITHUB_TRANSPORT_UNAVAILABLE');
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE KEY/);
+  });
 
 for (const scenario of ['post-rate-limit-429', 'post-rate-limit-403']) {
   test(`IssueTracker.checkAccess preserves the wait on known rejected issuance: ${scenario}`, async t => {
@@ -281,23 +340,24 @@ for (const [scenario, code] of [
   ['native-status', 'GITHUB_QUERY_FAILED'],
   ['native-duplicate', 'GITHUB_TRANSPORT_UNAVAILABLE'],
   ['native-oversize', 'GITHUB_TRANSPORT_UNAVAILABLE'],
-]) test(`IssueTracker.checkAccess native contract rejects ${scenario} with sanitized failure`, async t => {
-  const options = await fixture(t, scenario);
-  const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
-  assert.equal(report.status, 'blocked');
-  assert.equal(report.code, code);
-  if (scenario === 'uncertain-post') {
-    assert.match(report.nextStep, /outcome is unknown.*Do not repeat POST automatically/);
-    assert.equal(report.waitSeconds, undefined);
-  }
-  if (scenario === 'uncertain-post' || scenario === 'known-post-rejected') {
-    assert.equal(options.native.tokenPosts, 1);
-    assert.deepEqual(options.native.trace, ['GET /app', 'GET /app/installations/2', 'POST /app/installations/2/access_tokens']);
-    assert.equal(await options.ghTrace(), '');
-    t.diagnostic(JSON.stringify({ ...options.native, operationalGhCalls: 0 }));
-  }
-  assert.doesNotMatch(JSON.stringify(report), /synthetic-secret|synthetic-installation-secret|PRIVATE KEY/);
-});
+])
+  test(`IssueTracker.checkAccess native contract rejects ${scenario} with sanitized failure`, async t => {
+    const options = await fixture(t, scenario);
+    const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.code, code);
+    if (scenario === 'uncertain-post') {
+      assert.match(report.nextStep, /outcome is unknown.*Do not repeat POST automatically/);
+      assert.equal(report.waitSeconds, undefined);
+    }
+    if (scenario === 'uncertain-post' || scenario === 'known-post-rejected') {
+      assert.equal(options.native.tokenPosts, 1);
+      assert.deepEqual(options.native.trace, ['GET /app', 'GET /app/installations/2', 'POST /app/installations/2/access_tokens']);
+      assert.equal(await options.ghTrace(), '');
+      t.diagnostic(JSON.stringify({ ...options.native, operationalGhCalls: 0 }));
+    }
+    assert.doesNotMatch(JSON.stringify(report), /synthetic-secret|synthetic-installation-secret|PRIVATE KEY/);
+  });
 
 for (const scenario of ['token-trailing-lf', 'token-trailing-cr', 'token-trailing-crlf', 'token-tab', 'token-nul', 'token-del']) {
   test(`IssueTracker.checkAccess rejects invalid token68 before operational gh use: ${scenario}`, async t => {
@@ -323,7 +383,13 @@ test('IssueTracker.checkAccess accepts an opaque RFC 6750 token without leaking 
 
 test('CodeRepository.checkAccess reports only the exact missing minimum rights before issuance', async t => {
   const options = await fixture(t, 'missing-rights');
-  const report = await createCodeRepository({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope, 'main');
+  const report = await createCodeRepository({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(
+    scope,
+    'main',
+  );
   assert.equal(report.code, 'INSUFFICIENT_APP_PERMISSIONS');
-  assert.equal(report.nextStep, 'Operator must provide only the missing minimum installation permissions for repository: checks:read, statuses:read, actions:read, administration:read. Do not widen Workflows or retry issuance before correction.');
+  assert.equal(
+    report.nextStep,
+    'Operator must provide only the missing minimum installation permissions for repository: checks:read, statuses:read, actions:read, administration:read. Do not widen Workflows or retry issuance before correction.',
+  );
 });

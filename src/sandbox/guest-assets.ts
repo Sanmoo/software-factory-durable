@@ -22,7 +22,9 @@ const manifestSchema = z.object({
 });
 const nextStep = 'Supply pinned assets through trusted composition; integrity checks do not qualify a release or prove boot.';
 class AssetFailure extends Error {
-  constructor(readonly code: string) { super(code); }
+  constructor(readonly code: string) {
+    super(code);
+  }
 }
 
 async function readAsset(directory: string, name: string, expected: string, manifest = false) {
@@ -57,35 +59,51 @@ async function readAsset(directory: string, name: string, expected: string, mani
     }
     if (digest.digest('hex') !== expected) throw new AssetFailure('CHECKSUM_MISMATCH');
     return manifest ? Buffer.concat(chunks).toString('utf8') : '';
-  } finally { await handle.close(); }
+  } finally {
+    await handle.close();
+  }
 }
 
 function failure(id: string, error: unknown): Diagnostic {
   const fsCode = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-  const code = error instanceof AssetFailure ? error.code : fsCode === 'ENOENT' ? 'MISSING'
-    : fsCode === 'ELOOP' ? 'UNSAFE_PATH' : 'UNREADABLE';
+  const code = error instanceof AssetFailure ? error.code : fsCode === 'ENOENT' ? 'MISSING' : fsCode === 'ELOOP' ? 'UNSAFE_PATH' : 'UNREADABLE';
   return { id, status: 'blocked', message: code, nextStep };
 }
 
 export async function inspectGuestAssets(pin?: GuestAssetPin): Promise<Diagnostic[]> {
-  if (!pin) return [{ id: 'guest-assets', status: 'blocked',
-    message: 'Explicit guest asset directory and trusted manifest SHA256 are required; no discovery or download was attempted.', nextStep }];
+  if (!pin)
+    return [
+      {
+        id: 'guest-assets',
+        status: 'blocked',
+        message: 'Explicit guest asset directory and trusted manifest SHA256 are required; no discovery or download was attempted.',
+        nextStep,
+      },
+    ];
   const checks: Diagnostic[] = [];
   let manifest;
   try {
     if (!isAbsolute(pin.directory) || !sha256.safeParse(pin.manifestSha256).success) throw new AssetFailure('INVALID_PIN');
     const directory = resolve(pin.directory);
-    if (await realpath(directory) !== directory || !(await lstat(directory)).isDirectory()) throw new AssetFailure('UNSAFE_PATH');
+    if ((await realpath(directory)) !== directory || !(await lstat(directory)).isDirectory()) throw new AssetFailure('UNSAFE_PATH');
     const content = await readAsset(directory, 'manifest.json', pin.manifestSha256, true);
     let input: unknown;
-    try { input = JSON.parse(content); } catch { throw new AssetFailure('MALFORMED_MANIFEST'); }
+    try {
+      input = JSON.parse(content);
+    } catch {
+      throw new AssetFailure('MALFORMED_MANIFEST');
+    }
     const parsed = manifestSchema.safeParse(input);
     if (!parsed.success) throw new AssetFailure('INCOMPLETE_MANIFEST');
     manifest = parsed.data;
     if (manifest.version !== 1) throw new AssetFailure('INCOMPATIBLE_MANIFEST_VERSION');
     if (manifest.config.arch !== 'x86_64' || manifest.config.distro !== 'alpine') throw new AssetFailure('INCOMPATIBLE_PROFILE');
-    checks.push({ id: 'guest-assets:manifest', status: 'ok',
-      message: 'Manifest SHA256 matches the explicit pin; x86_64/Alpine integrity metadata present. No authenticity or build qualification asserted.', nextStep });
+    checks.push({
+      id: 'guest-assets:manifest',
+      status: 'ok',
+      message: 'Manifest SHA256 matches the explicit pin; x86_64/Alpine integrity metadata present. No authenticity or build qualification asserted.',
+      nextStep,
+    });
     const names = new Set<string>();
     for (const asset of ['kernel', 'initramfs', 'rootfs'] as const) {
       const id = `guest-assets:${asset}`;
@@ -95,8 +113,12 @@ export async function inspectGuestAssets(pin?: GuestAssetPin): Promise<Diagnosti
         names.add(name);
         await readAsset(directory, name, manifest.checksums[asset]);
         checks.push({ id, status: 'ok', message: 'SHA256 matches pinned manifest; regular non-aliased file inspected without boot.', nextStep });
-      } catch (error) { checks.push(failure(id, error)); }
+      } catch (error) {
+        checks.push(failure(id, error));
+      }
     }
-  } catch (error) { checks.push(failure('guest-assets:manifest', error)); }
+  } catch (error) {
+    checks.push(failure('guest-assets:manifest', error));
+  }
   return checks;
 }

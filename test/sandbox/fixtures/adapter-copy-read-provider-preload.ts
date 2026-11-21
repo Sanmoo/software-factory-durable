@@ -7,7 +7,8 @@ assert.deepEqual(Object.keys(process.env).sort(), ['LANG', 'LC_ALL', 'NODE_DISAB
 let attempts = 0;
 let copy = '';
 globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
-  attempts++; process.send?.({ kind: 'provider-attempt', count: attempts });
+  attempts++;
+  process.send?.({ kind: 'provider-attempt', count: attempts });
   assert.equal(input instanceof Request ? input.url : String(input), 'https://offline.invalid/chat/completions');
   const headers = input instanceof Request ? input.headers : new Headers(init?.headers);
   assert.equal(headers.get('authorization'), 'Bearer synthetic-key');
@@ -23,20 +24,43 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   assert.ok(attempts <= (publish ? 4 : 2));
   const toolResults = parsed.messages.filter((m: { role: string }) => m.role === 'tool');
   if (publish && attempts === 2) {
-    const match = body.match(/Full output: (\/artifacts\/factory-output-[0-9a-f-]{36}\.txt)/); assert.ok(match); copy = match[1]!;
+    const match = body.match(/Full output: (\/artifacts\/factory-output-[0-9a-f-]{36}\.txt)/);
+    assert.ok(match);
+    copy = match[1]!;
   } else if (!publish) {
-    const match = body.match(/\/artifacts\/factory-output-[0-9a-f-]{36}\.txt/); assert.ok(match); copy = match[0];
+    const match = body.match(/\/artifacts\/factory-output-[0-9a-f-]{36}\.txt/);
+    assert.ok(match);
+    copy = match[0];
   }
   if (attempts > (publish ? 2 : 1)) {
     const last = JSON.stringify(toolResults.at(-1));
     if (allowed) assert.match(last, publish && attempts === 3 ? /head π █ █ █/ : /tail π/);
     else assert.match(last, /READ_PATH_DENIED/);
   }
-  const call = publish && attempts === 1 ? { name: 'bash', arguments: JSON.stringify({ command: "printf 'syn''thetic-se''cret'; printf 'tail π' >&2" }) }
-    : attempts <= (publish ? 3 : 1) ? { name: 'read', arguments: JSON.stringify({ path: copy, offset: publish && attempts === 2 ? 1 : 80002, limit: 1, selectedOutputCopies: [copy], copyOutput: true }) } : undefined;
+  const call =
+    publish && attempts === 1
+      ? { name: 'bash', arguments: JSON.stringify({ command: "printf 'syn''thetic-se''cret'; printf 'tail π' >&2" }) }
+      : attempts <= (publish ? 3 : 1)
+        ? {
+            name: 'read',
+            arguments: JSON.stringify({ path: copy, offset: publish && attempts === 2 ? 1 : 80002, limit: 1, selectedOutputCopies: [copy], copyOutput: true }),
+          }
+        : undefined;
   process.send?.({ kind: 'provider-validated', count: attempts });
-  const choices = call ? [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + attempts, type: 'function', function: call }] }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'tool_calls' }]
-    : [{ index: 0, delta: { role: 'assistant', content: 'Complete.' }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'stop' }];
-  const events = choices.map(choice => 'data: ' + JSON.stringify({ id: 'copy-read-' + attempts, object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) + '\n\n').join('');
+  const choices = call
+    ? [
+        { index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + attempts, type: 'function', function: call }] }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'tool_calls' },
+      ]
+    : [
+        { index: 0, delta: { role: 'assistant', content: 'Complete.' }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'stop' },
+      ];
+  const events = choices
+    .map(
+      choice =>
+        'data: ' + JSON.stringify({ id: 'copy-read-' + attempts, object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) + '\n\n',
+    )
+    .join('');
   return new Response(events + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
 };

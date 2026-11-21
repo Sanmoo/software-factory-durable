@@ -15,9 +15,12 @@ const exempt: Record<string, string> = {
   'test/entrypoints/finite-qualification-provider.ts': 'scripted model provider of the finite qualification recipe: Bash tool arguments (seconds)',
   'test/workers/native-builder-bash.test.ts': 'the Bash tool `timeout` argument is the input under test (its expiry path), not a test timer',
   'test/workers/skill-pack-v8.test.ts': 'the skill text under test tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
-  'test/workers/skill-pack-v9.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
-  'test/workers/skill-pack-v10.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
-  'test/workers/skill-pack-v11.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
+  'test/workers/skill-pack-v9.test.ts':
+    'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
+  'test/workers/skill-pack-v10.test.ts':
+    'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
+  'test/workers/skill-pack-v11.test.ts':
+    'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
 };
 
 function sources(directory: string, root: string): string[] {
@@ -69,15 +72,35 @@ test('the detector finds numeric timeouts and counted wait loops, and leaves bud
   assert.deepEqual(fixedTimers("test('x', { timeout: 15000 }, async () => {});"), ['1: numeric timeout']);
   assert.deepEqual(fixedTimers("spawnSync(node, [], { encoding: 'utf8', timeout: 30_000 });"), ['1: numeric timeout']);
   assert.deepEqual(fixedTimers('for (let i = 0; i < 800; i++) {\n  if (await ready()) return;\n  await delay(10);\n}'), ['1: wait loop with a fixed count']);
-  assert.deepEqual(fixedTimers('for (let i = 0; i < 400 && !done(); i++) await new Promise(resolve => setTimeout(resolve, 5));'), ['1: wait loop with a fixed count']);
+  assert.deepEqual(fixedTimers('for (let i = 0; i < 400 && !done(); i++) await new Promise(resolve => setTimeout(resolve, 5));'), [
+    '1: wait loop with a fixed count',
+  ]);
   assert.deepEqual(fixedTimers("test('x', { timeout: remainingMs() }, async () => {});"), []);
-  assert.deepEqual(fixedTimers('for (let i = 0; i < 800; i++) {\n  const work = await show();\n  if (work) break;\n  if (time.isSleeping()) time.advance();\n  const x = 1;\n  await new Promise(resolve => setTimeout(resolve, 5));\n}'),
-    ['1: wait loop with a fixed count'], 'the whole braced body, however long');
-  assert.deepEqual(fixedTimers('for (let i = 0; i < 6000 && !(await work())?.readiness; i++) {\n  if (time.isSleeping()) time.advance();\n  await new Promise(resolve => setTimeout(resolve, 10));\n}'),
-    ['1: wait loop with a fixed count'], 'a call in the header condition');
-  assert.deepEqual(fixedTimers('for (let offset = 0; offset < 12; offset++) {\n  await new Promise(resolve => setTimeout(resolve, offset * 5));\n  assert.ok(check());\n}'), [], 'a sweep is not a poll');
+  assert.deepEqual(
+    fixedTimers(
+      'for (let i = 0; i < 800; i++) {\n  const work = await show();\n  if (work) break;\n  if (time.isSleeping()) time.advance();\n  const x = 1;\n  await new Promise(resolve => setTimeout(resolve, 5));\n}',
+    ),
+    ['1: wait loop with a fixed count'],
+    'the whole braced body, however long',
+  );
+  assert.deepEqual(
+    fixedTimers(
+      'for (let i = 0; i < 6000 && !(await work())?.readiness; i++) {\n  if (time.isSleeping()) time.advance();\n  await new Promise(resolve => setTimeout(resolve, 10));\n}',
+    ),
+    ['1: wait loop with a fixed count'],
+    'a call in the header condition',
+  );
+  assert.deepEqual(
+    fixedTimers('for (let offset = 0; offset < 12; offset++) {\n  await new Promise(resolve => setTimeout(resolve, offset * 5));\n  assert.ok(check());\n}'),
+    [],
+    'a sweep is not a poll',
+  );
   assert.deepEqual(fixedTimers('for (let i = 0; i < 128; i++) records.registerSecret(`s-${i}`);'), []);
-  assert.deepEqual(fixedTimers('for (let i = 0; i < 10; i++) {\n  try { await mkdir(root); return root; } catch {}\n}\nawait delay(5);'), [], 'a wait after the loop is not in it');
+  assert.deepEqual(
+    fixedTimers('for (let i = 0; i < 10; i++) {\n  try { await mkdir(root); return root; } catch {}\n}\nawait delay(5);'),
+    [],
+    'a wait after the loop is not in it',
+  );
   assert.deepEqual(fixedTimers('for (let round = 0; round < 3; round++) { h.time.advance(); await h.time.sleeping(); }'), [], 'fake clock steps are not waits');
 });
 

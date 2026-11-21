@@ -57,22 +57,52 @@ export const compositionMarkers = {
 } as const;
 
 export type ReleaseIdentity = {
-  release: string; commit: string; commitTime: string; branch: string; dirty: false; archive: string; archiveSha256: string; manifestSha256: string;
-  guestAssets: { manifestSha256: string }; lockfileSha256: string; node: string; markers: Record<keyof typeof compositionMarkers, boolean>;
-  root: string; unit: string; builtAt: string };
+  release: string;
+  commit: string;
+  commitTime: string;
+  branch: string;
+  dirty: false;
+  archive: string;
+  archiveSha256: string;
+  manifestSha256: string;
+  guestAssets: { manifestSha256: string };
+  lockfileSha256: string;
+  node: string;
+  markers: Record<keyof typeof compositionMarkers, boolean>;
+  root: string;
+  unit: string;
+  builtAt: string;
+};
 /** The Factory stamp every R-CAND result carries (closes the ticket 34 finding that no real-run JSON records the Factory commit). */
-export type FactoryStamp = { release: string; commit: string; manifestSha256: string; archiveSha256: string; root: string;
+export type FactoryStamp = {
+  release: string;
+  commit: string;
+  manifestSha256: string;
+  archiveSha256: string;
+  root: string;
   /** How the stamp was obtained at this phase: the installed manifest re-hashed AND the release's own doctor (every byte re-verified). */
-  verifiedBy: string };
+  verifiedBy: string;
+};
 
 /** Known credential shapes (GitHub, OpenAI incl. sk-proj-, Anthropic sk-ant-, JWT, OAuth access/refresh, Google ya29., PEM keys, Bearer). */
-export const secretPatterns = [/gh[opsur]_[A-Za-z0-9]{20,}/g, /github_pat_[A-Za-z0-9_]{20,}/g, /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
-  /\bsk-(?:proj-|ant-[a-z0-9]+-)?[A-Za-z0-9_-]{20,}/g, /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, /"(?:access|refresh|id)_token"\s*:\s*"[^"]+"/g,
-  /\bya29\.[A-Za-z0-9._-]{20,}/g, /Bearer [A-Za-z0-9._~+/=-]{20,}/g];
+export const secretPatterns = [
+  /gh[opsur]_[A-Za-z0-9]{20,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+  /\bsk-(?:proj-|ant-[a-z0-9]+-)?[A-Za-z0-9_-]{20,}/g,
+  /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+  /"(?:access|refresh|id)_token"\s*:\s*"[^"]+"/g,
+  /\bya29\.[A-Za-z0-9._-]{20,}/g,
+  /Bearer [A-Za-z0-9._~+/=-]{20,}/g,
+];
 /** Every match replaced BEFORE anything is kept or saved; returns the redacted text and how many matches were found. */
 export function redact(text: string): { text: string; found: number } {
   let found = 0;
-  for (const pattern of secretPatterns) text = text.replace(pattern, () => { found++; return '[REDACTED]'; });
+  for (const pattern of secretPatterns)
+    text = text.replace(pattern, () => {
+      found++;
+      return '[REDACTED]';
+    });
   return { text, found };
 }
 /** Bytes scan (storage, sessions): only whether a secret shape occurs and how often, never the match. */
@@ -93,35 +123,68 @@ export function observationWriter(directory: string, stamp: () => Record<string,
     const body = found ? text.replace(/^\{/, `{\n "redactedSecretShapes": ${found},`) : text;
     if (Buffer.byteLength(body) > 16 * 1024 * 1024) throw new Error('OBSERVATION_LIMIT');
     const file = await fs.open(`${directory}/${name}.json`, 'wx', 0o600);
-    try { await file.writeFile(body); await file.sync(); } finally { await file.close(); }
+    try {
+      await file.writeFile(body);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
   };
 }
 
 /** Minimal environment for host commands (systemctl --user needs the user bus); never the caller's tokens or GH_* variables. */
 export function hostEnvironment(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const uid = process.getuid?.() ?? 1000;
-  return { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', HOME: env.HOME ?? '/home/sanmoo', XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR ?? `/run/user/${uid}`,
-    DBUS_SESSION_BUS_ADDRESS: env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=/run/user/${uid}/bus` };
+  return {
+    PATH: '/usr/bin:/bin',
+    LANG: 'C',
+    LC_ALL: 'C',
+    HOME: env.HOME ?? '/home/sanmoo',
+    XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR ?? `/run/user/${uid}`,
+    DBUS_SESSION_BUS_ADDRESS: env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=/run/user/${uid}/bus`,
+  };
 }
 
 /** Bounded command (no shell, no implicit retry); stdout/stderr redacted before they are returned. */
 export async function command(executable: string, args: readonly string[], options: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } = {}) {
   const { spawnSync } = await import('node:child_process');
-  const result = spawnSync(executable, [...args], { cwd: options.cwd ?? '/', encoding: 'utf8', timeout: options.timeoutMs ?? 120_000, maxBuffer: 64 * 1024 * 1024,
-    env: options.env ?? hostEnvironment(), shell: false });
-  const out = redact(result.stdout ?? ''), err = redact((result.stderr ?? '').slice(-65536));
-  return { args: [executable, ...args], status: result.status, signal: result.signal, stdout: out.text, stderr: err.text, secrets: out.found + err.found,
-    error: result.error ? (result.error as NodeJS.ErrnoException).code ?? 'SPAWN_FAILED' : null };
+  const result = spawnSync(executable, [...args], {
+    cwd: options.cwd ?? '/',
+    encoding: 'utf8',
+    timeout: options.timeoutMs ?? 120_000,
+    maxBuffer: 64 * 1024 * 1024,
+    env: options.env ?? hostEnvironment(),
+    shell: false,
+  });
+  const out = redact(result.stdout ?? ''),
+    err = redact((result.stderr ?? '').slice(-65536));
+  return {
+    args: [executable, ...args],
+    status: result.status,
+    signal: result.signal,
+    stdout: out.text,
+    stderr: err.text,
+    secrets: out.found + err.found,
+    error: result.error ? ((result.error as NodeJS.ErrnoException).code ?? 'SPAWN_FAILED') : null,
+  };
 }
 
 /** `systemctl --user show` properties as an object (pure parser). */
 export function parseShow(text: string): Record<string, string> {
-  return Object.fromEntries(text.split('\n').filter(line => line.includes('=')).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+  return Object.fromEntries(
+    text
+      .split('\n')
+      .filter(line => line.includes('='))
+      .map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+  );
 }
 
 /** Mount points at or below `root` in a /proc/self/mountinfo text (field 5, octal escapes decoded). A removal never crosses one. */
 export function mountsBelow(mountinfo: string, root: string): string[] {
-  return mountinfo.split('\n').map(line => line.split(' ')[4]).filter((point): point is string => !!point)
+  return mountinfo
+    .split('\n')
+    .map(line => line.split(' ')[4])
+    .filter((point): point is string => !!point)
     .map(point => point.replace(/\\([0-7]{3})/g, (_, octal: string) => String.fromCharCode(parseInt(octal, 8))))
     .filter(point => point === root || point.startsWith(`${root}/`));
 }

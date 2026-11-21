@@ -11,20 +11,38 @@ import { sdkProfile } from '../../src/workers/sdk-profile.js';
 // I-local: real Pi SDK session + real owner Read binding/Records/Protocol; only the provider HTTP boundary and the VM are doubled. The VM
 // double reproduces the guest program's own Builder rule (exact path in the Host-selected list, no symlink resolution difference) and serves
 // the real seeded pack bytes. Real-run finding (q10 ask v1): the Builder could not read /artifacts/.../factory-skills-v2/.../SKILL.md.
-const context: ToolContext = { workId: 'work-pack', executionId: 'exec-pack', invocationId: 'builder-pack', role: 'builder', environmentRef: 'env-pack', bootRef: 'boot-pack', phaseId: 'p' };
+const context: ToolContext = {
+  workId: 'work-pack',
+  executionId: 'exec-pack',
+  invocationId: 'builder-pack',
+  role: 'builder',
+  environmentRef: 'env-pack',
+  bootRef: 'boot-pack',
+  phaseId: 'p',
+};
 type Id = keyof typeof skillPacks;
 
 async function run(t: { after(fn: () => Promise<void>): void }, pack: Id, paths: string[]) {
   const guestCalls: string[] = [];
   const files = await skillPackGuestFiles(pack);
-  const f = await nativeOwner(context, { exec(argv) {
-    const [path, role, selected] = [argv[5]!, argv[6], JSON.parse(argv[7] ?? '[]') as string[]];
-    guestCalls.push(path);
-    const allowed = role === 'builder' && selected.includes(path);
-    const local = Object.values(skillPacks).find(entry => path.startsWith(`${entry.guestDirectory}/`));
-    return { async *output() { if (allowed && local) yield { stream: 'stdout' as const, data: await readFile(join(local.directory, path.slice(local.guestDirectory.length + 1))) }; },
-      result: Promise.resolve({ exitCode: allowed && local ? 0 : 1 }) };
-  } }, { skillPackFiles: files });
+  const f = await nativeOwner(
+    context,
+    {
+      exec(argv) {
+        const [path, role, selected] = [argv[5]!, argv[6], JSON.parse(argv[7] ?? '[]') as string[]];
+        guestCalls.push(path);
+        const allowed = role === 'builder' && selected.includes(path);
+        const local = Object.values(skillPacks).find(entry => path.startsWith(`${entry.guestDirectory}/`));
+        return {
+          async *output() {
+            if (allowed && local) yield { stream: 'stdout' as const, data: await readFile(join(local.directory, path.slice(local.guestDirectory.length + 1))) };
+          },
+          result: Promise.resolve({ exitCode: allowed && local ? 0 : 1 }),
+        };
+      },
+    },
+    { skillPackFiles: files },
+  );
   t.after(() => f.close());
   const directory = join(f.root, 'profile');
   await mkdir(join(directory, 'sessions'), { recursive: true, mode: 0o700 });
@@ -32,18 +50,62 @@ async function run(t: { after(fn: () => Promise<void>): void }, pack: Id, paths:
   let requests = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
-    const body = String(init?.body); bodies.push(body);
+    const body = String(init?.body);
+    bodies.push(body);
     const call = paths[requests++];
-    const choices = call ? [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: `read-${requests}`, type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: call }) } }] }, finish_reason: null },
-      { index: 0, delta: {}, finish_reason: 'tool_calls' }] : [{ index: 0, delta: { role: 'assistant', content: 'done' }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'stop' }];
-    return new Response(choices.map(choice => 'data: ' + JSON.stringify({ id: 'r', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [choice] }) + '\n\n').join('') + 'data: [DONE]\n\n',
-      { headers: { 'Content-Type': 'text/event-stream' } });
+    const choices = call
+      ? [
+          {
+            index: 0,
+            delta: {
+              role: 'assistant',
+              tool_calls: [{ index: 0, id: `read-${requests}`, type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: call }) } }],
+            },
+            finish_reason: null,
+          },
+          { index: 0, delta: {}, finish_reason: 'tool_calls' },
+        ]
+      : [
+          { index: 0, delta: { role: 'assistant', content: 'done' }, finish_reason: null },
+          { index: 0, delta: {}, finish_reason: 'stop' },
+        ];
+    return new Response(
+      choices
+        .map(choice => 'data: ' + JSON.stringify({ id: 'r', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [choice] }) + '\n\n')
+        .join('') + 'data: [DONE]\n\n',
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    );
   };
-  t.after(async () => { globalThis.fetch = originalFetch; });
-  const session = createWorkerSession({ profile: { id: sdkProfile.id, directory, systemPrompt: 'Builder pack read fixture.', providerId: 'fixture', modelId: 'm', apiKey: 'synthetic-key',
-    provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [{ id: 'm', name: 'm', reasoning: false, input: ['text'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 1000 }] } }, records: f.records,
-  sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }) });
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+  });
+  const session = createWorkerSession({
+    profile: {
+      id: sdkProfile.id,
+      directory,
+      systemPrompt: 'Builder pack read fixture.',
+      providerId: 'fixture',
+      modelId: 'm',
+      apiKey: 'synthetic-key',
+      provider: {
+        api: 'openai-completions',
+        baseUrl: 'https://offline.invalid',
+        models: [
+          {
+            id: 'm',
+            name: 'm',
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 200000,
+            maxTokens: 1000,
+          },
+        ],
+      },
+    },
+    records: f.records,
+    sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }),
+  });
   // No copyOutput: the pack is the ONLY Builder Read authority here.
   const result = await session.activate({ context, prompt: 'Read the skill.', signal: f.authority.signal, skillPack: pack });
   return { result, bodies, guestCalls, files };
@@ -51,7 +113,11 @@ async function run(t: { after(fn: () => Promise<void>): void }, pack: Id, paths:
 
 test('real-run fix: a v2 Builder reads exactly its seeded v2 pack files (SKILL.md with section 4); other /artifacts paths stay denied', async t => {
   const v2 = '/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md';
-  const { result, bodies, guestCalls, files } = await run(t, 'factory-skills-v2', [v2, '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md', '/artifacts/spec/v1/ticket.json']);
+  const { result, bodies, guestCalls, files } = await run(t, 'factory-skills-v2', [
+    v2,
+    '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md',
+    '/artifacts/spec/v1/ticket.json',
+  ]);
   assert.equal(result.status, 'completed');
   assert.ok(files.includes(v2) && files.every(path => path.startsWith('/artifacts/factory/skill-pack/factory-skills-v2/')));
   assert.match(bodies[1]!, /## 4\. Resume after an answer/, 'the v2 SKILL.md reached the model');
@@ -59,9 +125,13 @@ test('real-run fix: a v2 Builder reads exactly its seeded v2 pack files (SKILL.m
   assert.match(bodies[3]!, /READ_PATH_DENIED/, 'nothing else under /artifacts becomes readable');
   assert.deepEqual(guestCalls, [v2], 'denied paths never reach the guest');
   for (const path of ['prompts/implement.md', 'prompts/pr.md', 'skills/implement/SKILL.md']) {
-    for (const line of (await readFile(join(skillPacks['factory-skills-v2'].directory, path), 'utf8')).match(/\/artifacts\/factory\/skill-pack\/[^\s`)]+/g) ?? []) {
+    for (const line of (await readFile(join(skillPacks['factory-skills-v2'].directory, path), 'utf8')).match(/\/artifacts\/factory\/skill-pack\/[^\s`)]+/g) ??
+      []) {
       const referenced = line.replace(/[.,;:]$/, '');
-      assert.ok(referenced.endsWith('/') ? files.some(file => file.startsWith(referenced)) : files.includes(referenced), `${path} references a readable v2 path: ${referenced}`);
+      assert.ok(
+        referenced.endsWith('/') ? files.some(file => file.startsWith(referenced)) : files.includes(referenced),
+        `${path} references a readable v2 path: ${referenced}`,
+      );
     }
   }
 });

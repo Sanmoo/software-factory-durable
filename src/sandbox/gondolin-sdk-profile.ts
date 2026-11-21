@@ -14,9 +14,15 @@ export const gondolinSdkProfile = Object.freeze({
 });
 const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const json = (value: unknown) => JSON.stringify(value) + '\n';
-function deny(reason: string): never { throw new Error(`GONDOLIN_${reason}`); }
+function deny(reason: string): never {
+  throw new Error(`GONDOLIN_${reason}`);
+}
 function parse(text: string) {
-  try { return JSON.parse(text); } catch { return deny('INVALID_JSON'); }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return deny('INVALID_JSON');
+  }
 }
 function comparePaths(a: string, b: string) {
   if (a < b) return -1;
@@ -25,22 +31,41 @@ function comparePaths(a: string, b: string) {
 }
 type Entry = [string, 'directory'] | [string, 'file', string, number, number];
 interface Provenance {
-  candidateHead: string; sdkCodeCommit: string; original133SHA256: string; licenseSHA256: string;
-  original: Entry[]; copied: Entry[]; originalTreeSHA256: string; copiedTreeSHA256: string;
+  candidateHead: string;
+  sdkCodeCommit: string;
+  original133SHA256: string;
+  licenseSHA256: string;
+  original: Entry[];
+  copied: Entry[];
+  originalTreeSHA256: string;
+  copiedTreeSHA256: string;
   dependencies: { name: string; version: string; integrity: string; packageSHA256: string }[];
 }
-interface Correction { path: string; beforeSha256: string | null; afterSha256: string; afterBytes: number; }
+interface Correction {
+  path: string;
+  beforeSha256: string | null;
+  afterSha256: string;
+  afterBytes: number;
+}
 
 /** Refuse links (including ancestor links), foreign ownership, writable shared paths and hard links. */
 async function checked(path: string, type: 'file' | 'directory') {
   const info = await lstat(path);
-  if (await realpath(path) !== path || info.uid !== process.getuid?.() || (info.mode & 0o7022) ||
-      (type === 'file' ? !info.isFile() || info.nlink !== 1 : !info.isDirectory())) deny('UNSAFE_PATH');
+  if (
+    (await realpath(path)) !== path ||
+    info.uid !== process.getuid?.() ||
+    info.mode & 0o7022 ||
+    (type === 'file' ? !info.isFile() || info.nlink !== 1 : !info.isDirectory())
+  )
+    deny('UNSAFE_PATH');
   return info;
 }
 async function directoryChain(base: string, relative: string) {
   let path = base;
-  for (const name of relative.split('/')) { path = join(path, name); await checked(path, 'directory'); }
+  for (const name of relative.split('/')) {
+    path = join(path, name);
+    await checked(path, 'directory');
+  }
 }
 async function bytes(path: string) {
   await checked(path, 'file');
@@ -48,11 +73,13 @@ async function bytes(path: string) {
 }
 // Specific distribution inventory, not an executable closure or guest-asset inventory.
 async function inventory(root: string, expected: Entry[]): Promise<Entry[]> {
-  const entries: Entry[] = [], allowed = new Map(expected.map(entry => [entry[0], entry]));
+  const entries: Entry[] = [],
+    allowed = new Map(expected.map(entry => [entry[0], entry]));
   async function visit(relative: string): Promise<void> {
     const entry = allowed.get(relative);
     if (!entry) deny('TREE_SHAPE'); // Never open/hash unknown files or descend into unknown directories.
-    const path = join(root, relative), info = await lstat(path);
+    const path = join(root, relative),
+      info = await lstat(path);
     if (info.isDirectory()) {
       // Every directory in this exact published distribution is mode0755 (private parent is0700).
       if (entry[1] !== 'directory' || (info.mode & 0o7777) !== 0o755) deny('TREE_SHAPE');
@@ -81,18 +108,27 @@ async function context(project: string) {
   const lock = parse((await bytes(join(base, 'package-lock.json'))).toString());
   const pin = lock.packages?.['node_modules/@earendil-works/gondolin'];
   const pkg = parse((await bytes(join(source, 'package.json'))).toString());
-  if (pin?.version !== gondolinSdkProfile.version || pin?.integrity !== gondolinSdkProfile.integrity ||
-      pkg.name !== '@earendil-works/gondolin' || pkg.version !== gondolinSdkProfile.version || pkg.license !== 'Apache-2.0') deny('SOURCE_PIN');
+  if (
+    pin?.version !== gondolinSdkProfile.version ||
+    pin?.integrity !== gondolinSdkProfile.integrity ||
+    pkg.name !== '@earendil-works/gondolin' ||
+    pkg.version !== gondolinSdkProfile.version ||
+    pkg.license !== 'Apache-2.0'
+  )
+    deny('SOURCE_PIN');
   const data = join(base, 'docs/evidence/gondolin-sdk-v1');
   await directoryChain(base, 'docs/evidence/gondolin-sdk-v1');
   const provenanceBytes = await bytes(join(data, 'provenance.data'));
   if (sha(provenanceBytes) !== gondolinSdkProfile.provenanceSHA256) deny('PROVENANCE_PIN');
   const provenance: Provenance = parse(provenanceBytes.toString());
   const manifestBytes = await bytes(join(data, 'patch-manifest.data'));
-  if (sha(manifestBytes) !== gondolinSdkProfile.patchManifestSHA256 ||
-      sha(await bytes(join(data, 'native-stdin.patch'))) !== gondolinSdkProfile.patchSHA256 ||
-      sha(await bytes(join(data, 'original-133.data'))) !== provenance.original133SHA256 ||
-      sha(await bytes(join(data, 'LICENSE'))) !== provenance.licenseSHA256) deny('CANDIDATE_PIN');
+  if (
+    sha(manifestBytes) !== gondolinSdkProfile.patchManifestSHA256 ||
+    sha(await bytes(join(data, 'native-stdin.patch'))) !== gondolinSdkProfile.patchSHA256 ||
+    sha(await bytes(join(data, 'original-133.data'))) !== provenance.original133SHA256 ||
+    sha(await bytes(join(data, 'LICENSE'))) !== provenance.licenseSHA256
+  )
+    deny('CANDIDATE_PIN');
   const corrections: Correction[] = parse(manifestBytes.toString()).files;
   if (corrections.length !== 9 || corrections.filter(file => file.beforeSha256 === null).length !== 2) deny('CANDIDATE_COUNT');
   const corrected = new Map<string, Buffer>();
@@ -100,31 +136,53 @@ async function context(project: string) {
     // Manifest bytes are pinned above; no untrusted path/patch interpreter.
     await directoryChain(data, `corrected/${dirname(file.path)}`);
     const content = await bytes(join(data, 'corrected', `${file.path}.data`));
-    if (content.length !== file.afterBytes || sha(content) !== file.afterSha256 ||
-        (provenance.original.find(entry => entry[0] === file.path)?.[2] ?? null) !== file.beforeSha256 ||
-        provenance.copied.find(entry => entry[0] === file.path)?.[2] !== file.afterSha256) deny('CORRECTED_PIN');
+    if (
+      content.length !== file.afterBytes ||
+      sha(content) !== file.afterSha256 ||
+      (provenance.original.find(entry => entry[0] === file.path)?.[2] ?? null) !== file.beforeSha256 ||
+      provenance.copied.find(entry => entry[0] === file.path)?.[2] !== file.afterSha256
+    )
+      deny('CORRECTED_PIN');
     corrected.set(file.path, content);
   }
-  if (sha(json(provenance.original)) !== provenance.originalTreeSHA256 ||
-      sha(json(provenance.copied)) !== provenance.copiedTreeSHA256 ||
-      json(await inventory(source, provenance.original)) !== json(provenance.original)) deny('SOURCE_TREE');
+  if (
+    sha(json(provenance.original)) !== provenance.originalTreeSHA256 ||
+    sha(json(provenance.copied)) !== provenance.copiedTreeSHA256 ||
+    json(await inventory(source, provenance.original)) !== json(provenance.original)
+  )
+    deny('SOURCE_TREE');
   for (const dep of provenance.dependencies) {
     const pin = lock.packages?.[`node_modules/${dep.name}`];
     await directoryChain(dependencies, dep.name);
     const metadata = await bytes(join(dependencies, dep.name, 'package.json'));
     const pkg = parse(metadata.toString());
-    if (pin?.version !== dep.version || pin?.integrity !== dep.integrity || pkg.name !== dep.name ||
-        pkg.version !== dep.version || sha(metadata) !== dep.packageSHA256) deny('DEPENDENCY_PIN');
+    if (
+      pin?.version !== dep.version ||
+      pin?.integrity !== dep.integrity ||
+      pkg.name !== dep.name ||
+      pkg.version !== dep.version ||
+      sha(metadata) !== dep.packageSHA256
+    )
+      deny('DEPENDENCY_PIN');
   }
   await checked(join(base, '.scratch'), 'directory');
   const staging = join(base, gondolinSdkProfile.directory);
   const evidence = {
-    ...gondolinSdkProfile, candidateHead: provenance.candidateHead, sdkCodeCommit: provenance.sdkCodeCommit,
-    original133SHA256: provenance.original133SHA256, originalInventoryCount: 133,
-    originalTreeSHA256: provenance.originalTreeSHA256, copiedTreeSHA256: provenance.copiedTreeSHA256,
-    originalFiles: 407, copiedFiles: 409, modifiedFiles: 7, addedFiles: 2,
-    license: 'Apache-2.0', licenseSHA256: provenance.licenseSHA256,
-    dependencies: provenance.dependencies, dependencyLink: dependencies,
+    ...gondolinSdkProfile,
+    candidateHead: provenance.candidateHead,
+    sdkCodeCommit: provenance.sdkCodeCommit,
+    original133SHA256: provenance.original133SHA256,
+    originalInventoryCount: 133,
+    originalTreeSHA256: provenance.originalTreeSHA256,
+    copiedTreeSHA256: provenance.copiedTreeSHA256,
+    originalFiles: 407,
+    copiedFiles: 409,
+    modifiedFiles: 7,
+    addedFiles: 2,
+    license: 'Apache-2.0',
+    licenseSHA256: provenance.licenseSHA256,
+    dependencies: provenance.dependencies,
+    dependencyLink: dependencies,
     dependencyUsage: 'Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.',
     scope: 'Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification.',
   };
@@ -140,11 +198,17 @@ async function verifyPrepared(ctx: Awaited<ReturnType<typeof context>>) {
   const { staging, dependencies, provenance } = ctx;
   if (((await checked(staging, 'directory')).mode & 0o777) !== 0o700) deny('ROOT_MODE');
   if (json((await readdir(staging)).sort(comparePaths)) !== json(['node_modules', 'profile.json', 'sdk'])) deny('ROOT_DRIFT');
-  const link = join(staging, 'node_modules'), info = await lstat(link);
+  const link = join(staging, 'node_modules'),
+    info = await lstat(link);
   // Sole allowed escaping symlink: exact canonical installed dependency directory, never followed during SDK inventory.
   const target = info.isSymbolicLink() ? await readlink(link) : undefined;
-  if (!info.isSymbolicLink() || info.uid !== process.getuid?.() || (target !== dependencies && target !== releaseDependencyLink) ||
-      await realpath(link) !== dependencies) deny('DEPENDENCY_LINK');
+  if (
+    !info.isSymbolicLink() ||
+    info.uid !== process.getuid?.() ||
+    (target !== dependencies && target !== releaseDependencyLink) ||
+    (await realpath(link)) !== dependencies
+  )
+    deny('DEPENDENCY_LINK');
   const evidence = { ...ctx.evidence, dependencyLink: target };
   if (json(await inventory(join(staging, 'sdk'), provenance.copied)) !== json(provenance.copied)) deny('COPY_TREE');
   const record = join(staging, 'profile.json');
@@ -160,8 +224,9 @@ export async function verifyDevelopmentGondolinSdk(project = process.cwd()) {
 /** Offline, explicit preparation. Existing/incomplete/drifted roots are never repaired or removed. */
 export async function prepareDevelopmentGondolinSdk(project = process.cwd(), { dependencyLink = 'absolute' }: { dependencyLink?: DependencyLink } = {}) {
   const ctx = await context(project);
-  try { await mkdir(ctx.staging, { mode: 0o700 }); }
-  catch (error) {
+  try {
+    await mkdir(ctx.staging, { mode: 0o700 });
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     return verifyPrepared(ctx);
   }

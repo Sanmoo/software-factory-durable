@@ -1,12 +1,12 @@
 import tsParser from '@typescript-eslint/parser';
 
 const loadingRestrictions = [
-  { selector: "ImportExpression[source.type!='Literal']",
-    message: 'Authorial dynamic imports must use a string literal visible to dependency-cruiser.' },
-  { selector: "Identifier[name=/^(require|createRequire|getBuiltinModule|eval|Function)$/]",
-    message: 'Use statically analyzable ESM imports; opaque loaders cannot bypass architecture.' },
-  { selector: "ImportSpecifier[imported.name='createRequire']",
-    message: 'Use statically analyzable ESM imports, not an alias for a runtime loader.' },
+  { selector: "ImportExpression[source.type!='Literal']", message: 'Authorial dynamic imports must use a string literal visible to dependency-cruiser.' },
+  {
+    selector: 'Identifier[name=/^(require|createRequire|getBuiltinModule|eval|Function)$/]',
+    message: 'Use statically analyzable ESM imports; opaque loaders cannot bypass architecture.',
+  },
+  { selector: "ImportSpecifier[imported.name='createRequire']", message: 'Use statically analyzable ESM imports, not an alias for a runtime loader.' },
 ];
 
 export default [
@@ -19,21 +19,32 @@ export default [
   {
     files: ['src/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     ignores: ['src/workers/**'],
-    rules: { 'no-restricted-syntax': ['error', ...loadingRestrictions,
-      { selector: ":matches(ImportDeclaration,ExportNamedDeclaration,ExportAllDeclaration,ImportExpression)[source.value='#factory-pi']",
-        message: 'The private SDK alias is confined to Workers, like the upstream SDK.' },
-    ] },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...loadingRestrictions,
+        {
+          selector: ":matches(ImportDeclaration,ExportNamedDeclaration,ExportAllDeclaration,ImportExpression)[source.value='#factory-pi']",
+          message: 'The private SDK alias is confined to Workers, like the upstream SDK.',
+        },
+      ],
+    },
   },
   {
     files: ['src/control/rules/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     rules: {
-      'no-restricted-syntax': ['error', ...loadingRestrictions,
-        { selector: ":matches(ImportDeclaration,ExportNamedDeclaration,ExportAllDeclaration,ImportExpression)[source.value='#factory-pi']",
-          message: 'The private SDK alias is confined to Workers, like the upstream SDK.' },
-        { selector: "Identifier[name=/^(Date|performance|process|global|globalThis|setTimeout|setInterval|setImmediate)$/]",
-          message: 'Pure Control rules use injected data/time, not ambient clocks or I/O.' },
-        { selector: "MemberExpression[object.name='Math'][property.name='random']",
-          message: 'Pure Control rules use injected data, not ambient randomness.' },
+      'no-restricted-syntax': [
+        'error',
+        ...loadingRestrictions,
+        {
+          selector: ":matches(ImportDeclaration,ExportNamedDeclaration,ExportAllDeclaration,ImportExpression)[source.value='#factory-pi']",
+          message: 'The private SDK alias is confined to Workers, like the upstream SDK.',
+        },
+        {
+          selector: 'Identifier[name=/^(Date|performance|process|global|globalThis|setTimeout|setInterval|setImmediate)$/]',
+          message: 'Pure Control rules use injected data/time, not ambient clocks or I/O.',
+        },
+        { selector: "MemberExpression[object.name='Math'][property.name='random']", message: 'Pure Control rules use injected data, not ambient randomness.' },
       ],
     },
   },

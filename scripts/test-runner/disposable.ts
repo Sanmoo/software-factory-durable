@@ -6,8 +6,13 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export interface Copy { dir: string; edit(file: string, change: (text: string) => string): void; write(file: string, text: string): void;
-  commit(message: string): void; remove(): void }
+export interface Copy {
+  dir: string;
+  edit(file: string, change: (text: string) => string): void;
+  write(file: string, text: string): void;
+  commit(message: string): void;
+  remove(): void;
+}
 
 export function disposableCopy(project: string, name: string, fixture: (copy: Copy) => void = () => {}): Copy {
   const parent = join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'sf-disposable');
@@ -17,15 +22,21 @@ export function disposableCopy(project: string, name: string, fixture: (copy: Co
   for (const file of files) if (existsSync(join(project, file))) cpSync(join(project, file), join(dir, file), { recursive: true, verbatimSymlinks: true });
   execFileSync('cp', ['-a', '--reflink=auto', join(project, 'node_modules'), join(dir, 'node_modules')]);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
-  const copy: Copy = { dir,
+  const copy: Copy = {
+    dir,
     edit: (file, change) => {
-      const before = readFileSync(join(dir, file), 'utf8'), after = change(before);
+      const before = readFileSync(join(dir, file), 'utf8'),
+        after = change(before);
       if (after === before) throw new Error(`the edit of ${file} changed nothing`);
       writeFileSync(join(dir, file), after);
     },
     write: (file, text) => writeFileSync(join(dir, file), text),
-    commit: message => { git('add', '-A'); git('-c', 'user.name=disposable', '-c', 'user.email=disposable@example.invalid', 'commit', '-q', '--allow-empty', '-m', message); },
-    remove: () => rmSync(dir, { recursive: true, force: true }) };
+    commit: message => {
+      git('add', '-A');
+      git('-c', 'user.name=disposable', '-c', 'user.email=disposable@example.invalid', 'commit', '-q', '--allow-empty', '-m', message);
+    },
+    remove: () => rmSync(dir, { recursive: true, force: true }),
+  };
   git('init', '-q', '-b', 'main');
   writeFileSync(join(dir, '.git/info/exclude'), '.integral-result.json\n');
   fixture(copy);

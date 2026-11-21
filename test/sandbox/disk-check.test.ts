@@ -43,7 +43,14 @@ function tools(durations: Durations) {
     }
     if (file === '/usr/bin/e2fsck') {
       if ((durations.e2fsckMs ?? 2000) > options.timeout) await expire()();
-      if (durations.e2fsck) throw Object.assign(new Error(`Command failed: ${file}`), { killed: false, signal: null, code: durations.e2fsck.code, stdout: durations.e2fsck.stdout, stderr: '' });
+      if (durations.e2fsck)
+        throw Object.assign(new Error(`Command failed: ${file}`), {
+          killed: false,
+          signal: null,
+          code: durations.e2fsck.code,
+          stdout: durations.e2fsck.stdout,
+          stderr: '',
+        });
       return { stdout: '', stderr: '' };
     }
     throw new Error(`unexpected native call ${file} ${args.join(' ')}`);
@@ -55,11 +62,20 @@ async function environment() {
   const directory = await mkdtemp(join(tmpdir(), 'disk-check-'));
   const disk = join(directory, 'root.qcow2');
   await writeFile(disk, 'qcow2', { mode: 0o600 });
-  return { directory, disk, async snapshots() { return (await readdir(directory)).filter(name => name.startsWith('filesystem-check-')); },
-    cleanup: () => rm(directory, { recursive: true, force: true }) };
+  return {
+    directory,
+    disk,
+    async snapshots() {
+      return (await readdir(directory)).filter(name => name.startsWith('filesystem-check-'));
+    },
+    cleanup: () => rm(directory, { recursive: true, force: true }),
+  };
 }
 
-for (const [label, convertMs] of [['35 s (pilot 2: 13-17 GiB disk, three checks at once)', 35_000], ['10 min (40 GiB fully allocated)', 600_000]] as const) {
+for (const [label, convertMs] of [
+  ['35 s (pilot 2: 13-17 GiB disk, three checks at once)', 35_000],
+  ['10 min (40 GiB fully allocated)', 600_000],
+] as const) {
   test(`ticket 55: a healthy preserved disk whose whole-image copy takes ${label} passes the check`, async () => {
     const env = await environment();
     try {
@@ -68,7 +84,9 @@ for (const [label, convertMs] of [['35 s (pilot 2: 13-17 GiB disk, three checks 
       assert.deepEqual(await env.snapshots(), [], 'the private copy of a passed check is removed');
       // Whole-image steps get the image bound, not the 30 s bound of the metadata calls.
       for (const call of calls.filter(call => call.tool !== 'qemu-img info')) assert.ok(call.boundMs >= 1_800_000, `${call.tool} bound ${call.boundMs}`);
-    } finally { await env.cleanup(); }
+    } finally {
+      await env.cleanup();
+    }
   });
 }
 
@@ -83,21 +101,29 @@ test('ticket 55: a copy killed by its bound refuses with the step and the expiry
     const [kept] = await env.snapshots();
     assert.ok(kept, 'the failed snapshot is kept for inspection');
     assert.equal(await readFile(join(env.directory, kept, 'refusal.txt'), 'utf8'), `${result.reason}\n`);
-  } finally { await env.cleanup(); }
+  } finally {
+    await env.cleanup();
+  }
 });
 
 test('ticket 55: a damaged filesystem refuses with the e2fsck exit and its first findings (semantics unchanged: never repaired)', async () => {
   const env = await environment();
   try {
-    const stdout = 'e2fsck 1.47.4 (6-Mar-2025)\nPass 1: Checking inodes, blocks, and sizes\nPass 2: Checking directory structure\n' +
+    const stdout =
+      'e2fsck 1.47.4 (6-Mar-2025)\nPass 1: Checking inodes, blocks, and sizes\nPass 2: Checking directory structure\n' +
       "Entry 'data' in / (2) has deleted/unused inode 2068993.  Clear? no\n\nInode 2 ref count is 23, should be 21.  Fix? no\n";
     const { runner } = tools({ convertMs: 1000, e2fsck: { code: 4, stdout } });
     const result = await checkDiskFilesystem(env.directory, env.disk, size, runner);
-    assert.deepEqual(result, { ok: false, reason: "e2fsck -f -n: exit 4 (Entry 'data' in / (2) has deleted/unused inode 2068993.  Clear? no | Inode 2 ref count is 23, should be 21.  Fix? no)" });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "e2fsck -f -n: exit 4 (Entry 'data' in / (2) has deleted/unused inode 2068993.  Clear? no | Inode 2 ref count is 23, should be 21.  Fix? no)",
+    });
     const [kept] = await env.snapshots();
     assert.ok(kept);
     assert.deepEqual((await readdir(join(env.directory, kept))).sort(), ['refusal.txt', 'snapshot.ext4']);
-  } finally { await env.cleanup(); }
+  } finally {
+    await env.cleanup();
+  }
 });
 
 test('ticket 55: an unsafe root disk refuses with its reason before any native call', async () => {
@@ -106,7 +132,12 @@ test('ticket 55: an unsafe root disk refuses with its reason before any native c
     await rm(env.disk);
     await writeFile(env.disk, 'qcow2', { mode: 0o644 });
     const { runner, calls } = tools({ convertMs: 1000 });
-    assert.deepEqual(await checkDiskFilesystem(env.directory, env.disk, size, runner), { ok: false, reason: 'root disk: not a private regular file of this user' });
+    assert.deepEqual(await checkDiskFilesystem(env.directory, env.disk, size, runner), {
+      ok: false,
+      reason: 'root disk: not a private regular file of this user',
+    });
     assert.deepEqual(calls, []);
-  } finally { await env.cleanup(); }
+  } finally {
+    await env.cleanup();
+  }
 });

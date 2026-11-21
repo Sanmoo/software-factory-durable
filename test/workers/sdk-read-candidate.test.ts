@@ -22,16 +22,24 @@ test('local SDK candidate preserves native read without host path probing for su
     assert.equal(sourceHash, 'e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc');
     assert.equal(source, await readFile('test/workers/fixtures/sdk-read-1.5.2-upstream.fixture', 'utf8'));
     await writeFile(join(root, 'probe.mjs'), await readFile('test/workers/fixtures/sdk-read-probe.fixture'));
-    const run = () => spawnSync(process.execPath, ['probe.mjs'], { cwd: root, encoding: 'utf8', timeout: remainingMs(),
-      env: { PATH: process.env.PATH, TMPDIR: root, NODE_DISABLE_COMPILE_CACHE: '1', HOME: root } });
+    const run = () =>
+      spawnSync(process.execPath, ['probe.mjs'], {
+        cwd: root,
+        encoding: 'utf8',
+        timeout: remainingMs(),
+        env: { PATH: process.env.PATH, TMPDIR: root, NODE_DISABLE_COMPILE_CACHE: '1', HOME: root },
+      });
     const upstream = run();
     assert.equal(upstream.status, 1, `${upstream.stdout}\n${upstream.stderr}`);
     assert.match(upstream.stdout, /"hostProbes":5/);
     assert.match(upstream.stdout, /"guestPathKinds":\["requested","host-variant"\]/);
     assert.match(upstream.stderr, /substituted operations must not probe the host filesystem/);
     await rm(join(root, 'cafe\u0301.txt'));
-    const patch = spawnSync('patch', ['--batch', '-p1', '-i', resolve('docs/evidence/05-sdk-read-operations-candidate.patch')],
-      { cwd: join(root, 'sdk'), encoding: 'utf8', timeout: remainingMs() });
+    const patch = spawnSync('patch', ['--batch', '-p1', '-i', resolve('docs/evidence/05-sdk-read-operations-candidate.patch')], {
+      cwd: join(root, 'sdk'),
+      encoding: 'utf8',
+      timeout: remainingMs(),
+    });
     assert.equal(patch.status, 0, `${patch.stdout}\n${patch.stderr}`);
     const candidate = run();
     assert.equal(candidate.status, 0, `${candidate.stdout}\n${candidate.stderr}`);
@@ -41,5 +49,7 @@ test('local SDK candidate preserves native read without host path probing for su
     // This regression copy leaves installed upstream untouched. The Factory
     // development profile uses its own separately guarded private staging.
     assert.equal(source, await readFile(join(installed, 'dist/core/tools/read.js'), 'utf8'));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

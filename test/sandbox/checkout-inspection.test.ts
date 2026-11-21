@@ -7,8 +7,21 @@ import { tmpdir } from 'node:os';
 import { inspectCheckout, readConfined } from '../../src/sandbox/index.js';
 
 // Real git; the "guest-written" checkout is a local fixture whose .git/config and attributes are hostile. Host must never execute them.
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8',
-  env: { PATH: '/usr/bin:/bin', HOME: cwd, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 'f', GIT_AUTHOR_EMAIL: 'f@x', GIT_COMMITTER_NAME: 'f', GIT_COMMITTER_EMAIL: 'f@x' } }).trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      PATH: '/usr/bin:/bin',
+      HOME: cwd,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_AUTHOR_NAME: 'f',
+      GIT_AUTHOR_EMAIL: 'f@x',
+      GIT_COMMITTER_NAME: 'f',
+      GIT_COMMITTER_EMAIL: 'f@x',
+    },
+  }).trim();
 
 async function hostileEnvironment(t: { after(fn: () => Promise<void>): void }) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-inspect-'));
@@ -18,19 +31,26 @@ async function hostileEnvironment(t: { after(fn: () => Promise<void>): void }) {
   await mkdir(checkout, { recursive: true });
   git(checkout, 'init', '-q', '-b', 'main');
   await writeFile(join(checkout, 'a.txt'), 'one\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'base');
+  git(checkout, 'add', '.');
+  git(checkout, 'commit', '-q', '-m', 'base');
   const base = git(checkout, 'rev-parse', 'HEAD');
   git(checkout, 'checkout', '-q', '-b', 'factory/3-abcdef12');
   await writeFile(join(checkout, 'a.txt'), 'two\n');
   await writeFile(join(checkout, 'b.txt'), 'new\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'builder change');
+  git(checkout, 'add', '.');
+  git(checkout, 'commit', '-q', '-m', 'builder change');
   const canary = (name: string) => `touch ${join(dir, name)}`;
   // Hostile repository-local configuration and attributes, as a guest could write them.
-  await writeFile(join(checkout, '.git', 'config'), `[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfsmonitor = ${canary('FSMONITOR')}\n\tpager = ${canary('PAGER')}\n` +
-    `[diff "x"]\n\ttextconv = ${canary('TEXTCONV')}\n\tcommand = ${canary('EXTDIFF')}\n[filter "f"]\n\tclean = ${canary('CLEAN')}\n\tsmudge = ${canary('SMUDGE')}\n` +
-    `[log]\n\tshowSignature = true\n[gpg]\n\tprogram = ${canary('GPG')}\n[remote "origin"]\n\turl = https://github.com/acme/project.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`);
+  await writeFile(
+    join(checkout, '.git', 'config'),
+    `[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfsmonitor = ${canary('FSMONITOR')}\n\tpager = ${canary('PAGER')}\n` +
+      `[diff "x"]\n\ttextconv = ${canary('TEXTCONV')}\n\tcommand = ${canary('EXTDIFF')}\n[filter "f"]\n\tclean = ${canary('CLEAN')}\n\tsmudge = ${canary('SMUDGE')}\n` +
+      `[log]\n\tshowSignature = true\n[gpg]\n\tprogram = ${canary('GPG')}\n[remote "origin"]\n\turl = https://github.com/acme/project.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`,
+  );
   await writeFile(join(checkout, '.git', 'info', 'attributes'), '* diff=x filter=f\n').catch(async () => {
-    await mkdir(join(checkout, '.git', 'info'), { recursive: true }); await writeFile(join(checkout, '.git', 'info', 'attributes'), '* diff=x filter=f\n'); });
+    await mkdir(join(checkout, '.git', 'info'), { recursive: true });
+    await writeFile(join(checkout, '.git', 'info', 'attributes'), '* diff=x filter=f\n');
+  });
   await writeFile(join(checkout, '.gitattributes'), '* diff=x filter=f\n');
   // Host secret the guest tries to exfiltrate through symlinks.
   await writeFile(join(dir, 'app.pem'), 'PRIVATE KEY CANARY');
@@ -45,7 +65,10 @@ test('review 1: the checkout is inspected through a Factory-owned bare copy of i
   assert.equal(result.status, 'observed', JSON.stringify(result));
   if (result.status !== 'observed') return;
   assert.equal(result.branch, 'factory/3-abcdef12');
-  assert.deepEqual(result.commits.map(line => line.replace(/^[0-9a-f]+ /, '')), ['builder change', 'base']);
+  assert.deepEqual(
+    result.commits.map(line => line.replace(/^[0-9a-f]+ /, '')),
+    ['builder change', 'base'],
+  );
   assert.match(result.diffStat, /a\.txt[\s\S]*b\.txt[\s\S]*2 files changed/);
   assert.deepEqual(result.remotes, [{ name: 'origin', url: 'https://github.com/acme/project.git' }]);
   assert.equal(result.alternates, false);

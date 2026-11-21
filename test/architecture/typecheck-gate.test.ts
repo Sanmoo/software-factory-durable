@@ -17,10 +17,15 @@ test('vendor skipLibCheck does not disable strict application or exact optional-
     config.include = ['fixture.ts'];
     await writeFile(join(root, 'tsconfig.json'), JSON.stringify(config));
     await writeFile(join(root, 'fixture.ts'), 'export const invalid: string = 42;\nexport const optional: { value?: string } = { value: undefined };\n');
-    const result = spawnSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(root, 'tsconfig.json'), '--noEmit'],
-      { cwd: root, encoding: 'utf8', timeout: remainingMs() });
+    const result = spawnSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '-p', join(root, 'tsconfig.json'), '--noEmit'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: remainingMs(),
+    });
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stdout, /TS2322/);
     assert.match(result.stdout, /TS2375/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

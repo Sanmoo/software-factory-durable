@@ -4,13 +4,20 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { metadata, ownerSchema, privateDirectory } from './lifecycle.js';
 
-export type RuntimeListing = { environments: { environment: string; workId: string | null }[];
-  cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown' }[]; unknown: string[] };
+export type RuntimeListing = {
+  environments: { environment: string; workId: string | null }[];
+  cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown' }[];
+  unknown: string[];
+};
 const environmentName = /^env-[a-f0-9]{64}$/;
 /** Sockets the controller (`control.sock`) and doctor (`factory.sock`) own in run/. */
 const ownSockets = ['control.sock', 'factory.sock'];
 const cacheState = z.object({ state: z.string() });
-const listing = async (path: string) => readdir(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
+const listing = async (path: string) =>
+  readdir(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [] as string[];
+    throw error;
+  });
 
 /**
  * Ticket 26 (spec §5.2 boot step 3): read-only host inventory of the installation's own runtime resources, taken by the composition after the
@@ -25,13 +32,18 @@ export async function inventoryRuntime(root: string): Promise<RuntimeListing> {
   const unknown: string[] = [];
   const parent = join(canonical, 'environments');
   for (const name of (await listing(parent)).sort()) {
-    if (!environmentName.test(name)) { unknown.push(`environments/${name}`); continue; }
+    if (!environmentName.test(name)) {
+      unknown.push(`environments/${name}`);
+      continue;
+    }
     let workId: string | null = null;
     try {
       await privateDirectory(join(parent, name));
       const owner = await metadata(join(parent, name, 'owner.json'), ownerSchema);
       if (owner.environment === name && `env-${createHash('sha256').update(owner.workId).digest('hex')}` === name) workId = owner.workId;
-    } catch { workId = null; }
+    } catch {
+      workId = null;
+    }
     environments.push({ environment: name, workId });
   }
   const cache: RuntimeListing['cache'] = [];
@@ -44,9 +56,11 @@ export async function inventoryRuntime(root: string): Promise<RuntimeListing> {
       const info = await lstat(join(git, name));
       if (info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && info.size <= 4096) {
         const parsed = cacheState.safeParse(JSON.parse(await readFile(join(git, name), 'utf8')));
-        state = parsed.success ? parsed.data.state === 'idle' ? 'idle' : 'preparing' : 'unknown';
+        state = parsed.success ? (parsed.data.state === 'idle' ? 'idle' : 'preparing') : 'unknown';
       }
-    } catch { state = 'unknown'; }
+    } catch {
+      state = 'unknown';
+    }
     cache.push({ repositoryId: Number(match[1]), state });
   }
   // Own endpoints (an obsolete socket is inert: no process listens through a file) are known; anything else in run/ is unknown, never ignored.

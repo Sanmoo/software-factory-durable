@@ -2,37 +2,79 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import { builderBudgetMaximumFactor, builderBudgetV1, qualificationRequestsV1, reviewerBudgetV1 } from '../../src/contracts/index.js';
-import { createOwnerSecretReceiver, createSecretPublisher, secretChannelEndCode, secretChannelFailures, secretSyncLimit, secretSyncSetupMargin,
-  sessionRequestBudget, type SecretChannelFailure } from '../../src/platform/host/index.js';
+import {
+  createOwnerSecretReceiver,
+  createSecretPublisher,
+  secretChannelEndCode,
+  secretChannelFailures,
+  secretSyncLimit,
+  secretSyncSetupMargin,
+  sessionRequestBudget,
+  type SecretChannelFailure,
+} from '../../src/platform/host/index.js';
 import { budgetFor } from '../../src/workers/oauth-qualification.js';
 
 // Ticket 59 (pilot 2: two Builders ended at request 126/127, below their 150): the secret-sync bound follows the session's request budget,
 // a value the owner already acknowledged is never re-sent, and a refused sync reaches Control as its own closed cause.
-const context = { workId: 'work', executionId: 'exec', invocationId: 'invocation', role: 'builder' as const,
-  environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
+const context = {
+  workId: 'work',
+  executionId: 'exec',
+  invocationId: 'invocation',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  phaseId: 'phase',
+};
 type End = EventEmitter & { connected: boolean; send(message: Record<string, unknown>, callback: (error: Error | null) => void): boolean };
 function channel() {
-  const worker = new EventEmitter() as End, owner = new EventEmitter() as End;
+  const worker = new EventEmitter() as End,
+    owner = new EventEmitter() as End;
   worker.connected = owner.connected = true;
   const toOwner: Record<string, unknown>[] = [];
-  worker.send = (message, callback) => { toOwner.push(message); setImmediate(() => { owner.emit('message', structuredClone(message)); callback(null); }); return true; };
-  owner.send = (message, callback) => { setImmediate(() => { worker.emit('message', structuredClone(message)); callback(null); }); return true; };
+  worker.send = (message, callback) => {
+    toOwner.push(message);
+    setImmediate(() => {
+      owner.emit('message', structuredClone(message));
+      callback(null);
+    });
+    return true;
+  };
+  owner.send = (message, callback) => {
+    setImmediate(() => {
+      worker.emit('message', structuredClone(message));
+      callback(null);
+    });
+    return true;
+  };
   return { worker, owner, toOwner };
 }
 function session(maxRequests: number) {
   const { worker, owner, toOwner } = channel();
-  const registered: string[] = [], reasons: SecretChannelFailure[] = [];
+  const registered: string[] = [],
+    reasons: SecretChannelFailure[] = [];
   const abort = new AbortController();
-  createOwnerSecretReceiver(owner, context, abort.signal, () => true, value => { registered.push(value); }, reason => { reasons.push(reason); },
-    secretSyncLimit(maxRequests));
+  createOwnerSecretReceiver(
+    owner,
+    context,
+    abort.signal,
+    () => true,
+    value => {
+      registered.push(value);
+    },
+    reason => {
+      reasons.push(reason);
+    },
+    secretSyncLimit(maxRequests),
+  );
   const publisher = createSecretPublisher(worker, context, new AbortController().signal, 1000);
   publisher.protectedStarted();
   return { publisher, toOwner, registered, reasons };
 }
-const denied = (promise: Promise<unknown>) => assert.rejects(promise, error => {
-  assert.deepEqual(error, { code: 'SECRET_SYNC_DENIED' });
-  return true;
-});
+const denied = (promise: Promise<unknown>) =>
+  assert.rejects(promise, error => {
+    assert.deepEqual(error, { code: 'SECRET_SYNC_DENIED' });
+    return true;
+  });
 
 test('the bound is derived from the launch budget: builder-v1, the repository maximum, reviewer-v1 and the qualification', () => {
   assert.equal(secretSyncLimit(builderBudgetV1.requests), builderBudgetV1.requests + secretSyncSetupMargin);
@@ -44,7 +86,10 @@ test('the bound is derived from the launch budget: builder-v1, the repository ma
   assert.equal(sessionRequestBudget({ context }), qualificationRequestsV1);
   // Same requests the worker enforces for that policy (`budgetFor`), so the owner never refuses a request the worker's budget allows.
   assert.equal(sessionRequestBudget(builder), budgetFor('builder', 'builder-v1').requests);
-  assert.equal(sessionRequestBudget({ context: { ...context, role: 'standards' }, modelBudget: 'reviewer-v1' }), budgetFor('standards', 'reviewer-v1').requests);
+  assert.equal(
+    sessionRequestBudget({ context: { ...context, role: 'standards' }, modelBudget: 'reviewer-v1' }),
+    budgetFor('standards', 'reviewer-v1').requests,
+  );
   assert.equal(sessionRequestBudget({ context }), budgetFor('builder', undefined).requests);
   for (const invalid of [0, -1, 1.5, Number.NaN]) assert.throws(() => secretSyncLimit(invalid), /WORKER_BUDGET_INVALID/);
 });
@@ -63,7 +108,10 @@ test('only new values are sent: a refresh spends one sync, already acknowledged 
   await s.publisher.acknowledgeSecrets(['synthetic-access-1', 'synthetic-refresh-1']);
   await s.publisher.acknowledgeSecrets(['synthetic-access-1']);
   await s.publisher.acknowledgeSecrets(['synthetic-access-2', 'synthetic-refresh-1', 'synthetic-access-2']);
-  assert.deepEqual(s.toOwner.map(message => message.values), [['synthetic-access-1', 'synthetic-refresh-1'], ['synthetic-access-2']]);
+  assert.deepEqual(
+    s.toOwner.map(message => message.values),
+    [['synthetic-access-1', 'synthetic-refresh-1'], ['synthetic-access-2']],
+  );
   assert.deepEqual(s.reasons, []);
 });
 
@@ -87,7 +135,8 @@ test('a known value is never trusted after the channel failed (the scope is rech
   publisher.protectedStarted();
   const sent: Record<string, unknown>[] = [];
   worker.send = (message, callback) => {
-    sent.push(message); callback(null);
+    sent.push(message);
+    callback(null);
     setImmediate(() => worker.emit('message', { kind: 'worker-secret-ack', version: 1, id: message.id, context }));
     return true;
   };
@@ -106,7 +155,15 @@ test('the Execution end names the refused sync; channel loss stays uncertain; ne
     assert.match(secretChannelEndCode(reason), /^[A-Z_]{1,128}$/);
     assert.notEqual(secretChannelEndCode(reason), 'WORKER_PROVIDER_UNAVAILABLE');
   }
-  assert.deepEqual(secretChannelFailures.filter(reason => secretChannelEndCode(reason) !== 'WORKER_EXECUTION_UNCERTAIN').map(secretChannelEndCode),
-    ['WORKER_SECRET_SYNC_SCHEMA', 'WORKER_SECRET_SYNC_CONTEXT', 'WORKER_SECRET_SYNC_REPLAY', 'WORKER_SECRET_SYNC_LIMIT', 'WORKER_SECRET_SYNC_BUSY',
-      'WORKER_SECRET_SYNC_NOT_STARTED', 'WORKER_SECRET_SYNC_REGISTER', 'WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND']);
+  assert.deepEqual(secretChannelFailures.filter(reason => secretChannelEndCode(reason) !== 'WORKER_EXECUTION_UNCERTAIN').map(secretChannelEndCode), [
+    'WORKER_SECRET_SYNC_SCHEMA',
+    'WORKER_SECRET_SYNC_CONTEXT',
+    'WORKER_SECRET_SYNC_REPLAY',
+    'WORKER_SECRET_SYNC_LIMIT',
+    'WORKER_SECRET_SYNC_BUSY',
+    'WORKER_SECRET_SYNC_NOT_STARTED',
+    'WORKER_SECRET_SYNC_REGISTER',
+    'WORKER_SECRET_SYNC_TIMEOUT',
+    'WORKER_SECRET_SYNC_SEND',
+  ]);
 });

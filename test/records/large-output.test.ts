@@ -5,8 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords, outputLimits } from '../../src/records/index.js';
 
-const context = { workId: 'work-05', executionId: 'execution-05', invocationId: 'builder-05',
-  role: 'builder' as const, environmentRef: 'environment-05', bootRef: 'boot-05', callId: 'large' };
+const context = {
+  workId: 'work-05',
+  executionId: 'execution-05',
+  invocationId: 'builder-05',
+  role: 'builder' as const,
+  environmentRef: 'environment-05',
+  bootRef: 'boot-05',
+  callId: 'large',
+};
 
 test('Records captures large output incrementally and pages the protected copy with a prefix-only marked excerpt', async () => {
   const root = await mkdtemp(join(tmpdir(), 'records-05-'));
@@ -29,5 +36,7 @@ test('Records captures large output incrementally and pages the protected copy w
     assert.equal(Buffer.from(last.data).toString(), 'xxx');
     assert.equal(last.nextOffset, finished.bytes);
     await assert.rejects(records.read({ reference: output.reference, offset: 0, limit: 65537 }), /PROTECTED_CAPTURE_UNAVAILABLE/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

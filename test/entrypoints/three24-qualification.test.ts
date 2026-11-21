@@ -5,26 +5,55 @@ import type { WorkView } from '../../src/control/index.js';
 
 // Import and --plan of the ticket 24 real-run recipe must be inert: no process, socket, filesystem or SDK effect. Guards on controlled data only.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, spawn: deny, request: deny, open: deny, mkdir: deny, readFile: deny,
-    access: deny, readdir: deny, copyFile: deny, chmod: deny, rm: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      spawn: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+      copyFile: deny,
+      chmod: deny,
+      rm: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./three24-qualification.js');
 
 test('ticket 24 recipe: import and --plan are inert; own namespace and key copy, three NEW issues in one repository, capacity 3, read-only GitHub', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q24-three-v4');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v4 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.match(
+    plan.github.accessRoot,
+    /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v4 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/,
+  );
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.equal(plan.pinned, false, 'the supervisor pins the three NEW issue numbers in a reviewed commit before any phase');
   assert.equal(plan.suite.pinned, true);
-  assert.match(plan.suite.command, /eclipse-temurin:25-jdk \.\/gradlew --no-daemon test$/, 'README `./gradlew test`, run in a JDK 25 container of the guest\'s own Docker');
+  assert.match(
+    plan.suite.command,
+    /eclipse-temurin:25-jdk \.\/gradlew --no-daemon test$/,
+    "README `./gradlew test`, run in a JDK 25 container of the guest's own Docker",
+  );
   assert.equal(plan.tickets.length, 3);
   assert.equal(plan.capacity, 3);
   assert.deepEqual([plan.configuration.memoryMiB, plan.configuration.vcpus, plan.configuration.minFreeMemoryMiB], [2048, 2, 1024]);
@@ -59,16 +88,44 @@ test('phase guard and host precondition: order, one shot, unknown host facts nev
   assert.equal(recipe.phaseGuard('inspect', { preflight: { status: 'success' } }, none, numbers, 'suite'), 'RUN_REQUIRED');
   assert.equal(recipe.phaseGuard('stop-environment', { preflight: { status: 'success' } }, new Set(['run-intent']), numbers, 'suite'), null);
   const gib = 1073741824;
-  const ok = { memAvailableBytes: 10 * gib, storageAvailableBytes: 500 * gib, cpus: 8, kvm: true, systemdUser: 'running', activeUnits: [] as string[], qemuProcesses: 0 };
+  const ok = {
+    memAvailableBytes: 10 * gib,
+    storageAvailableBytes: 500 * gib,
+    cpus: 8,
+    kvm: true,
+    systemdUser: 'running',
+    activeUnits: [] as string[],
+    qemuProcesses: 0,
+  };
   assert.deepEqual(recipe.hostPrecondition(ok), { ok: true, reasons: [] });
   assert.deepEqual(recipe.hostPrecondition({ ...ok, systemdUser: 'degraded' }).ok, true);
-  assert.deepEqual(recipe.hostPrecondition({ memAvailableBytes: null, storageAvailableBytes: null, cpus: 4, kvm: false, systemdUser: null, activeUnits: null, qemuProcesses: null }).reasons,
-    ['HOST_MEMORY_BELOW_REQUIREMENT', 'HOST_STORAGE_BELOW_REQUIREMENT', 'HOST_CPUS_BELOW_REQUIREMENT', 'KVM_UNAVAILABLE', 'SYSTEMD_USER_MANAGER_UNAVAILABLE:unreachable',
-      'FACTORY_UNITS_UNKNOWN', 'QEMU_PROCESSES_UNKNOWN']);
+  assert.deepEqual(
+    recipe.hostPrecondition({
+      memAvailableBytes: null,
+      storageAvailableBytes: null,
+      cpus: 4,
+      kvm: false,
+      systemdUser: null,
+      activeUnits: null,
+      qemuProcesses: null,
+    }).reasons,
+    [
+      'HOST_MEMORY_BELOW_REQUIREMENT',
+      'HOST_STORAGE_BELOW_REQUIREMENT',
+      'HOST_CPUS_BELOW_REQUIREMENT',
+      'KVM_UNAVAILABLE',
+      'SYSTEMD_USER_MANAGER_UNAVAILABLE:unreachable',
+      'FACTORY_UNITS_UNKNOWN',
+      'QEMU_PROCESSES_UNKNOWN',
+    ],
+  );
   assert.deepEqual(recipe.hostPrecondition({ ...ok, memAvailableBytes: 8 * gib }).reasons, ['HOST_MEMORY_BELOW_REQUIREMENT']);
   const unit = 'factory-sandbox-boot-11111111-2222-4333-8444-555555555555.service';
-  assert.deepEqual(recipe.hostPrecondition({ ...ok, activeUnits: [unit], qemuProcesses: 1 }).reasons, [`FACTORY_UNITS_ACTIVE:${unit}`, 'QEMU_PROCESSES_ACTIVE:1'],
-    'a running Factory VM is refused by name');
+  assert.deepEqual(
+    recipe.hostPrecondition({ ...ok, activeUnits: [unit], qemuProcesses: 1 }).reasons,
+    [`FACTORY_UNITS_ACTIVE:${unit}`, 'QEMU_PROCESSES_ACTIVE:1'],
+    'a running Factory VM is refused by name',
+  );
   assert.deepEqual(recipe.hostPrecondition({ ...ok, systemdUser: 'starting' }).reasons, ['SYSTEMD_USER_MANAGER_UNAVAILABLE:starting']);
 });
 
@@ -93,20 +150,48 @@ test('activation guard: one implementation Builder per pinned Work (at most thre
 test('run end and verdict: all three settled; success only with completed + confirmed cessation, one-pass reservation and overlapping container windows', async () => {
   const { containerWindows } = await import('./three24-measure.js');
   const at = (seconds: number) => new Date(Date.UTC(2026, 10, 15, 12, 0, seconds)).toISOString();
-  const execution = (n: number, extra: Record<string, unknown> = {}) => ({ executionId: `e${n}`, state: 'ended', start: { receiptId: 'r' }, slot: { held: false, reservedAt: at(n) },
-    dispatch: { environment: `env-${n}`, boot: `boot-${n}`, phase: 'stopped' }, request: { branch: `factory/${n}-x` },
-    end: { at: at(600 + n), outcome: 'completed', cessation: 'confirmed' }, ...extra });
+  const execution = (n: number, extra: Record<string, unknown> = {}) => ({
+    executionId: `e${n}`,
+    state: 'ended',
+    start: { receiptId: 'r' },
+    slot: { held: false, reservedAt: at(n) },
+    dispatch: { environment: `env-${n}`, boot: `boot-${n}`, phase: 'stopped' },
+    request: { branch: `factory/${n}-x` },
+    end: { at: at(600 + n), outcome: 'completed', cessation: 'confirmed' },
+    ...extra,
+  });
   const work = (n: number, extra: Record<string, unknown> = {}) => ({ ticket: { number: n }, execution: execution(n, extra) }) as unknown as WorkView;
   const numbers = [7, 8, 9];
   assert.deepEqual(recipe.runSettled([work(7), work(8), work(9)], numbers), { done: true, success: true, findings: [] });
-  assert.deepEqual(recipe.runSettled([work(7), work(8, { state: 'started', slot: { held: true, reservedAt: at(8) } }), work(9)], numbers), { done: false, success: false, findings: [] });
-  assert.deepEqual(recipe.runSettled([work(7), work(8, { end: { at: at(1), outcome: 'failure', cessation: 'confirmed' } }), work(9)], numbers), { done: true, success: false, findings: [] });
-  assert.deepEqual(recipe.runSettled([work(7), work(8, { state: 'ended', slot: { held: true, reservedAt: at(8) }, end: { at: at(1), outcome: 'failure', cessation: 'unconfirmed' } }), work(9)], numbers),
-    { done: false, success: false, findings: [] }, 'an uncertain Slot is never settled');
+  assert.deepEqual(recipe.runSettled([work(7), work(8, { state: 'started', slot: { held: true, reservedAt: at(8) } }), work(9)], numbers), {
+    done: false,
+    success: false,
+    findings: [],
+  });
+  assert.deepEqual(recipe.runSettled([work(7), work(8, { end: { at: at(1), outcome: 'failure', cessation: 'confirmed' } }), work(9)], numbers), {
+    done: true,
+    success: false,
+    findings: [],
+  });
+  assert.deepEqual(
+    recipe.runSettled(
+      [
+        work(7),
+        work(8, { state: 'ended', slot: { held: true, reservedAt: at(8) }, end: { at: at(1), outcome: 'failure', cessation: 'unconfirmed' } }),
+        work(9),
+      ],
+      numbers,
+    ),
+    { done: false, success: false, findings: [] },
+    'an uncertain Slot is never settled',
+  );
   assert.equal(recipe.threeStarted([work(7), work(8)], numbers), false);
   assert.equal(recipe.threeStarted([work(7), work(8), work(9)], numbers), true);
-  const overlapping = containerWindows({ A: 'Q24_WINDOW_START A 1763208000 ... Q24_WINDOW_END A 1763208100', B: 'Q24_WINDOW_START B 1763208050\nQ24_WINDOW_END B 1763208160',
-    C: 'Q24_WINDOW_START C 1763208090 Q24_WINDOW_END C 1763208170' });
+  const overlapping = containerWindows({
+    A: 'Q24_WINDOW_START A 1763208000 ... Q24_WINDOW_END A 1763208100',
+    B: 'Q24_WINDOW_START B 1763208050\nQ24_WINDOW_END B 1763208160',
+    C: 'Q24_WINDOW_START C 1763208090 Q24_WINDOW_END C 1763208170',
+  });
   const evidence = { passes: { 'env-7': 'p1', 'env-8': 'p1', 'env-9': 'p1' }, summary: [7, 8, 9].map(n => ({ boot: `boot-${n}`, samples: 4 })) };
   const passed = recipe.verdict([work(7), work(8), work(9)], overlapping, evidence, numbers);
   assert.equal(passed.passed, true, JSON.stringify(passed.checks));
@@ -117,10 +202,23 @@ test('run end and verdict: all three settled; success only with completed + conf
   const unlogged = recipe.verdict([work(7), work(8), work(9)], overlapping, { ...evidence, passes: {} }, numbers);
   assert.equal(unlogged.checks.find(item => item.name === 'one-pass-reservation')!.ok, false);
   const unmeasured = recipe.verdict([work(7), work(8), work(9)], overlapping, { ...evidence, summary: [] }, numbers);
-  assert.deepEqual([unmeasured.passed, unmeasured.checks.find(item => item.name === 'resources-measured')!.ok], [false, false], 'every sample absent fails the verdict');
-  const shared = recipe.verdict([work(7), work(8, { dispatch: { environment: 'env-7', boot: 'boot-8', phase: 'stopped' } }), work(9)], overlapping, evidence, numbers);
+  assert.deepEqual(
+    [unmeasured.passed, unmeasured.checks.find(item => item.name === 'resources-measured')!.ok],
+    [false, false],
+    'every sample absent fails the verdict',
+  );
+  const shared = recipe.verdict(
+    [work(7), work(8, { dispatch: { environment: 'env-7', boot: 'boot-8', phase: 'stopped' } }), work(9)],
+    overlapping,
+    evidence,
+    numbers,
+  );
   assert.equal(shared.checks.find(item => item.name === 'own-environment-boot-branch')!.ok, false);
-  const apart = containerWindows({ A: 'Q24_WINDOW_START A 1763208000 Q24_WINDOW_END A 1763208010', B: 'Q24_WINDOW_START B 1763208050 Q24_WINDOW_END B 1763208060', C: '' });
+  const apart = containerWindows({
+    A: 'Q24_WINDOW_START A 1763208000 Q24_WINDOW_END A 1763208010',
+    B: 'Q24_WINDOW_START B 1763208050 Q24_WINDOW_END B 1763208060',
+    C: '',
+  });
   assert.deepEqual([apart.known, apart.overlapAll], [false, false]);
   // The command text itself (in the session's tool call) never counts as an observed window: only printed epochs do.
   assert.deepEqual(containerWindows({ A: recipe.gateCommand('A') }).windows.A, { start: null, end: null });
@@ -131,47 +229,106 @@ test('never-started: a Work that left without a start receipt, or a start window
   const started = { state: 'started', start: { receiptId: 'r' } };
   const numbers = [7, 8, 9];
   assert.equal(recipe.neverStarted([work(7, started), work(8, null), work(9, null)], 60_000, 25 * 60_000, numbers), null);
-  assert.equal(recipe.neverStarted([work(7, started), work(8, { state: 'held', start: null, held: { code: 'START_INSUFFICIENT_MEMORY_FOR_BOOT' } }), work(9, null)], 60_000, 25 * 60_000, numbers),
-    'WORK_NEVER_STARTED:8:START_INSUFFICIENT_MEMORY_FOR_BOOT');
-  assert.equal(recipe.neverStarted([work(7, started), work(8, started), work(9, { state: 'reserved', start: null })], 26 * 60_000, 25 * 60_000, numbers),
-    'WORK_NEVER_STARTED:9:START_WINDOW_ELAPSED');
+  assert.equal(
+    recipe.neverStarted(
+      [work(7, started), work(8, { state: 'held', start: null, held: { code: 'START_INSUFFICIENT_MEMORY_FOR_BOOT' } }), work(9, null)],
+      60_000,
+      25 * 60_000,
+      numbers,
+    ),
+    'WORK_NEVER_STARTED:8:START_INSUFFICIENT_MEMORY_FOR_BOOT',
+  );
+  assert.equal(
+    recipe.neverStarted([work(7, started), work(8, started), work(9, { state: 'reserved', start: null })], 26 * 60_000, 25 * 60_000, numbers),
+    'WORK_NEVER_STARTED:9:START_WINDOW_ELAPSED',
+  );
   const boot = 'boot-11111111-2222-4333-8444-555555555555';
-  assert.deepEqual(recipe.startedBoots([{ call: 'start-requested', environment: 'env-a', pass: 'p' }, { call: 'start', environment: 'env-a', result: { status: 'success', boot } },
-    { call: 'start', environment: 'env-b', result: { status: 'failure', code: 'X' } }]), [{ environment: 'env-a', boot, ticket: null, executionId: null, needsStop: true }]);
+  assert.deepEqual(
+    recipe.startedBoots([
+      { call: 'start-requested', environment: 'env-a', pass: 'p' },
+      { call: 'start', environment: 'env-a', result: { status: 'success', boot } },
+      { call: 'start', environment: 'env-b', result: { status: 'failure', code: 'X' } },
+    ]),
+    [{ environment: 'env-a', boot, ticket: null, executionId: null, needsStop: true }],
+  );
 });
 
 test('v2 guards: the real suite command must be pinned; a Builder Question is a recorded finding (held), not a recipe failure to retry', () => {
   const numbers = [{ number: 7 }, { number: 8 }, { number: 9 }];
   assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, null), 'SUITE_COMMAND_NOT_PINNED');
-  assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && docker run --rm -v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew test'), null);
-  assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && ./gradlew test'), 'SUITE_NOT_EXECUTABLE_IN_GUEST:JVM_TOOL_OUTSIDE_CONTAINER:./gradlew',
-    'v2: the guest has no Java');
+  assert.equal(
+    recipe.phaseGuard(
+      'preflight',
+      {},
+      new Set(),
+      numbers,
+      'cd /workspace/checkout && docker run --rm -v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew test',
+    ),
+    null,
+  );
+  assert.equal(
+    recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && ./gradlew test'),
+    'SUITE_NOT_EXECUTABLE_IN_GUEST:JVM_TOOL_OUTSIDE_CONTAINER:./gradlew',
+    'v2: the guest has no Java',
+  );
   const at = new Date(Date.UTC(2026, 10, 16, 2, 0, 0)).toISOString();
-  const work = (n: number, outcome: string) => ({ ticket: { number: n }, execution: { state: 'ended', slot: { held: false }, end: { at, outcome, cessation: 'confirmed' } } }) as unknown as WorkView;
-  assert.deepEqual(recipe.runSettled([work(7, 'completed'), work(8, 'completed'), work(9, 'question')], [7, 8, 9]),
-    { done: true, success: false, findings: ['QUESTION_ASKED:9'] });
-  assert.deepEqual(recipe.runSettled([work(7, 'completed'), work(8, 'completed'), work(9, 'completed')], [7, 8, 9]), { done: true, success: true, findings: [] });
+  const work = (n: number, outcome: string) =>
+    ({ ticket: { number: n }, execution: { state: 'ended', slot: { held: false }, end: { at, outcome, cessation: 'confirmed' } } }) as unknown as WorkView;
+  assert.deepEqual(recipe.runSettled([work(7, 'completed'), work(8, 'completed'), work(9, 'question')], [7, 8, 9]), {
+    done: true,
+    success: false,
+    findings: ['QUESTION_ASKED:9'],
+  });
+  assert.deepEqual(recipe.runSettled([work(7, 'completed'), work(8, 'completed'), work(9, 'completed')], [7, 8, 9]), {
+    done: true,
+    success: true,
+    findings: [],
+  });
 });
 
 test('v1 offline proof (y5/q24-three-v1, derived summary in docs/evidence): one pass, own environment/boot/branch, overlapping containers, measured units; #23 asked', async () => {
   // node:fs (sync) is not among the modules this file mocks; the summary is a reviewed repository file next to the evidence.
   const v1 = JSON.parse(readFileSync(new URL('../../../docs/evidence/24-real-q24-three-v1-summary.json', import.meta.url), 'utf8')) as {
-    passes: Record<string, string>; works: WorkView[]; registry: { summary: { boot: string; samples: number; maxWorkersAtOnce: number; ioReadBytes: number | null }[] };
-    sessionObservations: { windows: Record<string, number[][]> } };
+    passes: Record<string, string>;
+    works: WorkView[];
+    registry: { summary: { boot: string; samples: number; maxWorkersAtOnce: number; ioReadBytes: number | null }[] };
+    sessionObservations: { windows: Record<string, number[][]> };
+  };
   const { containerWindows } = await import('./three24-measure.js');
-  const texts = Object.fromEntries(Object.entries(v1.sessionObservations.windows).map(([key, windows]) =>
-    [key, windows.map(([start, end]) => `Q24_WINDOW_START ${key} ${start} Q24_WINDOW_END ${key} ${end}`).join('\n')]));
+  const texts = Object.fromEntries(
+    Object.entries(v1.sessionObservations.windows).map(([key, windows]) => [
+      key,
+      windows.map(([start, end]) => `Q24_WINDOW_START ${key} ${start} Q24_WINDOW_END ${key} ${end}`).join('\n'),
+    ]),
+  );
   const windows = containerWindows(texts);
   const result = recipe.verdict(v1.works, windows, { passes: v1.passes, summary: v1.registry.summary }, [21, 22, 23]);
   const by = Object.fromEntries(result.checks.map(item => [item.name, item.ok]));
-  assert.deepEqual(by, { 'three-executions': true, 'own-environment-boot-branch': true, 'one-pass-reservation': true, 'resources-measured': true,
-    'completed-with-cessation': false, 'containers-overlapped': true });
-  assert.deepEqual(recipe.runSettled(v1.works, [21, 22, 23]), { done: true, success: false, findings: ['QUESTION_ASKED:23'] }, 'the held cause: the #23 Question');
-  assert.deepEqual(v1.registry.summary.map(item => item.maxWorkersAtOnce).sort(), [1, 3, 3], 'reviewers ran inside their Builder\'s own unit (3 workers), #23 never reached review');
-  assert.ok(v1.registry.summary.every(item => item.ioReadBytes === null), 'io.stat was unreadable in the user units: I/O is unknown, never zero');
+  assert.deepEqual(by, {
+    'three-executions': true,
+    'own-environment-boot-branch': true,
+    'one-pass-reservation': true,
+    'resources-measured': true,
+    'completed-with-cessation': false,
+    'containers-overlapped': true,
+  });
+  assert.deepEqual(
+    recipe.runSettled(v1.works, [21, 22, 23]),
+    { done: true, success: false, findings: ['QUESTION_ASKED:23'] },
+    'the held cause: the #23 Question',
+  );
+  assert.deepEqual(
+    v1.registry.summary.map(item => item.maxWorkersAtOnce).sort(),
+    [1, 3, 3],
+    "reviewers ran inside their Builder's own unit (3 workers), #23 never reached review",
+  );
+  assert.ok(
+    v1.registry.summary.every(item => item.ioReadBytes === null),
+    'io.stat was unreadable in the user units: I/O is unknown, never zero',
+  );
 });
 
-test('v3: the real-suite gate is executable by the guest profile — the JVM/Gradle only inside a pinned container image of the guest\'s own Docker, never a host/guest Java', () => {
+test("v3: the real-suite gate is executable by the guest profile — the JVM/Gradle only inside a pinned container image of the guest's own Docker, never a host/guest Java", () => {
   // v2 finding: `./gradlew test` exits 1 in gondolin-qemu-alpine-dev-v1 (no Java, JAVA_HOME unset): #39/#41 asked, #40 recorded GATE_FAILED.
   assert.deepEqual(recipe.profileGateViolations('cd /workspace/checkout && ./gradlew test'), ['JVM_TOOL_OUTSIDE_CONTAINER:./gradlew']);
   assert.deepEqual(recipe.profileGateViolations('cd /workspace/checkout && ./mvnw -B verify'), ['JVM_TOOL_OUTSIDE_CONTAINER:./mvnw']);
@@ -189,20 +346,31 @@ test('v3: the real-suite gate is executable by the guest profile — the JVM/Gra
 test('v2 offline proof (y5/q24-three-v2): three VMs in ONE dispatch pass at capacity 3, independent Questions per Work, the failed suite never verified green', async () => {
   const { containerWindows } = await import('./three24-measure.js');
   const v2 = JSON.parse(readFileSync(new URL('../../../docs/evidence/24-real-q24-three-v2-summary.json', import.meta.url), 'utf8')) as {
-    passes: Record<string, string>; works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
-    registry: { summary: { boot: string; samples: number }[]; maxHeldSlots: number; capacity: number } };
+    passes: Record<string, string>;
+    works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
+    registry: { summary: { boot: string; samples: number }[]; maxHeldSlots: number; capacity: number };
+  };
   const result = recipe.verdict(v2.works, containerWindows({}), { passes: v2.passes, summary: v2.registry.summary }, [39, 40, 41]);
   const by = Object.fromEntries(result.checks.map(item => [item.name, item.ok]));
-  assert.deepEqual([by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
-    [true, true, true, true, false]);
+  assert.deepEqual(
+    [by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
+    [true, true, true, true, false],
+  );
   assert.deepEqual([v2.registry.maxHeldSlots, v2.registry.capacity], [3, 3], 'three Slots held at once, never more');
-  assert.deepEqual(recipe.runSettled(v2.works, [39, 40, 41]).findings, ['QUESTION_ASKED:39', 'QUESTION_ASKED:41'], 'each Work asked on its own; the other kept running');
+  assert.deepEqual(
+    recipe.runSettled(v2.works, [39, 40, 41]).findings,
+    ['QUESTION_ASKED:39', 'QUESTION_ASKED:41'],
+    'each Work asked on its own; the other kept running',
+  );
   const forty = v2.works.find(work => work.ticket.number === 40)!;
-  assert.deepEqual([forty.execution.end?.outcome, forty.execution.verification?.status, forty.execution.verification?.reasons], ['completed', 'not-verified', ['GATE_FAILED:repository-tests']],
-    'a session that "completed" with a failed gate is never verified');
+  assert.deepEqual(
+    [forty.execution.end?.outcome, forty.execution.verification?.status, forty.execution.verification?.reasons],
+    ['completed', 'not-verified', ['GATE_FAILED:repository-tests']],
+    'a session that "completed" with a failed gate is never verified',
+  );
 });
 
-test('v4: the Gradle distribution is pre-provisioned by the guest (one long, checksum-verified download) so the wrapper\'s 10 s networkTimeout never decides the gate', async () => {
+test("v4: the Gradle distribution is pre-provisioned by the guest (one long, checksum-verified download) so the wrapper's 10 s networkTimeout never decides the gate", async () => {
   // v3 finding (#46): `Downloading .../gradle-9.5.1-bin.zip failed: timeout (10000ms)` through the guest's mediated egress under 3-VM load.
   const { createHash } = await import('node:crypto');
   const url = 'https://services.gradle.org/distributions/gradle-9.5.1-bin.zip';
@@ -220,16 +388,24 @@ test('v4: the Gradle distribution is pre-provisioned by the guest (one long, che
 
 test('v3 offline proof (y5/q24-three-v3): one pass, three VMs, own units; the failed real suite is never verified; two Questions are findings', () => {
   const v3 = JSON.parse(readFileSync(new URL('../../../docs/evidence/24-real-q24-three-v3-summary.json', import.meta.url), 'utf8')) as {
-    passes: Record<string, string>; works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
-    windows: { windows: Record<string, { start: number | null; end: number | null }> }; registry: { summary: { boot: string; samples: number }[] } };
+    passes: Record<string, string>;
+    works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
+    windows: { windows: Record<string, { start: number | null; end: number | null }> };
+    registry: { summary: { boot: string; samples: number }[] };
+  };
   const { windows } = v3.windows;
   const result = recipe.verdict(v3.works, { windows, known: false, overlapAll: false }, { passes: v3.passes, summary: v3.registry.summary }, [44, 45, 46]);
   const by = Object.fromEntries(result.checks.map(item => [item.name, item.ok]));
-  assert.deepEqual([by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
-    [true, true, true, true, false]);
+  assert.deepEqual(
+    [by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
+    [true, true, true, true, false],
+  );
   assert.deepEqual(recipe.runSettled(v3.works, [44, 45, 46]).findings, ['QUESTION_ASKED:45', 'QUESTION_ASKED:46']);
   const a = v3.works.find(work => work.ticket.number === 44)!;
-  assert.deepEqual([a.execution.end?.outcome, a.execution.verification?.status, a.execution.verification?.reasons], ['completed', 'not-verified', ['GATE_FAILED:repository-test-suite']]);
+  assert.deepEqual(
+    [a.execution.end?.outcome, a.execution.verification?.status, a.execution.verification?.reasons],
+    ['completed', 'not-verified', ['GATE_FAILED:repository-test-suite']],
+  );
   // Two Docker fixtures overlapped (A and C) in their own VMs; B never ran its gate.
   assert.ok(windows.A!.start! < windows.C!.end! && windows.C!.start! < windows.A!.end!);
   assert.deepEqual(windows.B, { start: null, end: null });

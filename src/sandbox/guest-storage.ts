@@ -7,8 +7,7 @@ import type { BootRef } from './lifecycle.js';
  * The reserved .factory-profile area is outside the repository checkout/PR.
  */
 export function guestStorageReadiness(environment: EnvironmentRef, boot: BootRef): string {
-  if (!/^env-[a-f0-9]{64}$/.test(environment) ||
-      !/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(boot)) {
+  if (!/^env-[a-f0-9]{64}$/.test(environment) || !/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(boot)) {
     throw new Error('INVALID_STORAGE_PROFILE_IDENTITY');
   }
   return `set -eu

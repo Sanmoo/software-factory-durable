@@ -5,10 +5,19 @@ import { verdictOf } from './repair22-qualification.js';
 
 // The ticket 22 real-run verdict, computed from the SAVED results of q22-repair-v1 (docs/evidence copies; read-only, no GitHub), and its
 // sensitivity: each expectation fails when its observation is altered.
-const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../docs/evidence/22-real-repair-${name}-2026-11-16.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
-const saved = () => ({ advance: load('advance-result'), conflict: load('conflict-result'), inspect: load('inspect-result'), human2: load('human-step-2-observed') });
+const load = (name: string) =>
+  JSON.parse(readFileSync(new URL(`../../../docs/evidence/22-real-repair-${name}-2026-11-16.json`, import.meta.url), 'utf8')) as Record<string, unknown>;
+const saved = () => ({
+  advance: load('advance-result'),
+  conflict: load('conflict-result'),
+  inspect: load('inspect-result'),
+  human2: load('human-step-2-observed'),
+});
 type Json = Record<string, any>;
-const failing = (input: ReturnType<typeof saved>) => verdictOf(input).checks.filter(item => !item.met).map(item => item.id);
+const failing = (input: ReturnType<typeof saved>) =>
+  verdictOf(input)
+    .checks.filter(item => !item.met)
+    .map(item => item.id);
 
 test('q22-repair-v1: every plan expectation is met by the saved results', () => {
   const verdict = verdictOf(saved());
@@ -23,7 +32,11 @@ test('the verdict fails on a second correction, a re-trigger, a rebase over huma
   inspect.work.corrections = [...inspect.work.corrections, inspect.work.corrections[0]];
   assert.ok(failing(input).includes('conflict.one-correction'));
   input = saved();
-  (input.conflict as Json).events.push({ call: 'activate', at: '2099-01-01T00:00:00.000Z', context: { role: 'builder', phaseId: 'builder-continuation', executionId: 'x' } });
+  (input.conflict as Json).events.push({
+    call: 'activate',
+    at: '2099-01-01T00:00:00.000Z',
+    context: { role: 'builder', phaseId: 'builder-continuation', executionId: 'x' },
+  });
   assert.ok(failing(input).includes('no-retrigger'));
   input = saved();
   (input.inspect as Json).work.publication.divergences = [{ current: '1'.repeat(40) }];

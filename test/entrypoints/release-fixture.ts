@@ -34,11 +34,27 @@ async function build(directory: string): Promise<Built> {
 function appeared(path: string, directory: string, stage: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const watcher = watch(directory);
-    const timer = setTimeout(() => { done(); reject(new Error(`TEST_BUDGET_EXCEEDED waiting for ${stage}`)); }, remainingMs());
-    const done = () => { clearTimeout(timer); watcher.close(); };
-    const check = () => readFile(path).then(() => { done(); resolve(); }, () => {});
+    const timer = setTimeout(() => {
+      done();
+      reject(new Error(`TEST_BUDGET_EXCEEDED waiting for ${stage}`));
+    }, remainingMs());
+    const done = () => {
+      clearTimeout(timer);
+      watcher.close();
+    };
+    const check = () =>
+      readFile(path).then(
+        () => {
+          done();
+          resolve();
+        },
+        () => {},
+      );
     watcher.on('change', check);
-    watcher.on('error', error => { done(); reject(error); });
+    watcher.on('error', error => {
+      done();
+      reject(error);
+    });
     void check();
   });
 }
@@ -51,12 +67,22 @@ function appeared(path: string, directory: string, stage: string): Promise<void>
 async function sharedBuild(work: string): Promise<Built> {
   const shared = process.env.FACTORY_TEST_RUN_DIRECTORY;
   if (!shared) return build(work);
-  const directory = join(shared, `release-${id}`), outcome = join(shared, `release-${id}.json`);
+  const directory = join(shared, `release-${id}`),
+    outcome = join(shared, `release-${id}.json`);
   let owner = true;
-  try { await mkdir(directory); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; owner = false; }
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    owner = false;
+  }
   if (owner) {
     let result: { ok: true; built: Built } | { ok: false; error: string };
-    try { result = { ok: true, built: await build(directory) }; } catch (error) { result = { ok: false, error: String((error as Error).stack ?? error) }; }
+    try {
+      result = { ok: true, built: await build(directory) };
+    } catch (error) {
+      result = { ok: false, error: String((error as Error).stack ?? error) };
+    }
     // Published atomically (rename), so a waiter never reads a partial outcome.
     await writeFile(`${outcome}.tmp`, JSON.stringify(result));
     await rename(`${outcome}.tmp`, outcome);
@@ -70,7 +96,12 @@ async function sharedBuild(work: string): Promise<Built> {
 export async function releaseBuild() {
   const work = await mkdtemp(join(tmpdir(), 'factory-r32-'));
   // A failed build must not leak the work directory (the caller only learns `work` on success).
-  try { return { work, ...await sharedBuild(work) }; } catch (error) { await rm(work, { recursive: true, force: true }); throw error; }
+  try {
+    return { work, ...(await sharedBuild(work)) };
+  } catch (error) {
+    await rm(work, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export async function builtRelease() {
@@ -88,7 +119,26 @@ export async function builtRelease() {
 /** PATH whose installer/escalation commands only leave a canary: setup/doctor must never invoke any of them. */
 export async function canaryPath(directory: string) {
   await mkdir(join(directory, 'bin'), { recursive: true });
-  for (const name of ['sudo', 'su', 'doas', 'pkexec', 'npm', 'npx', 'pnpm', 'yarn', 'corepack', 'node', 'apk', 'pacman', 'apt-get', 'dnf', 'docker', 'podman', 'curl', 'wget']) {
+  for (const name of [
+    'sudo',
+    'su',
+    'doas',
+    'pkexec',
+    'npm',
+    'npx',
+    'pnpm',
+    'yarn',
+    'corepack',
+    'node',
+    'apk',
+    'pacman',
+    'apt-get',
+    'dnf',
+    'docker',
+    'podman',
+    'curl',
+    'wget',
+  ]) {
     await writeFile(join(directory, 'bin', name), `#!/bin/sh\necho ${name} >> ${join(directory, 'canary')}\nexit 1\n`, { mode: 0o755 });
   }
   return `${join(directory, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`;

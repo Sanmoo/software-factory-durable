@@ -10,16 +10,24 @@ import { defaultMinFreeMemoryMiB, type SandboxConfiguration } from './configurat
 const mib = 1048576n;
 export const memoryFloorMiB = (configuration: Pick<SandboxConfiguration, 'minFreeMemoryMiB'>) => configuration.minFreeMemoryMiB ?? defaultMinFreeMemoryMiB;
 const gib = 1073741824n;
-export type HostCapacity = { memory: { totalBytes: string; availableBytes: string } | undefined; storage: { availableBytes: string } | undefined; cpus: number;
+export type HostCapacity = {
+  memory: { totalBytes: string; availableBytes: string } | undefined;
+  storage: { availableBytes: string } | undefined;
+  cpus: number;
   /** Own `factory-sandbox-*` units active now (systemd user manager); null = unknown. */
-  runningGuests: number | null };
+  runningGuests: number | null;
+};
 
 /**
  * Free-memory precondition of ONE boot: the host's MemAvailable must cover the guest's configured memory, the guest limits of the OTHER
  * Factory boots still LAUNCHING (admitted, not yet observed operational or failed: their RAM is not visible in the observation yet) and
  * the configured floor. A precondition, not a reservation of physical memory.
  */
-export function bootMemoryAllows(input: { availableBytes: string | undefined; configuration: Pick<SandboxConfiguration, 'memoryMiB' | 'minFreeMemoryMiB'>; launchingMiB?: number }): boolean {
+export function bootMemoryAllows(input: {
+  availableBytes: string | undefined;
+  configuration: Pick<SandboxConfiguration, 'memoryMiB' | 'minFreeMemoryMiB'>;
+  launchingMiB?: number;
+}): boolean {
   if (input.availableBytes === undefined || !/^\d+$/.test(input.availableBytes)) return false;
   return BigInt(input.availableBytes) >= BigInt((input.launchingMiB ?? 0) + input.configuration.memoryMiB + memoryFloorMiB(input.configuration)) * mib;
 }
@@ -44,7 +52,9 @@ export function createBootLedger(available: () => Promise<string | undefined>) {
         if (!bootMemoryAllows({ availableBytes: await available().catch(() => undefined), configuration, launchingMiB })) return null;
         const id = next++;
         entries.set(id, configuration.memoryMiB);
-        return () => { entries.delete(id); };
+        return () => {
+          entries.delete(id);
+        };
       });
       chain = decision.catch(() => {});
       return decision;
@@ -75,26 +85,53 @@ export function capacityDiagnostic(input: { concurrency: number; configuration: 
     host.storage ? `storage available ${host.storage.availableBytes} B` : 'storage unknown (unreadable)',
     `host CPUs ${host.cpus}`,
   ];
-  const tail = 'Configured guest limits are virtual, not reserved; each boot re-checks free memory (minus the other own boots still launching) and disk; ' +
+  const tail =
+    'Configured guest limits are virtual, not reserved; each boot re-checks free memory (minus the other own boots still launching) and disk; ' +
     'adapter, VMM, workers, reviewers and Docker vfs overhead are not included.';
-  const measured = 'Capacity is proven only by a measured authorized run of this configuration (RAM/CPU/I/O/disk recorded per Work); adjust concurrency or guest limits explicitly.';
-  if (!host.memory || !host.storage || free === null) return { id: 'capacity', status: 'unverified', message: `${facts.join('; ')}. Capacity unknown: a host fact is unreadable. ${tail}`,
-    nextStep: 'Make the unreadable host fact observable (meminfo, statfs of the root, systemd user units); a boot with unknown memory is refused, never guessed.' };
-  if (free === 0) return { id: 'capacity', status: 'unverified', message: `${facts.join('; ')}. Every Slot has a running own guest; no new boot is judged until one ends. ${tail}`, nextStep: measured };
+  const measured =
+    'Capacity is proven only by a measured authorized run of this configuration (RAM/CPU/I/O/disk recorded per Work); adjust concurrency or guest limits explicitly.';
+  if (!host.memory || !host.storage || free === null)
+    return {
+      id: 'capacity',
+      status: 'unverified',
+      message: `${facts.join('; ')}. Capacity unknown: a host fact is unreadable. ${tail}`,
+      nextStep:
+        'Make the unreadable host fact observable (meminfo, statfs of the root, systemd user units); a boot with unknown memory is refused, never guessed.',
+    };
+  if (free === 0)
+    return {
+      id: 'capacity',
+      status: 'unverified',
+      message: `${facts.join('; ')}. Every Slot has a running own guest; no new boot is judged until one ends. ${tail}`,
+      nextStep: measured,
+    };
   const oneBoot = bootMemoryAllows({ availableBytes: host.memory.availableBytes, configuration }) && BigInt(host.storage.availableBytes) >= bootDisk;
-  const allFree = BigInt(host.memory.availableBytes) >= BigInt(free) * guestMemory + BigInt(memoryFloorMiB(configuration)) * mib &&
+  const allFree =
+    BigInt(host.memory.availableBytes) >= BigInt(free) * guestMemory + BigInt(memoryFloorMiB(configuration)) * mib &&
     BigInt(host.storage.availableBytes) >= BigInt(free) * BigInt(configuration.diskGiB) * gib + BigInt(configuration.minFreeSpaceGiB) * gib &&
     host.cpus >= concurrency * configuration.vcpus;
-  return { id: 'capacity', status: oneBoot ? 'unverified' : 'blocked',
-    message: `${facts.join('; ')}. ${allFree ? 'The current observation covers every free Slot at its full virtual size'
-      : 'The current observation does NOT cover every free Slot at its full virtual size (guests may still fit: memory and disk are allocated on demand)'}. ${tail}`,
-    nextStep: oneBoot ? measured : 'Free host memory/disk (or lower guest memory/disk or the floors) before dispatch: a boot below its preconditions is refused, never retried.' };
+  return {
+    id: 'capacity',
+    status: oneBoot ? 'unverified' : 'blocked',
+    message: `${facts.join('; ')}. ${
+      allFree
+        ? 'The current observation covers every free Slot at its full virtual size'
+        : 'The current observation does NOT cover every free Slot at its full virtual size (guests may still fit: memory and disk are allocated on demand)'
+    }. ${tail}`,
+    nextStep: oneBoot
+      ? measured
+      : 'Free host memory/disk (or lower guest memory/disk or the floors) before dispatch: a boot below its preconditions is refused, never retried.',
+  };
 }
 
 /** Read-only host observation at this instant (memory, storage of the installation root, CPUs, own active sandbox units); unreadable = undefined/null. */
 export async function observeHostCapacity(root: string): Promise<HostCapacity> {
   const storage = await inspectStorage(root);
   const units = await listActiveSandboxUnits();
-  return { memory: await inspectMemory(), storage: storage ? { availableBytes: storage.availableBytes } : undefined, cpus: availableParallelism(),
-    runningGuests: units ? units.length : null };
+  return {
+    memory: await inspectMemory(),
+    storage: storage ? { availableBytes: storage.availableBytes } : undefined,
+    cpus: availableParallelism(),
+    runningGuests: units ? units.length : null,
+  };
 }

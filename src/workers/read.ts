@@ -7,22 +7,28 @@ import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.j
  * not this Worker, authorizes reviewer paths and Builder published copies.
  * Only the native schema is presented to Pi; Q5 calls are private operations. */
 /** Ticket 13: what the model sees when it reads a directory; the code prefix lets the Host observer tell it from a failed read. */
-export const directoryMessage = 'READ_IS_DIRECTORY: this path is a directory, not a file. Read the files it holds by their own paths ' +
-  '(listed in the handoff index or in that version\'s sources.json); this is not a failed source read.';
+export const directoryMessage =
+  'READ_IS_DIRECTORY: this path is a directory, not a file. Read the files it holds by their own paths ' +
+  "(listed in the handoff index or in that version's sources.json); this is not a failed source read.";
 /** Ticket 14: what the model sees for a path that does not exist (file or directory); the code prefix lets the Host observer tell it apart. */
-export const notFoundMessage = 'READ_NOT_FOUND: this path does not exist. Context that instructions name but that does not exist is not a ' +
+export const notFoundMessage =
+  'READ_NOT_FOUND: this path does not exist. Context that instructions name but that does not exist is not a ' +
   'limitation and not a failed source read; only required inputs or existing files that cannot be read are.';
 /** Real run q23-feedback-v1: what a BUILDER sees when its confined read is denied. Its `read` serves only its own skill pack files and the
  * copies of its own Bash output; a bare code was taken for an inaccessible source (a blocker). Same code prefix; the policy is unchanged. */
-export const builderPathDeniedMessage = 'READ_PATH_DENIED: the Builder read tool reads only your skill pack files and copies of your own Bash output. ' +
+export const builderPathDeniedMessage =
+  'READ_PATH_DENIED: the Builder read tool reads only your skill pack files and copies of your own Bash output. ' +
   'To read a file in /workspace/checkout or /artifacts (for example the instructions or the request you preserved), use bash (cat, sed -n, head). ' +
   'This is not a missing source and not a blocker.';
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
   // Fixed host composition: the shared channel admits one tool at a time.
-  return { ...definition,
+  return {
+    ...definition,
     executionMode: 'sequential',
-    description: definition.description + '\nFactory development profile: PNG/JPEG/GIF/WebP require an explicit host source-byte budget. Other binary formats are not qualified.',
+    description:
+      definition.description +
+      '\nFactory development profile: PNG/JPEG/GIF/WebP require an explicit host source-byte budget. Other binary formats are not qualified.',
     async execute(...args: Parameters<typeof definition.execute>) {
       function failed(code: string): never {
         // Ticket 13: a directory is a clear answer to the model, not a failed source read (the observer does not count it).
@@ -35,27 +41,48 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
       let capture: Extract<ReadResult, { status: 'success' }> | undefined;
       async function page(offset: number) {
         if (!capture) return failed('READ_CAPTURE_UNAVAILABLE');
-        const result = await sandbox.executeTool(context, { name: 'read', operation: 'page', reference: capture.reference,
-          ...(capture.format === 'raw' ? { format: 'raw' as const } : {}), offset, callId: randomUUID() });
+        const result = await sandbox.executeTool(context, {
+          name: 'read',
+          operation: 'page',
+          reference: capture.reference,
+          ...(capture.format === 'raw' ? { format: 'raw' as const } : {}),
+          offset,
+          callId: randomUUID(),
+        });
         if (result.status !== 'success') return failed(result.code);
         const data = Buffer.from(result.data, 'base64');
-        if (result.reference.id !== capture.reference.id || result.reference.workId !== capture.reference.workId ||
-            result.format !== capture.format || result.encoding !== 'base64' || result.bytes !== capture.bytes ||
-            (result.format === 'raw' && capture.format === 'raw' && result.imageSourceMaxBytes !== capture.imageSourceMaxBytes) ||
-            data.length > 24576 ||
-            data.toString('base64') !== result.data || !Number.isSafeInteger(result.nextOffset) ||
-            result.nextOffset !== offset + data.length || result.nextOffset > capture.bytes ||
-            (offset < capture.bytes && data.length === 0)) return failed('READ_CAPTURE_UNAVAILABLE');
+        if (
+          result.reference.id !== capture.reference.id ||
+          result.reference.workId !== capture.reference.workId ||
+          result.format !== capture.format ||
+          result.encoding !== 'base64' ||
+          result.bytes !== capture.bytes ||
+          (result.format === 'raw' && capture.format === 'raw' && result.imageSourceMaxBytes !== capture.imageSourceMaxBytes) ||
+          data.length > 24576 ||
+          data.toString('base64') !== result.data ||
+          !Number.isSafeInteger(result.nextOffset) ||
+          result.nextOffset !== offset + data.length ||
+          result.nextOffset > capture.bytes ||
+          (offset < capture.bytes && data.length === 0)
+        )
+          return failed('READ_CAPTURE_UNAVAILABLE');
         return { data, nextOffset: result.nextOffset };
       }
       const operations: ReadOperations = {
         async access(path) {
           const result = await sandbox.executeTool(context, { name: 'read', operation: 'capture', path, callId: randomUUID() });
           if (result.status !== 'success') return failed(result.code);
-          if (!Number.isSafeInteger(result.bytes) || result.bytes < 0 || result.nextOffset !== 0 || result.data !== '' ||
-              result.encoding !== 'base64' || !['text', 'raw'].includes(result.format) ||
-              (result.format === 'raw' && (!Number.isSafeInteger(result.imageSourceMaxBytes) ||
-                result.imageSourceMaxBytes <= 0 || result.bytes > result.imageSourceMaxBytes))) return failed('READ_CAPTURE_UNAVAILABLE');
+          if (
+            !Number.isSafeInteger(result.bytes) ||
+            result.bytes < 0 ||
+            result.nextOffset !== 0 ||
+            result.data !== '' ||
+            result.encoding !== 'base64' ||
+            !['text', 'raw'].includes(result.format) ||
+            (result.format === 'raw' &&
+              (!Number.isSafeInteger(result.imageSourceMaxBytes) || result.imageSourceMaxBytes <= 0 || result.bytes > result.imageSourceMaxBytes))
+          )
+            return failed('READ_CAPTURE_UNAVAILABLE');
           capture = result;
         },
         async detectImageMimeType() {
@@ -85,7 +112,8 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
           let offset = 0;
           while (offset < capture.bytes) {
             const result = await page(offset);
-            chunks.push(result.data); offset = result.nextOffset;
+            chunks.push(result.data);
+            offset = result.nextOffset;
           }
           return Buffer.concat(chunks, capture.bytes);
         },
@@ -99,5 +127,6 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
         if (capture?.format === 'raw') criticalFailure();
         throw error;
       }
-  } } satisfies ToolDefinition;
+    },
+  } satisfies ToolDefinition;
 }

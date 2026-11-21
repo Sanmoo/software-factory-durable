@@ -1,8 +1,15 @@
 // Whether one Entry Point run proves a quality gate: the rules that keep a red run from being miscounted as a Gate Proof.
 // Pure, so the rules themselves are tested (test/runner/proof-attribution.test.ts).
 
-export interface ProofRun { exitCode: number | null; report: string }
-export interface Verdict { proved: boolean; reason: string; failingGates: string[] }
+export interface ProofRun {
+  exitCode: number | null;
+  report: string;
+}
+export interface Verdict {
+  proved: boolean;
+  reason: string;
+  failingGates: string[];
+}
 
 /** The quality gates the report names in its FAILURE lines (`quality gate <Gate> (<check>): …`); other failures as `unattributed`. */
 export function failingGates(report: string): string[] {
@@ -22,7 +29,8 @@ export function failingGates(report: string): string[] {
 export function attribute(run: ProofRun, gate: string, location: string): Verdict {
   const gates = failingGates(run.report);
   const verdict = (proved: boolean, reason: string): Verdict => ({ proved, reason, failingGates: gates });
-  if (!/^RESULT: (PASS|FAIL|INCONCLUSIVE)/m.test(run.report)) return verdict(false, 'the runner did not complete a report (crash, precondition or environment)');
+  if (!/^RESULT: (PASS|FAIL|INCONCLUSIVE)/m.test(run.report))
+    return verdict(false, 'the runner did not complete a report (crash, precondition or environment)');
   if (run.exitCode === 0) return verdict(false, 'the Entry Point stayed green');
   if (gates.length === 0) return verdict(false, 'the run failed without naming a quality gate');
   if (gates.length > 1 || gates[0] !== gate) return verdict(false, `the failing quality gates are ${gates.join(', ')}, not only ${gate}`);

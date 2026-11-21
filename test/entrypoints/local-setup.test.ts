@@ -12,8 +12,10 @@ test('setup is repeatable, starts with no repositories, and preserves existing p
   try {
     const first = spawnSync(process.execPath, [cli, 'setup', '--root', root, '--json'], { encoding: 'utf8' });
     assert.equal(first.status, 0, first.stderr);
-    assert.deepEqual((JSON.parse(first.stdout) as { created: string[] }).created.sort(),
-      ['assets', 'config.yaml', 'credentials', 'data', 'environments', 'releases', 'run'].sort());
+    assert.deepEqual(
+      (JSON.parse(first.stdout) as { created: string[] }).created.sort(),
+      ['assets', 'config.yaml', 'credentials', 'data', 'environments', 'releases', 'run'].sort(),
+    );
     assert.match(await readFile(join(root, 'config.yaml'), 'utf8'), /repositories: \[\]/);
     for (const name of ['credentials', 'data', 'run']) {
       assert.equal((await stat(join(root, name))).mode & 0o777, 0o700);
@@ -29,7 +31,9 @@ test('setup is repeatable, starts with no repositories, and preserves existing p
     assert.equal((await stat(join(root, 'data', 'unknown'))).mode & 0o777, 0o755);
     assert.deepEqual(await readdir(join(root, 'environments')), []);
     assert.deepEqual(await readdir(join(root, 'run')), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('setup refuses preexisting symlinks and incompatible paths before creating installation children', async () => {
@@ -46,7 +50,9 @@ test('setup refuses preexisting symlinks and incompatible paths before creating 
     assert.equal(result.status, 2);
     assert.deepEqual(await readdir(root), ['credentials']);
     assert.deepEqual(await readdir(outside), ['sentinel']);
-  } finally { await rm(parent, { recursive: true, force: true }); }
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
 });
 
 test('setup includes prerequisite diagnostics without treating its incomplete initial example as operational', async () => {
@@ -58,7 +64,9 @@ test('setup includes prerequisite diagnostics without treating its incomplete in
     assert.equal(report.code, 'SETUP_PREPARED');
     assert.equal(report.diagnostics.configuration.valid, false);
     assert.ok(report.diagnostics.checks.find((check: { id: string }) => check.id === 'kvm-access'));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('CLI rejects unknown commands and malformed arguments without filesystem changes', async () => {
@@ -70,5 +78,7 @@ test('CLI rejects unknown commands and malformed arguments without filesystem ch
       assert.match(result.stderr, /INVALID_ARGUMENTS/);
       assert.deepEqual(await readdir(root), []);
     }
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

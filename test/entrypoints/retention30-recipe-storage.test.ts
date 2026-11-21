@@ -12,10 +12,11 @@ import { addSyntheticSession, copyRecords, ownerRun, verdict } from './retention
 // production detail ports, local refusing doubles for every remote port, fixed calendar) and the verdict. Proves the recipe can work offline.
 const day = 86_400_000;
 
-test('recipe core: Records copied privately (symlink refused); run A retained + plan only; run B removes the copy\'s expired details; verdict met; no remote call', async t => {
+test("recipe core: Records copied privately (symlink refused); run A retained + plan only; run B removes the copy's expired details; verdict met; no remote call", async t => {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'q30-recipe-')));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const source = join(dir, 'source'); await mkdir(source, { mode: 0o700 });
+  const source = join(dir, 'source');
+  await mkdir(source, { mode: 0o700 });
   const opened = await store(t, source);
   const work_id = await seedPublishedWork(opened.session);
   const confirmedAt = new Date(Date.now() - 2 * day).toISOString();
@@ -25,26 +26,49 @@ test('recipe core: Records copied privately (symlink refused); run A retained + 
   const context = { workId: work_id, executionId: 'e-1', invocationId: 'i-1', role: 'builder' as const, environmentRef: 'env', bootRef: 'boot', callId: 'c-1' };
   // Real-data shape (q30-retention-v1: 88 logs): more logs than one intent batch (50), so a sweep spans several batches.
   // Tool/command outputs (UUID call ids) are the logs; Records event envelopes are kept, like the real run's receipts and opinions.
-  for (let index = 0; index < 88; index++) { const output = await records.openOutput({ ...context, callId: randomUUID() }); await output.write(Buffer.from(`out ${index}`)); await output.finish(); }
+  for (let index = 0; index < 88; index++) {
+    const output = await records.openOutput({ ...context, callId: randomUUID() });
+    await output.write(Buffer.from(`out ${index}`));
+    await output.finish();
+  }
   await records.record({ ...context, callId: 'worker-start' }, { version: 1, kind: 'worker-start' });
   await records.record({ ...context, role: 'spec', callId: 'review-opinion' }, { kind: 'review-opinion' });
   await preserveEvidence({ root: source, workId: work_id, label: 'env', stage: async () => {} });
   // A symlink anywhere in the source Records refuses the copy.
-  const unsafe = join(dir, 'unsafe'); await mkdir(unsafe, { mode: 0o700 }); await symlink('/etc/passwd', join(unsafe, 'x'));
+  const unsafe = join(dir, 'unsafe');
+  await mkdir(unsafe, { mode: 0o700 });
+  await symlink('/etc/passwd', join(unsafe, 'x'));
   await assert.rejects(copyRecords(unsafe, join(dir, 'unsafe-copy')), /RECORDS_COPY_UNSAFE/);
-  const recordsRoot = join(dir, 'records'); await mkdir(recordsRoot, { mode: 0o700 }); await chmod(recordsRoot, 0o700);
+  const recordsRoot = join(dir, 'records');
+  await mkdir(recordsRoot, { mode: 0o700 });
+  await chmod(recordsRoot, 0o700);
   const copied = await copyRecords(join(source, work_id), join(recordsRoot, work_id));
   assert.ok(copied.files >= 5);
   const synthetic = await addSyntheticSession(recordsRoot, work_id, 'e-1');
   assert.match(synthetic.label, /synthetic/);
-  const count = async () => { const inventory = await listDetails(recordsRoot, work_id); return { logs: inventory.items.filter(item => item.kind === 'log').length,
-    sessions: inventory.items.filter(item => item.kind === 'session').length, evidence: inventory.evidence,
-    kept: Object.values(inventory.kept).reduce((sum, value) => sum + value, 0), synthetic: inventory.items.some(item => item.id.endsWith('--rv-5e555e555e555e55')) }; };
+  const count = async () => {
+    const inventory = await listDetails(recordsRoot, work_id);
+    return {
+      logs: inventory.items.filter(item => item.kind === 'log').length,
+      sessions: inventory.items.filter(item => item.kind === 'session').length,
+      evidence: inventory.evidence,
+      kept: Object.values(inventory.kept).reduce((sum, value) => sum + value, 0),
+      synthetic: inventory.items.some(item => item.id.endsWith('--rv-5e555e555e555e55')),
+    };
+  };
   const before = await count();
   assert.deepEqual(before, { logs: 88, sessions: 1, evidence: 1, kept: 2, synthetic: true }, 'the receipt and the opinion are kept records, never logs');
   const storagePath = join(source, 'control.sqlite');
   const at = Date.parse(confirmedAt);
-  const runA = await ownerRun({ storagePath, recordsRoot, workId: work_id, now: at + day, planSelect: ['logs', 'sessions', 'environment'], requestId: 'q30-test-a', deadlineMs: 20000 });
+  const runA = await ownerRun({
+    storagePath,
+    recordsRoot,
+    workId: work_id,
+    now: at + day,
+    planSelect: ['logs', 'sessions', 'environment'],
+    requestId: 'q30-test-a',
+    deadlineMs: 20000,
+  });
   assert.equal(runA.outcome.kind, 'clean');
   assert.equal(runA.work?.retention?.state, 'retained');
   assert.equal(runA.status && 'retention' in runA.status ? runA.status.retention?.sweeps : null, 1, 'run A stopped only after its completed boot sweep');
@@ -53,7 +77,10 @@ test('recipe core: Records copied privately (symlink refused); run A retained + 
   assert.deepEqual(after, { logs: 0, sessions: 0, evidence: 1, kept: 2, synthetic: false }, 'logs and the session copy gone; evidence and records kept');
   assert.equal((await listDetails(source, work_id)).items.length, 88, 'the source Records are untouched');
   // Review MED: protected/0 is never a pass.
-  const protectedRun = { ...runB, work: runB.work && { ...runB.work, retention: { ...runB.work.retention!, state: 'protected' as const, removed: { logs: 0, sessions: 0, bytes: 0 } } } };
+  const protectedRun = {
+    ...runB,
+    work: runB.work && { ...runB.work, retention: { ...runB.work.retention!, state: 'protected' as const, removed: { logs: 0, sessions: 0, bytes: 0 } } },
+  };
   assert.equal(verdict({ confirmedAt, runA, runB: protectedRun, before, after: before, sourceBefore: 'same', sourceAfter: 'same' }).overall, 'not-met');
   const result = verdict({ confirmedAt, runA, runB, before, after, sourceBefore: 'same', sourceAfter: 'same' });
   assert.equal(result.overall, 'met', JSON.stringify(result.checks.filter(check => !check.met)));

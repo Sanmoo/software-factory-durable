@@ -9,14 +9,24 @@ import { dirname, isAbsolute, join } from 'node:path';
  */
 async function components(base: string, relative: string): Promise<string | null> {
   const parts = relative.split('/');
-  if (!isAbsolute(base) || await realpath(base) !== base || !parts.length || parts.some(part => part === '' || part === '.' || part === '..' || part.includes('\0'))) {
+  if (
+    !isAbsolute(base) ||
+    (await realpath(base)) !== base ||
+    !parts.length ||
+    parts.some(part => part === '' || part === '.' || part === '..' || part.includes('\0'))
+  ) {
     throw new Error('CONFINED_PATH_UNSAFE');
   }
   let path = base;
   for (const [index, part] of parts.entries()) {
     path = join(path, part);
     let info;
-    try { info = await lstat(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
     if (info.isSymbolicLink() || (index < parts.length - 1 && !info.isDirectory())) throw new Error('CONFINED_PATH_UNSAFE');
   }
   return path;
@@ -30,7 +40,10 @@ async function openLeaf(path: string, maxBytes: number) {
     if (!info.isFile() || info.nlink !== 1n || info.dev !== before.dev || info.ino !== before.ino) throw new Error('CONFINED_PATH_UNSAFE');
     if (info.size > BigInt(maxBytes)) throw new Error('CONFINED_FILE_TOO_LARGE');
     return { file, size: Number(info.size) };
-  } catch (error) { await file.close(); throw error; }
+  } catch (error) {
+    await file.close();
+    throw error;
+  }
 }
 
 export async function readConfined(base: string, relative: string, maxBytes: number): Promise<Buffer | null> {
@@ -42,7 +55,9 @@ export async function readConfined(base: string, relative: string, maxBytes: num
     const { bytesRead } = await file.read(buffer, 0, size + 1, 0);
     if (bytesRead > maxBytes || bytesRead !== size) throw new Error('CONFINED_FILE_TOO_LARGE');
     return buffer.subarray(0, bytesRead);
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
 }
 
 /** Copies a confined tree (regular files/directories only) into a Factory-owned destination; bounded by files and bytes. */
@@ -75,8 +90,12 @@ export async function copyConfinedTree(base: string, relative: string, destinati
           await out.write(chunk.subarray(0, bytesRead));
           offset += bytesRead;
         }
-      } finally { await out.close(); }
-    } finally { await file.close(); }
+      } finally {
+        await out.close();
+      }
+    } finally {
+      await file.close();
+    }
   };
   await walk(relative);
 }
@@ -87,7 +106,12 @@ export async function copyConfinedTree(base: string, relative: string, destinati
  * Returns the parent directory handle (caller closes) or null when a component is absent.
  */
 async function parentAt(base: string, parts: string[]) {
-  if (!isAbsolute(base) || await realpath(base) !== base || !parts.length || parts.some(part => part === '' || part === '.' || part === '..' || part.includes('\0') || part.includes('/'))) {
+  if (
+    !isAbsolute(base) ||
+    (await realpath(base)) !== base ||
+    !parts.length ||
+    parts.some(part => part === '' || part === '.' || part === '..' || part.includes('\0') || part.includes('/'))
+  ) {
     throw new Error('CONFINED_PATH_UNSAFE');
   }
   const flags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
@@ -95,24 +119,35 @@ async function parentAt(base: string, parts: string[]) {
   try {
     for (const part of parts.slice(0, -1)) {
       let next;
-      try { next = await open(`/proc/self/fd/${directory.fd}/${part}`, flags); }
-      catch (error) {
+      try {
+        next = await open(`/proc/self/fd/${directory.fd}/${part}`, flags);
+      } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT') { await directory.close(); return null; }
+        if (code === 'ENOENT') {
+          await directory.close();
+          return null;
+        }
         throw new Error('CONFINED_PATH_UNSAFE');
       }
       await directory.close();
       directory = next;
     }
     return directory;
-  } catch (error) { await directory.close().catch(() => {}); throw error; }
+  } catch (error) {
+    await directory.close().catch(() => {});
+    throw error;
+  }
 }
 
 /**
  * Hash-only observation of one guest-writable path without following it (descriptor-relative walk): a symlink leaf is described by its
  * target text (never followed); a regular single-link leaf is hashed with a size bound; anything else is `other`. Absence is explicit.
  */
-export async function observeConfined(base: string, relative: string, maxBytes: number): Promise<{ kind: 'absent' } | { kind: 'file'; sha256: string; size: number } | { kind: 'symlink'; sha256: string } | { kind: 'other' }> {
+export async function observeConfined(
+  base: string,
+  relative: string,
+  maxBytes: number,
+): Promise<{ kind: 'absent' } | { kind: 'file'; sha256: string; size: number } | { kind: 'symlink'; sha256: string } | { kind: 'other' }> {
   const { createHash } = await import('node:crypto');
   const { readlink } = await import('node:fs/promises');
   const parts = relative.split('/');
@@ -121,11 +156,18 @@ export async function observeConfined(base: string, relative: string, maxBytes: 
   try {
     const leaf = `/proc/self/fd/${parent.fd}/${parts[parts.length - 1]}`;
     let file;
-    try { file = await open(leaf, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
-    catch (error) {
+    try {
+      file = await open(leaf, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') return { kind: 'absent' };
-      if (code === 'ELOOP') return { kind: 'symlink', sha256: createHash('sha256').update(Buffer.from(await readlink(leaf, { encoding: 'buffer' }))).digest('hex') };
+      if (code === 'ELOOP')
+        return {
+          kind: 'symlink',
+          sha256: createHash('sha256')
+            .update(Buffer.from(await readlink(leaf, { encoding: 'buffer' })))
+            .digest('hex'),
+        };
       return { kind: 'other' };
     }
     try {
@@ -144,8 +186,12 @@ export async function observeConfined(base: string, relative: string, maxBytes: 
         offset += bytesRead;
       }
       return { kind: 'file', sha256: hash.digest('hex'), size };
-    } finally { await file.close(); }
-  } finally { await parent.close(); }
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await parent.close();
+  }
 }
 
 /** Bounded read of one regular single-link file through the descriptor-relative walk; absence is null, a symlink/other is unsafe. */
@@ -155,8 +201,12 @@ export async function readConfinedAt(base: string, relative: string, maxBytes: n
   if (!parent) return null;
   try {
     let file;
-    try { file = await open(`/proc/self/fd/${parent.fd}/${parts[parts.length - 1]}`, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw new Error('CONFINED_PATH_UNSAFE'); }
+    try {
+      file = await open(`/proc/self/fd/${parent.fd}/${parts[parts.length - 1]}`, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw new Error('CONFINED_PATH_UNSAFE');
+    }
     try {
       const info = await file.stat({ bigint: true });
       if (!info.isFile() || info.nlink !== 1n) throw new Error('CONFINED_PATH_UNSAFE');
@@ -165,6 +215,10 @@ export async function readConfinedAt(base: string, relative: string, maxBytes: n
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
       if (bytesRead !== Number(info.size)) throw new Error('CONFINED_FILE_TOO_LARGE');
       return buffer.subarray(0, bytesRead);
-    } finally { await file.close(); }
-  } finally { await parent.close(); }
+    } finally {
+      await file.close();
+    }
+  } finally {
+    await parent.close();
+  }
 }

@@ -29,7 +29,10 @@ export function createBootMarkers(boot: string) {
       if (sealed || component !== 'qemu' || typeof message !== 'string') return;
       callbacks = Math.min(1024, callbacks + 1);
       // No slicing, regex or copy of an oversized raw callback.
-      if (message.length > 4096) { oversized = Math.min(1024, oversized + 1); return; }
+      if (message.length > 4096) {
+        oversized = Math.min(1024, oversized + 1);
+        return;
+      }
       if (!message.startsWith('stdout: ') || message.includes('\n') || message.includes('\r')) return;
       stages.add('console-text-observed');
       const line = message.slice(8).replace(/^\[\s{0,12}\d{1,8}\.\d{1,8}\]\s{0,4}/, '');

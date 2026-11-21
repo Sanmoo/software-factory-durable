@@ -19,17 +19,33 @@ const sources = ['q18-journey-v4', 'q25-cancel-v1'] as const;
 /** Bounds of the copy (bytes of Records + session files per source) and of each CLI output kept in the observations. */
 const limits = { copyBytes: 1024 * 1024 * 1024, outputBytes: 256 * 1024, cliTimeoutMs: 30_000 } as const;
 /** Known credential shapes (GitHub, OpenAI incl. sk-proj-, Anthropic sk-ant-, JWT, OAuth access/refresh, Google ya29., PEM keys, Bearer). */
-export const secretPatterns = [/gh[opsur]_[A-Za-z0-9]{20,}/g, /github_pat_[A-Za-z0-9_]{20,}/g, /-----BEGIN [A-Z ]*PRIVATE KEY-----/g, /\bsk-(?:proj-|ant-[a-z0-9]+-)?[A-Za-z0-9_-]{20,}/g,
-  /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, /"(?:access|refresh|id)_token"\s*:\s*"[^"]+"/g, /\bya29\.[A-Za-z0-9._-]{20,}/g, /Bearer [A-Za-z0-9._~+/=-]{20,}/g];
+export const secretPatterns = [
+  /gh[opsur]_[A-Za-z0-9]{20,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+  /\bsk-(?:proj-|ant-[a-z0-9]+-)?[A-Za-z0-9_-]{20,}/g,
+  /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+  /"(?:access|refresh|id)_token"\s*:\s*"[^"]+"/g,
+  /\bya29\.[A-Za-z0-9._-]{20,}/g,
+  /Bearer [A-Za-z0-9._~+/=-]{20,}/g,
+];
 /** Every match replaced BEFORE anything is kept or saved; returns the redacted text and how many matches were found. */
 export function redact(text: string): { text: string; found: number } {
   let found = 0;
-  for (const pattern of secretPatterns) text = text.replace(pattern, () => { found++; return '[REDACTED]'; });
+  for (const pattern of secretPatterns)
+    text = text.replace(pattern, () => {
+      found++;
+      return '[REDACTED]';
+    });
   return { text, found };
 }
 
 export function plan() {
-  return { revision, root, namespace, sources,
+  return {
+    revision,
+    root,
+    namespace,
+    sources,
     requires: 'tickets 17/18/23/25/28/30 integrated with 29; the storages y5/q18-journey-v4 and y5/q25-cancel-v1 exist (their runs are consumed)',
     effects: [
       `run (one-shot, LOCAL): exclusive mkdir ${namespace}; per source: COPY ${root}/<source>/control.sqlite(-wal/-shm) into ${namespace}/<source>/data ` +
@@ -41,10 +57,17 @@ export function plan() {
       'checks recorded: exit codes only 0/2/3, stable JSON on stdout, every view fits one frame, no known secret pattern in any output, unavailable usage never carries numbers, ' +
         'chain present for every Work, history filters consistent with the full history, logs listing complete or explained',
     ],
-    never: ['open or write a source storage/Records', 'start a controller (`run`) or any polling/GitHub read', 'boot a VM, run a model, read a credential', 'rerun after the namespace exists'],
-    expected: ['q18-journey-v4: a delivered Work with Executions, two-reviewer rounds, publication/readiness/delivery/cleanup in the chain; usage measured or explained per activity',
+    never: [
+      'open or write a source storage/Records',
+      'start a controller (`run`) or any polling/GitHub read',
+      'boot a VM, run a model, read a credential',
+      'rerun after the namespace exists',
+    ],
+    expected: [
+      'q18-journey-v4: a delivered Work with Executions, two-reviewer rounds, publication/readiness/delivery/cleanup in the chain; usage measured or explained per activity',
       'q25-cancel-v1: cancelled/new-cycle Works with predecessor links in the chain; history of the cancellation; usage partial/unavailable where sessions were removed',
-      'logs: listing complete with per-capture state (v2: q18 too, its ticket 17 preserved-evidence folder counted in listing.preservedEvidence); raw captures never displayed; a large text capture paged as truncated with nextOffset'],
+      'logs: listing complete with per-capture state (v2: q18 too, its ticket 17 preserved-evidence folder counted in listing.preservedEvidence); raw captures never displayed; a large text capture paged as truncated with nextOffset',
+    ],
   };
 }
 
@@ -52,19 +75,41 @@ type Cli = { args: string[]; code: number | null; json: unknown; bytes: number; 
 
 async function cli(copy: string, args: string[]): Promise<Cli> {
   const child = spawn(process.execPath, [resolve('dist/src/entrypoints/cli.js'), ...args, '--root', copy, '--json'], {
-    env: { PATH: process.env.PATH ?? '', HOME: '/forbidden-personal-profile' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += String(data); });
-  child.stderr.on('data', data => { stderr = (stderr + String(data)).slice(-4096); });
+    env: { PATH: process.env.PATH ?? '', HOME: '/forbidden-personal-profile' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', data => {
+    stdout += String(data);
+  });
+  child.stderr.on('data', data => {
+    stderr = (stderr + String(data)).slice(-4096);
+  });
   const timer = setTimeout(() => child.kill('SIGKILL'), limits.cliTimeoutMs);
-  const code = await new Promise<number | null>((done, fail) => { child.once('error', fail); child.once('close', done); }).finally(() => clearTimeout(timer));
+  const code = await new Promise<number | null>((done, fail) => {
+    child.once('error', fail);
+    child.once('close', done);
+  }).finally(() => clearTimeout(timer));
   const bytes = Buffer.byteLength(stdout);
   // Redacted before parsing/keeping: no secret-shaped text ever reaches memory kept for the observations or the disk.
-  const out = redact(stdout), err = redact(stderr);
+  const out = redact(stdout),
+    err = redact(stderr);
   let json: unknown = null;
-  try { json = out.text ? JSON.parse(out.text) : null; } catch { json = { unparsable: true }; }
-  return { args, code, json: bytes > limits.outputBytes ? { omitted: 'larger than the observation bound' } : json, bytes, truncated: bytes > limits.outputBytes, stderr: err.text,
-    secrets: out.found + err.found };
+  try {
+    json = out.text ? JSON.parse(out.text) : null;
+  } catch {
+    json = { unparsable: true };
+  }
+  return {
+    args,
+    code,
+    json: bytes > limits.outputBytes ? { omitted: 'larger than the observation bound' } : json,
+    bytes,
+    truncated: bytes > limits.outputBytes,
+    stderr: err.text,
+    secrets: out.found + err.found,
+  };
 }
 
 /**
@@ -89,7 +134,9 @@ async function copyTree(from: string, to: string, budget: { left: number }): Pro
   const info = await fs.lstat(from).catch(() => null);
   if (!info) return 0;
   if (info.isDirectory()) {
-    await fs.mkdir(to, { mode: info.mode & 0o777 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+    await fs.mkdir(to, { mode: info.mode & 0o777 }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error;
+    });
     let total = 0;
     for (const name of (await fs.readdir(from)).sort()) total += await copyTree(`${from}/${name}`, `${to}/${name}`, budget);
     await fs.chmod(to, info.mode & 0o777);
@@ -117,45 +164,85 @@ export async function inspectCopy(input: { root: string; source: string; copy: s
   for (const directory of ['run', 'environments']) await fs.mkdir(`${input.copy}/${directory}`, { mode: 0o700 });
   const authority = await prepareAuthority(`${input.root}/${input.source}`, `${input.copy}/data`, input.upgradeId);
   const { inspectStorage } = await import('../../src/control/index.js');
-  const digest = async () => { const inspection = await inspectStorage(authority.storagePath); return inspection.kind === 'storage' ? inspection.stateDigest : null; };
+  const digest = async () => {
+    const inspection = await inspectStorage(authority.storagePath);
+    return inspection.kind === 'storage' ? inspection.stateDigest : null;
+  };
   const before = await digest();
   // ONE Control on the copy, never `run` started: no polling, reconciliation, dispatch or GitHub (no `access` is composed, so no dispatcher
   // or boot reconciliation can exist); its Records/usage ports open lazily, after the copy below. Closed by an aborted `run` (writes nothing).
   const workers = createWorkers({ root: input.copy, knownSecrets: [], profile: { id: 'inspection-only' } as never });
   let records: ReturnType<typeof createRecords> | undefined;
-  const opened = () => records ??= createRecords({ root: input.copy });
-  const refuse = async () => { throw new Error('INSPECTION_ONLY'); };
-  const ports: ExecutionPorts = { sandbox: { prepare: refuse, start: refuse, stop: refuse }, credentials: {} as never, configuration: {}, capacity: 0, builder: {},
-    workers: { activate: refuse, deliver: refuse,
+  const opened = () => (records ??= createRecords({ root: input.copy }));
+  const refuse = async () => {
+    throw new Error('INSPECTION_ONLY');
+  };
+  const ports: ExecutionPorts = {
+    sandbox: { prepare: refuse, start: refuse, stop: refuse },
+    credentials: {} as never,
+    configuration: {},
+    capacity: 0,
+    builder: {},
+    workers: {
+      activate: refuse,
+      deliver: refuse,
       // Reviewer session files are recorded as absolute paths of the source root: read the COPY of the same (contained) relative path.
-      observeUsage: request => workers.observeUsage({ ...request, session: 'file' in request.session && request.session.file.startsWith(`${input.root}/`)
-        ? { file: `${input.copy}/${request.session.file.slice(input.root.length + 1)}` } : request.session }) },
-    records: { find: async selection => (await opened()).find(selection), read: async request => (await opened()).read(request) } };
+      observeUsage: request =>
+        workers.observeUsage({
+          ...request,
+          session:
+            'file' in request.session && request.session.file.startsWith(`${input.root}/`)
+              ? { file: `${input.copy}/${request.session.file.slice(input.root.length + 1)}` }
+              : request.session,
+        }),
+    },
+    records: { find: async selection => (await opened()).find(selection), read: async request => (await opened()).read(request) },
+  };
   const control = await openControl({ storagePath: authority.storagePath, runtimeInventory: 'unknown', execution: ports });
-  const list = await control.inspect({ kind: 'list' }) as ListView;
+  const list = (await control.inspect({ kind: 'list' })) as ListView;
   const budget = { left: limits.copyBytes };
   const copied: Record<string, number> = {};
   const refused: string[] = [];
   for (const work of list.works) {
     copied[work.work_id] = await copyTree(`${input.root}/${work.work_id}`, `${input.copy}/${work.work_id}`, budget);
     for (const execution of [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]) {
-      const files = [execution.end?.session?.ref ? `${input.root}/${execution.end.session.ref}` : null,
-        ...(execution.review?.rounds ?? []).flatMap(round => (['standards', 'spec'] as const).map(role => round.reviewers?.[role]?.opinion?.session.file ?? null))]
-        .filter((file): file is string => !!file);
+      const files = [
+        execution.end?.session?.ref ? `${input.root}/${execution.end.session.ref}` : null,
+        ...(execution.review?.rounds ?? []).flatMap(round =>
+          (['standards', 'spec'] as const).map(role => round.reviewers?.[role]?.opinion?.session.file ?? null),
+        ),
+      ].filter((file): file is string => !!file);
       for (const file of files) {
         const relative = await containedPath(input.root, input.copy, file, 'r');
-        if (!relative) { refused.push(file.slice(0, 256)); continue; }
+        if (!relative) {
+          refused.push(file.slice(0, 256));
+          continue;
+        }
         let directory = input.copy;
-        for (const part of relative.split('/').slice(0, -1)) { directory = `${directory}/${part}`; await fs.mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; }); }
-        copied[relative] = await copyTree(file, `${input.copy}/${relative}`, budget).catch((error: NodeJS.ErrnoException) => { if (error.code === 'EEXIST') return 0; throw error; });
+        for (const part of relative.split('/').slice(0, -1)) {
+          directory = `${directory}/${part}`;
+          await fs.mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'EEXIST') throw error;
+          });
+        }
+        copied[relative] = await copyTree(file, `${input.copy}/${relative}`, budget).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'EEXIST') return 0;
+          throw error;
+        });
       }
     }
   }
   const server = await serveInspection(`${input.copy}/run/control.sock`, control);
   const results: Cli[] = [];
   try {
-    const run = async (...args: string[]) => { const result = await cli(input.copy, args); results.push(result); return result; };
-    await run('status'); await run('list'); await run('usage');
+    const run = async (...args: string[]) => {
+      const result = await cli(input.copy, args);
+      results.push(result);
+      return result;
+    };
+    await run('status');
+    await run('list');
+    await run('usage');
     for (const work of list.works) {
       const id = work.work_id;
       await run('show', id);
@@ -167,7 +254,9 @@ export async function inspectCopy(input: { root: string; source: string; copy: s
       await run('history', id, '--role', 'standards', '--limit', '200');
       const logs = await run('logs', id, '--limit', '200');
       await run('logs', id, '--role', 'builder', '--limit', '20');
-      const text = ((logs.json as { captures?: { capture: string; format: string; state: string }[] })?.captures ?? []).find(item => item.format === 'text' && item.state === 'complete');
+      const text = ((logs.json as { captures?: { capture: string; format: string; state: string }[] })?.captures ?? []).find(
+        item => item.format === 'text' && item.state === 'complete',
+      );
       if (text) {
         const page = await run('logs', id, '--read', text.capture);
         const next = (page.json as { nextOffset?: number | null })?.nextOffset;
@@ -177,12 +266,31 @@ export async function inspectCopy(input: { root: string; source: string; copy: s
     }
   } finally {
     await server.close();
-    const stop = new AbortController(); stop.abort(); await control.run(stop.signal);
+    const stop = new AbortController();
+    stop.abort();
+    await control.run(stop.signal);
   }
   const after = await digest();
-  return { source: input.source, authority, works: list.works.map(work => ({ work_id: work.work_id, ticket: `${work.ticket.repository}#${work.ticket.number}`, result: work.result,
-    cycle: work.cycle, predecessor: work.predecessor, executions: work.previousExecutions.length + (work.execution ? 1 : 0) })), copied, refused, results,
-    storage: { before, after }, checks: [...checks(results), { name: 'copy-unchanged', ok: before !== null && before === after, detail: 'state digest of the copy before/after the inspection' }] };
+  return {
+    source: input.source,
+    authority,
+    works: list.works.map(work => ({
+      work_id: work.work_id,
+      ticket: `${work.ticket.repository}#${work.ticket.number}`,
+      result: work.result,
+      cycle: work.cycle,
+      predecessor: work.predecessor,
+      executions: work.previousExecutions.length + (work.execution ? 1 : 0),
+    })),
+    copied,
+    refused,
+    results,
+    storage: { before, after },
+    checks: [
+      ...checks(results),
+      { name: 'copy-unchanged', ok: before !== null && before === after, detail: 'state digest of the copy before/after the inspection' },
+    ],
+  };
 }
 
 /** Recipe expectations over the CLI results (pure; tested on synthetic results). */
@@ -191,23 +299,61 @@ export function checks(results: Cli[]) {
   const outcome = (name: string, ok: boolean, detail: string) => ({ name, ok, detail });
   const shows = results.filter(item => item.args[0] === 'show');
   const usages = results.filter(item => item.args[0] === 'usage');
-  const unavailableWithNumbers = usages.flatMap(item => ((item.json as { works?: { activities: { measurement: string; tokens: unknown; cost: unknown }[] }[] })?.works ?? [])
-    .flatMap(work => work.activities).filter(activity => activity.measurement === 'unavailable' && (activity.tokens !== null || activity.cost !== null)));
+  const unavailableWithNumbers = usages.flatMap(item =>
+    ((item.json as { works?: { activities: { measurement: string; tokens: unknown; cost: unknown }[] }[] })?.works ?? [])
+      .flatMap(work => work.activities)
+      .filter(activity => activity.measurement === 'unavailable' && (activity.tokens !== null || activity.cost !== null)),
+  );
   const histories = results.filter(item => item.args[0] === 'history');
   return [
-    outcome('exit-codes', results.every(item => item.code === 0 || item.code === 2 || item.code === 3), results.map(item => `${item.args[0]}:${item.code}`).join(' ')),
-    outcome('stable-json', results.every(item => item.json !== null && !(item.json as { unparsable?: boolean }).unparsable), 'every stdout is one JSON document'),
-    outcome('frame-fit', results.every(item => item.bytes < 64 * 1024 && !(item.json as { code?: string })?.code?.startsWith('VIEW_TOO_LARGE')), 'no view exceeds one protocol frame'),
-    outcome('no-secret', results.every(item => item.secrets === 0 && redact(text(item)).found === 0), `${results.reduce((sum, item) => sum + item.secrets, 0)} secret-shaped matches (redacted before saving)`),
-    outcome('chain', shows.length > 0 && shows.every(item => (item.json as { chain?: unknown })?.chain !== undefined), `${shows.length} show views with a chain`),
+    outcome(
+      'exit-codes',
+      results.every(item => item.code === 0 || item.code === 2 || item.code === 3),
+      results.map(item => `${item.args[0]}:${item.code}`).join(' '),
+    ),
+    outcome(
+      'stable-json',
+      results.every(item => item.json !== null && !(item.json as { unparsable?: boolean }).unparsable),
+      'every stdout is one JSON document',
+    ),
+    outcome(
+      'frame-fit',
+      results.every(item => item.bytes < 64 * 1024 && !(item.json as { code?: string })?.code?.startsWith('VIEW_TOO_LARGE')),
+      'no view exceeds one protocol frame',
+    ),
+    outcome(
+      'no-secret',
+      results.every(item => item.secrets === 0 && redact(text(item)).found === 0),
+      `${results.reduce((sum, item) => sum + item.secrets, 0)} secret-shaped matches (redacted before saving)`,
+    ),
+    outcome(
+      'chain',
+      shows.length > 0 && shows.every(item => (item.json as { chain?: unknown })?.chain !== undefined),
+      `${shows.length} show views with a chain`,
+    ),
     outcome('usage-never-false-zero', unavailableWithNumbers.length === 0, `${unavailableWithNumbers.length} unavailable activities with numbers`),
-    outcome('history-paged', histories.every(item => item.code === 0 && (item.json as { page?: { returned: number } })?.page !== undefined), `${histories.length} history pages`),
-    outcome('logs-complete', results.filter(item => item.args[0] === 'logs' && !item.args.includes('--read')).every(item =>
-      (item.json as { listing?: { state: string } })?.listing?.state === 'complete'), 'v2: every logs listing complete (preserved evidence is a known non-capture)'),
-    outcome('logs-explained', results.filter(item => item.args[0] === 'logs' && !item.args.includes('--read')).every(item => {
-      const listing = (item.json as { listing?: { state: string; code: string | null } })?.listing;
-      return listing !== undefined && (listing.state === 'complete' || listing.code !== null);
-    }), 'every logs listing is complete or carries its code'),
+    outcome(
+      'history-paged',
+      histories.every(item => item.code === 0 && (item.json as { page?: { returned: number } })?.page !== undefined),
+      `${histories.length} history pages`,
+    ),
+    outcome(
+      'logs-complete',
+      results
+        .filter(item => item.args[0] === 'logs' && !item.args.includes('--read'))
+        .every(item => (item.json as { listing?: { state: string } })?.listing?.state === 'complete'),
+      'v2: every logs listing complete (preserved evidence is a known non-capture)',
+    ),
+    outcome(
+      'logs-explained',
+      results
+        .filter(item => item.args[0] === 'logs' && !item.args.includes('--read'))
+        .every(item => {
+          const listing = (item.json as { listing?: { state: string; code: string | null } })?.listing;
+          return listing !== undefined && (listing.state === 'complete' || listing.code !== null);
+        }),
+      'every logs listing is complete or carries its code',
+    ),
   ];
 }
 
@@ -216,7 +362,12 @@ export async function runPhase() {
   await fs.mkdir(namespace, { mode: 0o700 }); // exclusive intent: an existing namespace means the run was consumed
   const save = async (name: string, data: unknown) => {
     const file = await fs.open(`${namespace}/${name}.json`, 'wx', 0o600);
-    try { await file.writeFile(JSON.stringify(data, null, 1)); await file.sync(); } finally { await file.close(); }
+    try {
+      await file.writeFile(JSON.stringify(data, null, 1));
+      await file.sync();
+    } finally {
+      await file.close();
+    }
   };
   const summary: { source: string; checks: { name: string; ok: boolean; detail: string }[] | null; error: string | null }[] = [];
   for (const source of sources) {
@@ -229,16 +380,29 @@ export async function runPhase() {
     }
   }
   const met = summary.every(item => item.checks?.every(check => check.ok));
-  await save('run-result', { revision, met, summary, note: 'Consumed; no retry. A held source is recorded with its code; nothing was written outside this namespace.' });
+  await save('run-result', {
+    revision,
+    met,
+    summary,
+    note: 'Consumed; no retry. A held source is recorded with its code; nothing was written outside this namespace.',
+  });
   if (!met) throw new Error('QUALIFICATION_NOT_MET');
 }
 
 export async function main(args: string[]) {
-  if (args.length === 1 && args[0] === '--plan') { console.log(JSON.stringify(plan(), null, 2)); return; }
+  if (args.length === 1 && args[0] === '--plan') {
+    console.log(JSON.stringify(plan(), null, 2));
+    return;
+  }
   if (args.length !== 1 || args[0] !== 'run') throw new Error('EXACT_PHASE_REQUIRED');
   await runPhase();
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  main(process.argv.slice(2)).then(() => process.exit(0), () => { console.error('Qualification held or not met; no retry.'); process.exit(1); });
+  main(process.argv.slice(2)).then(
+    () => process.exit(0),
+    () => {
+      console.error('Qualification held or not met; no retry.');
+      process.exit(1);
+    },
+  );
 }
-

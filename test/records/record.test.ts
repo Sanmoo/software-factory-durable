@@ -5,8 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 
-const context = { workId: 'work-05', executionId: 'execution-05', invocationId: 'builder-05',
-  role: 'builder' as const, environmentRef: 'environment-05', bootRef: 'boot-05', callId: 'receipt' };
+const context = {
+  workId: 'work-05',
+  executionId: 'execution-05',
+  invocationId: 'builder-05',
+  role: 'builder' as const,
+  environmentRef: 'environment-05',
+  bootRef: 'boot-05',
+  callId: 'receipt',
+};
 
 test('Records publishes a complete correlated event durably and filters secrets before JSON escaping', async () => {
   const root = await mkdtemp(join(tmpdir(), 'records-05-'));
@@ -22,7 +29,9 @@ test('Records publishes a complete correlated event durably and filters secrets 
     assert.deepEqual(event.event, { kind: 'tool-result', nested: ['█'], detail: 'result █ end' });
     assert.equal(event.version, 1);
     assert.ok(Number.isFinite(Date.parse(event.recordedAt)));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Records never returns a complete result if critical completion publication fails', async () => {
@@ -37,5 +46,7 @@ test('Records never returns a complete result if critical completion publication
     await assert.rejects(output.write(Buffer.from('not admitted')), /PROTECTED_CAPTURE_UNAVAILABLE/);
     await rm(join(directory, 'complete.json'), { recursive: true });
     assert.equal((await records.read({ reference: output.reference, offset: 0, limit: 100 })).state, 'partial');
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

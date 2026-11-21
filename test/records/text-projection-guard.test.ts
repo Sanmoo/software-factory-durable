@@ -4,10 +4,22 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords, RecordsError, type TextProjection } from '../../src/records/index.js';
 
-const context = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder' as const,
-  environmentRef: 'environment', bootRef: 'boot', callId: 'call' };
-async function fixture(run: (records: Awaited<ReturnType<typeof createRecords>>, root: string,
-  request: { context: typeof context; reference: { workId: string; id: string }; expectedBytes: number }) => Promise<void>) {
+const context = {
+  workId: 'work',
+  executionId: 'execution',
+  invocationId: 'invocation',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  callId: 'call',
+};
+async function fixture(
+  run: (
+    records: Awaited<ReturnType<typeof createRecords>>,
+    root: string,
+    request: { context: typeof context; reference: { workId: string; id: string }; expectedBytes: number },
+  ) => Promise<void>,
+) {
   const root = await mkdtemp('/tmp/rg-');
   try {
     const records = await createRecords({ root });
@@ -15,7 +27,9 @@ async function fixture(run: (records: Awaited<ReturnType<typeof createRecords>>,
     await output.write(Buffer.from('late-secret public'));
     const done = await output.finish();
     await run(records, root, { context, reference: done.reference, expectedBytes: done.bytes });
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 async function exhaust(projection: TextProjection) {
   const chunks: Buffer[] = [];
@@ -23,8 +37,10 @@ async function exhaust(projection: TextProjection) {
   return Buffer.concat(chunks).toString();
 }
 function denied(projection: TextProjection) {
-  assert.throws(() => projection.assertCompleteAndCurrent(), error =>
-    error instanceof RecordsError && error.message === 'PROTECTED_CAPTURE_UNAVAILABLE');
+  assert.throws(
+    () => projection.assertCompleteAndCurrent(),
+    error => error instanceof RecordsError && error.message === 'PROTECTED_CAPTURE_UNAVAILABLE',
+  );
 }
 
 test('historical complete is insufficient after late registration; new projection uses current filter without recall', async () => {

@@ -7,10 +7,12 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 /** The native tool runner (`execFile`: on expiry of `timeout` the tool is SIGTERMed and the call rejects with `killed`). Injectable for tests. */
-export type NativeRun = (file: string, args: string[], options: { timeout: number; maxBuffer: number; env: Record<string, string> }) =>
-  Promise<{ stdout: string; stderr: string }>;
-const native = { timeout: 30000, maxBuffer: 65536,
-  env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } };
+export type NativeRun = (
+  file: string,
+  args: string[],
+  options: { timeout: number; maxBuffer: number; env: Record<string, string> },
+) => Promise<{ stdout: string; stderr: string }>;
+const native = { timeout: 30000, maxBuffer: 65536, env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } };
 
 /**
  * Tickets 47/55: native steps that read or write a WHOLE disk image (qemu-img check/convert of the root disk, e2fsck/resize2fs of its raw
@@ -32,13 +34,15 @@ async function superblock(raw: string): Promise<Buffer> {
     const { bytesRead } = await file.read(header, 0, header.length, 1024);
     if (bytesRead !== 1024 || header.readUInt16LE(0x38) !== 0xef53 || header.readUInt32LE(0x18) > 2) throw new Error('UNSUPPORTED_FILESYSTEM');
     return header;
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
 }
 
 /** Geometry is a capacity check, never a substitute for a complete filesystem check. */
 async function filesystemBytes(raw: string): Promise<bigint> {
   const header = await superblock(raw);
-  const high = (header.readUInt32LE(0x60) & 0x80) ? BigInt(header.readUInt32LE(0x150)) : 0n;
+  const high = header.readUInt32LE(0x60) & 0x80 ? BigInt(header.readUInt32LE(0x150)) : 0n;
   return (BigInt(header.readUInt32LE(4)) + (high << 32n)) * (1024n << BigInt(header.readUInt32LE(0x18)));
 }
 
@@ -59,7 +63,9 @@ export async function growFilesystemCopy(source: string, raw: string, size: bigi
     }
     await file.chmod(0o600);
     await file.truncate(Number(size));
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
   // No host mount, privileged helper, scripts or repair flags. Nonzero is a refusal.
   await run('/usr/bin/e2fsck', ['-f', '-n', raw], image);
   await run('/usr/bin/resize2fs', [raw], image);
@@ -68,7 +74,7 @@ export async function growFilesystemCopy(source: string, raw: string, size: bigi
 
 export async function checkFilesystem(raw: string, size: bigint, runner: NativeRun = run): Promise<void> {
   await runner('/usr/bin/e2fsck', ['-f', '-n', raw], image);
-  if (await filesystemBytes(raw) !== size) throw new Error('FILESYSTEM_CAPACITY_MISMATCH');
+  if ((await filesystemBytes(raw)) !== size) throw new Error('FILESYSTEM_CAPACITY_MISMATCH');
 }
 
 /** Ticket 55: the outcome of a preserved-disk check; a refusal says which step refused and why (never a bare `false`). */
@@ -77,8 +83,14 @@ export type DiskCheck = { ok: true } | { ok: false; reason: string };
 /** Ticket 55: one line on why a native step failed: expiry (the tool was killed: its output is incomplete), signal or exit + first output. */
 function nativeFailure(step: string, error: unknown, bound: number): string {
   const failure = (error ?? {}) as { killed?: unknown; signal?: unknown; code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown };
-  const output = [failure.stdout, failure.stderr].filter((text): text is string => typeof text === 'string').join('\n')
-    .split('\n').map(line => line.trim()).filter(line => line && !/^e2fsck \d|^Pass \d/.test(line)).slice(0, 4).join(' | ');
+  const output = [failure.stdout, failure.stderr]
+    .filter((text): text is string => typeof text === 'string')
+    .join('\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !/^e2fsck \d|^Pass \d/.test(line))
+    .slice(0, 4)
+    .join(' | ');
   let cause: string;
   if (failure.killed === true) cause = `timed out after ${bound / 1000} s and was killed (its output is incomplete)`;
   else if (typeof failure.signal === 'string') cause = `killed by ${failure.signal}`;
@@ -101,12 +113,12 @@ export async function checkDiskFilesystem(directory: string, disk: string, size:
   };
   try {
     const before = await lstat(disk, { bigint: true });
-    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n ||
-        before.uid !== BigInt(process.getuid?.() ?? -1) || (before.mode & 0o077n)) return await refuse('root disk: not a private regular file of this user');
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.uid !== BigInt(process.getuid?.() ?? -1) || before.mode & 0o077n)
+      return await refuse('root disk: not a private regular file of this user');
     step = 'qemu-img info';
     const info = JSON.parse((await runner('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
-    if (info.format !== 'qcow2' || info['backing-filename'] || info['format-specific']?.data?.['data-file'] ||
-        BigInt(info['virtual-size']) !== size) return await refuse('qemu-img info: not a standalone qcow2 of the configured size');
+    if (info.format !== 'qcow2' || info['backing-filename'] || info['format-specific']?.data?.['data-file'] || BigInt(info['virtual-size']) !== size)
+      return await refuse('qemu-img info: not a standalone qcow2 of the configured size');
     step = 'qemu-img check';
     await runner('/usr/bin/qemu-img', ['check', '-f', 'qcow2', disk], image);
     snapshot = join(directory, `filesystem-check-${randomUUID()}`);
@@ -117,13 +129,19 @@ export async function checkDiskFilesystem(directory: string, disk: string, size:
     // The parser never mounts/repairs the preserved disk; it checks a private copy.
     step = 'private copy';
     const file = await open(raw, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    try { await file.chmod(0o600); } finally { await file.close(); }
+    try {
+      await file.chmod(0o600);
+    } finally {
+      await file.close();
+    }
     // Ticket 47: a journaled root stopped abruptly is consistent only after its journal is replayed (as the guest kernel does at mount).
     // The replay touches THIS private copy only; a read-only check of the unreplayed image would refuse a healthy disk.
     // Exit 1 only says the copy was modified (the replay itself); the full read-only check below decides.
     if ((await journalState(raw)).needsRecovery) {
       step = 'e2fsck journal replay';
-      await runner('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], image).catch((error: { code?: unknown }) => { if (error.code !== 1) throw error; });
+      await runner('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], image).catch((error: { code?: unknown }) => {
+        if (error.code !== 1) throw error;
+      });
     }
     step = 'e2fsck -f -n';
     await checkFilesystem(raw, size, runner);
@@ -134,18 +152,25 @@ export async function checkDiskFilesystem(directory: string, disk: string, size:
     await unlink(raw);
     await rmdir(snapshot);
     return { ok: true };
-  } catch (error) { return await refuse(nativeFailure(step, error, step === 'qemu-img info' ? native.timeout : image.timeout)); } // Keep failed snapshots, never auto-repair or launch.
+  } catch (error) {
+    return await refuse(nativeFailure(step, error, step === 'qemu-img info' ? native.timeout : image.timeout));
+  } // Keep failed snapshots, never auto-repair or launch.
 }
 
 /** Ticket 47: the result of an operator disk remedy. `refused` leaves the preserved disk exactly as it was (detail says why). */
 export type DiskRemedyOutcome = { status: 'applied' | 'refused'; detail: string };
-const stampOf = (at: Date) => at.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'z').toLowerCase();
+const stampOf = (at: Date) =>
+  at
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d+Z$/, 'z')
+    .toLowerCase();
 const identityKeys = ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'uid', 'mode', 'nlink'] as const;
 
 /** The own, private qcow2 root disk of `size` (no backing/data file), with its identity to prove it did not change meanwhile. */
 async function ownDisk(disk: string, size: bigint) {
   const info = await lstat(disk, { bigint: true });
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n || info.uid !== BigInt(process.getuid?.() ?? -1) || (info.mode & 0o077n)) {
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n || info.uid !== BigInt(process.getuid?.() ?? -1) || info.mode & 0o077n) {
     throw new Error('UNSAFE_ROOT_DISK');
   }
   const facts = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
@@ -157,12 +182,21 @@ async function ownDisk(disk: string, size: bigint) {
 
 async function privateFile(path: string) {
   const file = await open(path, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
+  try {
+    await file.chmod(0o600);
+    await file.sync();
+  } finally {
+    await file.close();
+  }
 }
 
 async function syncPath(path: string) {
   const directory = await open(path, 'r');
-  try { await directory.sync(); } finally { await directory.close(); }
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
 }
 
 /** Publishes `candidate` as the root disk; the current one (if any) is set aside under `kept`, never deleted. */
@@ -170,7 +204,14 @@ async function swapDisk(directory: string, disk: string, candidate: string, kept
   if (before) {
     const after = await lstat(disk, { bigint: true });
     for (const key of identityKeys) if (after[key] !== before[key]) throw new Error('ROOT_DISK_CHANGED_DURING_REMEDY');
-    await lstat(kept).then(() => { throw new Error('KEPT_DISK_NAME_TAKEN'); }, (error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
+    await lstat(kept).then(
+      () => {
+        throw new Error('KEPT_DISK_NAME_TAKEN');
+      },
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      },
+    );
     await rename(disk, kept);
   }
   await rename(candidate, disk);
@@ -195,8 +236,9 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
     await privateFile(raw);
     let exit = 0;
     let output = '';
-    try { output = (await run('/usr/bin/e2fsck', ['-f', '-p', raw], remedy)).stdout; }
-    catch (error) {
+    try {
+      output = (await run('/usr/bin/e2fsck', ['-f', '-p', raw], remedy)).stdout;
+    } catch (error) {
       const failure = error as { code?: unknown; stdout?: unknown };
       exit = typeof failure.code === 'number' ? failure.code : 8;
       output = typeof failure.stdout === 'string' ? failure.stdout : '';
@@ -205,7 +247,10 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
     // 1/2: errors corrected. 4: preen refused (needs a human answer). 8+: operational failure. Nothing is applied unless corrected or clean.
     if (exit > 2) {
       await unlink(raw);
-      return { status: 'refused', detail: `e2fsck -p exit ${exit} (${exit === 4 ? 'needs a manual check' : 'operational error'}); the preserved disk is unchanged; see ${basename(work)}/e2fsck-p.log or use --remedy replace-disk` };
+      return {
+        status: 'refused',
+        detail: `e2fsck -p exit ${exit} (${exit === 4 ? 'needs a manual check' : 'operational error'}); the preserved disk is unchanged; see ${basename(work)}/e2fsck-p.log or use --remedy replace-disk`,
+      };
     }
     await checkFilesystem(raw, size);
     const candidate = join(work, 'root.qcow2');
@@ -217,7 +262,10 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
     return { status: 'applied', detail: `e2fsck -p exit ${exit}; original kept as ${kept}` };
   } catch (error) {
     await unlink(raw).catch(() => {});
-    return { status: 'refused', detail: `repair not applied (${error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'native step failed'}); the preserved disk is unchanged` };
+    return {
+      status: 'refused',
+      detail: `repair not applied (${error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'native step failed'}); the preserved disk is unchanged`,
+    };
   }
 }
 
@@ -227,14 +275,23 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
  * into the guest), not part of the root disk, so they are kept as they are; what lived only on the root (JDK, caches, Docker images) is lost.
  * The discarded disk is kept as `root.qcow2.replaced-<stamp>`.
  */
-export async function replacePreservedDisk(directory: string, disk: string, template: string | { base: string }, size: bigint, now = new Date()): Promise<DiskRemedyOutcome> {
+export async function replacePreservedDisk(
+  directory: string,
+  disk: string,
+  template: string | { base: string },
+  size: bigint,
+  now = new Date(),
+): Promise<DiskRemedyOutcome> {
   const stamp = stampOf(now);
   const work = join(directory, `disk-replace-${stamp}`);
   const raw = join(work, 'rootfs.ext4');
   try {
     let before: Awaited<ReturnType<typeof ownDisk>> | null = null;
-    try { before = await lstat(disk, { bigint: true }); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    try {
+      before = await lstat(disk, { bigint: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     if (before && (!before.isFile() || before.nlink !== 1n || before.uid !== BigInt(process.getuid?.() ?? -1))) throw new Error('UNSAFE_ROOT_DISK');
     await mkdir(work, { mode: 0o700 });
     const candidate = join(work, 'root.qcow2');
@@ -244,11 +301,18 @@ export async function replacePreservedDisk(directory: string, disk: string, temp
     const kept = `root.qcow2.replaced-${stamp}`;
     await swapDisk(directory, disk, candidate, join(directory, kept), before);
     const from = typeof template === 'string' ? 'the pinned template' : 'the environment base it was created from';
-    return { status: 'applied', detail: before ? `new root disk from ${from}; /workspace and /artifacts kept; discarded disk kept as ${kept}`
-      : `new root disk from ${from} (no disk was present); /workspace and /artifacts kept` };
+    return {
+      status: 'applied',
+      detail: before
+        ? `new root disk from ${from}; /workspace and /artifacts kept; discarded disk kept as ${kept}`
+        : `new root disk from ${from} (no disk was present); /workspace and /artifacts kept`,
+    };
   } catch (error) {
     await unlink(raw).catch(() => {});
-    return { status: 'refused', detail: `replacement not applied (${error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'native step failed'}); the preserved disk is unchanged` };
+    return {
+      status: 'refused',
+      detail: `replacement not applied (${error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'native step failed'}); the preserved disk is unchanged`,
+    };
   }
 }
 
@@ -261,7 +325,12 @@ export async function buildRootDisk(template: string, raw: string, disk: string,
   if (BigInt(info['virtual-size']) > size) throw new Error('BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY');
   await run('/usr/bin/qemu-img', ['resize', '-f', 'qcow2', disk, size.toString()], native);
   const file = await open(disk, 'r+');
-  try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
+  try {
+    await file.chmod(0o600);
+    await file.sync();
+  } finally {
+    await file.close();
+  }
   // Only the successful new intermediate is disposable.
   await unlink(raw);
 }
@@ -272,7 +341,8 @@ export async function buildRootDisk(template: string, raw: string, disk: string,
  */
 export async function copyBaseDisk(base: string, disk: string, size: bigint): Promise<void> {
   const source = await lstat(base);
-  if (!source.isFile() || source.isSymbolicLink() || source.nlink !== 1 || source.uid !== process.getuid?.() || (source.mode & 0o077)) throw new Error('UNSAFE_ENVIRONMENT_BASE');
+  if (!source.isFile() || source.isSymbolicLink() || source.nlink !== 1 || source.uid !== process.getuid?.() || source.mode & 0o077)
+    throw new Error('UNSAFE_ENVIRONMENT_BASE');
   const facts = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', base], native)).stdout);
   if (facts.format !== 'qcow2' || facts['backing-filename'] || facts['format-specific']?.data?.['data-file'] || BigInt(facts['virtual-size']) !== size) {
     throw new Error('ENVIRONMENT_BASE_GEOMETRY_MISMATCH');
@@ -281,5 +351,10 @@ export async function copyBaseDisk(base: string, disk: string, size: bigint): Pr
   const copied = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
   if (copied.format !== 'qcow2' || copied['backing-filename'] || BigInt(copied['virtual-size']) !== size) throw new Error('ENVIRONMENT_DISK_GEOMETRY_MISMATCH');
   const file = await open(disk, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
+  try {
+    await file.chmod(0o600);
+    await file.sync();
+  } finally {
+    await file.close();
+  }
 }

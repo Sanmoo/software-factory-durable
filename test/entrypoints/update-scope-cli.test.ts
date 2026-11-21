@@ -10,122 +10,309 @@ import { githubWorld } from './github-world-fixture.js';
 // repositories, so no Work exists here). Where an accepted scope update lands is proven at flow level (test/control/continuation-flow).
 function invoke(root: string, args: string[]) {
   const child = spawn(process.execPath, [resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
-    env: { PATH: `${root}:${process.env.PATH ?? ''}`, HOME: '/forbidden-personal-profile' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += String(data); });
-  child.stderr.on('data', data => { stderr += String(data); });
-  return { child, result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr })); }) };
+    env: { PATH: `${root}:${process.env.PATH ?? ''}`, HOME: '/forbidden-personal-profile' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', data => {
+    stdout += String(data);
+  });
+  child.stderr.on('data', data => {
+    stderr += String(data);
+  });
+  return {
+    child,
+    result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', code => resolve({ code, stdout, stderr }));
+    }),
+  };
 }
 const work = '0b9c6a52-3d3e-4c8f-9a51-000000000011';
 
-test('AC3: `factory update-scope <work> --reason` identifies the request first, is idempotent, durable when not applied and indeterminate offline', { timeout: remainingMs() }, async t => {
-  const world = await githubWorld(t, { issues: [], pulls: [] });
-  const root = world.root;
-  await prepareController(root);
-  const cli = async (...args: string[]) => { const result = await invoke(root, args).result; return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined }; };
-  for (const bad of [['update-scope', work], ['update-scope', work, 'Only docs.'], ['update-scope', 'not-a-uuid', '--reason', 'Only touch docs/ please.'],
-    ['update-scope', work, '--reason', ' padded reason text'], ['update-scope', work, '--reason', 'x'.repeat(2001)], ['update-scope', work, '--reason', 'a', 'b']]) {
-    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
-  }
-  const offline = await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-offline');
-  assert.equal(offline.code, 4);
-  assert.match(offline.stderr, /REQUEST_IDENTIFIED.*scope-offline/);
-  assert.match(offline.stderr, /REQUEST_INDETERMINATE/);
-  const owner = invoke(root, ['run']);
-  t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
-  const first = await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1');
-  assert.equal(first.code, 2, first.stderr);
-  assert.deepEqual(first.json, { kind: 'durable', request_id: 'scope-1', operation: 'update-scope', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND',
-    scopeUpdateId: null, appliesAt: null });
-  assert.deepEqual((await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1')).json, first.json, 'same identity and content: same result');
-  assert.deepEqual((await cli('update-scope', work, '--reason', 'Changed reason text here.', '--request-id', 'scope-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' });
-  assert.deepEqual((await cli('request', 'scope-1')).json, { kind: 'request', receipt: first.json });
-  // Ticket 16: `authorize-readiness <work> --reason` follows the same shape; with no Work, a durable not-applied receipt (nothing authorized).
-  assert.equal((await cli('authorize-readiness', work, 'no flag')).code, 2);
-  const authorize = await cli('authorize-readiness', work, '--reason', 'Restore ready after the human draft.', '--request-id', 'ready-1');
-  assert.equal(authorize.code, 2, authorize.stderr);
-  assert.match(authorize.stderr, /REQUEST_IDENTIFIED.*ready-1/);
-  assert.deepEqual(authorize.json, { kind: 'durable', request_id: 'ready-1', operation: 'authorize-readiness', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', purpose: null });
-  // Ticket 25: cycle commands share the identified-request shape; with no Work every one is a durable not-applied receipt (nothing changed).
-  for (const bad of [['cancel', 'not-a-uuid'], ['resume', work, 'extra'], ['reopen'], ['new', 'acme/project'], ['new', 'acme/project#0'], ['new', 'acme/project#3', '--keep']]) {
-    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
-  }
-  for (const operation of ['cancel', 'resume', 'reopen'] as const) {
-    const result = await cli(operation, work, '--request-id', `${operation}-1`);
-    assert.equal(result.code, 2, result.stderr);
-    assert.match(result.stderr, new RegExp(`REQUEST_IDENTIFIED.*${operation}-1`));
-    assert.deepEqual(result.json, { kind: 'durable', request_id: `${operation}-1`, operation, work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
-  }
-  // Ticket 41: `resume <work> --override-blocked-recovery <reference> --request-id <id>` (identity required; reference shape checked locally,
-  // its exactness by Control). With no Work: a durable not-applied receipt through the real socket/owner; the replay is the same receipt.
-  const blocked = 'request:builder-0b9c6a52-3d3e-4c8f-9a51-000000000041:QUESTION_RECORD_INCOMPLETE';
-  for (const bad of [['resume', work, '--override-blocked-recovery', blocked], ['resume', work, '--override-blocked-recovery', 'request:x y:CODE', '--request-id', 'o-bad'],
-    ['resume', work, '--override-blocked-recovery', '--request-id', 'o-bad'], ['cancel', work, '--override-blocked-recovery', blocked, '--request-id', 'o-bad']]) {
-    const result = await cli(...bad);
-    assert.equal(result.code, 2, bad.join(' '));
-    assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
-  }
-  const overridden = await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1');
-  assert.equal(overridden.code, 2, overridden.stderr);
-  assert.match(overridden.stderr, /REQUEST_IDENTIFIED.*override-1/);
-  assert.deepEqual(overridden.json, { kind: 'durable', request_id: 'override-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
-  assert.deepEqual((await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1')).json, overridden.json);
-  assert.deepEqual((await cli('resume', work, '--request-id', 'override-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'plain resume under the same identity');
-  // Ticket 51: `resume <work> --new-review-round --request-id <id>` (identity required, never combined with an override, resume only).
-  for (const bad of [['resume', work, '--new-review-round'], ['resume', work, '--new-review-round', '--override-blocked-recovery', blocked, '--request-id', 'n-bad'],
-    ['cancel', work, '--new-review-round', '--request-id', 'n-bad'], ['resume', work, '--new-review-round', '--new-review-round', '--request-id', 'n-bad'],
-    ['resume', work, '--accept-unverified-round', '--request-id', 'n-bad']]) {
-    const result = await cli(...bad);
-    assert.equal(result.code, 2, bad.join(' '));
-    assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
-  }
-  const round = await cli('resume', work, '--new-review-round', '--request-id', 'round-1');
-  assert.equal(round.code, 2, round.stderr);
-  assert.match(round.stderr, /REQUEST_IDENTIFIED.*round-1/);
-  assert.deepEqual(round.json, { kind: 'durable', request_id: 'round-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
-  assert.deepEqual((await cli('resume', work, '--new-review-round', '--request-id', 'round-1')).json, round.json, 'replay: the recorded receipt');
-  assert.deepEqual((await cli('resume', work, '--request-id', 'round-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'plain resume under the same identity');
-  // Ticket 50: `resume <work> --retry-blocked-start <code> [--remedy <name>] --request-id <id>` (identity required; code/remedy shapes checked
-  // locally, exactness by Control); never together with an override; a remedy only with a retry.
-  for (const bad of [['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED'], ['resume', work, '--retry-blocked-start', 'WORKER_INTERRUPTED', '--request-id', 'r-bad'],
-    ['resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'wipe', '--request-id', 'r-bad'],
-    ['resume', work, '--remedy', 'recreate-artifact-seed', '--request-id', 'r-bad'],
-    ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--override-blocked-recovery', blocked, '--request-id', 'r-bad'],
-    ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--new-review-round', '--request-id', 'r-bad'],
-    ['cancel', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--request-id', 'r-bad']]) {
-    const result = await cli(...bad);
-    assert.equal(result.code, 2, bad.join(' '));
-    assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
-  }
-  const retried = await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'recreate-artifact-seed', '--request-id', 'retry-1');
-  assert.equal(retried.code, 2, retried.stderr);
-  assert.match(retried.stderr, /REQUEST_IDENTIFIED.*retry-1/);
-  assert.deepEqual(retried.json, { kind: 'durable', request_id: 'retry-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
-  assert.deepEqual((await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'recreate-artifact-seed', '--request-id', 'retry-1')).json,
-    retried.json, 'replay: the recorded receipt');
-  assert.deepEqual((await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--request-id', 'retry-1')).json,
-    { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity without the remedy is another decision');
-  // Ticket 47: the disk remedies travel through the same CLI/socket shapes (applicability is Control's: no Work here).
-  for (const remedy of ['repair-disk', 'replace-disk']) {
-    const disk = await cli('resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--remedy', remedy, '--request-id', `disk-${remedy}`);
-    assert.deepEqual([disk.code, disk.json], [2, { kind: 'durable', request_id: `disk-${remedy}`, operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null }], disk.stderr);
-  }
-  const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
-  assert.equal(created.code, 2, created.stderr);
-  assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });
-  assert.deepEqual((await cli('new', 'acme/project#3', '--request-id', 'new-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity, other decision');
-  // Ticket 23: `repair <work> --reason` follows the same ingress (identified first, durable, idempotent); no Work here.
-  for (const bad of [['repair', work], ['repair', work, 'Rename the flag.'], ['repair', 'not-a-uuid', '--reason', 'Rename the flag.']]) {
-    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
-  }
-  const repair = await cli('repair', work, '--reason', 'Rename the flag to --dry-run in docs/a.md.', '--request-id', 'repair-1');
-  assert.equal(repair.code, 2, repair.stderr);
-  assert.match(repair.stderr, /REQUEST_IDENTIFIED.*repair-1/);
-  assert.deepEqual(repair.json, { kind: 'durable', request_id: 'repair-1', operation: 'repair', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', feedbackId: null, appliesAt: null,
-    nextStep: 'No Work with this identity; use `factory list`.' });
-  assert.deepEqual((await cli('repair', work, '--reason', 'Another repair reason here.', '--request-id', 'repair-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' });
-  owner.child.kill('SIGTERM');
-  assert.equal((await owner.result).code, 0);
-});
+test(
+  'AC3: `factory update-scope <work> --reason` identifies the request first, is idempotent, durable when not applied and indeterminate offline',
+  { timeout: remainingMs() },
+  async t => {
+    const world = await githubWorld(t, { issues: [], pulls: [] });
+    const root = world.root;
+    await prepareController(root);
+    const cli = async (...args: string[]) => {
+      const result = await invoke(root, args).result;
+      return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined };
+    };
+    for (const bad of [
+      ['update-scope', work],
+      ['update-scope', work, 'Only docs.'],
+      ['update-scope', 'not-a-uuid', '--reason', 'Only touch docs/ please.'],
+      ['update-scope', work, '--reason', ' padded reason text'],
+      ['update-scope', work, '--reason', 'x'.repeat(2001)],
+      ['update-scope', work, '--reason', 'a', 'b'],
+    ]) {
+      assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+    }
+    const offline = await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-offline');
+    assert.equal(offline.code, 4);
+    assert.match(offline.stderr, /REQUEST_IDENTIFIED.*scope-offline/);
+    assert.match(offline.stderr, /REQUEST_INDETERMINATE/);
+    const owner = invoke(root, ['run']);
+    t.after(async () => {
+      owner.child.kill('SIGTERM');
+      await owner.result;
+    });
+    await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
+    const first = await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1');
+    assert.equal(first.code, 2, first.stderr);
+    assert.deepEqual(first.json, {
+      kind: 'durable',
+      request_id: 'scope-1',
+      operation: 'update-scope',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      scopeUpdateId: null,
+      appliesAt: null,
+    });
+    assert.deepEqual(
+      (await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1')).json,
+      first.json,
+      'same identity and content: same result',
+    );
+    assert.deepEqual((await cli('update-scope', work, '--reason', 'Changed reason text here.', '--request-id', 'scope-1')).json, {
+      kind: 'refused',
+      code: 'REQUEST_ID_CONFLICT',
+    });
+    assert.deepEqual((await cli('request', 'scope-1')).json, { kind: 'request', receipt: first.json });
+    // Ticket 16: `authorize-readiness <work> --reason` follows the same shape; with no Work, a durable not-applied receipt (nothing authorized).
+    assert.equal((await cli('authorize-readiness', work, 'no flag')).code, 2);
+    const authorize = await cli('authorize-readiness', work, '--reason', 'Restore ready after the human draft.', '--request-id', 'ready-1');
+    assert.equal(authorize.code, 2, authorize.stderr);
+    assert.match(authorize.stderr, /REQUEST_IDENTIFIED.*ready-1/);
+    assert.deepEqual(authorize.json, {
+      kind: 'durable',
+      request_id: 'ready-1',
+      operation: 'authorize-readiness',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      purpose: null,
+    });
+    // Ticket 25: cycle commands share the identified-request shape; with no Work every one is a durable not-applied receipt (nothing changed).
+    for (const bad of [
+      ['cancel', 'not-a-uuid'],
+      ['resume', work, 'extra'],
+      ['reopen'],
+      ['new', 'acme/project'],
+      ['new', 'acme/project#0'],
+      ['new', 'acme/project#3', '--keep'],
+    ]) {
+      assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+    }
+    for (const operation of ['cancel', 'resume', 'reopen'] as const) {
+      const result = await cli(operation, work, '--request-id', `${operation}-1`);
+      assert.equal(result.code, 2, result.stderr);
+      assert.match(result.stderr, new RegExp(`REQUEST_IDENTIFIED.*${operation}-1`));
+      assert.deepEqual(result.json, {
+        kind: 'durable',
+        request_id: `${operation}-1`,
+        operation,
+        work_id: work,
+        outcome: 'not-applied',
+        reason: 'WORK_NOT_FOUND',
+        created: null,
+      });
+    }
+    // Ticket 41: `resume <work> --override-blocked-recovery <reference> --request-id <id>` (identity required; reference shape checked locally,
+    // its exactness by Control). With no Work: a durable not-applied receipt through the real socket/owner; the replay is the same receipt.
+    const blocked = 'request:builder-0b9c6a52-3d3e-4c8f-9a51-000000000041:QUESTION_RECORD_INCOMPLETE';
+    for (const bad of [
+      ['resume', work, '--override-blocked-recovery', blocked],
+      ['resume', work, '--override-blocked-recovery', 'request:x y:CODE', '--request-id', 'o-bad'],
+      ['resume', work, '--override-blocked-recovery', '--request-id', 'o-bad'],
+      ['cancel', work, '--override-blocked-recovery', blocked, '--request-id', 'o-bad'],
+    ]) {
+      const result = await cli(...bad);
+      assert.equal(result.code, 2, bad.join(' '));
+      assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
+    }
+    const overridden = await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1');
+    assert.equal(overridden.code, 2, overridden.stderr);
+    assert.match(overridden.stderr, /REQUEST_IDENTIFIED.*override-1/);
+    assert.deepEqual(overridden.json, {
+      kind: 'durable',
+      request_id: 'override-1',
+      operation: 'resume',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      created: null,
+    });
+    assert.deepEqual((await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1')).json, overridden.json);
+    assert.deepEqual(
+      (await cli('resume', work, '--request-id', 'override-1')).json,
+      { kind: 'refused', code: 'REQUEST_ID_CONFLICT' },
+      'plain resume under the same identity',
+    );
+    // Ticket 51: `resume <work> --new-review-round --request-id <id>` (identity required, never combined with an override, resume only).
+    for (const bad of [
+      ['resume', work, '--new-review-round'],
+      ['resume', work, '--new-review-round', '--override-blocked-recovery', blocked, '--request-id', 'n-bad'],
+      ['cancel', work, '--new-review-round', '--request-id', 'n-bad'],
+      ['resume', work, '--new-review-round', '--new-review-round', '--request-id', 'n-bad'],
+      ['resume', work, '--accept-unverified-round', '--request-id', 'n-bad'],
+    ]) {
+      const result = await cli(...bad);
+      assert.equal(result.code, 2, bad.join(' '));
+      assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
+    }
+    const round = await cli('resume', work, '--new-review-round', '--request-id', 'round-1');
+    assert.equal(round.code, 2, round.stderr);
+    assert.match(round.stderr, /REQUEST_IDENTIFIED.*round-1/);
+    assert.deepEqual(round.json, {
+      kind: 'durable',
+      request_id: 'round-1',
+      operation: 'resume',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      created: null,
+    });
+    assert.deepEqual((await cli('resume', work, '--new-review-round', '--request-id', 'round-1')).json, round.json, 'replay: the recorded receipt');
+    assert.deepEqual(
+      (await cli('resume', work, '--request-id', 'round-1')).json,
+      { kind: 'refused', code: 'REQUEST_ID_CONFLICT' },
+      'plain resume under the same identity',
+    );
+    // Ticket 50: `resume <work> --retry-blocked-start <code> [--remedy <name>] --request-id <id>` (identity required; code/remedy shapes checked
+    // locally, exactness by Control); never together with an override; a remedy only with a retry.
+    for (const bad of [
+      ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED'],
+      ['resume', work, '--retry-blocked-start', 'WORKER_INTERRUPTED', '--request-id', 'r-bad'],
+      ['resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'wipe', '--request-id', 'r-bad'],
+      ['resume', work, '--remedy', 'recreate-artifact-seed', '--request-id', 'r-bad'],
+      ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--override-blocked-recovery', blocked, '--request-id', 'r-bad'],
+      ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--new-review-round', '--request-id', 'r-bad'],
+      ['cancel', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--request-id', 'r-bad'],
+    ]) {
+      const result = await cli(...bad);
+      assert.equal(result.code, 2, bad.join(' '));
+      assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
+    }
+    const retried = await cli(
+      'resume',
+      work,
+      '--retry-blocked-start',
+      'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT',
+      '--remedy',
+      'recreate-artifact-seed',
+      '--request-id',
+      'retry-1',
+    );
+    assert.equal(retried.code, 2, retried.stderr);
+    assert.match(retried.stderr, /REQUEST_IDENTIFIED.*retry-1/);
+    assert.deepEqual(retried.json, {
+      kind: 'durable',
+      request_id: 'retry-1',
+      operation: 'resume',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      created: null,
+    });
+    assert.deepEqual(
+      (
+        await cli(
+          'resume',
+          work,
+          '--retry-blocked-start',
+          'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT',
+          '--remedy',
+          'recreate-artifact-seed',
+          '--request-id',
+          'retry-1',
+        )
+      ).json,
+      retried.json,
+      'replay: the recorded receipt',
+    );
+    assert.deepEqual(
+      (await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--request-id', 'retry-1')).json,
+      { kind: 'refused', code: 'REQUEST_ID_CONFLICT' },
+      'same identity without the remedy is another decision',
+    );
+    // Ticket 47: the disk remedies travel through the same CLI/socket shapes (applicability is Control's: no Work here).
+    for (const remedy of ['repair-disk', 'replace-disk']) {
+      const disk = await cli(
+        'resume',
+        work,
+        '--retry-blocked-start',
+        'START_PRESERVED_DISK_CHECK_REQUIRED',
+        '--remedy',
+        remedy,
+        '--request-id',
+        `disk-${remedy}`,
+      );
+      assert.deepEqual(
+        [disk.code, disk.json],
+        [
+          2,
+          {
+            kind: 'durable',
+            request_id: `disk-${remedy}`,
+            operation: 'resume',
+            work_id: work,
+            outcome: 'not-applied',
+            reason: 'WORK_NOT_FOUND',
+            created: null,
+          },
+        ],
+        disk.stderr,
+      );
+    }
+    const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
+    assert.equal(created.code, 2, created.stderr);
+    assert.deepEqual(created.json, {
+      kind: 'durable',
+      request_id: 'new-1',
+      operation: 'new',
+      work_id: null,
+      outcome: 'not-applied',
+      reason: 'TICKET_NOT_KNOWN',
+      created: null,
+    });
+    assert.deepEqual(
+      (await cli('new', 'acme/project#3', '--request-id', 'new-1')).json,
+      { kind: 'refused', code: 'REQUEST_ID_CONFLICT' },
+      'same identity, other decision',
+    );
+    // Ticket 23: `repair <work> --reason` follows the same ingress (identified first, durable, idempotent); no Work here.
+    for (const bad of [
+      ['repair', work],
+      ['repair', work, 'Rename the flag.'],
+      ['repair', 'not-a-uuid', '--reason', 'Rename the flag.'],
+    ]) {
+      assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+    }
+    const repair = await cli('repair', work, '--reason', 'Rename the flag to --dry-run in docs/a.md.', '--request-id', 'repair-1');
+    assert.equal(repair.code, 2, repair.stderr);
+    assert.match(repair.stderr, /REQUEST_IDENTIFIED.*repair-1/);
+    assert.deepEqual(repair.json, {
+      kind: 'durable',
+      request_id: 'repair-1',
+      operation: 'repair',
+      work_id: work,
+      outcome: 'not-applied',
+      reason: 'WORK_NOT_FOUND',
+      feedbackId: null,
+      appliesAt: null,
+      nextStep: 'No Work with this identity; use `factory list`.',
+    });
+    assert.deepEqual((await cli('repair', work, '--reason', 'Another repair reason here.', '--request-id', 'repair-1')).json, {
+      kind: 'refused',
+      code: 'REQUEST_ID_CONFLICT',
+    });
+    owner.child.kill('SIGTERM');
+    assert.equal((await owner.result).code, 0);
+  },
+);

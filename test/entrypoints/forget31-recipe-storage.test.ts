@@ -16,23 +16,42 @@ import { environmentPort, forgetOwnerRun, verdict, type CaseObservation } from '
 const label = { id: 55, name: 'ready-for-agent' };
 
 async function source(dir: string, name: string, number: number, kind: 'delivered' | 'cancelled') {
-  const path = join(dir, `${name}-source`); await mkdir(path, { mode: 0o700 });
+  const path = join(dir, `${name}-source`);
+  await mkdir(path, { mode: 0o700 });
   const opened = await store({ after: () => {} }, path);
   const work_id = await seedPublishedWork(opened.session, { number, ...(kind === 'delivered' ? { environmentFor: () => 'no-environment' } : {}) });
   let successor: string | null = null;
-  if (kind === 'delivered') { await markDelivered(opened.session, work_id, new Date().toISOString()); await markCleaned(opened.session, work_id); }
-  else successor = await cancelWithSuccessor(opened.session, work_id, number);
+  if (kind === 'delivered') {
+    await markDelivered(opened.session, work_id, new Date().toISOString());
+    await markCleaned(opened.session, work_id);
+  } else successor = await cancelWithSuccessor(opened.session, work_id, number);
   await opened.close();
   const records = await createRecords({ root: path });
   const context = { workId: work_id, executionId: 'e-1', invocationId: 'i-1', role: 'builder' as const, environmentRef: 'env', bootRef: 'boot', callId: 'c-1' };
-  for (let index = 0; index < 5; index++) { const output = await records.openOutput({ ...context, callId: randomUUID() }); await output.write(Buffer.from(`out ${index}`)); await output.finish(); }
+  for (let index = 0; index < 5; index++) {
+    const output = await records.openOutput({ ...context, callId: randomUUID() });
+    await output.write(Buffer.from(`out ${index}`));
+    await output.finish();
+  }
   await records.record({ ...context, role: 'spec', callId: 'review-opinion' }, { kind: 'review-opinion' });
   await preserveEvidence({ root: path, workId: work_id, label: 'env', stage: async () => {} });
-  const caseRoot = join(dir, name); await mkdir(join(caseRoot, 'records'), { recursive: true, mode: 0o700 });
+  const caseRoot = join(dir, name);
+  await mkdir(join(caseRoot, 'records'), { recursive: true, mode: 0o700 });
   const recordsRoot = await realpath(join(caseRoot, 'records'));
   await copyRecords(join(path, work_id), join(recordsRoot, work_id));
-  return { storagePath: join(path, 'control.sqlite'), environmentRoot: path, recordsRoot, workId: work_id, successor, ticket: ticket(number), label, now: Date.now(),
-    repositoryName: 'acme/project', deadlineMs: 20000, before: await inspectWorkRecords(recordsRoot, work_id) };
+  return {
+    storagePath: join(path, 'control.sqlite'),
+    environmentRoot: path,
+    recordsRoot,
+    workId: work_id,
+    successor,
+    ticket: ticket(number),
+    label,
+    now: Date.now(),
+    repositoryName: 'acme/project',
+    deadlineMs: 20000,
+    before: await inspectWorkRecords(recordsRoot, work_id),
+  };
 }
 
 test('recipe core: delivered and cancelled Works forgotten on copies through the public Control; existing after forget and restart; verdict met, no-op not met; no remote call', async t => {
@@ -45,9 +64,14 @@ test('recipe core: delivered and cancelled Works forgotten on copies through the
   assert.equal((runDA.shown as { kind: string }).kind, 'work-forgotten', JSON.stringify(runDA).slice(0, 2000));
   const runCA = await forgetOwnerRun({ ...c, steps: ['cleanup-environment-then-forget'], requestPrefix: 't-c-a' });
   assert.equal((runCA.shown as { kind: string }).kind, 'work-forgotten', JSON.stringify(runCA).slice(0, 3000));
-  assert.deepEqual(runCA.environmentPort.map(item => item.split(':')[0]), ['preserve', 'remove', 'absent'], 'the labelled environment port answered the explicit cleanup only');
+  assert.deepEqual(
+    runCA.environmentPort.map(item => item.split(':')[0]),
+    ['preserve', 'remove', 'absent'],
+    'the labelled environment port answered the explicit cleanup only',
+  );
   // Review MED: the stand-in guards the REAL path the product would remove: an existing environment is refused, never answered absent.
-  const real = join(dir, 'real-root'); await mkdir(join(real, 'environments', 'env-x'), { recursive: true, mode: 0o700 });
+  const real = join(dir, 'real-root');
+  await mkdir(join(real, 'environments', 'env-x'), { recursive: true, mode: 0o700 });
   const guarded = environmentPort(real);
   assert.equal((await guarded.remove({ environment: 'env-x' })).status, 'failure');
   assert.equal((await guarded.preserve({ environment: 'env-x' })).status, 'failed');
@@ -59,7 +83,8 @@ test('recipe core: delivered and cancelled Works forgotten on copies through the
     const tree = (value: typeof after) => ({ present: value.present, leftover: value.leftover, files: value.files, completeness: value.completeness });
     return { workId: input.workId, successorId: input.successor, before: tree(input.before), after: tree(after), runA, runB };
   };
-  const delivered = await observed(d, runDA, runDB), cancelled = await observed(c, runCA, runCB);
+  const delivered = await observed(d, runDA, runDB),
+    cancelled = await observed(c, runCA, runCB);
   const result = verdict({ delivered, cancelled: { ...cancelled, environmentPresent: false }, sourceBefore: 'same', sourceAfter: 'same' });
   assert.equal(result.overall, 'met', JSON.stringify(result.checks.filter(check => !check.met)));
   // A no-op (nothing forgotten, Records still there) is never a pass.
@@ -67,6 +92,10 @@ test('recipe core: delivered and cancelled Works forgotten on copies through the
   assert.equal(verdict({ delivered: noop, cancelled, sourceBefore: 'same', sourceAfter: 'same' }).overall, 'not-met');
   // With the real environment present, a forgotten cancelled cycle is NOT met (it had to stay refused); sources must match exactly.
   assert.equal(verdict({ delivered, cancelled: { ...cancelled, environmentPresent: true }, sourceBefore: 'same', sourceAfter: 'same' }).overall, 'not-met');
-  assert.equal(verdict({ delivered, cancelled, sourceBefore: { records: { delivered: 'a' } }, sourceAfter: { records: { delivered: 'b' } } }).overall, 'not-met');
-  for (const run of [runDA, runDB, runCA, runCB]) assert.ok(!('cleanupBranch' in run.calls) && !('postComment' in run.calls) && !('sandbox.remove' in run.calls));
+  assert.equal(
+    verdict({ delivered, cancelled, sourceBefore: { records: { delivered: 'a' } }, sourceAfter: { records: { delivered: 'b' } } }).overall,
+    'not-met',
+  );
+  for (const run of [runDA, runDB, runCA, runCB])
+    assert.ok(!('cleanupBranch' in run.calls) && !('postComment' in run.calls) && !('sandbox.remove' in run.calls));
 });

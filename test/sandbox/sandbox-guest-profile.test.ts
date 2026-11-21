@@ -21,7 +21,10 @@ test('guest recipe uses one explicit ISO kernel/module cohort without a second k
   assert.deepEqual(recipe.alpine.rootfsPackages, []);
   const requested = readFileSync(join(directory, 'apk-packages.txt'), 'utf8').trim().split('\n');
   assert.ok(requested.includes('docker') && requested.includes('git'));
-  assert.equal(requested.some(name => name.startsWith('linux-')), false);
+  assert.equal(
+    requested.some(name => name.startsWith('linux-')),
+    false,
+  );
   assert.ok(requested.every(name => /^[a-z0-9][a-z0-9+.-]*$/.test(name)));
   assert.deepEqual(recipe.alpine.initramfsPackages, []);
   assert.equal(recipe.oci, undefined);
@@ -46,7 +49,8 @@ test('guest Git trusts only the Work workspace despite FUSE host uid mapping', (
 
 test('offline filesystem finalization is limited to the two sticky temporary directories', () => {
   assert.deepEqual(JSON.parse(readFileSync(join(directory, 'filesystem-modes.json'), 'utf8')), {
-    '/tmp': '1777', '/var/tmp': '1777',
+    '/tmp': '1777',
+    '/var/tmp': '1777',
   });
 });
 

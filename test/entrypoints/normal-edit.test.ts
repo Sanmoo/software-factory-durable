@@ -17,7 +17,9 @@ const isolated = ['invalid', 'uncertain', 'persist', 'cancel', 'eof', 'secret'];
 
 type Chain = { root: string; code: number | null; output: string; audit: string[] };
 const roots: string[] = [];
-after(async () => { await Promise.all(roots.map(root => rm(root, { recursive: true, force: true }))); });
+after(async () => {
+  await Promise.all(roots.map(root => rm(root, { recursive: true, force: true })));
+});
 
 async function chain(modes: string): Promise<Chain> {
   const root = await mkdtemp('/tmp/ne-');
@@ -26,15 +28,32 @@ async function chain(modes: string): Promise<Chain> {
   const child = fork(fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), [root, environment, `boot-${randomUUID()}`], {
     execArgv: ['--experimental-test-module-mocks', '--import', fileURLToPath(new URL('../sandbox/adapter-diagnostics-fixture.js', import.meta.url))],
     env: { ...process.env, ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'normal-worker', TASK114_EDIT: modes, NODE_DISABLE_COMPILE_CACHE: '1' },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: true,
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    detached: true,
   });
-  let output = ''; child.stdout!.on('data', data => { output += data; }); child.stderr!.on('data', data => { output += data; });
+  let output = '';
+  child.stdout!.on('data', data => {
+    output += data;
+  });
+  child.stderr!.on('data', data => {
+    output += data;
+  });
   // No fixed 15 s per-test timeout (expired at ci load 18): the chain's own end, bounded by the runner budget.
-  const { code } = await ended(child, () => { try { return readFileSync(join(root, 'audit'), 'utf8').trim().split('\n').slice(-3).join(' | '); } catch { return 'no audit yet'; } });
+  const { code } = await ended(child, () => {
+    try {
+      return readFileSync(join(root, 'audit'), 'utf8').trim().split('\n').slice(-3).join(' | ');
+    } catch {
+      return 'no audit yet';
+    }
+  });
   return { root, code, output, audit: existsSync(join(root, 'audit')) ? (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n') : [] };
 }
 const chains = new Map<string, Promise<Chain>>();
-const once = (modes: string[]) => { const key = modes.join(','); if (!chains.has(key)) chains.set(key, chain(key)); return chains.get(key)!; };
+const once = (modes: string[]) => {
+  const key = modes.join(',');
+  if (!chains.has(key)) chains.set(key, chain(key));
+  return chains.get(key)!;
+};
 
 /** One mode's lines (and its edit-result file) within a shared boot, or the whole boot of an isolated mode. */
 async function activation(mode: string, run: Chain, batched: boolean) {
@@ -44,7 +63,8 @@ async function activation(mode: string, run: Chain, batched: boolean) {
   }
   const error = join(run.root, `mode-error-${mode}`);
   assert.equal(existsSync(error), false, existsSync(error) ? readFileSync(error, 'utf8') : '');
-  const begin = run.audit.indexOf(`mode-begin:${mode}`), end = run.audit.indexOf(`mode-end:${mode}`);
+  const begin = run.audit.indexOf(`mode-begin:${mode}`),
+    end = run.audit.indexOf(`mode-end:${mode}`);
   assert.ok(begin >= 0 && end > begin, run.output);
   return { audit: run.audit.slice(begin + 1, end), result: join(run.root, `edit-result-${mode}`) };
 }
@@ -55,10 +75,18 @@ async function check(mode: string, run: Chain, batched: boolean) {
   // Ticket 46: `budget`/`secret` are captures refused before effect: no commit, but the following write and the next turn still run.
   const critical = ['uncertain', 'persist', 'cancel', 'eof'].includes(mode);
   assert.equal(audit.filter(x => x === 'worker-spawn').length, mode === 'invalid' ? 0 : 1, mode);
-  assert.equal(audit.filter(x => x.includes('"kind":"provider-request"')).length, mode === 'invalid' ? 0 : disabled || critical ? 1 : ['mismatch', 'no-match'].includes(mode) ? 3 : 2, mode);
+  assert.equal(
+    audit.filter(x => x.includes('"kind":"provider-request"')).length,
+    mode === 'invalid' ? 0 : disabled || critical ? 1 : ['mismatch', 'no-match'].includes(mode) ? 3 : 2,
+    mode,
+  );
   assert.equal(audit.filter(x => x.includes('"kind":"provider-validated"')).length, audit.filter(x => x.includes('"kind":"provider-request"')).length, mode);
   assert.equal(audit.filter(x => x === 'edit-create').length, disabled || critical ? 0 : 1, mode);
-  assert.equal(audit.filter(x => x === 'edit-commit').length, disabled || ['budget', 'cancel', 'eof', 'empty', 'secret'].includes(mode) ? 0 : mode === 'mismatch' ? 2 : 1, mode);
+  assert.equal(
+    audit.filter(x => x === 'edit-commit').length,
+    disabled || ['budget', 'cancel', 'eof', 'empty', 'secret'].includes(mode) ? 0 : mode === 'mismatch' ? 2 : 1,
+    mode,
+  );
   if (!disabled && !['budget', 'cancel', 'eof', 'empty', 'secret'].includes(mode)) assert.equal(await readFile(result, 'utf8'), '﻿new\r\nsafe █\r\n', mode);
   assert.equal(audit.filter(x => x === 'edit-capture').length, disabled ? 0 : ['mismatch', 'no-match'].includes(mode) ? 2 : 1, mode);
   if (mode === 'persist') assert.ok(audit.includes('edit-result-evidence-failed'));

@@ -20,7 +20,9 @@ export type FactoryOAuthOptions = {
   profileDirectory: string;
 };
 const unavailable = () => Object.freeze({ code: 'FACTORY_OAUTH_UNAVAILABLE' as const });
-function requireCondition(condition: unknown): asserts condition { if (!condition) throw unavailable(); }
+function requireCondition(condition: unknown): asserts condition {
+  if (!condition) throw unavailable();
+}
 const canonical = (path: string) => isAbsolute(path) && resolve(path) === path;
 const intersects = (a: string, b: string) => a === b || a.startsWith(b + sep) || b.startsWith(a + sep);
 
@@ -38,18 +40,30 @@ function verifySelectedModules() {
   const base = '.scratch/factory-development-sdk-v3/';
   const root = new URL(base, app);
   const ownedFile = (url: URL) => {
-    const path = fileURLToPath(url), info = lstatSync(path);
+    const path = fileURLToPath(url),
+      info = lstatSync(path);
     requireCondition(info.isFile() && info.uid === process.getuid?.() && info.nlink === 1 && realpathSync(path) === path);
     return info;
   };
   const profileURL = new URL('profile.json', root);
   ownedFile(profileURL);
   let profile: Record<string, unknown>;
-  try { profile = JSON.parse(readFileSync(profileURL, 'utf8')); } catch { throw unavailable(); }
+  try {
+    profile = JSON.parse(readFileSync(profileURL, 'utf8'));
+  } catch {
+    throw unavailable();
+  }
   for (const [key, value] of Object.entries(sdkProfile)) requireCondition(profile[key] === value);
   let manifest: { imports?: Record<string, { types?: string; default?: string }> };
-  try { manifest = JSON.parse(readFileSync(new URL('package.json', app), 'utf8')); } catch { throw unavailable(); }
-  for (const [alias, module] of [['#factory-pi-auth-storage', 'auth-storage'], ['#factory-pi-model-runtime', 'model-runtime']] as const) {
+  try {
+    manifest = JSON.parse(readFileSync(new URL('package.json', app), 'utf8'));
+  } catch {
+    throw unavailable();
+  }
+  for (const [alias, module] of [
+    ['#factory-pi-auth-storage', 'auth-storage'],
+    ['#factory-pi-model-runtime', 'model-runtime'],
+  ] as const) {
     const selected = `./${base}sdk/dist/core/${module}`;
     requireCondition(manifest.imports?.[alias]?.default === `${selected}.js` && manifest.imports[alias]?.types === `${selected}.d.ts`);
     requireCondition(import.meta.resolve(alias) === new URL(`${selected}.js`, app).href);
@@ -69,8 +83,8 @@ function validatePath(options: FactoryOAuthOptions): string {
   const credentialsDirectory = join(root, 'credentials');
   const excluded = [options.excludedRoots.source, options.excludedRoots.guest, ...options.excludedRoots.profiles];
   requireCondition(options.excludedRoots.profiles.length > 0);
-  for (const path of excluded) requireCondition(canonical(path) && realpathSync(path) === path &&
-    lstatSync(path).isDirectory() && !intersects(credentialsDirectory, path));
+  for (const path of excluded)
+    requireCondition(canonical(path) && realpathSync(path) === path && lstatSync(path).isDirectory() && !intersects(credentialsDirectory, path));
   const path = join(credentialsDirectory, 'chatgpt.json');
   let ancestor = path;
   while (true) {
@@ -90,16 +104,30 @@ function credential(value: unknown): Credential {
   requireCondition(typeof value === 'object' && value !== null && !Array.isArray(value));
   const c = value as Record<string, unknown>;
   requireCondition(Object.keys(c).every(key => ['type', 'access', 'refresh', 'expires', 'clientId', 'scopes'].includes(key)));
-  requireCondition(c.type === 'oauth' && typeof c.access === 'string' && c.access.trim().length > 0 &&
-    typeof c.refresh === 'string' && c.refresh.trim().length > 0 && typeof c.expires === 'number' && Number.isFinite(c.expires) &&
-    typeof c.clientId === 'string' && c.clientId.trim().length > 0 && Array.isArray(c.scopes) &&
-    c.scopes.every(scope => typeof scope === 'string') && c.scopes.includes('chatgpt.tokens.use.direct'));
+  requireCondition(
+    c.type === 'oauth' &&
+      typeof c.access === 'string' &&
+      c.access.trim().length > 0 &&
+      typeof c.refresh === 'string' &&
+      c.refresh.trim().length > 0 &&
+      typeof c.expires === 'number' &&
+      Number.isFinite(c.expires) &&
+      typeof c.clientId === 'string' &&
+      c.clientId.trim().length > 0 &&
+      Array.isArray(c.scopes) &&
+      c.scopes.every(scope => typeof scope === 'string') &&
+      c.scopes.includes('chatgpt.tokens.use.direct'),
+  );
   return c as Credential;
 }
 function documentCredential(raw: string | undefined): Credential {
   requireCondition(typeof raw === 'string' && raw.length > 0);
   let value: unknown;
-  try { value = JSON.parse(raw); } catch { throw unavailable(); }
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw unavailable();
+  }
   requireCondition(typeof value === 'object' && value !== null && !Array.isArray(value));
   requireCondition(Object.keys(value).length === 1 && Object.hasOwn(value, 'openai'));
   return credential((value as Record<string, unknown>).openai);
@@ -112,7 +140,9 @@ function sensitive(c: Credential): readonly string[] {
 /** Private Factory store, shared with the actual OAuth worker's native runtime.
  * The optional getAuth helper is for deep component qualification only; worker
  * composition consumes credentials directly and never exports a bearer. */
-export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ credentials: CredentialStore; getAuth(): Promise<{ apiKey: string }>; settleCredentialWrites(): Promise<void> }> {
+export async function openFactoryOAuth(
+  options: FactoryOAuthOptions,
+): Promise<{ credentials: CredentialStore; getAuth(): Promise<{ apiKey: string }>; settleCredentialWrites(): Promise<void> }> {
   try {
     options.signal.throwIfAborted();
     const path = validatePath(options); // BEFORE native construction/open (which otherwise creates missing files).
@@ -121,8 +151,13 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
     const native = await import('#factory-pi-auth-storage');
     options.signal.throwIfAborted();
     const file = new native.FileAuthStorageBackend(path);
-    const register = (c: Credential) => { for (const value of sensitive(c)) options.records.registerSecret(value); };
-    const inspect = (raw: string | undefined) => { const c = documentCredential(raw); register(c); };
+    const register = (c: Credential) => {
+      for (const value of sensitive(c)) options.records.registerSecret(value);
+    };
+    const inspect = (raw: string | undefined) => {
+      const c = documentCredential(raw);
+      register(c);
+    };
     let backendFailed = false;
     const backend: Backend = {
       withLock(fn) {
@@ -134,20 +169,27 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
             if (next.next !== undefined) inspect(next.next);
             return next;
           });
-        } catch { backendFailed = true; throw unavailable(); }
+        } catch {
+          backendFailed = true;
+          throw unavailable();
+        }
       },
       async withLockAsync(fn, operation) {
         try {
           validatePath(options);
           return await file.withLockAsync(async raw => {
-            validatePath(options); inspect(raw);
+            validatePath(options);
+            inspect(raw);
             const next = await fn(raw);
             // No scope check here: an already-started native refresh must preserve rotation after abort.
             validatePath(options);
             if (next.next !== undefined) inspect(next.next);
             return next;
           }, operation);
-        } catch { backendFailed = true; throw unavailable(); }
+        } catch {
+          backendFailed = true;
+          throw unavailable();
+        }
       },
     };
     // AuthStorage constructor/reload can swallow parse errors. Explicit validation must not.
@@ -156,13 +198,19 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
     let publicationFailed = false;
     const active = (provider = 'openai', operation?: Operation) => {
       requireCondition(provider === 'openai' && !publicationFailed && !backendFailed);
-      options.signal.throwIfAborted(); operation?.signal?.throwIfAborted();
+      options.signal.throwIfAborted();
+      operation?.signal?.throwIfAborted();
     };
     const publish = async (value: Credential | undefined, operation?: Operation) => {
       requireCondition(!backendFailed && !publicationFailed); // SDK reload/read fallback cannot mask a backend failure.
-      const c = credential(value); register(c);
-      try { await options.acknowledgeSecrets(Object.freeze([...sensitive(c)])); }
-      catch { publicationFailed = true; throw unavailable(); }
+      const c = credential(value);
+      register(c);
+      try {
+        await options.acknowledgeSecrets(Object.freeze([...sensitive(c)]));
+      } catch {
+        publicationFailed = true;
+        throw unavailable();
+      }
       active('openai', operation);
       return structuredClone(c);
     };
@@ -172,53 +220,77 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
           active(provider, operation);
           const value = await store.read(provider, { signal: operation?.signal ?? options.signal });
           return await publish(value, operation);
-        } catch { throw unavailable(); }
+        } catch {
+          throw unavailable();
+        }
       },
       async modify(provider, fn, operation) {
         try {
           active(provider, operation);
-          const value = await store.modify(provider, async current => {
-            active(provider, operation);
-            const c = await publish(current, operation);
-            const next = await fn(c);
-            if (next !== undefined) register(credential(next)); // BEFORE native private commit.
-            return next;
-          }, operation);
+          const value = await store.modify(
+            provider,
+            async current => {
+              active(provider, operation);
+              const c = await publish(current, operation);
+              const next = await fn(c);
+              if (next !== undefined) register(credential(next)); // BEFORE native private commit.
+              return next;
+            },
+            operation,
+          );
           return await publish(value, operation); // AFTER commit, BEFORE SDK toAuth/use.
-        } catch { throw unavailable(); }
+        } catch {
+          throw unavailable();
+        }
       },
       async list(operation) {
-        try { active('openai', operation); await credentials.read('openai', operation); return [{ providerId: 'openai', type: 'oauth' }]; }
-        catch { throw unavailable(); }
+        try {
+          active('openai', operation);
+          await credentials.read('openai', operation);
+          return [{ providerId: 'openai', type: 'oauth' }];
+        } catch {
+          throw unavailable();
+        }
       },
-      async delete() { throw unavailable(); }, // This qualification module does not implement logout/login.
+      async delete() {
+        throw unavailable();
+      }, // This qualification module does not implement logout/login.
     };
     let runtime: ModelRuntime | undefined;
     let creating: Promise<ModelRuntime> | undefined;
     const getRuntime = async () => {
       active();
-      if (!creating) creating = (async () => {
-        const profile = options.profileDirectory;
-        requireCondition(canonical(profile) && !intersects(join(options.factoryRoot, 'credentials'), profile) &&
-          options.excludedRoots.profiles.some(root => profile === root || profile.startsWith(root + sep)));
-        let ancestor = profile;
-        while (true) {
-          const info = lstatSync(ancestor);
-          requireCondition(info.isDirectory() && !info.isSymbolicLink() && realpathSync(ancestor) === ancestor);
-          if (ancestor === profile) requireCondition(info.uid === process.getuid?.() && (info.mode & 0o7777) === 0o700);
-          if (ancestor === dirname(ancestor)) break;
-          ancestor = dirname(ancestor);
-        }
-        verifySelectedModules();
-        const sdk = await import('#factory-pi-model-runtime');
-        active();
-        runtime = await sdk.ModelRuntime.create({ credentials, modelsPath: null,
-          modelsStorePath: join(profile, 'models-store.json'), allowModelNetwork: false, refreshOnCreate: false });
-        const model = runtime.getModel('openai', 'gpt-6-luna');
-        requireCondition(model?.provider === 'openai' && model.id === 'gpt-6-luna' && model.api === 'openai-responses');
-        active();
-        return runtime;
-      })();
+      if (!creating)
+        creating = (async () => {
+          const profile = options.profileDirectory;
+          requireCondition(
+            canonical(profile) &&
+              !intersects(join(options.factoryRoot, 'credentials'), profile) &&
+              options.excludedRoots.profiles.some(root => profile === root || profile.startsWith(root + sep)),
+          );
+          let ancestor = profile;
+          while (true) {
+            const info = lstatSync(ancestor);
+            requireCondition(info.isDirectory() && !info.isSymbolicLink() && realpathSync(ancestor) === ancestor);
+            if (ancestor === profile) requireCondition(info.uid === process.getuid?.() && (info.mode & 0o7777) === 0o700);
+            if (ancestor === dirname(ancestor)) break;
+            ancestor = dirname(ancestor);
+          }
+          verifySelectedModules();
+          const sdk = await import('#factory-pi-model-runtime');
+          active();
+          runtime = await sdk.ModelRuntime.create({
+            credentials,
+            modelsPath: null,
+            modelsStorePath: join(profile, 'models-store.json'),
+            allowModelNetwork: false,
+            refreshOnCreate: false,
+          });
+          const model = runtime.getModel('openai', 'gpt-6-luna');
+          requireCondition(model?.provider === 'openai' && model.id === 'gpt-6-luna' && model.api === 'openai-responses');
+          active();
+          return runtime;
+        })();
       return creating;
     };
     return {
@@ -229,21 +301,32 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
           active();
           const result = await nativeRuntime.getAuth('openai', { signal: options.signal });
           active();
-          requireCondition(result?.source === 'OAuth' && result.auth &&
-            Object.keys(result.auth).length === 1 && typeof result.auth.apiKey === 'string');
+          requireCondition(result?.source === 'OAuth' && result.auth && Object.keys(result.auth).length === 1 && typeof result.auth.apiKey === 'string');
           options.records.registerSecret(result.auth.apiKey);
-          try { await options.acknowledgeSecrets(Object.freeze([result.auth.apiKey])); }
-          catch { publicationFailed = true; throw unavailable(); }
+          try {
+            await options.acknowledgeSecrets(Object.freeze([result.auth.apiKey]));
+          } catch {
+            publicationFailed = true;
+            throw unavailable();
+          }
           active();
           return { apiKey: result.auth.apiKey };
-        } catch { throw unavailable(); } // Includes unknown raw SDK HTTP errors, never serialize their cause/stack/body.
+        } catch {
+          throw unavailable();
+        } // Includes unknown raw SDK HTTP errors, never serialize their cause/stack/body.
       },
       async settleCredentialWrites() {
-        try { if (creating) await creating.catch(() => {}); await runtime?.settleCredentialWrites(); }
-        catch { throw unavailable(); }
+        try {
+          if (creating) await creating.catch(() => {});
+          await runtime?.settleCredentialWrites();
+        } catch {
+          throw unavailable();
+        }
       },
     };
-  } catch { throw unavailable(); }
+  } catch {
+    throw unavailable();
+  }
 }
 
 /** Fixed standalone setup only. Not worker activation, auth CRUD or owner ACK.
@@ -258,8 +341,11 @@ export type FirstFactoryOAuthLoginOptions = {
 
 function privateSetupDirectory(path: string, create = false) {
   if (create) {
-    try { mkdirSync(path, { mode: 0o700 }); }
-    catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST'); }
+    try {
+      mkdirSync(path, { mode: 0o700 });
+    } catch (error) {
+      requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST');
+    }
   }
   let ancestor = path;
   while (true) {
@@ -271,21 +357,32 @@ function privateSetupDirectory(path: string, create = false) {
   }
 }
 function absent(path: string) {
-  try { lstatSync(path); }
-  catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'ENOENT'); return; }
+  try {
+    lstatSync(path);
+  } catch (error) {
+    requireCondition(error instanceof Error && 'code' in error && error.code === 'ENOENT');
+    return;
+  }
   throw unavailable();
 }
 function privateSetupFile(path: string) {
   const info = lstatSync(path);
-  requireCondition(info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() &&
-    info.nlink === 1 && (info.mode & 0o7777) === 0o600 && realpathSync(path) === path);
+  requireCondition(
+    info.isFile() &&
+      !info.isSymbolicLink() &&
+      info.uid === process.getuid?.() &&
+      info.nlink === 1 &&
+      (info.mode & 0o7777) === 0o600 &&
+      realpathSync(path) === path,
+  );
 }
 
 /** One native memory login, then one exclusive fixed-file native locked commit.
  * Native writes in place: failures retain a private partial file, with no repair,
  * retry, rollback or unlink. Return metadata only, never a credential/bearer. */
 export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOptions): Promise<{
-  code: 'FACTORY_OAUTH_CREATED'; credentialPath: string;
+  code: 'FACTORY_OAUTH_CREATED';
+  credentialPath: string;
 }> {
   let runtime: ModelRuntime | undefined;
   try {
@@ -307,16 +404,23 @@ export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOpti
     const devicePath = join(profile, 'device-id');
     try {
       const fd = openSync(devicePath, 'wx', 0o600);
-      try { writeFileSync(fd, randomUUID(), 'utf8'); } finally { closeSync(fd); }
-    } catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST'); }
+      try {
+        writeFileSync(fd, randomUUID(), 'utf8');
+      } finally {
+        closeSync(fd);
+      }
+    } catch (error) {
+      requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST');
+    }
     privateSetupFile(devicePath);
     const deviceId = readFileSync(devicePath, 'utf8');
     requireCondition(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceId));
     // Preflight this reserved path. With modelsPath:null and no explicit modelsStore,
     // the selected native runtime uses an in-memory catalog, not this cache file.
     const modelsStorePath = join(profile, 'models-store.json');
-    try { privateSetupFile(modelsStorePath); }
-    catch (error) {
+    try {
+      privateSetupFile(modelsStorePath);
+    } catch (error) {
       requireCondition(error instanceof Error && 'code' in error && error.code === 'ENOENT');
     }
     verifySelectedModules();
@@ -348,8 +452,7 @@ export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOpti
     });
     const sdk = await import('#factory-pi-model-runtime');
     signal.throwIfAborted();
-    runtime = await sdk.ModelRuntime.create({ credentials, modelsPath: null, modelsStorePath,
-      allowModelNetwork: false, refreshOnCreate: false, signal });
+    runtime = await sdk.ModelRuntime.create({ credentials, modelsPath: null, modelsStorePath, allowModelNetwork: false, refreshOnCreate: false, signal });
     type Interaction = Parameters<ModelRuntime['login']>[2];
     const interaction: Interaction = {
       signal,
@@ -359,15 +462,24 @@ export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOpti
         // Do not throw out of either callback before native can enter that block.
         try {
           const url = new URL(event.url);
-          requireCondition(url.origin === 'https://auth.openai.com' && url.pathname === '/api/accounts/authorize' &&
-            url.username === '' && url.password === '' && url.hash === '' &&
-            url.searchParams.get('client_id') === 'dynamic_agent_client' &&
-            url.searchParams.get('redirect_uri') === 'http://127.0.0.1:1455/auth/callback' &&
-            url.searchParams.get('response_type') === 'code' && url.searchParams.get('code_challenge_method') === 'S256' &&
-            !!url.searchParams.get('state') && !!url.searchParams.get('code_challenge'));
+          requireCondition(
+            url.origin === 'https://auth.openai.com' &&
+              url.pathname === '/api/accounts/authorize' &&
+              url.username === '' &&
+              url.password === '' &&
+              url.hash === '' &&
+              url.searchParams.get('client_id') === 'dynamic_agent_client' &&
+              url.searchParams.get('redirect_uri') === 'http://127.0.0.1:1455/auth/callback' &&
+              url.searchParams.get('response_type') === 'code' &&
+              url.searchParams.get('code_challenge_method') === 'S256' &&
+              !!url.searchParams.get('state') &&
+              !!url.searchParams.get('code_challenge'),
+          );
           signal.throwIfAborted();
           options.tty.authorizationURL(url.href);
-        } catch { uiAbort.abort(); }
+        } catch {
+          uiAbort.abort();
+        }
       },
       async prompt(prompt) {
         // Native races this prompt with its loopback callback. Never read, echo,
@@ -377,31 +489,44 @@ export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOpti
         const pending = AbortSignal.any([signal, ...(prompt.signal ? [prompt.signal] : [])]);
         return new Promise<string>((_resolve, reject) => {
           const stop = () => reject(unavailable());
-          if (pending.aborted) stop(); else pending.addEventListener('abort', stop, { once: true });
+          if (pending.aborted) stop();
+          else pending.addEventListener('abort', stop, { once: true });
         });
       },
     };
-    const issued = credential(await runtime.login('openai', 'oauth', interaction,
-      { getDeviceId: () => deviceId, agentName: 'Software Factory' }));
+    const issued = credential(await runtime.login('openai', 'oauth', interaction, { getDeviceId: () => deviceId, agentName: 'Software Factory' }));
     for (const value of sensitive(issued)) options.records.registerSecret(value);
     signal.throwIfAborted();
-    privateSetupDirectory(root); privateSetupDirectory(directory); privateSetupDirectory(profile);
+    privateSetupDirectory(root);
+    privateSetupDirectory(directory);
+    privateSetupDirectory(profile);
     const fd = openSync(path, 'wx', 0o600); // Concurrent appearance fails, never overwrite.
     closeSync(fd);
     privateSetupFile(path);
     const file = new native.FileAuthStorageBackend(path);
-    await file.withLockAsync(async raw => {
-      signal.throwIfAborted(); privateSetupDirectory(root); privateSetupDirectory(directory); privateSetupFile(path);
-      requireCondition(raw === '');
-      const next = JSON.stringify({ openai: issued });
-      observe(next); // BEFORE native locked private write.
-      return { result: undefined, next };
-    }, { signal });
+    await file.withLockAsync(
+      async raw => {
+        signal.throwIfAborted();
+        privateSetupDirectory(root);
+        privateSetupDirectory(directory);
+        privateSetupFile(path);
+        requireCondition(raw === '');
+        const next = JSON.stringify({ openai: issued });
+        observe(next); // BEFORE native locked private write.
+        return { result: undefined, next };
+      },
+      { signal },
+    );
     privateSetupFile(path);
     return { code: 'FACTORY_OAUTH_CREATED', credentialPath: path };
-  } catch { throw unavailable(); }
-  finally {
+  } catch {
+    throw unavailable();
+  } finally {
     // This drains native credential writes, NOT proof of physical cessation.
-    try { await runtime?.settleCredentialWrites(); } catch { /* No raw native errors. */ }
+    try {
+      await runtime?.settleCredentialWrites();
+    } catch {
+      /* No raw native errors. */
+    }
   }
 }

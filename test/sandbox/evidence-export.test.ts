@@ -13,7 +13,10 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const root = await mkdtemp(join(tmpdir(), 'factory-export-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const artifacts = join(root, 'environments', environment, 'artifacts');
-  const write = async (path: string, text: string) => { await mkdir(join(artifacts, path, '..'), { recursive: true, mode: 0o700 }); await writeFile(join(artifacts, path), text, { mode: 0o600 }); };
+  const write = async (path: string, text: string) => {
+    await mkdir(join(artifacts, path, '..'), { recursive: true, mode: 0o700 });
+    await writeFile(join(artifacts, path), text, { mode: 0o600 });
+  };
   await write('review/r1/index.json', '{"round":1}');
   await write('review/r1/diff.patch', 'diff --git a b');
   await write('spec/v1/ticket.json', '{"spec":1}');
@@ -24,8 +27,16 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   await mkdir(destination, { mode: 0o700 });
   return { root, artifacts, destination, sandbox: createSandbox({ root }) };
 }
-const list = async (dir: string, prefix = ''): Promise<string[]> => (await Promise.all((await readdir(join(dir, prefix), { withFileTypes: true }))
-  .map(entry => entry.isDirectory() ? list(dir, join(prefix, entry.name)) : [join(prefix, entry.name)]))).flat().sort();
+const list = async (dir: string, prefix = ''): Promise<string[]> =>
+  (
+    await Promise.all(
+      (await readdir(join(dir, prefix), { withFileTypes: true })).map(entry =>
+        entry.isDirectory() ? list(dir, join(prefix, entry.name)) : [join(prefix, entry.name)],
+      ),
+    )
+  )
+    .flat()
+    .sort();
 
 test('exportEvidence copies only review captures and preserved request/instruction versions', async t => {
   const f = await fixture(t);
@@ -43,5 +54,8 @@ test('exportEvidence refuses a guest symlink instead of following it, and report
   assert.equal(result.status === 'failure' && result.code, 'EVIDENCE_UNSAFE');
   await rm(f.artifacts, { recursive: true });
   assert.deepEqual(await f.sandbox.exportEvidence({ environment, destination: join(f.root, 'other') }), { status: 'absent' });
-  assert.deepEqual(await f.sandbox.exportEvidence({ environment: 'env-../x' as EnvironmentRef, destination: f.destination }), { status: 'failure', code: 'ENVIRONMENT_REF_INVALID' });
+  assert.deepEqual(await f.sandbox.exportEvidence({ environment: 'env-../x' as EnvironmentRef, destination: f.destination }), {
+    status: 'failure',
+    code: 'ENVIRONMENT_REF_INVALID',
+  });
 });

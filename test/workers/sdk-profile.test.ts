@@ -10,8 +10,10 @@ import { imageMimeFacade, prepareDevelopmentSdk, sdkProfile, sdkStagingDirectory
 async function privateProject() {
   const root = await mkdtemp(join(tmpdir(), 'sdkp-'));
   await mkdir(join(root, 'node_modules/@earendil-works'), { recursive: true });
-  await cp('node_modules/@earendil-works/pi-coding-agent', join(root, 'node_modules/@earendil-works/pi-coding-agent'),
-    { recursive: true, verbatimSymlinks: true });
+  await cp('node_modules/@earendil-works/pi-coding-agent', join(root, 'node_modules/@earendil-works/pi-coding-agent'), {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
   await cp('package-lock.json', join(root, 'package-lock.json'));
   await mkdir(join(root, 'docs/evidence'), { recursive: true });
   for (const patch of ['05-sdk-read-operations-candidate.patch', '05-sdk-async-bash-v2.patch', '05-sdk-lexical-queue-v3.patch']) {
@@ -44,6 +46,8 @@ test('private pinned SDK preparation is idempotent and refuses drift without ove
     assert.equal(evidence.resultSHA256, sdkProfile.resultSHA256);
     assert.equal(evidence.license, 'MIT');
     assert.deepEqual(await readFile(join(root, 'node_modules/@earendil-works/pi-coding-agent/dist/core/tools/read.js')), original);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
   assert.deepEqual(await readFile('node_modules/@earendil-works/pi-coding-agent/dist/core/tools/read.js'), shared);
 });

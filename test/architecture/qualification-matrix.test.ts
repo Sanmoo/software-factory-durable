@@ -12,14 +12,26 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 const statuses = ['aprovada', 'reprovada', 'inconclusiva', 'dependente-do-piloto'] as const;
-type Status = typeof statuses[number];
+type Status = (typeof statuses)[number];
 const levels = ['S', 'I', 'A', 'P'] as const;
 const applicabilities = ['aplicavel', 'aplicavel-encadeada', 'inconclusiva'] as const;
 
 interface Obligation {
-  id: string; scenario: string; requirements: string[]; requiredLevels: string[]; observedLevels: string[]; status: string;
-  expectation: string; observed: string; evidence: string[]; runs: string[]; commands: string[]; gate?: string; pointer?: string;
-  reexecution?: string[]; decision?: { id: string; waivedLevels?: string[] };
+  id: string;
+  scenario: string;
+  requirements: string[];
+  requiredLevels: string[];
+  observedLevels: string[];
+  status: string;
+  expectation: string;
+  observed: string;
+  evidence: string[];
+  runs: string[];
+  commands: string[];
+  gate?: string;
+  pointer?: string;
+  reexecution?: string[];
+  decision?: { id: string; waivedLevels?: string[] };
 }
 interface Matrix {
   schemaVersion: number;
@@ -30,13 +42,33 @@ interface Matrix {
   obligations: Obligation[];
   gates: { id: string; status: string; blockers: string[] }[];
   reexecutionGroups: { id: string; covers: string[]; authorizationRequired: boolean }[];
-  operatorDecisions: { id: string; obligations: string[]; dependency: string; decidedAt?: string; decidedBy?: string; decision?: string; resolution?: string }[];
+  operatorDecisions: {
+    id: string;
+    obligations: string[];
+    dependency: string;
+    decidedAt?: string;
+    decidedBy?: string;
+    decision?: string;
+    resolution?: string;
+  }[];
   counts: Record<string, number>;
 }
-const resolutions = ['carried-to-pilot', 'out-of-scope-unless-pilot-needs', 'scope-required', 'level-waived', 'proof-accepted', 'limit-accepted', 'implemented'] as const;
+const resolutions = [
+  'carried-to-pilot',
+  'out-of-scope-unless-pilot-needs',
+  'scope-required',
+  'level-waived',
+  'proof-accepted',
+  'limit-accepted',
+  'implemented',
+] as const;
 const pilotResolutions = new Set<string>(['carried-to-pilot', 'out-of-scope-unless-pilot-needs']);
 
-interface Plan { scenarios: Map<string, string[]>; requirements: string[]; requirementScenarios: Map<string, string[]> }
+interface Plan {
+  scenarios: Map<string, string[]>;
+  requirements: string[];
+  requirementScenarios: Map<string, string[]>;
+}
 
 /** Scenario ids with their required levels ("**Evidência exigida: S + I; A …**") and the RF/RNF/CA rows of the plan. */
 export function parsePlan(text: string): Plan {
@@ -46,7 +78,10 @@ export function parsePlan(text: string): Plan {
     const id = /^(V-\d{2})\b/.exec(section)?.[1];
     if (id === undefined) continue;
     const line = /\*\*Evidência exigida: ([^*]+)\*\*/.exec(section)?.[1] ?? '';
-    scenarios.set(id, levels.filter(level => new RegExp(`\\b${level}\\b`).test(line)));
+    scenarios.set(
+      id,
+      levels.filter(level => new RegExp(`\\b${level}\\b`).test(line)),
+    );
   }
   const rows = [...text.matchAll(/^\| ((?:RF|RNF|CA)-\d{2}) —(.*)$/gm)];
   const requirements = rows.map(match => match[1]!);
@@ -59,13 +94,15 @@ const rank: Record<Status, number> = { aprovada: 0, 'dependente-do-piloto': 1, i
 /** The aggregate of a set of obligations: the worst one wins; a pilot dependency is never an approval. */
 export function aggregate(values: string[]): Status {
   if (values.length === 0) return 'inconclusiva';
-  return values.map(value => value as Status).reduce((worst, value) => rank[value] > rank[worst] ? value : worst, 'aprovada');
+  return values.map(value => value as Status).reduce((worst, value) => (rank[value] > rank[worst] ? value : worst), 'aprovada');
 }
 
 /** Every problem found, as text; an empty list means the matrix is consistent with the plan and the checkout. */
 export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => boolean): string[] {
   const found: string[] = [];
-  const add = (problem: string): void => { found.push(problem); };
+  const add = (problem: string): void => {
+    found.push(problem);
+  };
   if (matrix.schemaVersion !== 1) add(`schemaVersion ${String(matrix.schemaVersion)}`);
   if (!/^[0-9a-f]{40}$/.test(matrix.candidate.commit)) add('candidate.commit is not a full commit id');
   const runs = new Map(matrix.realRuns.map(run => [run.id, run]));
@@ -78,7 +115,10 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
   const scenarioIds = new Set(matrix.scenarios.map(scenario => scenario.id));
   for (const [id, required] of plan.scenarios) {
     const scenario = matrix.scenarios.find(candidate => candidate.id === id);
-    if (scenario === undefined) { add(`scenario ${id} missing`); continue; }
+    if (scenario === undefined) {
+      add(`scenario ${id} missing`);
+      continue;
+    }
     if ([...scenario.requiredLevels].sort().join() !== [...required].sort().join()) {
       add(`scenario ${id}: levels ${scenario.requiredLevels.join('+')} differ from the plan ${required.join('+')}`);
     }
@@ -103,7 +143,8 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
     if (obligation.requirements.length === 0) add(`${name}: no RF/RNF/CA`);
     for (const id of obligation.requirements) {
       if (!requirementIds.has(id)) add(`${name}: unknown requirement ${id}`);
-      else if (!(plan.requirementScenarios.get(id) ?? []).includes(obligation.scenario)) add(`${name}: the plan does not trace ${id} to ${obligation.scenario}`);
+      else if (!(plan.requirementScenarios.get(id) ?? []).includes(obligation.scenario))
+        add(`${name}: the plan does not trace ${id} to ${obligation.scenario}`);
     }
     for (const level of obligation.observedLevels) if (!(levels as readonly string[]).includes(level)) add(`${name}: level ${level}`);
     if (obligation.expectation.trim() === '' || obligation.observed.trim() === '') add(`${name}: no expectation/observed`);
@@ -161,8 +202,10 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
     // A recorded decision names its date, author, text and resolution, and every obligation it names points back to it.
     if (decision.resolution === undefined) continue;
     if (!(resolutions as readonly string[]).includes(decision.resolution)) add(`decision ${decision.id}: resolution ${decision.resolution}`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(decision.decidedAt ?? '') || !decision.decidedBy || !decision.decision?.trim()) add(`decision ${decision.id}: incomplete record`);
-    for (const id of decision.obligations) if (matrix.obligations.find(obligation => obligation.id === id)?.decision?.id !== decision.id) add(`decision ${decision.id}: ${id} does not cite it`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(decision.decidedAt ?? '') || !decision.decidedBy || !decision.decision?.trim())
+      add(`decision ${decision.id}: incomplete record`);
+    for (const id of decision.obligations)
+      if (matrix.obligations.find(obligation => obligation.id === id)?.decision?.id !== decision.id) add(`decision ${decision.id}: ${id} does not cite it`);
   }
   const counted = Object.fromEntries(statuses.map(status => [status, matrix.obligations.filter(obligation => obligation.status === status).length]));
   if (JSON.stringify(counted) !== JSON.stringify(Object.fromEntries(statuses.map(status => [status, matrix.counts[status] ?? 0])))) {
@@ -176,7 +219,10 @@ const plan = parsePlan(readFileSync(join(root, '.scratch/software-factory/accept
 const matrix = JSON.parse(readFileSync(join(root, 'docs/evidence/34-qualification-matrix.json'), 'utf8')) as Matrix;
 
 test('the plan parses into V-01..V-17 and the 31 RF/RNF/CA rows', () => {
-  assert.deepEqual([...plan.scenarios.keys()], Array.from({ length: 17 }, (_, index) => `V-${String(index + 1).padStart(2, '0')}`));
+  assert.deepEqual(
+    [...plan.scenarios.keys()],
+    Array.from({ length: 17 }, (_, index) => `V-${String(index + 1).padStart(2, '0')}`),
+  );
   assert.deepEqual(plan.scenarios.get('V-01'), ['S', 'I']);
   assert.deepEqual(plan.scenarios.get('V-02'), ['I', 'A']);
   assert.deepEqual(plan.scenarios.get('V-17'), ['I', 'A', 'P']);
@@ -197,44 +243,165 @@ test('the checker detects the dishonest shapes it exists for', () => {
   const approved = base.obligations.find(obligation => obligation.status === 'aprovada' && obligation.requiredLevels.includes('I'));
   assert.ok(approved, 'the matrix has an approved I obligation to mutate');
   const cases: [string, (copy: Matrix) => void, RegExp][] = [
-    ['missing evidence file', copy => { copy.obligations.find(o => o.id === approved.id)!.evidence.push('docs/evidence/does-not-exist.md'); }, /missing evidence/],
-    ['unknown status', copy => { copy.obligations.find(o => o.id === approved.id)!.status = 'parcial'; }, /status parcial/],
-    ['approved by S only', copy => { copy.obligations.find(o => o.id === approved.id)!.observedLevels = ['S']; }, /approved without level I/],
-    ['stale real run', copy => { for (const run of copy.realRuns) run.applicability = 'inconclusiva'; }, /without an applicable real run/],
-    ['scenario dropped', copy => { copy.scenarios = copy.scenarios.filter(s => s.id !== 'V-09'); }, /scenario V-09 missing/],
-    ['requirement dropped', copy => { copy.requirements = copy.requirements.filter(r => r.id !== 'CA-08'); }, /requirement CA-08 missing/],
-    ['pilot as approval', copy => { const o = copy.obligations.find(x => x.requiredLevels.includes('P'))!; o.status = 'aprovada'; }, /a P obligation is aprovada/],
+    [
+      'missing evidence file',
+      copy => {
+        copy.obligations.find(o => o.id === approved.id)!.evidence.push('docs/evidence/does-not-exist.md');
+      },
+      /missing evidence/,
+    ],
+    [
+      'unknown status',
+      copy => {
+        copy.obligations.find(o => o.id === approved.id)!.status = 'parcial';
+      },
+      /status parcial/,
+    ],
+    [
+      'approved by S only',
+      copy => {
+        copy.obligations.find(o => o.id === approved.id)!.observedLevels = ['S'];
+      },
+      /approved without level I/,
+    ],
+    [
+      'stale real run',
+      copy => {
+        for (const run of copy.realRuns) run.applicability = 'inconclusiva';
+      },
+      /without an applicable real run/,
+    ],
+    [
+      'scenario dropped',
+      copy => {
+        copy.scenarios = copy.scenarios.filter(s => s.id !== 'V-09');
+      },
+      /scenario V-09 missing/,
+    ],
+    [
+      'requirement dropped',
+      copy => {
+        copy.requirements = copy.requirements.filter(r => r.id !== 'CA-08');
+      },
+      /requirement CA-08 missing/,
+    ],
+    [
+      'pilot as approval',
+      copy => {
+        const o = copy.obligations.find(x => x.requiredLevels.includes('P'))!;
+        o.status = 'aprovada';
+      },
+      /a P obligation is aprovada/,
+    ],
     // No obligation is inconclusive since 2026-11-18 (99/0/0/13): reopen one to check the rule.
-    ['open without pointer', copy => { const o = copy.obligations.find(x => x.id === approved.id)!; o.status = 'inconclusiva'; delete o.pointer; }, /without gate and pointer/],
-    ['untraced requirement', copy => { copy.obligations.find(o => o.id === 'V-01.a')!.requirements.push('CA-08'); }, /does not trace CA-08 to V-01/],
-    ['re-execution without authorization', copy => { copy.reexecutionGroups[0]!.authorizationRequired = false; }, /without its own authorization/],
-    ['pilot dependency without a decision', copy => { delete copy.obligations.find(o => o.id === 'V-06.e')!.decision; }, /V-06.e: pre-pilot obligation marked as pilot dependency/],
-    ['carried without naming the pilot', copy => { copy.operatorDecisions.find(d => d.id === 'D-01')!.dependency = 'CA-08'; }, /V-06.e: pre-pilot obligation marked as pilot dependency/],
-    ['waiver without a level-waived decision', copy => { copy.obligations.find(o => o.id === 'V-07.e')!.decision!.waivedLevels = ['A']; }, /waived without a level-waived decision/],
-    ['pilot level waived', copy => { const o = copy.obligations.find(x => x.id === 'V-15.e')!; o.decision!.waivedLevels = ['I', 'P']; }, /the pilot level is never waived/],
-    ['decision not cited', copy => { delete copy.obligations.find(o => o.id === 'V-14.g')!.decision; }, /decision D-07: V-14.g does not cite it/],
-    ['counts drift', copy => { copy.counts['aprovada'] = 66; }, /counts .* differ from the obligations/],
+    [
+      'open without pointer',
+      copy => {
+        const o = copy.obligations.find(x => x.id === approved.id)!;
+        o.status = 'inconclusiva';
+        delete o.pointer;
+      },
+      /without gate and pointer/,
+    ],
+    [
+      'untraced requirement',
+      copy => {
+        copy.obligations.find(o => o.id === 'V-01.a')!.requirements.push('CA-08');
+      },
+      /does not trace CA-08 to V-01/,
+    ],
+    [
+      're-execution without authorization',
+      copy => {
+        copy.reexecutionGroups[0]!.authorizationRequired = false;
+      },
+      /without its own authorization/,
+    ],
+    [
+      'pilot dependency without a decision',
+      copy => {
+        delete copy.obligations.find(o => o.id === 'V-06.e')!.decision;
+      },
+      /V-06.e: pre-pilot obligation marked as pilot dependency/,
+    ],
+    [
+      'carried without naming the pilot',
+      copy => {
+        copy.operatorDecisions.find(d => d.id === 'D-01')!.dependency = 'CA-08';
+      },
+      /V-06.e: pre-pilot obligation marked as pilot dependency/,
+    ],
+    [
+      'waiver without a level-waived decision',
+      copy => {
+        copy.obligations.find(o => o.id === 'V-07.e')!.decision!.waivedLevels = ['A'];
+      },
+      /waived without a level-waived decision/,
+    ],
+    [
+      'pilot level waived',
+      copy => {
+        const o = copy.obligations.find(x => x.id === 'V-15.e')!;
+        o.decision!.waivedLevels = ['I', 'P'];
+      },
+      /the pilot level is never waived/,
+    ],
+    [
+      'decision not cited',
+      copy => {
+        delete copy.obligations.find(o => o.id === 'V-14.g')!.decision;
+      },
+      /decision D-07: V-14.g does not cite it/,
+    ],
+    [
+      'counts drift',
+      copy => {
+        copy.counts['aprovada'] = 66;
+      },
+      /counts .* differ from the obligations/,
+    ],
   ];
   for (const [name, mutate, expected] of cases) {
     const copy = structuredClone(base);
     mutate(copy);
     const found = problems(copy, plan, path => existsSync(join(root, path)));
-    assert.ok(found.some(problem => expected.test(problem)), `${name}: ${found.join('; ') || 'no problem found'}`);
+    assert.ok(
+      found.some(problem => expected.test(problem)),
+      `${name}: ${found.join('; ') || 'no problem found'}`,
+    );
   }
 });
 
 test('docs/evidence/34-qualification-matrix.json is consistent with the plan and the checkout', () => {
-  assert.deepEqual(problems(matrix, plan, path => existsSync(join(root, path))), []);
+  assert.deepEqual(
+    problems(matrix, plan, path => existsSync(join(root, path))),
+    [],
+  );
 });
 
 test('the operator decisions D-01..D-08 of 2026-11-16, D-09..D-10 of 2026-11-17 and D-11..D-17 of 2026-11-18 are all recorded with a resolution', () => {
-  assert.deepEqual(matrix.operatorDecisions.map(decision => [decision.id, decision.decidedAt, decision.resolution]), [
-    ['D-01', '2026-11-16', 'carried-to-pilot'], ['D-02', '2026-11-16', 'scope-required'], ['D-03', '2026-11-16', 'level-waived'],
-    ['D-04', '2026-11-16', 'out-of-scope-unless-pilot-needs'], ['D-05', '2026-11-16', 'proof-accepted'], ['D-06', '2026-11-16', 'limit-accepted'],
-    ['D-07', '2026-11-16', 'implemented'], ['D-08', '2026-11-16', 'level-waived'],
-    ['D-09', '2026-11-17', 'proof-accepted'], ['D-10', '2026-11-17', 'proof-accepted'], ['D-11', '2026-11-18', 'proof-accepted'], ['D-12', '2026-11-18', 'proof-accepted'],
-    ['D-13', '2026-11-18', 'proof-accepted'], ['D-14', '2026-11-18', 'proof-accepted'], ['D-15', '2026-11-18', 'carried-to-pilot'],
-    ['D-16', '2026-11-18', 'proof-accepted'], ['D-17', '2026-11-18', 'limit-accepted']]);
+  assert.deepEqual(
+    matrix.operatorDecisions.map(decision => [decision.id, decision.decidedAt, decision.resolution]),
+    [
+      ['D-01', '2026-11-16', 'carried-to-pilot'],
+      ['D-02', '2026-11-16', 'scope-required'],
+      ['D-03', '2026-11-16', 'level-waived'],
+      ['D-04', '2026-11-16', 'out-of-scope-unless-pilot-needs'],
+      ['D-05', '2026-11-16', 'proof-accepted'],
+      ['D-06', '2026-11-16', 'limit-accepted'],
+      ['D-07', '2026-11-16', 'implemented'],
+      ['D-08', '2026-11-16', 'level-waived'],
+      ['D-09', '2026-11-17', 'proof-accepted'],
+      ['D-10', '2026-11-17', 'proof-accepted'],
+      ['D-11', '2026-11-18', 'proof-accepted'],
+      ['D-12', '2026-11-18', 'proof-accepted'],
+      ['D-13', '2026-11-18', 'proof-accepted'],
+      ['D-14', '2026-11-18', 'proof-accepted'],
+      ['D-15', '2026-11-18', 'carried-to-pilot'],
+      ['D-16', '2026-11-18', 'proof-accepted'],
+      ['D-17', '2026-11-18', 'limit-accepted'],
+    ],
+  );
   // D-02 keeps cross-repository dependencies as a required pre-pilot proof: approved only by the real R-GH-DEP run, never by the decision.
   // D-15 records V-06.g as a KNOWN PILOT RISK: carried to the pilot (ticket 35), never an approval.
   const pilotRisk = matrix.obligations.find(obligation => obligation.id === 'V-06.g')!;

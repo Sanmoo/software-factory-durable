@@ -8,8 +8,21 @@ import { createSandbox } from '../../src/sandbox/index.js';
 import { handoffCaptureProgram } from '../../src/workers/handoff.js';
 
 // Host-side identity over a TEST-OWNED environment (local repository), produced by the same constant capture program the guest runs.
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8',
-  env: { PATH: '/usr/bin:/bin', HOME: cwd, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 'f', GIT_AUTHOR_EMAIL: 'f@x', GIT_COMMITTER_NAME: 'f', GIT_COMMITTER_EMAIL: 'f@x' } }).trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      PATH: '/usr/bin:/bin',
+      HOME: cwd,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_AUTHOR_NAME: 'f',
+      GIT_AUTHOR_EMAIL: 'f@x',
+      GIT_COMMITTER_NAME: 'f',
+      GIT_COMMITTER_EMAIL: 'f@x',
+    },
+  }).trim();
 const environment = `env-${'1'.repeat(64)}` as never;
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
@@ -17,14 +30,21 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const directory = join(root, 'environments', environment);
   const checkout = join(directory, 'workspace', 'checkout');
-  await mkdir(checkout, { recursive: true }); await mkdir(join(directory, 'artifacts'));
+  await mkdir(checkout, { recursive: true });
+  await mkdir(join(directory, 'artifacts'));
   git(checkout, 'init', '-q', '-b', 'main');
-  await writeFile(join(checkout, 'a.txt'), 'a\n'); git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'base');
+  await writeFile(join(checkout, 'a.txt'), 'a\n');
+  git(checkout, 'add', '.');
+  git(checkout, 'commit', '-q', '-m', 'base');
   const base = git(checkout, 'rev-parse', 'HEAD');
   git(checkout, 'checkout', '-q', '-b', 'factory/3-abcdef12');
   await writeFile(join(checkout, 'a.txt'), 'changed\n');
   await writeFile(join(checkout, 'b.txt'), 'new\n');
-  execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, checkout, join(directory, 'artifacts'), '1', base, '/workspace/checkout', '/artifacts'], { stdio: 'pipe' });
+  execFileSync(
+    '/usr/bin/python3',
+    ['-I', '-S', '-c', handoffCaptureProgram, checkout, join(directory, 'artifacts'), '1', base, '/workspace/checkout', '/artifacts'],
+    { stdio: 'pipe' },
+  );
   await writeFile(join(root, 'host-secret'), 'PRIVATE KEY CANARY');
   return { root, checkout, sandbox: createSandbox({ root }) };
 }
@@ -38,7 +58,10 @@ test('AC7: equal host identities mean no observed change; content or staging cha
   assert.ok(again.status === 'observed' && again.sha256 === first.sha256);
   await writeFile(join(f.checkout, 'c.txt'), 'unindexed');
   const unindexed = await f.sandbox.observeProposal({ environment, round: 1 });
-  assert.ok(unindexed.status === 'observed' && unindexed.sha256 === first.sha256, 'documented limit: an unindexed new file is not observed (no freeze promised)');
+  assert.ok(
+    unindexed.status === 'observed' && unindexed.sha256 === first.sha256,
+    'documented limit: an unindexed new file is not observed (no freeze promised)',
+  );
   await writeFile(join(f.checkout, 'b.txt'), 'edited during review\n');
   const edited = await f.sandbox.observeProposal({ environment, round: 1 });
   assert.ok(edited.status === 'observed' && edited.sha256 !== first.sha256 && !edited.consistent);

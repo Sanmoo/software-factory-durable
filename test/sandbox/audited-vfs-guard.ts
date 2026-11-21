@@ -18,9 +18,13 @@ const edges = new Map<string, Map<string, string>>();
 function edge(parent: string, specifier: string, target: string) {
   const url = fileUrl(parent);
   const row = edges.get(url) ?? new Map<string, string>();
-  assert.ok(!row.has(specifier)); row.set(specifier, target); edges.set(url, row);
+  assert.ok(!row.has(specifier));
+  row.set(specifier, target);
+  edges.set(url, row);
 }
-function relative(parent: string, specifier: string, target: string) { edge(parent, specifier, fileUrl(target)); }
+function relative(parent: string, specifier: string, target: string) {
+  edge(parent, specifier, fileUrl(target));
+}
 function builtins(parent: string, names: string[]) {
   for (const name of names) edge(parent, name, name.startsWith('node:') ? name : 'node:' + name);
 }
@@ -48,7 +52,8 @@ for (const name of ['provider', 'file_handle', 'errors', 'file_system', 'router'
 }
 builtins(internal + 'gondolin-shim.js', ['node:url', 'module', 'node:path']);
 aliases(internal + 'provider.js', ['errors']);
-aliases(internal + 'file_handle.js', ['errors']); builtins(internal + 'file_handle.js', ['buffer']);
+aliases(internal + 'file_handle.js', ['errors']);
+builtins(internal + 'file_handle.js', ['buffer']);
 aliases(internal + 'providers/real.js', ['provider', 'file_handle', 'errors']);
 builtins(internal + 'providers/real.js', ['fs', 'os', 'path']);
 aliases(internal + 'file_system.js', ['providers/memory', 'router', 'fd', 'errors', 'streams']);
@@ -56,14 +61,20 @@ builtins(internal + 'file_system.js', ['path']);
 aliases(internal + 'providers/memory.js', ['provider', 'file_handle', 'watcher', 'errors', 'stats']);
 builtins(internal + 'providers/memory.js', ['buffer', 'path']);
 builtins(internal + 'router.js', ['path']);
-aliases(internal + 'streams.js', ['errors', 'fd']); builtins(internal + 'streams.js', ['stream']);
-aliases(internal + 'watcher.js', ['stats']); builtins(internal + 'watcher.js', ['events', 'path', 'timers']);
+aliases(internal + 'streams.js', ['errors', 'fd']);
+builtins(internal + 'streams.js', ['stream']);
+aliases(internal + 'watcher.js', ['stats']);
+builtins(internal + 'watcher.js', ['events', 'path', 'timers']);
 
 function sdkTarget(value: string) {
   // Reject alternate URL spellings too; only literal canonical entry/edge URLs
   // are authorized above. Decoding is string-only, never filesystem discovery.
   let decoded = value;
-  try { decoded = decodeURIComponent(value); } catch { /* Node rejects malformed URL escapes. */ }
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    /* Node rejects malformed URL escapes. */
+  }
   return decoded.includes('@earendil-works/gondolin') || decoded.includes('/gondolin/') || decoded.includes('/factory-development-gondolin-v1/');
 }
 function deny(parent: string | undefined, specifier: string): never {

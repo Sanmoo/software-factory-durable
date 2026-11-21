@@ -7,15 +7,31 @@ import { interruptedEnd } from '../../src/control/rules/questions.js';
 // role per round). Two decisions only: a new review round, or cancel. Accepting an unverified round is not an option. Facts are supplied.
 const facts = (change: Partial<NewReviewRoundFacts> = {}, execution: Partial<NonNullable<NewReviewRoundFacts['execution']>> = {}): NewReviewRoundFacts => ({
   work: { result: 'open', current: true, impediments: [{ code: 'RECOVERY_BLOCKED' }] },
-  execution: { state: 'ended', slotHeld: false, held: { code: 'REVIEWER_RETRY_LIMIT' }, end: { outcome: 'failure', code: 'REVIEWER_RETRY_LIMIT', cessation: 'confirmed' },
-    reviewRetryLimit: null, ...execution },
-  running: false, cancelling: false, pendingRecovery: false, ...change });
-const decided = (value: NewReviewRoundFacts) => { const decision = newReviewRoundDecision(value); return decision.kind === 'accept' ? 'accept' : `${decision.kind}:${decision.code}`; };
+  execution: {
+    state: 'ended',
+    slotHeld: false,
+    held: { code: 'REVIEWER_RETRY_LIMIT' },
+    end: { outcome: 'failure', code: 'REVIEWER_RETRY_LIMIT', cessation: 'confirmed' },
+    reviewRetryLimit: null,
+    ...execution,
+  },
+  running: false,
+  cancelling: false,
+  pendingRecovery: false,
+  ...change,
+});
+const decided = (value: NewReviewRoundFacts) => {
+  const decision = newReviewRoundDecision(value);
+  return decision.kind === 'accept' ? 'accept' : `${decision.kind}:${decision.code}`;
+};
 
 test('ticket 51: REVIEWER_RETRY_LIMIT is never retried automatically; once ceased it ends as a failure that blocks for the operator', () => {
   assert.deepEqual(classifyInterruption('REVIEWER_RETRY_LIMIT'), { kind: 'blocking', code: 'REVIEWER_RETRY_LIMIT' });
-  assert.deepEqual(interruptedEnd({ questionId: null, recovered: false, trigger: 'review-retry-limit', blocked: null, heldCode: 'REVIEWER_RETRY_LIMIT' }),
-    { outcome: 'failure', code: 'REVIEWER_RETRY_LIMIT', questionId: null });
+  assert.deepEqual(interruptedEnd({ questionId: null, recovered: false, trigger: 'review-retry-limit', blocked: null, heldCode: 'REVIEWER_RETRY_LIMIT' }), {
+    outcome: 'failure',
+    code: 'REVIEWER_RETRY_LIMIT',
+    questionId: null,
+  });
 });
 
 test('ticket 51: the impediment names exactly the two decisions (new review round, cancel) and no way to accept the unverified round', () => {
@@ -34,8 +50,19 @@ test('ticket 51: a new review round is accepted only for a current open Work blo
   assert.equal(decided(facts({ work: { result: 'delivered', current: true, impediments: [{ code: 'RECOVERY_BLOCKED' }] } })), 'refuse:WORK_DELIVERED');
   assert.equal(decided(facts({ cancelling: true })), 'refuse:WORK_CANCELLING');
   assert.equal(decided(facts({ execution: null })), 'refuse:REVIEWER_RETRY_LIMIT_NOT_PENDING');
-  assert.equal(decided(facts({}, { held: { code: 'START_PRESERVED_DISK_CHECK_REQUIRED' }, end: { outcome: 'failure', code: 'START_PRESERVED_DISK_CHECK_REQUIRED', cessation: 'confirmed' } })),
-    'refuse:REVIEWER_RETRY_LIMIT_NOT_PENDING', 'another block is not a review decision');
+  assert.equal(
+    decided(
+      facts(
+        {},
+        {
+          held: { code: 'START_PRESERVED_DISK_CHECK_REQUIRED' },
+          end: { outcome: 'failure', code: 'START_PRESERVED_DISK_CHECK_REQUIRED', cessation: 'confirmed' },
+        },
+      ),
+    ),
+    'refuse:REVIEWER_RETRY_LIMIT_NOT_PENDING',
+    'another block is not a review decision',
+  );
   // Still held (its own boot not yet stopped): the controller stops it; the decision waits for the confirmed cessation.
   assert.equal(decided(facts({}, { state: 'held', end: null })), 'refuse:CESSATION_NOT_CONFIRMED');
   assert.equal(decided(facts({}, { end: { outcome: 'failure', code: 'REVIEWER_RETRY_LIMIT', cessation: 'unconfirmed' } })), 'refuse:CESSATION_NOT_CONFIRMED');
@@ -47,7 +74,18 @@ test('ticket 51: a new review round is accepted only for a current open Work blo
 
 test('ticket 51: a decision already taken is reported, never applied twice', () => {
   const after = { decision: 'new-review-round' as const, request_id: 'r-1' };
-  assert.equal(decided(facts({ work: { result: 'open', current: true, impediments: [] }, pendingRecovery: true }, { reviewRetryLimit: after })), 'already:NEW_REVIEW_ROUND_ALREADY_DECIDED');
-  assert.equal(decided(facts({ work: { result: 'cancelled', current: true, impediments: [{ code: 'RECOVERY_BLOCKED' }] } }, { reviewRetryLimit: { decision: 'cancel', request_id: 'r-2' } })),
-    'refuse:WORK_CANCELLED', 'a cancel decision is final');
+  assert.equal(
+    decided(facts({ work: { result: 'open', current: true, impediments: [] }, pendingRecovery: true }, { reviewRetryLimit: after })),
+    'already:NEW_REVIEW_ROUND_ALREADY_DECIDED',
+  );
+  assert.equal(
+    decided(
+      facts(
+        { work: { result: 'cancelled', current: true, impediments: [{ code: 'RECOVERY_BLOCKED' }] } },
+        { reviewRetryLimit: { decision: 'cancel', request_id: 'r-2' } },
+      ),
+    ),
+    'refuse:WORK_CANCELLED',
+    'a cancel decision is final',
+  );
 });

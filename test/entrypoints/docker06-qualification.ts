@@ -7,8 +7,19 @@ import type { BootRef, EnvironmentRef } from '../../src/sandbox/index.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const observations = `${root}/q06-qualification-v3`;
-const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets', manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
-const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
+const guestAssets = {
+  directory: '/home/sanmoo/software-factory-test/assets34/assets',
+  manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807',
+} as const;
+const configuration = {
+  schemaVersion: 1,
+  profile: 'gondolin-qemu-alpine-dev-v1',
+  memoryMiB: 4096,
+  vcpus: 2,
+  diskGiB: 40,
+  shutdownGraceSeconds: 30,
+  minFreeSpaceGiB: 4,
+} as const;
 const stepName = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 type Identity = { workId: string; executionId: string; environment: string };
@@ -19,10 +30,19 @@ async function io() {
     const text = JSON.stringify(data, null, 1);
     if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('OBSERVATION_LIMIT');
     const file = await fs.open(`${observations}/${name}.json`, 'wx', 0o600);
-    try { await file.writeFile(text); await file.sync(); } finally { await file.close(); }
+    try {
+      await file.writeFile(text);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
   };
   const load = async (name: string) => JSON.parse(await fs.readFile(`${observations}/${name}.json`, 'utf8'));
-  const exists = async (name: string) => fs.access(`${observations}/${name}.json`).then(() => true, () => false);
+  const exists = async (name: string) =>
+    fs.access(`${observations}/${name}.json`).then(
+      () => true,
+      () => false,
+    );
   return { fs, save, load, exists };
 }
 
@@ -42,7 +62,7 @@ export async function main(args: string[]) {
     if (result.status !== 'success' || result.environment !== identity.environment) throw new Error('PREPARATION_HELD');
     return result;
   }
-  const { identity } = await load('prepare-result') as { identity: Identity };
+  const { identity } = (await load('prepare-result')) as { identity: Identity };
   const environment = identity.environment as EnvironmentRef;
   if (command === 'start') {
     if (!name || !/^boot[12]$/.test(name)) throw new Error('START_NAME');
@@ -53,10 +73,11 @@ export async function main(args: string[]) {
     return result;
   }
   const currentBoot = async () => {
-    for (const boot of ['boot2', 'boot1']) if (await exists(`${boot}-start-result`) && !(await exists(`${boot}-stop-intent`))) {
-      const { result } = await load(`${boot}-start-result`) as { result: { status: string; boot: string } };
-      return { label: boot, boot: result.boot as BootRef };
-    }
+    for (const boot of ['boot2', 'boot1'])
+      if ((await exists(`${boot}-start-result`)) && !(await exists(`${boot}-stop-intent`))) {
+        const { result } = (await load(`${boot}-start-result`)) as { result: { status: string; boot: string } };
+        return { label: boot, boot: result.boot as BootRef };
+      }
     throw new Error('NO_ACTIVE_OWNED_BOOT');
   };
   if (command === 'observe') {
@@ -77,11 +98,20 @@ export async function main(args: string[]) {
     if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 3600) throw new Error('STEP_TIMEOUT');
     const script = await fs.readFile(commandFile, 'utf8');
     const { boot, label } = await currentBoot();
-    const context = { workId: identity.workId, executionId: identity.executionId, invocationId: `q06-${name}`, role: 'builder' as const,
-      environmentRef: identity.environment, bootRef: boot, phaseId: `q06-${name}` };
+    const context = {
+      workId: identity.workId,
+      executionId: identity.executionId,
+      invocationId: `q06-${name}`,
+      role: 'builder' as const,
+      environmentRef: identity.environment,
+      bootRef: boot,
+      phaseId: `q06-${name}`,
+    };
     await save(`step-${name}-intent`, { context, boot: label, timeout, script });
     let progress = 0;
-    const result = await sandbox.executeTool(context, { name: 'bash', command: script, timeout, callId: `q06-${name}` }, data => { progress += data.length; });
+    const result = await sandbox.executeTool(context, { name: 'bash', command: script, timeout, callId: `q06-${name}` }, data => {
+      progress += data.length;
+    });
     // Filtered protected capture of this Work only (Records), bounded; never raw guest output.
     let text: string | undefined;
     if (result.status === 'success') {
@@ -89,18 +119,42 @@ export async function main(args: string[]) {
       const info = await fs.lstat(output);
       if (!info.isFile() || info.isSymbolicLink()) throw new Error('CAPTURE_HELD');
       const handle = await fs.open(output, 'r');
-      try { const size = Math.min(info.size, 262144); const buffer = Buffer.alloc(size); await handle.read(buffer, 0, size, info.size - size); text = buffer.toString('utf8'); }
-      finally { await handle.close(); }
+      try {
+        const size = Math.min(info.size, 262144);
+        const buffer = Buffer.alloc(size);
+        await handle.read(buffer, 0, size, info.size - size);
+        text = buffer.toString('utf8');
+      } finally {
+        await handle.close();
+      }
     }
-    await save(`step-${name}-result`, { boot: label, status: result.status, ...(result.status === 'success' ? { exitCode: 'exitCode' in result ? result.exitCode : undefined, reference: result.reference, bytes: result.bytes } : { code: result.code }), progress, text });
-    return { status: result.status, ...(result.status === 'success' ? { exitCode: 'exitCode' in result ? result.exitCode : undefined } : { code: result.code }), text };
+    await save(`step-${name}-result`, {
+      boot: label,
+      status: result.status,
+      ...(result.status === 'success'
+        ? { exitCode: 'exitCode' in result ? result.exitCode : undefined, reference: result.reference, bytes: result.bytes }
+        : { code: result.code }),
+      progress,
+      text,
+    });
+    return {
+      status: result.status,
+      ...(result.status === 'success' ? { exitCode: 'exitCode' in result ? result.exitCode : undefined } : { code: result.code }),
+      text,
+    };
   }
   throw new Error('EXACT_COMMAND_REQUIRED');
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   // Explicit exit: the bound tool projection keeps its channel open by design.
-  main(process.argv.slice(2)).then(value => { process.stdout.write(JSON.stringify(value, null, 1) + '\n', () => process.exit(0)); }, error => {
-    console.error('Qualification step held; no retry:', error instanceof Error ? error.message : 'UNKNOWN'); process.exit(1);
-  });
+  main(process.argv.slice(2)).then(
+    value => {
+      process.stdout.write(JSON.stringify(value, null, 1) + '\n', () => process.exit(0));
+    },
+    error => {
+      console.error('Qualification step held; no retry:', error instanceof Error ? error.message : 'UNKNOWN');
+      process.exit(1);
+    },
+  );
 }

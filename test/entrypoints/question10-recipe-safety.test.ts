@@ -19,7 +19,8 @@ test('review 7: inspection opens a COPY under the exclusive storage lock; the or
   const dir = await mkdtemp(join(tmpdir(), 'q10-safety-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const original = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'unknown' });
-  const stop = new AbortController(); stop.abort();
+  const stop = new AbortController();
+  stop.abort();
   await original.run(stop.signal);
   const before = await digest(dir);
   const lock = await holdStorageLock(join(dir, 'control.lock'));
@@ -36,7 +37,12 @@ test('review 7: inspection opens a COPY under the exclusive storage lock; the or
 
 test('review 3: the operator is pinned to the immutable id GitHub reports for the expected login; anything else is refused', () => {
   assert.deepEqual(resolveOperator({ owner: { login: 'Sanmoo', id: 4242, type: 'User' } }, 'sanmoo'), { login: 'Sanmoo', id: 4242 });
-  for (const body of [{ owner: { login: 'other', id: 1, type: 'User' } }, { owner: { login: 'Sanmoo', id: 1, type: 'Organization' } }, { owner: { login: 'Sanmoo' } }, null]) {
+  for (const body of [
+    { owner: { login: 'other', id: 1, type: 'User' } },
+    { owner: { login: 'Sanmoo', id: 1, type: 'Organization' } },
+    { owner: { login: 'Sanmoo' } },
+    null,
+  ]) {
     assert.throws(() => resolveOperator(body, 'Sanmoo'), /OPERATOR_IDENTITY_UNRESOLVED/);
   }
 });

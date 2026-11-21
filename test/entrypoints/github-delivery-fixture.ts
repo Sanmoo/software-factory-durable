@@ -6,15 +6,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installNativeAppFixture } from './native-app-fixture.js';
 
-export type DeliveryPull = { id: number; node_id: string; number: number; state: 'open' | 'closed'; draft: boolean; merged: boolean; merged_at: string | null;
-  merge_commit_sha: string | null; head: { ref: string; sha: string; repo: { id: number } | null }; base: { ref: string; repo: { id: number } | null } };
+export type DeliveryPull = {
+  id: number;
+  node_id: string;
+  number: number;
+  state: 'open' | 'closed';
+  draft: boolean;
+  merged: boolean;
+  merged_at: string | null;
+  merge_commit_sha: string | null;
+  head: { ref: string; sha: string; repo: { id: number } | null };
+  base: { ref: string; repo: { id: number } | null };
+};
 export type DeliveryWorld = {
   pulls: DeliveryPull[];
   /** Branch → tip of `refs/heads/<branch>` on the synthetic remote. */
   refs: Record<string, string>;
   defaultBranch?: string;
   /** Status the DELETE answers (default 204, and the ref is deleted only for 204 unless `deleteAnyway`). */
-  deleteStatus?: number; deleteAnyway?: boolean;
+  deleteStatus?: number;
+  deleteAnyway?: boolean;
   /** The atomic delete deletes the ref and then the transport dies (no answer): outcome unknown to the caller. */
   deleteTransportLost?: boolean;
   /** GraphQL `updateRefs` is not in the schema for this token (field unavailable). */
@@ -29,8 +40,19 @@ export type DeliveryTrace = { method: string; endpoint: string; permissions?: Re
 export const ownSha = 'a'.repeat(40);
 export const mergeSha = 'b'.repeat(40);
 export function ownPull(overrides: Partial<DeliveryPull> = {}): DeliveryPull {
-  return { id: 9042, node_id: 'PR_own42', number: 42, state: 'closed', draft: false, merged: true, merged_at: '2026-11-14T12:00:00Z', merge_commit_sha: mergeSha,
-    head: { ref: 'factory/3-abcdef12', sha: ownSha, repo: { id: 3 } }, base: { ref: 'main', repo: { id: 3 } }, ...overrides };
+  return {
+    id: 9042,
+    node_id: 'PR_own42',
+    number: 42,
+    state: 'closed',
+    draft: false,
+    merged: true,
+    merged_at: '2026-11-14T12:00:00Z',
+    merge_commit_sha: mergeSha,
+    head: { ref: 'factory/3-abcdef12', sha: ownSha, repo: { id: 3 } },
+    base: { ref: 'main', repo: { id: 3 } },
+    ...overrides,
+  };
 }
 
 export async function deliveryWorld(t: { after(fn: () => Promise<void> | void): void }, initial: DeliveryWorld) {
@@ -47,7 +69,9 @@ export async function deliveryWorld(t: { after(fn: () => Promise<void> | void): 
   await writeFile(traceFile, '');
   await writeFile(revokedFile, '');
   const executable = join(root, 'gh');
-  await writeFile(executable, `#!${process.execPath}
+  await writeFile(
+    executable,
+    `#!${process.execPath}
 import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const endpoint = args.at(-1);
@@ -120,19 +144,33 @@ else if (/^\\/pulls\\/\\d+$/.test(rest) && method === 'GET') {
 appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
 process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n\\r\\n' + (raw ?? JSON.stringify(body)));
 process.exit(status >= 200 && status < 300 ? 0 : 1);
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const restore = installNativeAppFixture(executable, 'delivery');
-  t.after(() => { restore(); });
+  t.after(() => {
+    restore();
+  });
   return {
-    root, executable,
-    async world(): Promise<DeliveryWorld> { return JSON.parse(await readFile(worldFile, 'utf8')) as DeliveryWorld; },
+    root,
+    executable,
+    async world(): Promise<DeliveryWorld> {
+      return JSON.parse(await readFile(worldFile, 'utf8')) as DeliveryWorld;
+    },
     async update(change: (world: DeliveryWorld) => void) {
       const world = JSON.parse(await readFile(worldFile, 'utf8')) as DeliveryWorld;
       change(world);
       await writeFile(worldFile, JSON.stringify(world));
     },
-    async revoked(): Promise<string[]> { return (await readFile(revokedFile, 'utf8')).split('\n').filter(Boolean); },
-    async trace(): Promise<DeliveryTrace[]> { return (await readFile(traceFile, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as DeliveryTrace); },
+    async revoked(): Promise<string[]> {
+      return (await readFile(revokedFile, 'utf8')).split('\n').filter(Boolean);
+    },
+    async trace(): Promise<DeliveryTrace[]> {
+      return (await readFile(traceFile, 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line) as DeliveryTrace);
+    },
   };
 }
 export const deliveryScope = { repository: 'acme/project', installationId: 2, workflows: false };

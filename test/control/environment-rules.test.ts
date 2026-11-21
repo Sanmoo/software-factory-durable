@@ -8,11 +8,26 @@ import { blockedStartImpediment, refusedWithoutActivity, retriesEnvironmentBase 
 const digest = `sha256:${'a'.repeat(64)}`;
 
 test('ticket 44: the declaration schema is closed: exact apk versions, images by digest with an explicit registry, nothing else', () => {
-  assert.deepEqual(validateEnvironmentDeclaration({ schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }],
-    images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }] }),
-  { valid: true, declaration: { schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }] } });
+  assert.deepEqual(
+    validateEnvironmentDeclaration({
+      schemaVersion: 1,
+      apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }],
+      images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }],
+    }),
+    {
+      valid: true,
+      declaration: {
+        schemaVersion: 1,
+        apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }],
+        images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }],
+      },
+    },
+  );
   assert.deepEqual(validateEnvironmentDeclaration({ schemaVersion: 1, apk: [] }), { valid: true, declaration: { schemaVersion: 1, apk: [], images: [] } });
-  const paths = (value: unknown) => { const result = validateEnvironmentDeclaration(value); return result.valid ? [] : result.errors.map(error => error.path); };
+  const paths = (value: unknown) => {
+    const result = validateEnvironmentDeclaration(value);
+    return result.valid ? [] : result.errors.map(error => error.path);
+  };
   assert.deepEqual(paths(null), ['$']);
   assert.deepEqual(paths({ schemaVersion: 2, apk: [] }), ['schemaVersion']);
   assert.deepEqual(paths({ schemaVersion: 1 }), ['apk'], 'apk is required (every repository declares, even an empty list)');
@@ -20,11 +35,39 @@ test('ticket 44: the declaration schema is closed: exact apk versions, images by
   for (const version of ['25', '25.0.5', '~25.0', '>=25.0.5-r0', '25.0.5.1_p2', 'latest', '25.0.5.1_p2-r0 ; rm -rf /']) {
     assert.deepEqual(paths({ schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version }] }), ['apk[0].version'], `inexact version ${version}`);
   }
-  assert.deepEqual(paths({ schemaVersion: 1, apk: [{ name: 'OpenJDK', version: '1-r0' }, { name: 'a', version: '1-r0', post: 'x' }] }), ['apk[0].name', 'apk[1].post']);
-  assert.deepEqual(paths({ schemaVersion: 1, apk: [{ name: 'a', version: '1-r0' }, { name: 'a', version: '2-r0' }] }), ['apk[1].name'], 'duplicate package');
-  for (const reference of ['eclipse-temurin:25-jdk', `eclipse-temurin@${digest}`, 'docker.io/library/eclipse-temurin:25-jdk', `docker.io/library/eclipse-temurin:25@${digest}`,
-    `docker.io/library/x@sha256:${'a'.repeat(63)}`]) {
-    assert.deepEqual(paths({ schemaVersion: 1, apk: [], images: [{ reference }] }), ['images[0].reference'], `not pinned by digest with a registry: ${reference}`);
+  assert.deepEqual(
+    paths({
+      schemaVersion: 1,
+      apk: [
+        { name: 'OpenJDK', version: '1-r0' },
+        { name: 'a', version: '1-r0', post: 'x' },
+      ],
+    }),
+    ['apk[0].name', 'apk[1].post'],
+  );
+  assert.deepEqual(
+    paths({
+      schemaVersion: 1,
+      apk: [
+        { name: 'a', version: '1-r0' },
+        { name: 'a', version: '2-r0' },
+      ],
+    }),
+    ['apk[1].name'],
+    'duplicate package',
+  );
+  for (const reference of [
+    'eclipse-temurin:25-jdk',
+    `eclipse-temurin@${digest}`,
+    'docker.io/library/eclipse-temurin:25-jdk',
+    `docker.io/library/eclipse-temurin:25@${digest}`,
+    `docker.io/library/x@sha256:${'a'.repeat(63)}`,
+  ]) {
+    assert.deepEqual(
+      paths({ schemaVersion: 1, apk: [], images: [{ reference }] }),
+      ['images[0].reference'],
+      `not pinned by digest with a registry: ${reference}`,
+    );
   }
   assert.deepEqual(paths({ schemaVersion: 1, apk: Array.from({ length: 65 }, (_, i) => ({ name: `p${i}`, version: '1-r0' })) }), ['apk']);
   assert.deepEqual(imageReferenceParts(`ghcr.io:443/acme/tool@${digest}`), { registry: 'ghcr.io:443', path: 'acme/tool', digest });
@@ -36,16 +79,31 @@ test('ticket 44: environmentOutcome pins a declared file once; missing/invalid/u
   const initial = environmentNotEvaluated(at);
   assert.equal(initial.impediment.code, 'ENVIRONMENT_NOT_EVALUATED');
   const declaration = { schemaVersion: 1 as const, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] };
-  const pinned = environmentOutcome(initial.environment, { kind: 'declared', observedAt: at, commit: 'a'.repeat(40), sha256: 'e'.repeat(64), declaration }, context)!;
+  const pinned = environmentOutcome(
+    initial.environment,
+    { kind: 'declared', observedAt: at, commit: 'a'.repeat(40), sha256: 'e'.repeat(64), declaration },
+    context,
+  )!;
   assert.deepEqual([pinned.environment.state, pinned.impediment, pinned.event], ['pinned', null, `environment-pinned:${'a'.repeat(40)}:${'e'.repeat(64)}`]);
   assert.equal(environmentOutcome(pinned.environment, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context), null, 'a pin is never re-read');
-  assert.equal(environmentOutcome(undefined, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context), null, 'a Work before ticket 44 is never gated');
+  assert.equal(
+    environmentOutcome(undefined, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context),
+    null,
+    'a Work before ticket 44 is never gated',
+  );
   const missing = environmentOutcome(initial.environment, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context)!;
   assert.equal(missing.impediment?.code, 'ENVIRONMENT_NOT_DECLARED');
   assert.match(missing.impediment!.nextStep, /acme\/project \(main at bbbbbbbbbbbb\) has no \.factory\/environment\.yaml/);
-  assert.equal(environmentOutcome(missing.environment, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context)!.event, null, 'history only on a change');
-  const invalid = environmentOutcome(initial.environment, { kind: 'invalid', observedAt: at, commit: 'b'.repeat(40), sha256: '1'.repeat(64),
-    errors: [{ path: 'apk[0].version', message: 'inexact' }] }, context)!;
+  assert.equal(
+    environmentOutcome(missing.environment, { kind: 'missing', observedAt: at, commit: 'b'.repeat(40) }, context)!.event,
+    null,
+    'history only on a change',
+  );
+  const invalid = environmentOutcome(
+    initial.environment,
+    { kind: 'invalid', observedAt: at, commit: 'b'.repeat(40), sha256: '1'.repeat(64), errors: [{ path: 'apk[0].version', message: 'inexact' }] },
+    context,
+  )!;
   assert.equal(invalid.impediment?.code, 'ENVIRONMENT_DECLARATION_INVALID');
   assert.match(invalid.impediment!.nextStep, /apk\[0\]\.version: inexact/);
   const unread = environmentOutcome(initial.environment, { kind: 'unavailable', observedAt: at, code: 'GITHUB_RATE_LIMITED', nextStep: 'wait' }, context)!;
@@ -53,10 +111,19 @@ test('ticket 44: environmentOutcome pins a declared file once; missing/invalid/u
 });
 
 test('ticket 44: environment base refusals settle at once and only their operator retry retries the base, with the cause shown', () => {
-  for (const code of ['ENVIRONMENT_BASE_PREPARATION_FAILED', 'ENVIRONMENT_BASE_PREPARATION_INCOMPLETE', 'ENVIRONMENT_PREPARATION_VM_NOT_COMPOSED', 'ENVIRONMENT_NOT_PINNED']) {
+  for (const code of [
+    'ENVIRONMENT_BASE_PREPARATION_FAILED',
+    'ENVIRONMENT_BASE_PREPARATION_INCOMPLETE',
+    'ENVIRONMENT_PREPARATION_VM_NOT_COMPOSED',
+    'ENVIRONMENT_NOT_PINNED',
+  ]) {
     assert.equal(refusedWithoutActivity({ phase: 'prepare', status: 'failure', code }), true, code);
   }
-  assert.equal(refusedWithoutActivity({ phase: 'prepare', status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_VM_UNCONFIRMED' }), false, 'an unconfirmed VM keeps the hold');
+  assert.equal(
+    refusedWithoutActivity({ phase: 'prepare', status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_VM_UNCONFIRMED' }),
+    false,
+    'an unconfirmed VM keeps the hold',
+  );
   assert.equal(retriesEnvironmentBase('PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED'), true);
   assert.equal(retriesEnvironmentBase('PREPARE_ARTIFACT_SEED_VERSION_CONFLICT'), false);
   const impediment = blockedStartImpediment('w', 'PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED', 'apk: unable to select packages', '2026-11-19T10:00:00.000Z');
@@ -69,7 +136,10 @@ test('ticket 44: the YAML parse is data only (no anchors/aliases/tags, unique ke
   const { parseEnvironmentDeclaration } = await import('../../src/code-repository/index.js');
   const proposed = parseEnvironmentDeclaration(await readFile('docs/evidence/44-java-springboot-environment.yaml'));
   assert.deepEqual(proposed, { valid: true, declaration: { schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] } });
-  const invalid = (text: string) => { const result = parseEnvironmentDeclaration(Buffer.from(text)); return result.valid ? null : result.errors[0]!.message; };
+  const invalid = (text: string) => {
+    const result = parseEnvironmentDeclaration(Buffer.from(text));
+    return result.valid ? null : result.errors[0]!.message;
+  };
   assert.match(invalid('schemaVersion: 1\napk: &a []\nimages: *a\n')!, /anchors, aliases and explicit tags/);
   assert.match(invalid('schemaVersion: !!int 1\napk: []\n')!, /anchors, aliases and explicit tags/);
   assert.match(invalid('schemaVersion: 1\nschemaVersion: 1\napk: []\n')!, /YAML syntax/);

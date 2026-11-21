@@ -9,23 +9,46 @@ import { factorySkillPackIds } from '../../src/contracts/index.js';
 import { builtRelease, check, id, manifestSha256, sha, type Check } from './release-fixture.js';
 
 // I-local (ticket 32): artifact layout/manifest pins and explicit failures of a changed, mis-extracted or foreign-root release.
-let work: string, assets: string, output: string, root: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
+let work: string,
+  assets: string,
+  output: string,
+  root: string,
+  report: Awaited<ReturnType<typeof buildRelease>>,
+  factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
 before(async () => ({ work, assets, output, root, report, factory } = await builtRelease()));
-after(async () => { if (work) await rm(work, { recursive: true, force: true }); });
+after(async () => {
+  if (work) await rm(work, { recursive: true, force: true });
+});
 
 test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/SQLite/Gondolin/assets/profile/tooling, and nothing of development', async () => {
-  assert.deepEqual((await readdir(output)).sort(), ['build-report.json', 'release-manifest.json', `software-factory-${id}.tar`, `software-factory-${id}.tar.sha256`]);
+  assert.deepEqual((await readdir(output)).sort(), [
+    'build-report.json',
+    'release-manifest.json',
+    `software-factory-${id}.tar`,
+    `software-factory-${id}.tar.sha256`,
+  ]);
   assert.equal(await readFile(join(output, `${report.archive}.sha256`), 'utf8'), `${sha(await readFile(join(output, report.archive)))}  ${report.archive}\n`);
   await assert.rejects(buildRelease({ release: id, output, guestAssets: { directory: assets, manifestSha256 } }), /RELEASE_OUTPUT_EXISTS/);
-  const listing = spawnSync('tar', ['-tf', join(output, report.archive)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout.trim().split('\n');
-  assert.ok(listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')), 'only launcher, release and assets');
+  const listing = spawnSync('tar', ['-tf', join(output, report.archive)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .stdout.trim()
+    .split('\n');
+  assert.ok(
+    listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')),
+    'only launcher, release and assets',
+  );
   assert.ok(listing.includes(`releases/${id}/node/bin/node`) && listing.includes(`releases/${id}/dist/src/entrypoints/cli.js`));
   for (const pack of factorySkillPackIds) assert.ok(listing.includes(`releases/${id}/assets/skill-pack/${pack}/manifest.json`), pack);
   assert.ok(listing.includes(`assets/guest/${manifestSha256}/rootfs.ext4`));
   const release = listing.filter(path => path.startsWith(`releases/${id}/`)).map(path => path.slice(`releases/${id}/`.length));
   // Development instruments are absent; type-only packages stay only where an upstream runtime package declares them (lockfile closure).
-  for (const forbidden of [/^dist\/test\//, /^dist\/.*\.(ts|map)$/, /^src\//, /^node_modules\/(typescript|eslint|dependency-cruiser|@typescript-eslint|@types\/(?!node\/|retry\/)[^/]+)/,
-    /^node_modules\/@earendil-works\/pi-coding-agent\//, /^test\//]) {
+  for (const forbidden of [
+    /^dist\/test\//,
+    /^dist\/.*\.(ts|map)$/,
+    /^src\//,
+    /^node_modules\/(typescript|eslint|dependency-cruiser|@typescript-eslint|@types\/(?!node\/|retry\/)[^/]+)/,
+    /^node_modules\/@earendil-works\/pi-coding-agent\//,
+    /^test\//,
+  ]) {
     assert.ok(!release.some(path => forbidden.test(path)), String(forbidden));
   }
   const manifest = JSON.parse(await readFile(join(root, 'releases', id, 'release-manifest.json'), 'utf8'));
@@ -40,7 +63,11 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   assert.equal(metadata.pi.codingAgent.profile.id, 'factory-development-pi-1.5.2-read-async-bash-lexical-v3');
   assert.equal(metadata.gondolin.version, '0.14.0');
   assert.equal(metadata.gondolin.profile.dependencyLink, '../../node_modules');
-  assert.deepEqual(metadata.skillPacks.map((pack: { id: string }) => pack.id), [...factorySkillPackIds], 'every registered pack ships');
+  assert.deepEqual(
+    metadata.skillPacks.map((pack: { id: string }) => pack.id),
+    [...factorySkillPackIds],
+    'every registered pack ships',
+  );
   assert.ok(metadata.skillPacks.every((pack: { licenses: unknown[]; credits: string }) => pack.licenses.length > 0 && pack.credits));
   assert.equal(metadata.protocol.version, 1);
   assert.ok(metadata.guestProfile.apkPackages.includes('docker'));
@@ -81,7 +108,11 @@ test('a release serves only its own canonical root; wrong extraction and changed
   const wrongChecks: Check[] = JSON.parse(wrong.stdout).diagnostics.checks;
   assert.equal(check(wrongChecks, 'release:integrity')?.status, 'blocked');
   assert.match(check(wrongChecks, 'release:integrity')!.message, /RELEASE_INTEGRITY_MISMATCH/);
-  assert.equal(wrongChecks.some(item => item.id === 'guest-assets:manifest'), false, 'no asset pin from an unverified release');
+  assert.equal(
+    wrongChecks.some(item => item.id === 'guest-assets:manifest'),
+    false,
+    'no asset pin from an unverified release',
+  );
   // Its controller refuses before opening storage.
   const owner = factory(masked, ['run']);
   assert.equal(owner.status, 2, owner.stderr);
@@ -90,7 +121,8 @@ test('a release serves only its own canonical root; wrong extraction and changed
   // Same-size content change of one distributed file.
   const target = join(root, 'releases', id, 'assets/skill-pack/factory-skills-v3/manifest.json');
   const original = await readFile(target);
-  const changed = Buffer.from(original); changed[0] = changed[0]! ^ 1;
+  const changed = Buffer.from(original);
+  changed[0] = changed[0]! ^ 1;
   await chmod(target, 0o644);
   await writeFile(target, changed);
   try {
@@ -101,9 +133,10 @@ test('a release serves only its own canonical root; wrong extraction and changed
     assert.equal(integrity?.status, 'blocked');
     assert.match(integrity!.message, /RELEASE_INTEGRITY_MISMATCH at assets\/skill-pack\/factory-skills-v3\/manifest.json/);
     assert.deepEqual(await readFile(target), changed, 'never repaired');
-  } finally { await writeFile(target, original); }
+  } finally {
+    await writeFile(target, original);
+  }
 });
-
 
 test('a release verifies EVERY distributed byte and fails closed without a manifest, before storage and independent of root', async () => {
   const extract = async (name: string) => {
@@ -113,8 +146,11 @@ test('a release verifies EVERY distributed byte and fails closed without a manif
     assert.equal(result.status, 0, result.stderr);
     return directory;
   };
-  const configuration = (text: string) => text.replace('operators: []', 'operators: [operador]')
-    .replaceAll('{ provider: null, model: null }', '{ provider: openai, model: gpt-6-luna }').replace('appId: null', 'appId: 123');
+  const configuration = (text: string) =>
+    text
+      .replace('operators: []', 'operators: [operador]')
+      .replaceAll('{ provider: null, model: null }', '{ provider: openai, model: gpt-6-luna }')
+      .replace('appId: null', 'appId: 123');
   // (1) A guest-asset file whose bytes change while the release manifest still claims the original hash: refused by release integrity.
   const tampered = await extract('asset-tampered');
   assert.equal(spawnSync(join(tampered, 'factory'), ['setup', '--json']).status, 0);
@@ -138,7 +174,9 @@ test('a release verifies EVERY distributed byte and fails closed without a manif
     assert.match(owner.stderr, /RELEASE_INVALID/);
     await assert.rejects(stat(join(tampered, 'data', 'control.sqlite')), { code: 'ENOENT' });
     await assert.rejects(stat(join(tampered, 'run', 'control.sock')), { code: 'ENOENT' });
-  } finally { await writeFile(asset, original); }
+  } finally {
+    await writeFile(asset, original);
+  }
   // (2) A release whose manifest is missing or unreadable never falls back to "development", and its root stays pinned.
   const manifestless = await extract('manifestless');
   await rm(join(manifestless, 'releases', id, 'release-manifest.json'));

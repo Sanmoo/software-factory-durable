@@ -34,8 +34,15 @@ async function forgottenInstallation(t: { after(fn: () => Promise<void> | void):
     await opened.session.commit(async tx => {
       const work = (await tx.doc(works, work_id, null)).work!;
       if (!work.questions.includes(questionId)) work.questions.push(questionId);
-      (await tx.doc(questionDocs, questionId, null)).question = { questionId, workId: work_id, state: 'answered', publication: { state: 'published' }, ignored: [],
-        answer: null, content: { question: `${marker} round ${round}` } } as never;
+      (await tx.doc(questionDocs, questionId, null)).question = {
+        questionId,
+        workId: work_id,
+        state: 'answered',
+        publication: { state: 'published' },
+        ignored: [],
+        answer: null,
+        content: { question: `${marker} round ${round}` },
+      } as never;
     }, BACKGROUND_CONTEXT);
   }
   assert.ok((await raw(path)).includes(marker), 'sanity: the marker is in the raw file before the forget');
@@ -43,11 +50,29 @@ async function forgottenInstallation(t: { after(fn: () => Promise<void> | void):
   const facts = () => ({ running: false, tree, repositoryConfigured: false });
   const planned = await acceptForgetPlan(opened.session, { request_id: 'f-1', operation: 'forget-plan', work_id, origin: 'local-cli' }, facts);
   assert.ok(planned.kind === 'durable' && planned.outcome === 'accepted', JSON.stringify(planned));
-  await acceptForgetConfirm(opened.session, { request_id: 'f-1c', operation: 'forget-confirm', work_id, plan_id: planned.plan!.planId, origin: 'local-cli' }, facts);
-  const desk = (scrub: StorageScrub | 'none' = opened) => createRetentionDesk({ session: opened.session, storage: scrub === 'none' ? undefined : scrub,
-    details: { list: () => listDetails(dir, work_id), preserveSession: async () => ({ status: 'lost', code: 'X' }), remove: async () => ({ outcome: 'refused', code: 'X' }),
-      inspectTree: ({ workId }) => inspectWorkRecords(dir, workId), forget: ({ workId }) => forgetWorkRecords(dir, workId) },
-    repositories: [], readWorks: () => readWorks(opened.session), readQuestions: work => readQuestions(opened.session, work), running: () => false, settled: () => true, stopped: () => false });
+  await acceptForgetConfirm(
+    opened.session,
+    { request_id: 'f-1c', operation: 'forget-confirm', work_id, plan_id: planned.plan!.planId, origin: 'local-cli' },
+    facts,
+  );
+  const desk = (scrub: StorageScrub | 'none' = opened) =>
+    createRetentionDesk({
+      session: opened.session,
+      storage: scrub === 'none' ? undefined : scrub,
+      details: {
+        list: () => listDetails(dir, work_id),
+        preserveSession: async () => ({ status: 'lost', code: 'X' }),
+        remove: async () => ({ outcome: 'refused', code: 'X' }),
+        inspectTree: ({ workId }) => inspectWorkRecords(dir, workId),
+        forget: ({ workId }) => forgetWorkRecords(dir, workId),
+      },
+      repositories: [],
+      readWorks: () => readWorks(opened.session),
+      readQuestions: work => readQuestions(opened.session, work),
+      running: () => false,
+      settled: () => true,
+      stopped: () => false,
+    });
   return { dir, path, opened, work_id, marker, desk };
 }
 
@@ -66,7 +91,13 @@ test('D-07: after a forget the deleted records are absent from the raw SQLite fi
 test('D-07: a scrub that fails (or is cut by a crash) leaves the forget committed, is reported pending and is re-attempted, never silently skipped', async t => {
   const h = await forgottenInstallation(t);
   let attempts = 0;
-  const failing = { vacuum: async () => { attempts++; return { outcome: 'failed' as const, code: 'SQLITE_FULL' }; }, checkpoint: () => h.opened.checkpoint() };
+  const failing = {
+    vacuum: async () => {
+      attempts++;
+      return { outcome: 'failed' as const, code: 'SQLITE_FULL' };
+    },
+    checkpoint: () => h.opened.checkpoint(),
+  };
   await h.desk(failing).cycle();
   assert.equal(await readWork(h.opened.session, h.work_id), undefined, 'the forget stays committed');
   let memory = (await readForgotten(h.opened.session))[0]!;
@@ -79,9 +110,21 @@ test('D-07: a scrub that fails (or is cut by a crash) leaves the forget committe
   await h.opened.close();
   const reopened = await openStore(h.path);
   t.after(() => reopened.close());
-  const desk = createRetentionDesk({ session: reopened.session, storage: reopened, details: { list: async () => ({ completeness: 'complete', items: [] }) as never,
-    preserveSession: async () => ({ status: 'lost', code: 'X' }), remove: async () => ({ outcome: 'refused', code: 'X' }) },
-    repositories: [], readWorks: () => readWorks(reopened.session), readQuestions: work => readQuestions(reopened.session, work), running: () => false, settled: () => true, stopped: () => false });
+  const desk = createRetentionDesk({
+    session: reopened.session,
+    storage: reopened,
+    details: {
+      list: async () => ({ completeness: 'complete', items: [] }) as never,
+      preserveSession: async () => ({ status: 'lost', code: 'X' }),
+      remove: async () => ({ outcome: 'refused', code: 'X' }),
+    },
+    repositories: [],
+    readWorks: () => readWorks(reopened.session),
+    readQuestions: work => readQuestions(reopened.session, work),
+    running: () => false,
+    settled: () => true,
+    stopped: () => false,
+  });
   await desk.cycle();
   memory = (await readForgotten(reopened.session))[0]!;
   assert.equal(memory.scrub?.state, 'scrubbed', JSON.stringify([memory.scrub, desk.view().failures]));

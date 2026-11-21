@@ -3,7 +3,16 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { CodeRepository, FeedbackObservation } from '../../code-repository/index.js';
 import type { ControlReceipt, ConversationCommentFact, FeedbackRequest, FeedbackView, HumanFeedback, WorkCorrection } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { commentCommand, feedbackLimits, repairNextStep, repairPhase, repairReplyBody, repairRequestDecision, reviewRequests, undeliveredHuman } from '../rules/feedback.js';
+import {
+  commentCommand,
+  feedbackLimits,
+  repairNextStep,
+  repairPhase,
+  repairReplyBody,
+  repairRequestDecision,
+  reviewRequests,
+  undeliveredHuman,
+} from '../rules/feedback.js';
 import { commentEligibility, type OperatorRef } from '../rules/questions.js';
 import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { activeExecution } from './execution.js';
@@ -46,7 +55,12 @@ function ignore(feedback: FeedbackView, at: string, origin: string, code: string
  * (content as submitted); a recorded review whose trigger a later approval/dismissal removed is withdrawn — only that one, never an
  * independent request, and never a statement that human merge approval is satisfied. Unauthorized reviews leave a bounded summary only.
  */
-export async function recordReviewFeedback(session: Session, work_id: string, observation: Extract<FeedbackObservation, { kind: 'observed' }>, operators: readonly OperatorRef[]) {
+export async function recordReviewFeedback(
+  session: Session,
+  work_id: string,
+  observation: Extract<FeedbackObservation, { kind: 'observed' }>,
+  operators: readonly OperatorRef[],
+) {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, work_id, null)).work;
@@ -55,15 +69,37 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
     const feedback = feedbackOf(work);
     // A review submitted before this Work was admitted never triggers it (a pre-existing request must not charge a new cycle).
     const admitted = Date.parse(work.admittedAt);
-    const older = observation.reviews.filter(item => item.state === 'CHANGES_REQUESTED' && item.submittedAt !== null && Date.parse(item.submittedAt) < admitted);
+    const older = observation.reviews.filter(
+      item => item.state === 'CHANGES_REQUESTED' && item.submittedAt !== null && Date.parse(item.submittedAt) < admitted,
+    );
     for (const item of older) ignore(feedback, now, `github-review:${item.reviewId}`, 'REVIEW_PREDATES_WORK');
-    const outcome = reviewRequests({ reviews: observation.reviews.filter(item => !older.includes(item)), reviewComments: observation.reviewComments, operators, digest });
+    const outcome = reviewRequests({
+      reviews: observation.reviews.filter(item => !older.includes(item)),
+      reviewComments: observation.reviewComments,
+      operators,
+      digest,
+    });
     for (const item of outcome.ignored) ignore(feedback, now, item.origin, item.code);
     for (const request of outcome.active) {
       if (feedback.requests.some(item => item.feedbackId === request.feedbackId) || (feedback.settled ?? []).includes(request.feedbackId)) continue;
-      feedback.requests.push({ feedbackId: request.feedbackId, code: 'HUMAN_CHANGES_REQUESTED', feedback: request, recordedAt: now, recordedHead: headOf(work),
-        state: 'pending', correctionId: null, closedAt: null, outcome: null });
-      work.history.push({ at: now, event: 'feedback-recorded', origin: 'controller-feedback', feedbackId: request.feedbackId, detail: `review:${request.author?.login ?? '?'}@${request.version ?? '?'}` });
+      feedback.requests.push({
+        feedbackId: request.feedbackId,
+        code: 'HUMAN_CHANGES_REQUESTED',
+        feedback: request,
+        recordedAt: now,
+        recordedHead: headOf(work),
+        state: 'pending',
+        correctionId: null,
+        closedAt: null,
+        outcome: null,
+      });
+      work.history.push({
+        at: now,
+        event: 'feedback-recorded',
+        origin: 'controller-feedback',
+        feedbackId: request.feedbackId,
+        detail: `review:${request.author?.login ?? '?'}@${request.version ?? '?'}`,
+      });
     }
     const executionsBefore = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
     const undeliveredBefore = work.correction?.consumed ? undeliveredHuman(work.correction, executionsBefore).length : 0;
@@ -71,8 +107,14 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
       const removed = outcome.inactive[request.feedbackId];
       if (!removed || request.code !== 'HUMAN_CHANGES_REQUESTED' || (request.state !== 'pending' && request.state !== 'in-correction')) continue;
       // Already delivered to a charged correction's Builder: that treatment stands (it closes with its correction).
-      if (request.state === 'in-correction' && work.correction?.consumed && !undeliveredHuman(work.correction, [...work.previousExecutions, ...(work.execution ? [work.execution] : [])])
-        .some(item => item.subject === request.feedbackId)) continue;
+      if (
+        request.state === 'in-correction' &&
+        work.correction?.consumed &&
+        !undeliveredHuman(work.correction, [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]).some(
+          item => item.subject === request.feedbackId,
+        )
+      )
+        continue;
       Object.assign(request, { state: 'withdrawn', closedAt: now, outcome: removed });
       tombstone(work, request.feedbackId);
       if (work.correction?.consumed) work.correction.reasons = (work.correction.reasons ?? []).filter(item => item.subject !== request.feedbackId);
@@ -80,11 +122,22 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
     }
     // A continuation (ticket 23) whose requests were all withdrawn BY THIS observation before it started has nothing left to deliver: no
     // activation for it. Real run q23-feedback-v3: never after the continuation delivered them (that would clear a pending publication).
-    if (work.correction?.consumed && work.correction.continuing && undeliveredBefore > 0 && !activeExecution(work.execution ?? null) &&
-        !undeliveredHuman(work.correction, executionsBefore).length) {
+    if (
+      work.correction?.consumed &&
+      work.correction.continuing &&
+      undeliveredBefore > 0 &&
+      !activeExecution(work.execution ?? null) &&
+      !undeliveredHuman(work.correction, executionsBefore).length
+    ) {
       work.correction.continuing = false;
       work.queue = { ...work.queue, pending: Boolean(work.pendingRecovery) || (work.scopeUpdates ?? []).some(update => update.state === 'pending') };
-      work.history.push({ at: now, event: 'feedback-withdrawn', origin: 'controller-feedback', feedbackId: null, detail: 'continuation: nothing left to deliver' });
+      work.history.push({
+        at: now,
+        event: 'feedback-withdrawn',
+        origin: 'controller-feedback',
+        feedbackId: null,
+        detail: 'continuation: nothing left to deliver',
+      });
     }
     feedback.requests = bound(feedback.requests);
     feedback.observedAt = observation.observedAt;
@@ -92,14 +145,17 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
   }, BACKGROUND_CONTEXT);
 }
 
-type RepairOrigin = { kind: 'local-cli' } | { kind: 'github-comment'; comment: { commentId: number; url: string; author: { id: number; login: string }; createdAt: string } };
+type RepairOrigin =
+  { kind: 'local-cli' } | { kind: 'github-comment'; comment: { commentId: number; url: string; author: { id: number; login: string }; createdAt: string } };
 type RepairReceipt = Extract<ControlReceipt, { operation: 'repair' }>;
 /**
  * "Aceitar comando" for `repair` (spec §11.3): dedupe by ingress identity, the concrete-reason rule, the phase answer (accepted / deferred /
  * already covered / refused) and the record share ONE commit. Charged to `corrections` only by the correction's confirmed start.
  */
-export async function acceptRepairRequest(session: Session, input: { request_id: string; work_id: string; reason: string; origin: RepairOrigin }):
-  Promise<RepairReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+export async function acceptRepairRequest(
+  session: Session,
+  input: { request_id: string; work_id: string; reason: string; origin: RepairOrigin },
+): Promise<RepairReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   const ingress = { request_id: input.request_id, operation: 'repair' as const, work_id: input.work_id, reason: input.reason, origin: input.origin.kind };
   return session.commit(async tx => {
     const request = await tx.doc(requests, input.request_id, null);
@@ -112,36 +168,100 @@ export async function acceptRepairRequest(session: Session, input: { request_id:
     const sha256 = digest(input.reason);
     const base = { kind: 'durable' as const, request_id: input.request_id, operation: 'repair' as const, work_id: input.work_id };
     let receipt: RepairReceipt;
-    if (!work) receipt = { ...base, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', feedbackId: null, appliesAt: null, nextStep: 'No Work with this identity; use `factory list`.' };
+    if (!work)
+      receipt = {
+        ...base,
+        outcome: 'not-applied',
+        reason: 'WORK_NOT_FOUND',
+        feedbackId: null,
+        appliesAt: null,
+        nextStep: 'No Work with this identity; use `factory list`.',
+      };
     else {
       const execution = work.execution ?? null;
-      const questionWait = execution?.state === 'ended' && execution.end?.outcome === 'question' && work.impediments.some(item => item.code === 'QUESTION_PENDING');
-      const phase = repairPhase({ activeExecution: activeExecution(execution), questionWait, publication: work.publication?.state ?? null, anyExecution: Boolean(execution) });
-      const unresolved = (work.feedback?.requests ?? []).filter(item => item.code === 'EXPLICIT_REPAIR' && (item.state === 'pending' || item.state === 'in-correction'))
+      const questionWait =
+        execution?.state === 'ended' && execution.end?.outcome === 'question' && work.impediments.some(item => item.code === 'QUESTION_PENDING');
+      const phase = repairPhase({
+        activeExecution: activeExecution(execution),
+        questionWait,
+        publication: work.publication?.state ?? null,
+        anyExecution: Boolean(execution),
+      });
+      const unresolved = (work.feedback?.requests ?? [])
+        .filter(item => item.code === 'EXPLICIT_REPAIR' && (item.state === 'pending' || item.state === 'in-correction'))
         .map(item => item.feedback.sha256);
       const decision = repairRequestDecision({ result: work.result, current: isCurrent(work, index), reason: input.reason, sha256, unresolved, phase });
       const now = new Date().toISOString();
       if (decision.outcome === 'not-applied' || decision.outcome === 'already-covered') {
-        receipt = { ...base, outcome: decision.outcome, reason: decision.code, feedbackId: null, appliesAt: null, nextStep: repairNextStep(input.work_id, decision.outcome, decision.code) };
+        receipt = {
+          ...base,
+          outcome: decision.outcome,
+          reason: decision.code,
+          feedbackId: null,
+          appliesAt: null,
+          nextStep: repairNextStep(input.work_id, decision.outcome, decision.code),
+        };
       } else {
         const feedbackId = `repair-${input.request_id}`;
-        const feedback: HumanFeedback = { feedbackId, origin: input.origin.kind, author: input.origin.kind === 'github-comment'
-          ? { login: input.origin.comment.author.login, id: input.origin.comment.author.id } : null, url: input.origin.kind === 'github-comment' ? input.origin.comment.url : null,
-        version: headOf(work), submittedAt: input.origin.kind === 'github-comment' ? input.origin.comment.createdAt : now, sha256, content: input.reason, comments: [] };
+        const feedback: HumanFeedback = {
+          feedbackId,
+          origin: input.origin.kind,
+          author: input.origin.kind === 'github-comment' ? { login: input.origin.comment.author.login, id: input.origin.comment.author.id } : null,
+          url: input.origin.kind === 'github-comment' ? input.origin.comment.url : null,
+          version: headOf(work),
+          submittedAt: input.origin.kind === 'github-comment' ? input.origin.comment.createdAt : now,
+          sha256,
+          content: input.reason,
+          comments: [],
+        };
         const record = feedbackOf(work);
-        record.requests = bound([...record.requests, { feedbackId, code: 'EXPLICIT_REPAIR', feedback, recordedAt: now, recordedHead: headOf(work), state: 'pending',
-          correctionId: null, closedAt: null, outcome: null }]);
+        record.requests = bound([
+          ...record.requests,
+          {
+            feedbackId,
+            code: 'EXPLICIT_REPAIR',
+            feedback,
+            recordedAt: now,
+            recordedHead: headOf(work),
+            state: 'pending',
+            correctionId: null,
+            closedAt: null,
+            outcome: null,
+          },
+        ]);
         work.history.push({ at: now, event: 'repair-requested', origin: input.origin.kind, feedbackId, detail: `${decision.outcome}:${decision.during}` });
-        receipt = { ...base, outcome: decision.outcome, reason: null, feedbackId, appliesAt: 'next-activation', nextStep: repairNextStep(input.work_id, decision.outcome, null) };
+        receipt = {
+          ...base,
+          outcome: decision.outcome,
+          reason: null,
+          feedbackId,
+          appliesAt: 'next-activation',
+          nextStep: repairNextStep(input.work_id, decision.outcome, null),
+        };
       }
     }
     // Spec §11.3: an operator's comment command is answered on the Ticket (intent here, in the SAME commit; published by the question desk).
     if (work && input.origin.kind === 'github-comment') {
       const record = feedbackOf(work);
       const at = new Date().toISOString();
-      record.replies = [...(record.replies ?? []), { replyId: randomUUID(), request_id: input.request_id, source: { commentId: input.origin.comment.commentId, url: input.origin.comment.url },
-        body: repairReplyBody({ workId: work.work_id, source: input.origin.comment.url, outcome: receipt.outcome, reason: receipt.reason, nextStep: receipt.nextStep, feedbackId: receipt.feedbackId }),
-        recordedAt: at, publication: { effectId: randomUUID(), state: 'intended' as const, failures: 0, comment: null, code: null, updatedAt: at } }].slice(-20);
+      record.replies = [
+        ...(record.replies ?? []),
+        {
+          replyId: randomUUID(),
+          request_id: input.request_id,
+          source: { commentId: input.origin.comment.commentId, url: input.origin.comment.url },
+          body: repairReplyBody({
+            workId: work.work_id,
+            source: input.origin.comment.url,
+            outcome: receipt.outcome,
+            reason: receipt.reason,
+            nextStep: receipt.nextStep,
+            feedbackId: receipt.feedbackId,
+          }),
+          recordedAt: at,
+          publication: { effectId: randomUUID(), state: 'intended' as const, failures: 0, comment: null, code: null, updatedAt: at },
+        },
+      ].slice(-20);
     }
     request.input = ingress;
     request.receipt = receipt;
@@ -153,9 +273,16 @@ export async function acceptRepairRequest(session: Session, input: { request_id:
  * The single ingestion of a `/factory` comment of a Work (its Ticket or its own PR): one authentication/correlation rule for answers and
  * repairs. Unauthorized or ineligible commands leave a bounded summary only; prose is nothing.
  */
-export async function ingestComment(session: Session, work: Pick<WorkRecord, 'work_id' | 'admittedAt'>, comment: ConversationCommentFact, operators: readonly OperatorRef[]) {
-  const command = commentCommand({ ...comment, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
-    { operators, admittedAt: Date.parse(work.admittedAt) });
+export async function ingestComment(
+  session: Session,
+  work: Pick<WorkRecord, 'work_id' | 'admittedAt'>,
+  comment: ConversationCommentFact,
+  operators: readonly OperatorRef[],
+) {
+  const command = commentCommand(
+    { ...comment, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
+    { operators, admittedAt: Date.parse(work.admittedAt) },
+  );
   const origin = `github-comment:${comment.commentId}`;
   if (command.kind === 'prose') return;
   if (command.kind === 'ignored') {
@@ -164,16 +291,39 @@ export async function ingestComment(session: Session, work: Pick<WorkRecord, 'wo
     return;
   }
   if (command.kind === 'repair') {
-    await acceptRepairRequest(session, { request_id: `github-comment-${comment.commentId}`, work_id: work.work_id, reason: command.reason,
-      origin: { kind: 'github-comment', comment: { commentId: comment.commentId, url: comment.url, author: { id: comment.author.id, login: comment.author.login }, createdAt: comment.createdAt } } });
+    await acceptRepairRequest(session, {
+      request_id: `github-comment-${comment.commentId}`,
+      work_id: work.work_id,
+      reason: command.reason,
+      origin: {
+        kind: 'github-comment',
+        comment: {
+          commentId: comment.commentId,
+          url: comment.url,
+          author: { id: comment.author.id, login: comment.author.login },
+          createdAt: comment.createdAt,
+        },
+      },
+    });
     return;
   }
   const question = await readQuestion(session, command.questionId);
-  const eligibility = question ? commentEligibility({ commentId: comment.commentId, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
-    { recordedAt: Date.parse(question.recordedAt), publishedCommentId: question.publication.comment?.commentId ?? null }) : { eligible: true as const };
-  if (!eligibility.eligible) { await recordIgnored(session, command.questionId, origin, eligibility.code); return; }
-  await acceptAnswer(session, { request_id: `github-comment-${comment.commentId}`, question_id: command.questionId, text: command.text,
-    origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } } });
+  const eligibility = question
+    ? commentEligibility(
+        { commentId: comment.commentId, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
+        { recordedAt: Date.parse(question.recordedAt), publishedCommentId: question.publication.comment?.commentId ?? null },
+      )
+    : { eligible: true as const };
+  if (!eligibility.eligible) {
+    await recordIgnored(session, command.questionId, origin, eligibility.code);
+    return;
+  }
+  await acceptAnswer(session, {
+    request_id: `github-comment-${comment.commentId}`,
+    question_id: command.questionId,
+    text: command.text,
+    origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } },
+  });
 }
 
 async function recordWorkIgnored(session: Session, work_id: string, origin: string, code: string) {
@@ -197,13 +347,20 @@ async function recordPullRequestCursor(session: Session, work_id: string, cursor
  * the single ingestion). Runs whatever the Work is doing: recording is not delivery and never interrupts or launches anything. A failed or
  * partial read decides nothing (no withdrawal, cursor unchanged).
  */
-export async function observeFeedback(deps: { session: Session; repository: Pick<CodeRepository, 'readFeedback'>; operators: readonly OperatorRef[];
-  repo(repository: string): Parameters<NonNullable<CodeRepository['readFeedback']>>[0]['repo'] | undefined }, work: WorkRecord): Promise<'observed' | 'unavailable' | 'skipped'> {
+export async function observeFeedback(
+  deps: {
+    session: Session;
+    repository: Pick<CodeRepository, 'readFeedback'>;
+    operators: readonly OperatorRef[];
+    repo(repository: string): Parameters<NonNullable<CodeRepository['readFeedback']>>[0]['repo'] | undefined;
+  },
+  work: WorkRecord,
+): Promise<'observed' | 'unavailable' | 'skipped'> {
   const repo = deps.repo(work.repository.repository);
   if (!deps.repository.readFeedback || !repo || !work.pullRequest || work.result !== 'open') return 'skipped';
   const observation = await deps.repository.readFeedback({ repo, number: work.pullRequest.number }).catch(() => null);
   if (!observation || observation.kind !== 'observed') return 'unavailable';
-  if (await recordReviewFeedback(deps.session, work.work_id, observation, deps.operators) === 'stale') return 'skipped';
+  if ((await recordReviewFeedback(deps.session, work.work_id, observation, deps.operators)) === 'stale') return 'skipped';
   const cursor = work.feedback?.pullRequestCursor ?? null;
   const fresh = observation.comments.filter(item => cursor === null || item.commentId > cursor);
   for (const comment of fresh) await ingestComment(deps.session, work, comment, deps.operators);
@@ -223,8 +380,13 @@ export function createFeedbackDesk(deps: Parameters<typeof observeFeedback>[0] &
   };
 }
 
-type ReplyUpdate = { kind: 'begin' } | { kind: 'published'; comment: { commentId: number; url: string } } | { kind: 'failed' | 'unknown'; code: string } |
-  { kind: 'discovered'; comment: { commentId: number; url: string } } | { kind: 'absent' } | { kind: 'undetermined'; code: string };
+type ReplyUpdate =
+  | { kind: 'begin' }
+  | { kind: 'published'; comment: { commentId: number; url: string } }
+  | { kind: 'failed' | 'unknown'; code: string }
+  | { kind: 'discovered'; comment: { commentId: number; url: string } }
+  | { kind: 'absent' }
+  | { kind: 'undetermined'; code: string };
 /** Reply publication transitions (intent → attempt → observation; discovery after doubt, never a blind republication). */
 export async function recordReplyPublication(session: Session, work_id: string, replyId: string, update: ReplyUpdate): Promise<string> {
   return session.commit(async tx => {
@@ -236,7 +398,8 @@ export async function recordReplyPublication(session: Session, work_id: string, 
     if (update.kind === 'begin') {
       if (publication.state !== 'intended' && publication.state !== 'failed') return 'stale';
       Object.assign(publication, { state: 'attempting', updatedAt: at });
-    } else if (update.kind === 'published' || update.kind === 'discovered') Object.assign(publication, { state: 'published', comment: update.comment, code: null, updatedAt: at });
+    } else if (update.kind === 'published' || update.kind === 'discovered')
+      Object.assign(publication, { state: 'published', comment: update.comment, code: null, updatedAt: at });
     else if (update.kind === 'failed') Object.assign(publication, { state: 'failed', failures: publication.failures + 1, code: update.code, updatedAt: at });
     else if (update.kind === 'unknown' || update.kind === 'undetermined') Object.assign(publication, { state: 'ambiguous', code: update.code, updatedAt: at });
     // Discovery proved no reply exists: it may be attempted again (the same intent).
@@ -254,7 +417,14 @@ export function markInCorrection(work: WorkRecord, correction: Pick<WorkCorrecti
   }
 }
 /** Inside the closing commit of a correction: a charged one TREATED its human requests (outcome kept); otherwise they return to pending. */
-export function settleFeedback(work: WorkRecord, correctionId: string, charged: boolean, at: string, outcome: string, undelivered: ReadonlySet<string> = new Set()) {
+export function settleFeedback(
+  work: WorkRecord,
+  correctionId: string,
+  charged: boolean,
+  at: string,
+  outcome: string,
+  undelivered: ReadonlySet<string> = new Set(),
+) {
   for (const request of work.feedback?.requests ?? []) {
     if (request.state !== 'in-correction' || request.correctionId !== correctionId) continue;
     if (charged && !undelivered.has(request.feedbackId)) {

@@ -23,10 +23,14 @@ export async function checkInstalledDependencies(root: string): Promise<string[]
   for (const [path, entry] of Object.entries(packages)) {
     if (!path.startsWith('node_modules/') || entry.link) continue;
     let installed: string | undefined;
-    try { installed = (JSON.parse(await readFile(join(root, path, 'package.json'), 'utf8')) as { version?: string }).version; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    if (installed === undefined) { if (!entry.optional) problems.push(`${path}: missing (lockfile ${entry.version})`); }
-    else if (installed !== entry.version) problems.push(`${path}: installed ${installed}, lockfile ${entry.version}`);
+    try {
+      installed = (JSON.parse(await readFile(join(root, path, 'package.json'), 'utf8')) as { version?: string }).version;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (installed === undefined) {
+      if (!entry.optional) problems.push(`${path}: missing (lockfile ${entry.version})`);
+    } else if (installed !== entry.version) problems.push(`${path}: installed ${installed}, lockfile ${entry.version}`);
   }
   return problems;
 }

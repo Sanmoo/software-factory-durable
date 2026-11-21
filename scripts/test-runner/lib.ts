@@ -12,7 +12,13 @@ export const tierNames: readonly Tier[] = ['fast', 'ci', 'full'];
 export const budgetsMs: Readonly<Record<Tier, number | undefined>> = Object.freeze({ fast: 180_000, ci: undefined, full: undefined });
 
 /** `full`: nightly only (excluded from fast and ci), for files too expensive for the per-integration gate. */
-export interface ManifestEntry { slow: boolean; serial: boolean; full: boolean; quarantine?: string; reason: string }
+export interface ManifestEntry {
+  slow: boolean;
+  serial: boolean;
+  full: boolean;
+  quarantine?: string;
+  reason: string;
+}
 export type Manifest = ReadonlyMap<string, ManifestEntry>;
 
 const entryKeys = new Set(['slow', 'serial', 'full', 'quarantine', 'reason']);
@@ -27,20 +33,27 @@ export function parseManifest(value: unknown, exists: (file: string) => boolean)
     if (value.schemaVersion !== 1) problems.push('schemaVersion must be 1');
     for (const key of Object.keys(value)) if (key !== 'schemaVersion' && key !== 'files') problems.push(`unknown top-level key "${key}"`);
     if (!isRecord(value.files)) problems.push('files must be an object');
-    else for (const [file, raw] of Object.entries(value.files)) {
-      const at = (message: string) => problems.push(`${file}: ${message}`);
-      if (!/^test\/.+\.test\.ts$/.test(file)) { at('not a test/**/*.test.ts path'); continue; }
-      if (!exists(file)) at('listed file does not exist');
-      if (!isRecord(raw)) { at('entry must be an object'); continue; }
-      for (const key of Object.keys(raw)) if (!entryKeys.has(key)) at(`unknown key "${key}"`);
-      for (const flag of ['slow', 'serial', 'full'] as const) if (flag in raw && raw[flag] !== true) at(`${flag} must be true when present`);
-      if ('quarantine' in raw && (typeof raw.quarantine !== 'string' || !raw.quarantine.trim())) at('quarantine must name its ticket');
-      if (raw.slow !== true && raw.serial !== true && raw.full !== true && !('quarantine' in raw)) at('needs slow, serial, full or quarantine');
-      if (typeof raw.reason !== 'string' || !raw.reason.trim()) at('needs a non-empty reason');
-      const entry: ManifestEntry = { slow: raw.slow === true, serial: raw.serial === true, full: raw.full === true, reason: String(raw.reason ?? '') };
-      if (typeof raw.quarantine === 'string') entry.quarantine = raw.quarantine;
-      entries.set(file, entry);
-    }
+    else
+      for (const [file, raw] of Object.entries(value.files)) {
+        const at = (message: string) => problems.push(`${file}: ${message}`);
+        if (!/^test\/.+\.test\.ts$/.test(file)) {
+          at('not a test/**/*.test.ts path');
+          continue;
+        }
+        if (!exists(file)) at('listed file does not exist');
+        if (!isRecord(raw)) {
+          at('entry must be an object');
+          continue;
+        }
+        for (const key of Object.keys(raw)) if (!entryKeys.has(key)) at(`unknown key "${key}"`);
+        for (const flag of ['slow', 'serial', 'full'] as const) if (flag in raw && raw[flag] !== true) at(`${flag} must be true when present`);
+        if ('quarantine' in raw && (typeof raw.quarantine !== 'string' || !raw.quarantine.trim())) at('quarantine must name its ticket');
+        if (raw.slow !== true && raw.serial !== true && raw.full !== true && !('quarantine' in raw)) at('needs slow, serial, full or quarantine');
+        if (typeof raw.reason !== 'string' || !raw.reason.trim()) at('needs a non-empty reason');
+        const entry: ManifestEntry = { slow: raw.slow === true, serial: raw.serial === true, full: raw.full === true, reason: String(raw.reason ?? '') };
+        if (typeof raw.quarantine === 'string') entry.quarantine = raw.quarantine;
+        entries.set(file, entry);
+      }
   }
   if (problems.length) throw new Error(`TIERS_MANIFEST_INVALID: test/tiers.json\n  ${problems.join('\n  ')}`);
   return entries;
@@ -52,13 +65,20 @@ export function concurrencyFor(tier: Tier, cpus: number): number {
 
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export interface LanePlan { parallel: string[]; serial: string[]; concurrency: number; quarantined: string[]; skippedSlow: string[]; skippedFull: string[] }
+export interface LanePlan {
+  parallel: string[];
+  serial: string[];
+  concurrency: number;
+  quarantined: string[];
+  skippedSlow: string[];
+  skippedFull: string[];
+}
 
 /** Longest known duration first; without history, slow-listed first; then by name. */
 export function planLanes(tier: Tier, files: readonly string[], manifest: Manifest, cpus: number, timings: Readonly<Record<string, number>>): LanePlan {
   const plan: LanePlan = { parallel: [], serial: [], concurrency: concurrencyFor(tier, cpus), quarantined: [], skippedSlow: [], skippedFull: [] };
-  const byCost = (a: string, b: string) => (timings[b] ?? -1) - (timings[a] ?? -1)
-    || Number(manifest.get(b)?.slow ?? false) - Number(manifest.get(a)?.slow ?? false) || byName(a, b);
+  const byCost = (a: string, b: string) =>
+    (timings[b] ?? -1) - (timings[a] ?? -1) || Number(manifest.get(b)?.slow ?? false) - Number(manifest.get(a)?.slow ?? false) || byName(a, b);
   for (const file of [...files].sort(byCost)) {
     const entry = manifest.get(file);
     if (entry?.quarantine) plan.quarantined.push(file);
@@ -77,8 +97,10 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1);
 
 export function budgetExceeded(tier: Tier, elapsedMs: number, budgetMs: number | undefined): string | undefined {
   if (budgetMs === undefined || elapsedMs <= budgetMs) return undefined;
-  return `BUDGET_EXCEEDED: tier ${tier} took ${seconds(elapsedMs)} s, over its ${budgetMs / 1000} s ceiling (lock wait excluded). `
-    + 'Reclassify the slow files in test/tiers.json or optimize them; load from other sessions is not an excuse.';
+  return (
+    `BUDGET_EXCEEDED: tier ${tier} took ${seconds(elapsedMs)} s, over its ${budgetMs / 1000} s ceiling (lock wait excluded). ` +
+    'Reclassify the slow files in test/tiers.json or optimize them; load from other sessions is not an excuse.'
+  );
 }
 
 /** Deterministic Fisher-Yates (mulberry32) so a random-order failure is reproducible from its seed. */
@@ -99,19 +121,59 @@ export function shuffle<T>(items: readonly T[], seed: number): T[] {
   return result;
 }
 
-export interface Counts { tests: number; pass: number; fail: number; cancelled: number; skipped: number; todo: number }
-export interface FileResult { file: string; ms: number; ok: boolean; counts: Counts; output?: string }
-/** A static step: the policy check it realizes, the findings that failed it (rule and location) and, for the cruise, the graph. */
-export interface StepResult { name: string; ms: number; ok: boolean; output?: string; check?: string; findings?: { rule: string; location: string }[]; graph?: Graph }
-export interface ValidationSummary {
-  plan: ValidationPlan; base: string | undefined; estimatedSeconds: number; outcomes: Record<string, 'passed' | 'failed' | 'not run'>; inconclusive?: string;
+export interface Counts {
+  tests: number;
+  pass: number;
+  fail: number;
+  cancelled: number;
+  skipped: number;
+  todo: number;
 }
-export interface LaneResult { name: string; concurrency: number; ms: number; files: FileResult[] }
+export interface FileResult {
+  file: string;
+  ms: number;
+  ok: boolean;
+  counts: Counts;
+  output?: string;
+}
+/** A static step: the policy check it realizes, the findings that failed it (rule and location) and, for the cruise, the graph. */
+export interface StepResult {
+  name: string;
+  ms: number;
+  ok: boolean;
+  output?: string;
+  check?: string;
+  findings?: { rule: string; location: string }[];
+  graph?: Graph;
+}
+export interface ValidationSummary {
+  plan: ValidationPlan;
+  base: string | undefined;
+  estimatedSeconds: number;
+  outcomes: Record<string, 'passed' | 'failed' | 'not run'>;
+  inconclusive?: string;
+}
+export interface LaneResult {
+  name: string;
+  concurrency: number;
+  ms: number;
+  files: FileResult[];
+}
 export interface RunSummary {
-  tier: Tier; lockWaitMs: number; totalMs: number; budgetMs: number | undefined;
+  tier: Tier;
+  lockWaitMs: number;
+  totalMs: number;
+  budgetMs: number | undefined;
   load: { start: readonly number[]; end: readonly number[] };
-  static: StepResult[]; lanes: LaneResult[]; quarantined: string[]; skippedSlow: string[]; skippedFull?: string[];
-  filtered: boolean; failures: string[]; seed?: number; validation?: ValidationSummary;
+  static: StepResult[];
+  lanes: LaneResult[];
+  quarantined: string[];
+  skippedSlow: string[];
+  skippedFull?: string[];
+  filtered: boolean;
+  failures: string[];
+  seed?: number;
+  validation?: ValidationSummary;
 }
 
 const emptyCounts = (): Counts => ({ tests: 0, pass: 0, fail: 0, cancelled: 0, skipped: 0, todo: 0 });
@@ -130,37 +192,54 @@ export function formatReport(summary: RunSummary): string {
     return sum;
   }, emptyCounts());
   const load = (values: readonly number[]) => values.map(value => value.toFixed(2)).join(' ');
-  const lines = [`== test-runner: tier ${summary.tier} ==`,
+  const lines = [
+    `== test-runner: tier ${summary.tier} ==`,
     `lock wait: ${seconds(summary.lockWaitMs)} s (not counted in the budget)`,
     `static: ${summary.static.map(step => `${step.name} ${seconds(step.ms)} s${step.ok ? '' : ' FAILED'}`).join(', ') || 'none'}`,
     ...summary.lanes.map(lane => `lane ${lane.name}: ${lane.files.length} files, N=${lane.concurrency}, ${seconds(lane.ms)} s`),
     `tests: ${totals.tests} (pass ${totals.pass}, fail ${totals.fail}, cancelled ${totals.cancelled}, skipped ${totals.skipped}, todo ${totals.todo})`,
     `total: ${seconds(summary.totalMs)} s${summary.budgetMs === undefined ? ' (no ceiling)' : ` of ${summary.budgetMs / 1000} s budget`}`,
-    `load average: start ${load(summary.load.start)}, end ${load(summary.load.end)}`];
+    `load average: start ${load(summary.load.start)}, end ${load(summary.load.end)}`,
+  ];
   if (summary.seed !== undefined) lines.push(`random-order seed: ${summary.seed}`);
   if (summary.skippedSlow.length) lines.push(`slow, left to ci: ${summary.skippedSlow.length} files`);
   if (summary.skippedFull?.length) lines.push(`full only, left to the nightly: ${summary.skippedFull.join(', ')}`);
   if (summary.quarantined.length) lines.push(`quarantined (not coverage): ${summary.quarantined.join(', ')}`);
   lines.push('slowest files:');
-  [...all].sort((a, b) => b.ms - a.ms).slice(0, 10)
+  [...all]
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, 10)
     .forEach((file, index) => lines.push(`  ${index + 1}. ${seconds(file.ms)} s ${file.file}`));
   if (summary.validation) lines.push(...validationLines(summary.validation));
   for (const failure of summary.failures) lines.push(`FAILURE: ${failure}`);
-  const scope = summary.validation?.plan.mode === 'change'
-    ? (summary.validation.plan.widened ? ' (validation by change, widened: every applicable check over its whole input; periodic checks not run)'
-      : ` (validation by change: the ${summary.validation.plan.affected?.length ?? 0} affected files only, not the whole application)`)
-    : summary.validation?.plan.mode === 'integral' ? ' (integral validation of this tree: every check over its whole input)' : '';
-  lines.push(summary.failures.length ? 'RESULT: FAIL'
-    : summary.validation?.inconclusive ? 'RESULT: INCONCLUSIVE'
-      : `RESULT: PASS${scope}${summary.filtered ? ' (filtered run: convenience only, never a gate)' : ''}`);
+  const scope =
+    summary.validation?.plan.mode === 'change'
+      ? summary.validation.plan.widened
+        ? ' (validation by change, widened: every applicable check over its whole input; periodic checks not run)'
+        : ` (validation by change: the ${summary.validation.plan.affected?.length ?? 0} affected files only, not the whole application)`
+      : summary.validation?.plan.mode === 'integral'
+        ? ' (integral validation of this tree: every check over its whole input)'
+        : '';
+  lines.push(
+    summary.failures.length
+      ? 'RESULT: FAIL'
+      : summary.validation?.inconclusive
+        ? 'RESULT: INCONCLUSIVE'
+        : `RESULT: PASS${scope}${summary.filtered ? ' (filtered run: convenience only, never a gate)' : ''}`,
+  );
   return lines.join('\n');
 }
 
 function validationLines(validation: ValidationSummary): string[] {
   const { plan } = validation;
-  const lines = [`mode: ${plan.mode === 'change' ? 'validation by change' : 'integral validation'}, policy ${plan.policyVersion}`
-    + (validation.base ? `, base ${validation.base}` : '')];
-  if (plan.mode === 'change') lines.push(plan.widened ? `selection widened: ${plan.widened}` : `selection: ${plan.affected?.length ?? 0} affected files (changed files and their dependents)`);
+  const lines = [
+    `mode: ${plan.mode === 'change' ? 'validation by change' : 'integral validation'}, policy ${plan.policyVersion}` +
+      (validation.base ? `, base ${validation.base}` : ''),
+  ];
+  if (plan.mode === 'change')
+    lines.push(
+      plan.widened ? `selection widened: ${plan.widened}` : `selection: ${plan.affected?.length ?? 0} affected files (changed files and their dependents)`,
+    );
   lines.push(`estimated cost: ${Math.round(validation.estimatedSeconds)} s`);
   for (const entry of plan.entries) {
     const label = `${entry.check.id} [${entry.check.gate}]`;
@@ -169,8 +248,12 @@ function validationLines(validation: ValidationSummary): string[] {
       lines.push(`  ran ${label}: ${validation.outcomes[entry.check.id] ?? 'not run'} (${scope})`);
     } else if (entry.decision === 'not-applicable') lines.push(`  not applicable ${label}: no affected input`);
     else if (entry.decision === 'covered') lines.push(`  covered ${label}: by ${entry.by}`);
-    else lines.push(`  periodic ${label}: left to integral validation (${entry.check.cron}); last integral result: ${entry.last.outcome}`
-      + (entry.last.at ? ` at ${entry.last.commit?.slice(0, 12)} on ${entry.last.at}` : '') + (entry.blocking ? ' — BLOCKS this change' : ''));
+    else
+      lines.push(
+        `  periodic ${label}: left to integral validation (${entry.check.cron}); last integral result: ${entry.last.outcome}` +
+          (entry.last.at ? ` at ${entry.last.commit?.slice(0, 12)} on ${entry.last.at}` : '') +
+          (entry.blocking ? ' — BLOCKS this change' : ''),
+      );
   }
   if (validation.inconclusive) lines.push(`INCONCLUSIVE: ${validation.inconclusive}`);
   return lines;

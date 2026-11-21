@@ -13,24 +13,47 @@ test('the guard is what remains of the runner deadline (minus a margin), never a
 });
 
 test('past the budget a hung child is killed with its whole group and the failure names the stage it reached', async () => {
-  const child = spawn(process.execPath, ['-e', `const c = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
-    console.log('grandchild ' + c.pid); setInterval(() => {}, 1000);`], { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      `const c = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
+    console.log('grandchild ' + c.pid); setInterval(() => {}, 1000);`,
+    ],
+    { detached: true, stdio: ['ignore', 'pipe', 'inherit'] },
+  );
   let output = '';
-  const grandchild = new Promise<number>(resolve => child.stdout.on('data', data => { output += data; const pid = /grandchild (\d+)/.exec(output)?.[1]; if (pid) resolve(Number(pid)); }));
+  const grandchild = new Promise<number>(resolve =>
+    child.stdout.on('data', data => {
+      output += data;
+      const pid = /grandchild (\d+)/.exec(output)?.[1];
+      if (pid) resolve(Number(pid));
+    }),
+  );
   const pid = await grandchild;
   const saved = process.env.FACTORY_TEST_DEADLINE;
   process.env.FACTORY_TEST_DEADLINE = String(Date.now()); // already due: the 1 s floor applies
   try {
-    await assert.rejects(ended(child, () => 'stage-canary'), /TEST_BUDGET_EXCEEDED.*last stage: stage-canary/);
-  } finally { if (saved === undefined) delete process.env.FACTORY_TEST_DEADLINE; else process.env.FACTORY_TEST_DEADLINE = saved; }
+    await assert.rejects(
+      ended(child, () => 'stage-canary'),
+      /TEST_BUDGET_EXCEEDED.*last stage: stage-canary/,
+    );
+  } finally {
+    if (saved === undefined) delete process.env.FACTORY_TEST_DEADLINE;
+    else process.env.FACTORY_TEST_DEADLINE = saved;
+  }
   // SIGKILL delivery is asynchronous: the event is the pipe the grandchild shares with its parent closing (both files closed).
   if (child.stdout.readable) await once(child.stdout, 'close');
   // The group was SIGKILLed: the grandchild is gone, a zombie, or on its exit path (PF_EXITING), never alive.
   let alive = false;
   try {
-    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ');
+    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      .replace(/^.*\) /s, '')
+      .split(' ');
     alive = !['Z', 'X'].includes(fields[0]!) && !(Number(fields[6]) & 0x4);
-  } catch { /* gone */ }
+  } catch {
+    /* gone */
+  }
   assert.equal(alive, false);
 });
 
@@ -48,6 +71,12 @@ test('past the budget a condition that never holds fails naming what it waited f
   const saved = process.env.FACTORY_TEST_DEADLINE;
   process.env.FACTORY_TEST_DEADLINE = String(Date.now()); // already due: the 1 s floor applies
   try {
-    await assert.rejects(untilHolds('stage-canary held', () => false, 50), /TEST_BUDGET_EXCEEDED waiting for: stage-canary held/);
-  } finally { if (saved === undefined) delete process.env.FACTORY_TEST_DEADLINE; else process.env.FACTORY_TEST_DEADLINE = saved; }
+    await assert.rejects(
+      untilHolds('stage-canary held', () => false, 50),
+      /TEST_BUDGET_EXCEEDED waiting for: stage-canary held/,
+    );
+  } finally {
+    if (saved === undefined) delete process.env.FACTORY_TEST_DEADLINE;
+    else process.env.FACTORY_TEST_DEADLINE = saved;
+  }
 });

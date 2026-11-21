@@ -12,12 +12,22 @@ test('a limited read that reaches the end of the file is a full read; a limited 
   observer.observe({ path: '/workspace/checkout/docs/A.md', offset: 1, limit: 2 }, text('line 1\nline 2\n\n[3 more lines in file. Use offset=3 to continue.]'));
   observer.observe({ path: '/workspace/checkout/docs/B.md', offset: 1, limit: 2 }, text('line 1\nline 2\n\n[3 more lines in file. Use offset=3 to continue.]'));
   observer.observe({ path: '/workspace/checkout/docs/B.md', offset: 3, limit: 2000 }, text('line 3\nline 4\nline 5'));
-  observer.observe({ path: '/workspace/checkout/docs/C.md', offset: 1, limit: 2000 }, { details: { truncation: { truncated: true, outputLines: 40 } }, content: [{ type: 'text', text: 'x' }] });
-  assert.deepEqual(observer.summary(['/artifacts/review/r7/index.json', '/workspace/checkout/docs/A.md', '/workspace/checkout/docs/B.md', '/workspace/checkout/docs/C.md']).requiredNotFullyRead,
-    ['/workspace/checkout/docs/A.md', '/workspace/checkout/docs/C.md']);
+  observer.observe(
+    { path: '/workspace/checkout/docs/C.md', offset: 1, limit: 2000 },
+    { details: { truncation: { truncated: true, outputLines: 40 } }, content: [{ type: 'text', text: 'x' }] },
+  );
+  assert.deepEqual(
+    observer.summary(['/artifacts/review/r7/index.json', '/workspace/checkout/docs/A.md', '/workspace/checkout/docs/B.md', '/workspace/checkout/docs/C.md'])
+      .requiredNotFullyRead,
+    ['/workspace/checkout/docs/A.md', '/workspace/checkout/docs/C.md'],
+  );
   const skipped = createReadObserver();
   skipped.observe({ path: '/workspace/checkout/docs/D.md', offset: 5, limit: 10 }, text('tail'));
-  assert.deepEqual(skipped.summary(['/workspace/checkout/docs/D.md']).requiredNotFullyRead, ['/workspace/checkout/docs/D.md'], 'reading only a later window is never full');
+  assert.deepEqual(
+    skipped.summary(['/workspace/checkout/docs/D.md']).requiredNotFullyRead,
+    ['/workspace/checkout/docs/D.md'],
+    'reading only a later window is never full',
+  );
 });
 
 // Ticket 51 (pilot 35, #124 rounds 1 and 4): the Spec reviewer read the index, the patch and every changed file IN FULL, then asked for windows
@@ -42,7 +52,10 @@ test('ticket 51: a read past the end of a file already read to its last line is 
 test('ticket 51: a read past the end of a file NOT read to its end, and any other failed read, stay failed reads naming path and offset', () => {
   const observer = createReadObserver();
   // Only a window was read (truncated output): the file was not read to its last line.
-  observer.observe({ path: '/workspace/checkout/src/Big.java' }, { details: { truncation: { truncated: true, outputLines: 2000 } }, content: [{ type: 'text', text: 'x' }] });
+  observer.observe(
+    { path: '/workspace/checkout/src/Big.java' },
+    { details: { truncation: { truncated: true, outputLines: 2000 } }, content: [{ type: 'text', text: 'x' }] },
+  );
   observer.observe({ path: '/workspace/checkout/src/Big.java', offset: 2600 }, beyond(2600, 2400));
   // Never read at all.
   observer.observe({ path: 'src/Other.java', offset: 401 }, beyond(401, 259));
@@ -58,11 +71,24 @@ test('ticket 51: a read past the end of a file NOT read to its end, and any othe
 });
 
 test('ticket 51: the pilot case concludes clean; a genuinely failed read still downgrades it, and the opinion names the path and offset', () => {
-  const opinion = (observer: ReturnType<typeof createReadObserver>) => composeOpinion({ role: 'spec', invocationId: 'spec-x', status: 'completed', sessionFile: null,
-    finalText: JSON.stringify({ role: 'spec', conclusion: 'clean', coverage: { scope: 'broad', justification: 'all read', examined: ['/workspace/checkout/src/Account.java'] },
-      findings: [], limitations: [] }),
-    review: { round: 1, attempt: 1, handoffIndexSha256: 'e'.repeat(64), required: ['/workspace/checkout/src/Account.java'], missing: [] },
-    model: { providerId: 'openai', modelId: 'gpt-6-luna' }, profile: { id: 'p', modelBudget: 'reviewer-v1' }, host: observer.summary(['/workspace/checkout/src/Account.java']) });
+  const opinion = (observer: ReturnType<typeof createReadObserver>) =>
+    composeOpinion({
+      role: 'spec',
+      invocationId: 'spec-x',
+      status: 'completed',
+      sessionFile: null,
+      finalText: JSON.stringify({
+        role: 'spec',
+        conclusion: 'clean',
+        coverage: { scope: 'broad', justification: 'all read', examined: ['/workspace/checkout/src/Account.java'] },
+        findings: [],
+        limitations: [],
+      }),
+      review: { round: 1, attempt: 1, handoffIndexSha256: 'e'.repeat(64), required: ['/workspace/checkout/src/Account.java'], missing: [] },
+      model: { providerId: 'openai', modelId: 'gpt-6-luna' },
+      profile: { id: 'p', modelBudget: 'reviewer-v1' },
+      host: observer.summary(['/workspace/checkout/src/Account.java']),
+    });
   const pilot = createReadObserver();
   pilot.observe({ path: '/workspace/checkout/src/Account.java', offset: 1, limit: 2000 }, text('class Account {}'));
   pilot.observe({ path: '/workspace/checkout/src/Account.java', offset: 401 }, beyond(401, 259));
@@ -72,6 +98,8 @@ test('ticket 51: the pilot case concludes clean; a genuinely failed read still d
   failing.observe({ path: '/workspace/checkout/src/Account.java', offset: 1, limit: 2000 }, text('class Account {}'));
   failing.observe({ path: '/workspace/checkout/src/Lock.java', offset: 401 }, { error: new Error('GUEST_READ_FAILED') });
   const downgraded = opinion(failing);
-  assert.deepEqual([downgraded.conclusion, downgraded.hostChecks.downgraded, downgraded.hostChecks.failedReads],
-    ['incomplete', ['SOURCE_UNREADABLE'], [{ path: '/workspace/checkout/src/Lock.java', code: 'GUEST_READ_FAILED', offset: 401 }]]);
+  assert.deepEqual(
+    [downgraded.conclusion, downgraded.hostChecks.downgraded, downgraded.hostChecks.failedReads],
+    ['incomplete', ['SOURCE_UNREADABLE'], [{ path: '/workspace/checkout/src/Lock.java', code: 'GUEST_READ_FAILED', offset: 401 }]],
+  );
 });

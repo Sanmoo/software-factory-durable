@@ -13,19 +13,34 @@ test('boot markers retain literal observations, never raw console or protocol pa
   markers.observe('qemu', 'stdout: [init] /dev entries:');
   markers.observe('qemu', 'stdout: [init] starting sandboxfs at /data');
   markers.observe('qemu', 'stdout: [init] starting sandboxd');
-  assert.deepEqual(markers.seal().stages, ['console-text-observed', 'kernel-version-text', 'acpi-text',
-    'root-init-text', 'sandboxfs-launch-text', 'pre-sandboxd-hook-text']);
+  assert.deepEqual(markers.seal().stages, [
+    'console-text-observed',
+    'kernel-version-text',
+    'acpi-text',
+    'root-init-text',
+    'sandboxfs-launch-text',
+    'pre-sandboxd-hook-text',
+  ]);
   assert.equal(JSON.stringify(markers.seal()).includes('PRIVATE_TOKEN_CANARY'), false);
 });
 
 test('initramfs and panic observations do not manufacture root-mounted or SDK-ready proof', () => {
   const markers = createBootMarkers(boot);
-  for (const line of ['[initramfs] virtio ports not ready', '[initramfs] root device /dev/vda not found',
-    '[initramfs] failed to mount /dev/vda', 'Kernel panic - not syncing: PRIVATE_TOKEN_CANARY']) {
+  for (const line of [
+    '[initramfs] virtio ports not ready',
+    '[initramfs] root device /dev/vda not found',
+    '[initramfs] failed to mount /dev/vda',
+    'Kernel panic - not syncing: PRIVATE_TOKEN_CANARY',
+  ]) {
     markers.observe('qemu', `stdout: ${line}`);
   }
-  assert.deepEqual(markers.seal().stages, ['console-text-observed', 'initramfs-ports-unready-text',
-    'initramfs-root-device-missing-text', 'initramfs-root-mount-failed-text', 'kernel-panic-text']);
+  assert.deepEqual(markers.seal().stages, [
+    'console-text-observed',
+    'initramfs-ports-unready-text',
+    'initramfs-root-device-missing-text',
+    'initramfs-root-mount-failed-text',
+    'kernel-panic-text',
+  ]);
   assert.equal('operational' in markers.seal(), false);
 });
 

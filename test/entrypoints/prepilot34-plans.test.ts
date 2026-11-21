@@ -4,11 +4,40 @@ import { mock, test } from 'node:test';
 // Import and --plan of the three pre-pilot real-run recipes (R-REL, R-CAND, R-INSPECT) must be inert: no process, socket, filesystem or
 // network effect; and R-CAND refuses every phase while its issue number is not pinned (0).
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, spawn: deny, spawnSync: deny, request: deny, open: deny, mkdir: deny,
-    readFile: deny, writeFile: deny, access: deny, readdir: deny, lstat: deny, stat: deny, copyFile: deny, chmod: deny, rm: deny, unlink: deny, rename: deny, statfs: deny, readlink: deny,
-    rmdir: deny, realpath: deny }, defaultExport: {} });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      spawn: deny,
+      spawnSync: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      writeFile: deny,
+      access: deny,
+      readdir: deny,
+      lstat: deny,
+      stat: deny,
+      copyFile: deny,
+      chmod: deny,
+      rm: deny,
+      unlink: deny,
+      rename: deny,
+      statfs: deny,
+      readlink: deny,
+      rmdir: deny,
+      realpath: deny,
+    },
+    defaultExport: {},
+  });
 }
 const rel = await import('./rrel34-qualification.js');
 const cand = await import('./rcand34-qualification.js');
@@ -17,8 +46,14 @@ const upg = await import('./rupg34-qualification.js');
 
 async function planOf(main: (args: string[]) => Promise<void>) {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
-  try { await main(['--plan']); } finally { log.mock.restore(); }
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
+  try {
+    await main(['--plan']);
+  } finally {
+    log.mock.restore();
+  }
   return JSON.parse(logged[0]!);
 }
 
@@ -71,7 +106,7 @@ test('R-INSPECT plan: inert; local copy of q23-feedback-v3 only, never its run/ 
   assert.equal(forbidden, 0);
 });
 
-test('R-UPG plan: inert; upgrades the SAME R-REL root to mvp-34.5 with the product\'s own upgrade; never the model login; R-CAND reads its identity', async () => {
+test("R-UPG plan: inert; upgrades the SAME R-REL root to mvp-34.5 with the product's own upgrade; never the model login; R-CAND reads its identity", async () => {
   const plan = await planOf(upg.main);
   assert.equal(forbidden, 0);
   assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v5');

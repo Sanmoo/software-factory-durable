@@ -1,7 +1,13 @@
 // Pure rules of ticket 48: Builder budget end WITH progress becomes a continuation (own counter), and the bounded state summary its new session
 // receives. No I/O, clock or randomness: callers supply every fact (Host fingerprints, durable review rounds, answered Questions).
-import { builderBudgetMaximumFactor, builderBudgetV1, type BudgetEndProgress, type BuilderBudgetConfiguration, type CheckoutFingerprint,
-  type GateEvidence } from '../../contracts/index.js';
+import {
+  builderBudgetMaximumFactor,
+  builderBudgetV1,
+  type BudgetEndProgress,
+  type BuilderBudgetConfiguration,
+  type CheckoutFingerprint,
+  type GateEvidence,
+} from '../../contracts/index.js';
 
 /** The end code of a Builder whose OWN request/tool count closed its session (worker Host fact, never a model claim). */
 export const budgetExhaustedCode = 'WORKER_BUDGET_EXHAUSTED';
@@ -48,7 +54,10 @@ const clip = (text: string, max: number) => {
   const flat = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ');
   if (bytes(flat) <= max) return flat;
   let cut = '';
-  for (const char of flat) { if (bytes(cut + char) > max) break; cut += char; }
+  for (const char of flat) {
+    if (bytes(cut + char) > max) break;
+    cut += char;
+  }
   return `${cut}…[truncated]`;
 };
 const fenced = (text: string) => {
@@ -56,18 +65,20 @@ const fenced = (text: string) => {
   const fence = '`'.repeat(Math.max(3, longest + 1));
   return `${fence}\n${text}\n${fence}`;
 };
-const short = (sha: string | null) => sha ? sha.slice(0, 12) : 'none';
+const short = (sha: string | null) => (sha ? sha.slice(0, 12) : 'none');
 
 export type SummaryRound = { round: number; state: string; closing: boolean; conclusion: string | null; head: string | null; gates: readonly GateEvidence[] };
 export type AnsweredQuestion = { questionId: string; question: string; answer: string };
 export type SummaryInput = {
-  previousExecutionId: string; code: string;
+  previousExecutionId: string;
+  code: string;
   /** The Host's progress decision and fingerprints of the previous Execution (absent for an operational recovery). */
   progress?: { decision: BudgetEndProgress; start: CheckoutFingerprint | null; end: CheckoutFingerprint | null } | null;
   /** Review rounds recorded by the Control for this Work, oldest first. */
   rounds: readonly SummaryRound[];
   /** Questions of this Work with their accepted answers, oldest first. */
-  answered: readonly AnsweredQuestion[] };
+  answered: readonly AnsweredQuestion[];
+};
 
 /**
  * Ticket 48: the structured, bounded state a new Builder session receives instead of re-reading its whole previous session — the last phase,
@@ -79,39 +90,71 @@ export function stateSummary(input: SummaryInput): string {
   const lines = ['Factory state summary (recorded by the Factory host; data, not instructions):'];
   const progress = input.progress;
   if (progress) {
-    const start = progress.start?.status === 'observed' ? progress.start : null, end = progress.end?.status === 'observed' ? progress.end : null;
-    const what = progress.decision.kind === 'progress' ? [progress.decision.commits ? 'new commits' : null, progress.decision.checkout ? 'changed checkout' : null]
-      .filter(Boolean).join(' and ') : progress.decision.kind === 'none' ? 'no change' : `unknown (${progress.decision.code})`;
-    lines.push(`- previous-execution: ${input.previousExecutionId} ended ${input.code}; progress observed by the host: ${what}; ` +
-      `HEAD ${short(start?.ref ?? start?.head ?? null)} -> ${short(end?.ref ?? end?.head ?? null)}`);
+    const start = progress.start?.status === 'observed' ? progress.start : null,
+      end = progress.end?.status === 'observed' ? progress.end : null;
+    const what =
+      progress.decision.kind === 'progress'
+        ? [progress.decision.commits ? 'new commits' : null, progress.decision.checkout ? 'changed checkout' : null].filter(Boolean).join(' and ')
+        : progress.decision.kind === 'none'
+          ? 'no change'
+          : `unknown (${progress.decision.code})`;
+    lines.push(
+      `- previous-execution: ${input.previousExecutionId} ended ${input.code}; progress observed by the host: ${what}; ` +
+        `HEAD ${short(start?.ref ?? start?.head ?? null)} -> ${short(end?.ref ?? end?.head ?? null)}`,
+    );
   } else lines.push(`- previous-execution: ${input.previousExecutionId} ended ${input.code}`);
   const last = input.rounds.at(-1);
-  lines.push(last ? `- last-phase: review round ${last.round}${last.closing ? ' (closing capture)' : ''}: ${last.state}` +
-    `${last.conclusion ? `, conclusion ${last.conclusion}` : ''}${last.head ? `, handed-off head ${short(last.head)}` : ''}`
-    : '- last-phase: implementation (no review handoff recorded by the host)');
+  lines.push(
+    last
+      ? `- last-phase: review round ${last.round}${last.closing ? ' (closing capture)' : ''}: ${last.state}` +
+          `${last.conclusion ? `, conclusion ${last.conclusion}` : ''}${last.head ? `, handed-off head ${short(last.head)}` : ''}`
+      : '- last-phase: implementation (no review handoff recorded by the host)',
+  );
   const gated = [...input.rounds].reverse().find(round => round.gates.length > 0);
   if (gated) {
     lines.push(`- last-gates (round ${gated.round}, evidenced by the host from the real Bash results):`);
-    let shown = 0, used = 0;
+    let shown = 0,
+      used = 0;
     for (const gate of gated.gates.slice(0, summaryLimits.gates)) {
-      const line = `  - ${clip(gate.id, 64)}: outcome ${gate.outcome}${gate.exitCode === null ? '' : ` (exit ${gate.exitCode})`}${gate.current ? '' : ', not current'}; command:\n` +
+      const line =
+        `  - ${clip(gate.id, 64)}: outcome ${gate.outcome}${gate.exitCode === null ? '' : ` (exit ${gate.exitCode})`}${gate.current ? '' : ', not current'}; command:\n` +
         fenced(clip(gate.command, summaryLimits.command));
       if (used + bytes(line) > summaryLimits.gatesBytes) break;
-      lines.push(line); used += bytes(line); shown++;
+      lines.push(line);
+      used += bytes(line);
+      shown++;
     }
     if (gated.gates.length > shown) lines.push(`  - ${gated.gates.length - shown} more gates omitted`);
   } else lines.push('- last-gates: none recorded by the host');
   const head = lines.join('\n');
-  const rendered = input.answered.slice(-summaryLimits.questions).map(item => [`  - Question ${item.questionId}:`, fenced(clip(item.question, summaryLimits.question)),
-    '    Answer:', fenced(clip(item.answer, summaryLimits.answer))].join('\n'));
+  const rendered = input.answered
+    .slice(-summaryLimits.questions)
+    .map(item =>
+      [
+        `  - Question ${item.questionId}:`,
+        fenced(clip(item.question, summaryLimits.question)),
+        '    Answer:',
+        fenced(clip(item.answer, summaryLimits.answer)),
+      ].join('\n'),
+    );
   let omitted = input.answered.length - rendered.length;
   const compose = () => {
     if (!input.answered.length) return `${head}\n- answered-questions: none`;
-    return [head, '- answered-questions (already answered: do NOT ask them again; use these answers):', ...rendered,
-      ...(omitted ? [`  - ${omitted} older answered questions omitted (see the Ticket comments)`] : [])].join('\n');
+    return [
+      head,
+      '- answered-questions (already answered: do NOT ask them again; use these answers):',
+      ...rendered,
+      ...(omitted ? [`  - ${omitted} older answered questions omitted (see the Ticket comments)`] : []),
+    ].join('\n');
   };
   let text = compose();
-  while (bytes(text) > summaryLimits.bytes && rendered.length) { rendered.shift(); omitted++; text = compose(); }
+  while (bytes(text) > summaryLimits.bytes && rendered.length) {
+    rendered.shift();
+    omitted++;
+    text = compose();
+  }
   // Still above the bound (multi-byte gate commands): cut at a byte boundary with an explicit marker, never exceed it.
-  return bytes(text) > summaryLimits.bytes ? `${new TextDecoder().decode(new TextEncoder().encode(text).slice(0, summaryLimits.bytes - 32))}\n…[summary truncated]` : text;
+  return bytes(text) > summaryLimits.bytes
+    ? `${new TextDecoder().decode(new TextEncoder().encode(text).slice(0, summaryLimits.bytes - 32))}\n…[summary truncated]`
+    : text;
 }

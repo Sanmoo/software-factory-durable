@@ -16,8 +16,14 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   await mkdir(join(artifacts, 'instructions', 'v1'), { recursive: true });
   await writeFile(join(artifacts, 'spec', 'v1', 'ticket.json'), '{"body":"x"}');
   await writeFile(join(artifacts, 'spec', 'v1', 'unlisted.md'), 'x');
-  await writeFile(join(artifacts, 'spec', 'v1', 'sources.json'), JSON.stringify({ version: 'v1', complete: true,
-    sources: [{ origin: 'https://github.com/acme/project/issues/3', copy: './ticket.json', sha256: 'a'.repeat(64) }] }));
+  await writeFile(
+    join(artifacts, 'spec', 'v1', 'sources.json'),
+    JSON.stringify({
+      version: 'v1',
+      complete: true,
+      sources: [{ origin: 'https://github.com/acme/project/issues/3', copy: './ticket.json', sha256: 'a'.repeat(64) }],
+    }),
+  );
   return { root, artifacts };
 }
 
@@ -34,8 +40,10 @@ test('AC1 review fix 3: a listed, existing preserved file is verified; unlisted,
   assert.deepEqual(await check('/artifacts/instructions/v1/ticket.json#body'), { status: 'invalid', code: 'PRESERVED_SOURCE_INDEX_MISSING' });
   assert.deepEqual(await check('/artifacts/spec/v1/../v1/ticket.json'), { status: 'invalid', code: 'AUTHORIZATION_REFERENCE_INVALID' });
   assert.deepEqual(await check('/workspace/checkout/README.md'), { status: 'invalid', code: 'AUTHORIZATION_REFERENCE_INVALID' });
-  assert.deepEqual(await sandbox.verifyPreservedSource({ environment: 'env-x' as never, reference: '/artifacts/spec/v1/ticket.json' }),
-    { status: 'invalid', code: 'ENVIRONMENT_REF_INVALID' });
+  assert.deepEqual(await sandbox.verifyPreservedSource({ environment: 'env-x' as never, reference: '/artifacts/spec/v1/ticket.json' }), {
+    status: 'invalid',
+    code: 'ENVIRONMENT_REF_INVALID',
+  });
   // A listed file that no longer exists is invalid too.
   await rm(join(f.artifacts, 'spec', 'v1', 'ticket.json'));
   assert.deepEqual(await check('/artifacts/spec/v1/ticket.json'), { status: 'invalid', code: 'PRESERVED_SOURCE_MISSING' });

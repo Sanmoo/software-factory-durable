@@ -13,16 +13,30 @@ import { untilHolds } from '../runner/budget.js';
 const token = 'ghs_syntheticBuilderGrant0123456789';
 type Call = { kind: string; at: number; detail?: unknown };
 
-function executionDoubles(control: () => Control, options: { prepare?: 'fail'; hangStart?: boolean; issue?: 'throw'; onBoot?: () => void; stopCessation?: boolean;
-  prepareGate?: Promise<void>; onIssue?: () => Promise<void> } = {}) {
+function executionDoubles(
+  control: () => Control,
+  options: {
+    prepare?: 'fail';
+    hangStart?: boolean;
+    issue?: 'throw';
+    onBoot?: () => void;
+    stopCessation?: boolean;
+    prepareGate?: Promise<void>;
+    onIssue?: () => Promise<void>;
+  } = {},
+) {
   const calls: Call[] = [];
   const snapshots: Record<string, WorkView | undefined> = {};
   const activationSignals: AbortSignal[] = [];
   let releaseStart!: () => void;
-  const startGate = new Promise<void>(resolve => { releaseStart = resolve; });
-  const firstWork = async () => ((await control().inspect({ kind: 'list' })) as ListView).works.find(work => work.execution && work.execution.state !== 'released');
+  const startGate = new Promise<void>(resolve => {
+    releaseStart = resolve;
+  });
+  const firstWork = async () =>
+    ((await control().inspect({ kind: 'list' })) as ListView).works.find(work => work.execution && work.execution.state !== 'released');
   const ports: ExecutionPorts = {
-    configuration: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' }, capacity: 1,
+    configuration: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' },
+    capacity: 1,
     builder: { skillPack: 'factory-skills-v1', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
       async prepare(input) {
@@ -30,13 +44,34 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
         snapshots.prepare = await firstWork();
         if (options.prepareGate) await options.prepareGate;
         if (options.prepare === 'fail') return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE' };
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v1', manifestSha256: 'f'.repeat(64), reused: false }],
-          checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
+        return {
+          status: 'success',
+          environment: `env-${'c'.repeat(64)}` as never,
+          seeds: [{ name: 'factory/skill-pack/factory-skills-v1', manifestSha256: 'f'.repeat(64), reused: false }],
+          checkout: {
+            path: '/workspace/checkout',
+            repository: input.checkout.repository,
+            repositoryId: input.checkout.repositoryId,
+            base: 'main',
+            branch: input.checkout.branch,
+            baseCommit: 'a'.repeat(40),
+            origin: 'https://github.com/acme/project.git',
+            reused: false,
+            preparedAt: new Date().toISOString(),
+          },
+        };
       },
-      async start(input) { calls.push({ kind: 'start', at: calls.length, detail: input }); options.onBoot?.(); return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
-      async stop(input) { calls.push({ kind: 'stop', at: calls.length, detail: input });
-        return options.stopCessation === false ? { status: 'indeterminate', code: 'X', cessationConfirmed: false } : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
+      async start(input) {
+        calls.push({ kind: 'start', at: calls.length, detail: input });
+        options.onBoot?.();
+        return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never };
+      },
+      async stop(input) {
+        calls.push({ kind: 'stop', at: calls.length, detail: input });
+        return options.stopCessation === false
+          ? { status: 'indeterminate', code: 'X', cessationConfirmed: false }
+          : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' };
+      },
     },
     credentials: {
       async issue(context) {
@@ -44,28 +79,61 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
         snapshots.issue = await firstWork();
         await options.onIssue?.();
         if (options.issue === 'throw') throw Object.assign(new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN'), { outcome: 'unknown' });
-        return { delivery: { token }, metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
-          permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() } };
+        return {
+          delivery: { token },
+          metadata: {
+            role: 'builder',
+            purpose: 'builder-start',
+            repository: 'acme/project',
+            repositoryId: 3,
+            installationId: 2,
+            permissions: { metadata: 'read', contents: 'read', issues: 'read' },
+            issuedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          },
+        };
       },
-      async revoke() { calls.push({ kind: 'revoke', at: calls.length }); return { kind: 'not-attempted', nextStep: 'ticket 20' }; },
+      async revoke() {
+        calls.push({ kind: 'revoke', at: calls.length });
+        return { kind: 'not-attempted', nextStep: 'ticket 20' };
+      },
     },
     workers: {
       async activate(invocation, delivery) {
         calls.push({ kind: 'activate', at: calls.length, detail: { invocation: { ...invocation, signal: undefined }, delivery } });
         activationSignals.push(invocation.signal);
         snapshots.activate = await firstWork();
-        const started = (options.hangStart ? startGate : Promise.resolve()).then(() => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
-          invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } }));
-        return { worker: invocation.context.invocationId, started, completed: started.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } })),
-          close() { calls.push({ kind: 'close', at: calls.length }); } };
+        const started = (options.hangStart ? startGate : Promise.resolve()).then(() => ({
+          receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
+          invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId },
+        }));
+        return {
+          worker: invocation.context.invocationId,
+          started,
+          completed: started.then(() => ({
+            status: 'success' as const,
+            receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
+          })),
+          close() {
+            calls.push({ kind: 'close', at: calls.length });
+          },
+        };
       },
-      async deliver(_worker, directive) { calls.push({ kind: `deliver-${directive.kind}`, at: calls.length }); return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' }; },
+      async deliver(_worker, directive) {
+        calls.push({ kind: `deliver-${directive.kind}`, at: calls.length });
+        return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' };
+      },
     },
   };
   return { ports, calls, snapshots, releaseStart, activationSignals };
 }
 
-async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, ports: (control: () => Control) => ReturnType<typeof executionDoubles>, runtimeInventory: 'empty' | 'unknown' = 'empty') {
+async function harness(
+  t: { after(fn: () => Promise<void>): void },
+  remote: Remote,
+  ports: (control: () => Control) => ReturnType<typeof executionDoubles>,
+  runtimeInventory: 'empty' | 'unknown' = 'empty',
+) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-execution-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles(remote);
@@ -74,18 +142,33 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const execution = ports(() => current!.control);
   async function start(inventory = runtimeInventory) {
     const time = manualClock();
-    const control = await openControl({ storagePath, runtimeInventory: inventory, execution: execution.ports,
-      access: { tracker: github.tracker, repository: github.repository, repositories: [scope] }, polling: { intervalSeconds: 60, clock: time.clock } });
+    const control = await openControl({
+      storagePath,
+      runtimeInventory: inventory,
+      execution: execution.ports,
+      access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
+      polling: { intervalSeconds: 60, clock: time.clock },
+    });
     const stop = new AbortController();
     current = { control, stop, running: control.run(stop.signal), time };
     return current;
   }
-  async function stop(expected: 'clean' | 'uncertain' = 'clean') { current!.stop.abort(); assert.deepEqual(await current!.running, { kind: expected }); }
-  t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
-  const list = async () => await current!.control.inspect({ kind: 'list' }) as ListView;
+  async function stop(expected: 'clean' | 'uncertain' = 'clean') {
+    current!.stop.abort();
+    assert.deepEqual(await current!.running, { kind: expected });
+  }
+  t.after(async () => {
+    if (current && !current.stop.signal.aborted) await stop();
+  });
+  const list = async () => (await current!.control.inspect({ kind: 'list' })) as ListView;
   const byNumber = async () => Object.fromEntries((await list()).works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
-  const until = async (predicate: () => Promise<boolean>) => { await untilHolds('condition', predicate, 5); };
-  const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
+  const until = async (predicate: () => Promise<boolean>) => {
+    await untilHolds('condition', predicate, 5);
+  };
+  const cycle = async () => {
+    current!.time.advance();
+    await current!.time.sleeping();
+  };
   return { github, execution, start, stop, list, byNumber, until, cycle, storagePath, control: () => current!.control };
 }
 
@@ -101,8 +184,10 @@ test('AC1/AC5/AC6: revalidated, durably reserved Execution/Slot/intent precede p
   assert.deepEqual(kinds, ['prepare', 'start', 'issue', 'activate', 'close', 'revoke', 'stop']);
   // Reserved durably BEFORE prepare: the Execution identity, Slot and dispatch intent were already visible in storage.
   const atPrepare = h.execution.snapshots.prepare!;
-  assert.deepEqual([atPrepare.execution!.state, atPrepare.execution!.dispatch.phase, atPrepare.execution!.slot.held, atPrepare.queue.pending, atPrepare.dispatch.state],
-    ['reserved', 'reserved', true, false, 'executing']);
+  assert.deepEqual(
+    [atPrepare.execution!.state, atPrepare.execution!.dispatch.phase, atPrepare.execution!.slot.held, atPrepare.queue.pending, atPrepare.dispatch.state],
+    ['reserved', 'reserved', true, false, 'executing'],
+  );
   const atActivate = h.execution.snapshots.activate!.execution!;
   assert.deepEqual([atActivate.dispatch.phase, atActivate.start], ['activation-requested', null], 'activation intent committed before the request');
   assert.equal(atActivate.credential!.purpose, 'builder-start');
@@ -112,25 +197,40 @@ test('AC1/AC5/AC6: revalidated, durably reserved Execution/Slot/intent precede p
   assert.notEqual(execution.admission.attemptId, execution.admission.activationAttemptId);
   assert.equal(work.dependencies.latest!.attemptId, execution.admission.activationAttemptId);
   assert.ok(h.github.calls.filter(call => call.method === 'readTicket').length >= 3, 'authorization re-read before reserving and before activating');
-  assert.deepEqual([execution.state, execution.start!.receiptId, execution.end!.outcome, execution.end!.cessation, execution.slot.held], ['ended', '99999999-2222-4333-8444-555555555555', 'completed', 'confirmed', false]);
+  assert.deepEqual(
+    [execution.state, execution.start!.receiptId, execution.end!.outcome, execution.end!.cessation, execution.slot.held],
+    ['ended', '99999999-2222-4333-8444-555555555555', 'completed', 'confirmed', false],
+  );
   assert.equal(execution.completion.automatic, false);
-  assert.deepEqual(work.history.filter(item => item.origin === 'controller-dispatch').map(item => item.event),
-    ['execution-reserved', 'execution-prepared', 'execution-booted', 'activation-requested', 'execution-started', 'execution-ended', 'slot-released']);
+  assert.deepEqual(
+    work.history.filter(item => item.origin === 'controller-dispatch').map(item => item.event),
+    ['execution-reserved', 'execution-prepared', 'execution-booted', 'activation-requested', 'execution-started', 'execution-ended', 'slot-released'],
+  );
   // Unambiguous Ticket/repository/base/branch for the Builder; the prompt starts with /implement <ticket link>.
   const prepare = h.execution.calls.find(call => call.kind === 'prepare')!.detail as { workId: string; checkout: Record<string, unknown> };
   assert.deepEqual(prepare.checkout, { repository: 'acme/project', repositoryId: 3, installationId: 2, base: 'main', branch: execution.request.branch });
   assert.match(execution.request.branch, /^factory\/3-[0-9a-f]{8}$/);
-  const activation = h.execution.calls.find(call => call.kind === 'activate')!.detail as { invocation: { prompt: string; context: Record<string, string>; skillPack: string; modelBudget: string }; delivery: { credential: { token: string } } };
-  assert.match(activation.invocation.prompt, /^\/implement https:\/\/github\.com\/acme\/project\/issues\/3 repository=acme\/project base=main base-commit=a{40} branch=factory\/3-/);
-  assert.deepEqual([activation.invocation.context.executionId, activation.invocation.context.invocationId, activation.invocation.context.role], [execution.executionId, execution.invocationId, 'builder']);
+  const activation = h.execution.calls.find(call => call.kind === 'activate')!.detail as {
+    invocation: { prompt: string; context: Record<string, string>; skillPack: string; modelBudget: string };
+    delivery: { credential: { token: string } };
+  };
+  assert.match(
+    activation.invocation.prompt,
+    /^\/implement https:\/\/github\.com\/acme\/project\/issues\/3 repository=acme\/project base=main base-commit=a{40} branch=factory\/3-/,
+  );
+  assert.deepEqual(
+    [activation.invocation.context.executionId, activation.invocation.context.invocationId, activation.invocation.context.role],
+    [execution.executionId, execution.invocationId, 'builder'],
+  );
   assert.deepEqual([activation.invocation.skillPack, activation.invocation.modelBudget], ['factory-skills-v1', 'builder-v1']);
   assert.equal(activation.delivery.credential.token, token, 'credential travels only in the transient delivery argument');
   assert.doesNotMatch(JSON.stringify(activation.invocation), /ghs_synthetic/);
   assert.equal(execution.request.skillPack!.name, 'factory/skill-pack/factory-skills-v1');
-  const status = await h.control().inspect({ kind: 'status' }) as ControlStatus;
+  const status = (await h.control().inspect({ kind: 'status' })) as ControlStatus;
   assert.deepEqual([status.dispatch, status.dispatchReason, status.slots], ['open', null, { capacity: 1, held: 0 }]);
   // No automatic retry or second Execution after the end, over further polling rounds.
-  await h.cycle(); await h.cycle();
+  await h.cycle();
+  await h.cycle();
   assert.equal(h.execution.calls.filter(call => call.kind === 'prepare').length, 1);
   await h.stop();
   assert.doesNotMatch(await readFile(h.storagePath, 'latin1'), /ghs_synthetic/, 'no token in durable state');
@@ -142,7 +242,8 @@ test('AC1: one Slot -> a second eligible Ticket is not reserved while the first 
   const { time } = await h.start();
   await time.sleeping();
   await h.until(async () => h.execution.calls.some(call => call.kind === 'activate'));
-  await h.cycle(); await h.cycle();
+  await h.cycle();
+  await h.cycle();
   const works = await h.byNumber();
   assert.equal(works[1]!.execution!.state, 'reserved');
   assert.equal(works[2]!.execution, null);
@@ -155,14 +256,26 @@ test('AC1: one Slot -> a second eligible Ticket is not reserved while the first 
 
 test('AC1: a blocker appearing between reservation and activation releases the reserved Slot after the own boot ceased; nothing is activated', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3), remoteIssue(9, { labels: [] })] };
-  const h = await harness(t, remote, control => executionDoubles(control, { onBoot: () => { remote.issues[0] = remoteIssue(3, { blockedBy: [9] }); } }));
+  const h = await harness(t, remote, control =>
+    executionDoubles(control, {
+      onBoot: () => {
+        remote.issues[0] = remoteIssue(3, { blockedBy: [9] });
+      },
+    }),
+  );
   const { time } = await h.start();
   await time.sleeping();
   await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'released');
   const work = (await h.byNumber())[3]!;
-  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare', 'start', 'stop']);
+  assert.deepEqual(
+    h.execution.calls.map(call => call.kind),
+    ['prepare', 'start', 'stop'],
+  );
   assert.deepEqual([work.queue.pending, work.execution!.slot.held, work.execution!.held!.code], [true, false, 'ACTIVATION_REVALIDATION_REFUSED']);
-  assert.deepEqual(work.impediments.map(item => item.code), ['DEPENDENCY_PENDING']);
+  assert.deepEqual(
+    work.impediments.map(item => item.code),
+    ['DEPENDENCY_PENDING'],
+  );
 });
 
 test('AC1: authorization withdrawn (label removed) before dispatch -> no reservation, no effect', async t => {
@@ -171,7 +284,11 @@ test('AC1: authorization withdrawn (label removed) before dispatch -> no reserva
   const github = h.github;
   const read = github.tracker.readTicket;
   let reads = 0;
-  github.tracker.readTicket = async ref => { reads++; const observed = await read(ref); return reads > 1 && observed.kind === 'observed' ? { ...observed, labels: [] } : observed; };
+  github.tracker.readTicket = async ref => {
+    reads++;
+    const observed = await read(ref);
+    return reads > 1 && observed.kind === 'observed' ? { ...observed, labels: [] } : observed;
+  };
   const { time } = await h.start();
   await time.sleeping();
   assert.equal((await h.byNumber())[3]!.execution, null);
@@ -184,16 +301,17 @@ test('failures hold explicitly with the Slot and are never retried; a held Slot 
   const { time } = await h.start();
   await time.sleeping();
   await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'held');
-  await h.cycle(); await h.cycle();
+  await h.cycle();
+  await h.cycle();
   const works = await h.byNumber();
   assert.deepEqual([works[3]!.execution!.held!.code, works[3]!.execution!.slot.held], ['PREPARE_ENVIRONMENT_PREPARATION_INCOMPLETE', true]);
   assert.equal(works[4]!.execution, null, 'the held Slot is not released by assumption');
   assert.equal(h.execution.calls.filter(call => call.kind === 'prepare').length, 1, 'no automatic retry');
   await h.stop();
   await h.start('empty');
-  const status = await h.control().inspect({ kind: 'status' }) as ControlStatus;
+  const status = (await h.control().inspect({ kind: 'status' })) as ControlStatus;
   assert.deepEqual([status.dispatch, status.dispatchReason], ['closed', 'RECONCILIATION_REQUIRED']);
-  const show = await h.control().inspect({ kind: 'show', work_id: works[3]!.work_id }) as ShowView;
+  const show = (await h.control().inspect({ kind: 'show', work_id: works[3]!.work_id })) as ShowView;
   assert.ok(show.kind === 'work' && show.work.execution!.state === 'held');
 });
 
@@ -203,11 +321,22 @@ test('AC5: a failed credential issuance holds before any activation (never widen
   const { time } = await h.start();
   await time.sleeping();
   await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'held');
-  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare', 'start', 'issue']);
+  assert.deepEqual(
+    h.execution.calls.map(call => call.kind),
+    ['prepare', 'start', 'issue'],
+  );
   assert.equal((await h.byNumber())[3]!.execution!.held!.code, 'CREDENTIAL_GITHUB_TOKEN_ISSUANCE_UNKNOWN');
   // Review 5: the issuance intent was durable BEFORE the call, and its unknown outcome is recorded.
-  assert.deepEqual(h.execution.snapshots.issue!.execution!.credentialIssuance, { requestedAt: h.execution.snapshots.issue!.execution!.credentialIssuance!.requestedAt,
-    outcome: 'requested', code: null, metadata: null, revocation: null, revocationCode: null, risk: null, revocationAttemptedAt: null });
+  assert.deepEqual(h.execution.snapshots.issue!.execution!.credentialIssuance, {
+    requestedAt: h.execution.snapshots.issue!.execution!.credentialIssuance!.requestedAt,
+    outcome: 'requested',
+    code: null,
+    metadata: null,
+    revocation: null,
+    revocationCode: null,
+    risk: null,
+    revocationAttemptedAt: null,
+  });
   const issuance = (await h.byNumber())[3]!.execution!.credentialIssuance!;
   assert.deepEqual([issuance.outcome, issuance.code, issuance.metadata], ['unknown', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN', null]);
 });
@@ -217,29 +346,50 @@ test('without execution boundaries dispatch stays closed exactly as before (EXEC
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3)] });
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'c.sqlite'), runtimeInventory: 'empty', access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
-    polling: { intervalSeconds: 60, clock: time.clock } });
+  const control = await openControl({
+    storagePath: join(dir, 'c.sqlite'),
+    runtimeInventory: 'empty',
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   await time.sleeping();
-  const list = await control.inspect({ kind: 'list' }) as ListView;
-  assert.deepEqual([list.dispatch, list.dispatchReason, list.works[0]!.dispatch], ['closed', 'EXECUTION_NOT_ENABLED', { state: 'held', reasons: ['EXECUTION_NOT_ENABLED'] }]);
-  stop.abort(); await running;
+  const list = (await control.inspect({ kind: 'list' })) as ListView;
+  assert.deepEqual(
+    [list.dispatch, list.dispatchReason, list.works[0]!.dispatch],
+    ['closed', 'EXECUTION_NOT_ENABLED', { state: 'held', reasons: ['EXECUTION_NOT_ENABLED'] }],
+  );
+  stop.abort();
+  await running;
 });
 
 test('review 4/5: a pause committed after issuance refuses activation in the commit; the live grant is recorded with its revocation outcome', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
   let control!: () => Control;
-  const h = await harness(t, remote, c => { control = c; return executionDoubles(c, { onIssue: async () => {
-    await control().accept({ request_id: 'pause-during-issue', operation: 'pause', origin: 'local-cli' }); } }); });
+  const h = await harness(t, remote, c => {
+    control = c;
+    return executionDoubles(c, {
+      onIssue: async () => {
+        await control().accept({ request_id: 'pause-during-issue', operation: 'pause', origin: 'local-cli' });
+      },
+    });
+  });
   const { time } = await h.start();
   await time.sleeping();
   await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'released');
   const execution = (await h.byNumber())[3]!.execution!;
-  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare', 'start', 'issue', 'revoke', 'stop'], 'never activated while paused');
+  assert.deepEqual(
+    h.execution.calls.map(call => call.kind),
+    ['prepare', 'start', 'issue', 'revoke', 'stop'],
+    'never activated while paused',
+  );
   assert.match(execution.held!.nextStep, /GLOBAL_PAUSE/);
-  assert.deepEqual([execution.credentialIssuance!.outcome, execution.credentialIssuance!.metadata!.purpose, execution.credentialIssuance!.revocation],
-    ['issued', 'builder-start', 'not-attempted'], 'no live token goes unrecorded');
+  assert.deepEqual(
+    [execution.credentialIssuance!.outcome, execution.credentialIssuance!.metadata!.purpose, execution.credentialIssuance!.revocation],
+    ['issued', 'builder-start', 'not-attempted'],
+    'no live token goes unrecorded',
+  );
   await h.stop();
   assert.doesNotMatch(await readFile(h.storagePath, 'latin1'), /ghs_synthetic/);
 });
@@ -247,7 +397,9 @@ test('review 4/5: a pause committed after issuance refuses activation in the com
 test('review 3: owner stop during preparation performs no further effect; during activation the worker signal is aborted', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
   let open!: () => void;
-  const gate = new Promise<void>(resolve => { open = resolve; });
+  const gate = new Promise<void>(resolve => {
+    open = resolve;
+  });
   const h = await harness(t, remote, c => executionDoubles(c, { prepareGate: gate }));
   const { time } = await h.start();
   await time.sleeping();
@@ -255,7 +407,11 @@ test('review 3: owner stop during preparation performs no further effect; during
   const stopping = h.stop();
   open();
   await stopping;
-  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare'], 'no start/issue/activate after the owner stopped');
+  assert.deepEqual(
+    h.execution.calls.map(call => call.kind),
+    ['prepare'],
+    'no start/issue/activate after the owner stopped',
+  );
 
   const second = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, c => executionDoubles(c, { hangStart: true }));
   const run = await second.start();

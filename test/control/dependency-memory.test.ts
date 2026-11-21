@@ -14,8 +14,13 @@ test('admission records the explicit minimal memory of the cycle; own classifica
   const path = join(dir, 'control.sqlite');
   let store = await openStore(path);
   await initialize(store.session);
-  const admitted = await admitTicket(store.session, { ticket: ticket(2), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' },
-    observedAt: 'now', label: { id: 55, name: 'ready-for-agent' }, publication: { observedAt: 'now', limitations: [] } });
+  const admitted = await admitTicket(store.session, {
+    ticket: ticket(2),
+    repository: { repository: 'acme/project', repositoryId: 3, base: 'main' },
+    observedAt: 'now',
+    label: { id: 55, name: 'ready-for-agent' },
+    publication: { observedAt: 'now', limitations: [] },
+  });
   assert.equal(admitted.kind, 'admitted');
   const work_id = admitted.kind === 'admitted' ? admitted.work_id : '';
   const expected = { source: 'work', applicable: { work_id, cycle: 1, result: 'open', mergeConfirmed: false }, previousCycles: [] };

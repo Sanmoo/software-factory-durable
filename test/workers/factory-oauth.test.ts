@@ -17,47 +17,66 @@ import { openFactoryOAuth } from '../../src/workers/factory-oauth.js';
 
 // CLOSED before any native SDK evaluation. No HTTP server or real transport.
 const attempts = { fetch: 0, token: 0, deniedURL: 0, physical: 0, forbiddenCredentialPath: 0 };
-const deny = () => { attempts.physical++; throw new Error('TEST_TRANSPORT_CLOSED'); };
+const deny = () => {
+  attempts.physical++;
+  throw new Error('TEST_TRANSPORT_CLOSED');
+};
 for (const [object, names] of [
-  [net.Socket.prototype, ['connect']], [net.Server.prototype, ['listen']],
-  [tls, ['connect']], [http, ['request', 'get']], [https, ['request', 'get']],
+  [net.Socket.prototype, ['connect']],
+  [net.Server.prototype, ['listen']],
+  [tls, ['connect']],
+  [http, ['request', 'get']],
+  [https, ['request', 'get']],
   [dns, ['lookup', 'resolve', 'resolve4', 'resolve6']],
   [dns.promises, ['lookup', 'resolve', 'resolve4', 'resolve6']],
-  [dgram, ['createSocket']], [childProcess, ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']],
-] as const) for (const name of names) mock.method(object, name as never, deny);
+  [dgram, ['createSocket']],
+  [childProcess, ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']],
+] as const)
+  for (const name of names) mock.method(object, name as never, deny);
 mock.method(process, 'dlopen', deny);
 // SDK credential reads/writes/metadata must stay in our new synthetic fixtures.
 for (const name of ['readFileSync', 'writeFileSync', 'lstatSync', 'statSync', 'existsSync', 'realpathSync'] as const) {
   const original = fs[name];
   mock.method(fs, name, (...args: unknown[]) => {
     const path = String(args[0]);
-    if (/(?:auth\.json|chatgpt\.json)$|\/credentials(?:\/|$)/.test(path) &&
-        !roots.some(root => path === root || path.startsWith(root + '/'))) {
-      attempts.forbiddenCredentialPath++; throw new Error('TEST_CREDENTIAL_PATH_CLOSED');
+    if (/(?:auth\.json|chatgpt\.json)$|\/credentials(?:\/|$)/.test(path) && !roots.some(root => path === root || path.startsWith(root + '/'))) {
+      attempts.forbiddenCredentialPath++;
+      throw new Error('TEST_CREDENTIAL_PATH_CLOSED');
     }
     return Reflect.apply(original, fs, args);
   });
 }
 syncBuiltinESMExports();
-let tokenResponse = async () => new Response(JSON.stringify({ access_token: 'synthetic-access-new',
-  refresh_token: 'synthetic-refresh-new', expires_in: 3600, scope: 'chatgpt.tokens.use.direct' }));
+let tokenResponse = async () =>
+  new Response(
+    JSON.stringify({ access_token: 'synthetic-access-new', refresh_token: 'synthetic-refresh-new', expires_in: 3600, scope: 'chatgpt.tokens.use.direct' }),
+  );
 globalThis.fetch = async (input, init) => {
   attempts.fetch++;
   if (String(input) !== 'https://auth.openai.com/api/accounts/oauth/token' || init?.method !== 'POST') {
-    attempts.deniedURL++; throw new Error('TEST_URL_CLOSED');
+    attempts.deniedURL++;
+    throw new Error('TEST_URL_CLOSED');
   }
   attempts.token++;
   return tokenResponse();
 };
 const roots: string[] = [];
-const initial = { type: 'oauth' as const, access: 'synthetic-access-old', refresh: 'synthetic-refresh-old',
-  expires: 0, clientId: 'synthetic-client', scopes: ['chatgpt.tokens.use.direct'] };
+const initial = {
+  type: 'oauth' as const,
+  access: 'synthetic-access-old',
+  refresh: 'synthetic-refresh-old',
+  expires: 0,
+  clientId: 'synthetic-client',
+  scopes: ['chatgpt.tokens.use.direct'],
+};
 async function fixture(installationLayout = false) {
-  const root = await mkdtemp(join(tmpdir(), 'fo-')); roots.push(root);
+  const root = await mkdtemp(join(tmpdir(), 'fo-'));
+  roots.push(root);
   await mkdir(join(root, 'credentials'), { mode: 0o700 });
   const path = join(root, 'credentials', 'chatgpt.json');
   await writeFile(path, JSON.stringify({ openai: initial }), { mode: 0o600 });
-  const recordsRoot = join(root, 'records'); await mkdir(recordsRoot, { mode: 0o700 });
+  const recordsRoot = join(root, 'records');
+  await mkdir(recordsRoot, { mode: 0o700 });
   const records = await createRecords({ root: recordsRoot });
   const source = installationLayout ? join(root, 'releases', 'version') : `${root}-source`;
   const guest = installationLayout ? join(root, 'environments', 'environment', 'guest') : `${root}-guest`;
@@ -67,33 +86,58 @@ async function fixture(installationLayout = false) {
     if (!installationLayout) roots.push(directory);
   }
   const controller = new AbortController();
-  const options = { factoryRoot: root, excludedRoots: { source, guest, profiles: [profileDirectory] },
-    records, acknowledgeSecrets: async (_values: readonly string[]) => {}, signal: controller.signal, profileDirectory };
+  const options = {
+    factoryRoot: root,
+    excludedRoots: { source, guest, profiles: [profileDirectory] },
+    records,
+    acknowledgeSecrets: async (_values: readonly string[]) => {},
+    signal: controller.signal,
+    profileDirectory,
+  };
   return { root, path, records, controller, options };
 }
 after(async () => {
   // Counters checked before any other assertion about the run's safety.
-  assert.equal(attempts.deniedURL, 0); assert.equal(attempts.physical, 0); assert.equal(attempts.forbiddenCredentialPath, 0);
+  assert.equal(attempts.deniedURL, 0);
+  assert.equal(attempts.physical, 0);
+  assert.equal(attempts.forbiddenCredentialPath, 0);
   console.log('closed transport attempts', JSON.stringify(attempts));
   for (const root of roots) await rm(root, { recursive: true, force: true });
 });
-afterEach(() => { assert.equal(attempts.deniedURL, 0); assert.equal(attempts.physical, 0); assert.equal(attempts.forbiddenCredentialPath, 0); });
-beforeEach(() => { tokenResponse = async () => new Response(JSON.stringify({ access_token: 'synthetic-access-new',
-  refresh_token: 'synthetic-refresh-new', expires_in: 3600, scope: 'chatgpt.tokens.use.direct' })); });
+afterEach(() => {
+  assert.equal(attempts.deniedURL, 0);
+  assert.equal(attempts.physical, 0);
+  assert.equal(attempts.forbiddenCredentialPath, 0);
+});
+beforeEach(() => {
+  tokenResponse = async () =>
+    new Response(
+      JSON.stringify({ access_token: 'synthetic-access-new', refresh_token: 'synthetic-refresh-new', expires_in: 3600, scope: 'chatgpt.tokens.use.direct' }),
+    );
+});
 const closed = { code: 'FACTORY_OAUTH_UNAVAILABLE' };
 
 test('native file credential read waits for private ACK after local registration', async () => {
   const f = await fixture();
   let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
   const seen: string[] = [];
-  f.options.acknowledgeSecrets = async values => { seen.push(...values); await gate; };
+  f.options.acknowledgeSecrets = async values => {
+    seen.push(...values);
+    await gate;
+  };
   const auth = await openFactoryOAuth(f.options);
   let returned = false;
-  const read = auth.credentials.read('openai').then(value => { returned = true; return value; });
+  const read = auth.credentials.read('openai').then(value => {
+    returned = true;
+    return value;
+  });
   while (!seen.length) await new Promise(resolve => setImmediate(resolve));
   assert.equal(returned, false);
-  assert.ok(seen.includes(initial.access)); assert.ok(seen.includes(initial.refresh));
+  assert.ok(seen.includes(initial.access));
+  assert.ok(seen.includes(initial.refresh));
   release();
   assert.deepEqual(await read, initial);
   assert.deepEqual(JSON.parse(await readFile(f.path, 'utf8')), { openai: initial });
@@ -131,50 +175,83 @@ test('canonical installation siblings open and resolve native fake-only auth; OW
 test('current credential owner ACK precedes SDK modify callback use', async () => {
   const f = await fixture();
   let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
   let observed!: () => void;
-  const ackStarted = new Promise<void>(resolve => { observed = resolve; });
-  f.options.acknowledgeSecrets = async () => { observed(); await gate; };
+  const ackStarted = new Promise<void>(resolve => {
+    observed = resolve;
+  });
+  f.options.acknowledgeSecrets = async () => {
+    observed();
+    await gate;
+  };
   const auth = await openFactoryOAuth(f.options);
   let used = false;
-  const modifying = auth.credentials.modify('openai', async () => { used = true; return undefined; });
+  const modifying = auth.credentials.modify('openai', async () => {
+    used = true;
+    return undefined;
+  });
   await ackStarted;
-  try { assert.equal(used, false); } finally { release(); await modifying; }
+  try {
+    assert.equal(used, false);
+  } finally {
+    release();
+    await modifying;
+  }
   assert.equal(used, true);
 });
 
 test('rotated local registration precedes private native write; post-commit ACK holds getAuth', async () => {
   const f = await fixture();
   let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
   let observed!: () => void;
-  const ackStarted = new Promise<void>(resolve => { observed = resolve; });
+  const ackStarted = new Promise<void>(resolve => {
+    observed = resolve;
+  });
   let registeredBeforeWrite = false;
   const register = f.records.registerSecret;
-  f.options.records = { ...f.records, registerSecret(value: string) {
-    if (value === 'synthetic-access-new' && !registeredBeforeWrite) {
-      assert.equal(JSON.parse(fs.readFileSync(f.path, 'utf8')).openai.access, initial.access);
-      registeredBeforeWrite = true;
-    }
-    register(value);
-  } };
+  f.options.records = {
+    ...f.records,
+    registerSecret(value: string) {
+      if (value === 'synthetic-access-new' && !registeredBeforeWrite) {
+        assert.equal(JSON.parse(fs.readFileSync(f.path, 'utf8')).openai.access, initial.access);
+        registeredBeforeWrite = true;
+      }
+      register(value);
+    },
+  };
   f.options.acknowledgeSecrets = async values => {
-    if (values.includes('synthetic-refresh-new')) { observed(); await gate; }
+    if (values.includes('synthetic-refresh-new')) {
+      observed();
+      await gate;
+    }
   };
   const auth = await openFactoryOAuth(f.options);
   let returned = false;
-  const pending = auth.getAuth().then(value => { returned = true; return value; });
+  const pending = auth.getAuth().then(value => {
+    returned = true;
+    return value;
+  });
   await ackStarted;
   try {
-    assert.equal(returned, false); assert.equal(registeredBeforeWrite, true);
+    assert.equal(returned, false);
+    assert.equal(registeredBeforeWrite, true);
     assert.equal(JSON.parse(await readFile(f.path, 'utf8')).openai.refresh, 'synthetic-refresh-new');
-  } finally { release(); }
+  } finally {
+    release();
+  }
   assert.deepEqual(await pending, { apiKey: 'synthetic-access-new' });
 });
 
 test('failed owner ACK denies use and later reads but preserves committed private rotation', async () => {
   const f = await fixture();
-  f.options.acknowledgeSecrets = async values => { if (values.includes('synthetic-refresh-new')) throw new Error('private ACK detail'); };
+  f.options.acknowledgeSecrets = async values => {
+    if (values.includes('synthetic-refresh-new')) throw new Error('private ACK detail');
+  };
   const auth = await openFactoryOAuth(f.options);
   await assert.rejects(auth.getAuth(), closed);
   await auth.settleCredentialWrites();
@@ -185,11 +262,19 @@ test('failed owner ACK denies use and later reads but preserves committed privat
 test('scope abort during native bounded refresh preserves rotation but never returns auth or starts another refresh', async () => {
   const f = await fixture();
   let received!: () => void;
-  const started = new Promise<void>(resolve => { received = resolve; });
+  const started = new Promise<void>(resolve => {
+    received = resolve;
+  });
   let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
   const response = tokenResponse;
-  tokenResponse = async () => { received(); await gate; return response(); };
+  tokenResponse = async () => {
+    received();
+    await gate;
+    return response();
+  };
   const auth = await openFactoryOAuth(f.options);
   const pending = assert.rejects(auth.getAuth(), closed);
   await started;
@@ -200,7 +285,10 @@ test('scope abort during native bounded refresh preserves rotation but never ret
   assert.equal(JSON.parse(await readFile(f.path, 'utf8')).openai.refresh, 'synthetic-refresh-new');
   const count = attempts.token;
   await assert.rejects(auth.getAuth(), closed);
-  await assert.rejects(auth.credentials.modify('openai', async () => initial), closed);
+  await assert.rejects(
+    auth.credentials.modify('openai', async () => initial),
+    closed,
+  );
   assert.equal(attempts.token, count);
 });
 
@@ -221,8 +309,10 @@ test('unknown token HTTP body, malformed JSON and SDK exceptions escape only as 
 test('4096 character access token is accepted; 4097 and Records count exhaustion reject before write/use', async () => {
   for (const size of [4096, 4097]) {
     const f = await fixture();
-    tokenResponse = async () => new Response(JSON.stringify({ access_token: 'X'.repeat(size), refresh_token: 'synthetic-refresh-new',
-      expires_in: 3600, scope: 'chatgpt.tokens.use.direct' }));
+    tokenResponse = async () =>
+      new Response(
+        JSON.stringify({ access_token: 'X'.repeat(size), refresh_token: 'synthetic-refresh-new', expires_in: 3600, scope: 'chatgpt.tokens.use.direct' }),
+      );
     const auth = await openFactoryOAuth(f.options);
     if (size === 4096) assert.equal((await auth.getAuth()).apiKey.length, 4096);
     else {
@@ -238,10 +328,19 @@ test('4096 character access token is accepted; 4097 and Records count exhaustion
 });
 
 test('rejects missing, torn, mixed, key, command and wrong-provider store without network or repair', async () => {
-  const cases: unknown[] = [{}, [], null, { openai: { type: 'api_key', key: '!synthetic-command' } },
-    { 'openai-codex': initial }, { openai: initial, other: initial }, { openai: { ...initial, key: 'mixed' } },
-    { openai: { ...initial, clientId: '' } }, { openai: { ...initial, scopes: [] } },
-    { openai: { ...initial, access: '' } }, { openai: { ...initial, expires: 'tomorrow' } }];
+  const cases: unknown[] = [
+    {},
+    [],
+    null,
+    { openai: { type: 'api_key', key: '!synthetic-command' } },
+    { 'openai-codex': initial },
+    { openai: initial, other: initial },
+    { openai: { ...initial, key: 'mixed' } },
+    { openai: { ...initial, clientId: '' } },
+    { openai: { ...initial, scopes: [] } },
+    { openai: { ...initial, access: '' } },
+    { openai: { ...initial, expires: 'tomorrow' } },
+  ];
   const before = attempts.fetch;
   for (const value of cases) {
     const f = await fixture();
@@ -251,11 +350,13 @@ test('rejects missing, torn, mixed, key, command and wrong-provider store withou
     assert.equal(await readFile(f.path, 'utf8'), raw);
   }
   for (const raw of ['', '{"openai":']) {
-    const f = await fixture(); await writeFile(f.path, raw);
+    const f = await fixture();
+    await writeFile(f.path, raw);
     await assert.rejects(openFactoryOAuth(f.options), closed);
     assert.equal(await readFile(f.path, 'utf8'), raw);
   }
-  const f = await fixture(); await unlink(f.path);
+  const f = await fixture();
+  await unlink(f.path);
   await assert.rejects(openFactoryOAuth(f.options), closed);
   await assert.rejects(lstat(f.path), { code: 'ENOENT' });
   assert.equal(attempts.fetch, before);
@@ -272,17 +373,23 @@ test('rejects unsafe private fixture modes, hardlinks, symlinks, noncanonical ro
     assert.equal((await lstat(path)).mode & 0o777, mode); // no repair.
   }
   {
-    const f = await fixture(); await link(f.path, join(f.root, 'alias'));
+    const f = await fixture();
+    await link(f.path, join(f.root, 'alias'));
     await assert.rejects(openFactoryOAuth(f.options), closed);
   }
   {
-    const f = await fixture(); const target = join(f.root, 'target');
+    const f = await fixture();
+    const target = join(f.root, 'target');
     await writeFile(target, JSON.stringify({ openai: initial }), { mode: 0o600 });
-    await unlink(f.path); await symlink(target, f.path);
+    await unlink(f.path);
+    await symlink(target, f.path);
     await assert.rejects(openFactoryOAuth(f.options), closed);
   }
   {
-    const f = await fixture(); const alias = `${f.root}-alias`; roots.push(alias); await symlink(f.root, alias);
+    const f = await fixture();
+    const alias = `${f.root}-alias`;
+    roots.push(alias);
+    await symlink(f.root, alias);
     await assert.rejects(openFactoryOAuth({ ...f.options, factoryRoot: alias }), closed);
     await assert.rejects(openFactoryOAuth({ ...f.options, factoryRoot: `${f.root}/../${f.root.split('/').at(-1)}` }), closed);
   }
@@ -303,23 +410,39 @@ test('rejects unsafe private fixture modes, hardlinks, symlinks, noncanonical ro
 
 test('fresh native store operations reject torn or missing file instead of cached credential fallback/autocreation', async () => {
   for (const missing of [false, true]) {
-    const f = await fixture(); const auth = await openFactoryOAuth(f.options);
-    if (missing) await unlink(f.path); else await writeFile(f.path, '{"openai":');
+    const f = await fixture();
+    const auth = await openFactoryOAuth(f.options);
+    if (missing) await unlink(f.path);
+    else await writeFile(f.path, '{"openai":');
     await assert.rejects(auth.credentials.read('openai'), closed);
-    await assert.rejects(auth.credentials.modify('openai', async () => initial), closed);
+    await assert.rejects(
+      auth.credentials.modify('openai', async () => initial),
+      closed,
+    );
     if (missing) await assert.rejects(lstat(f.path), { code: 'ENOENT' });
     else assert.equal(await readFile(f.path, 'utf8'), '{"openai":');
   }
 });
 
-const context = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder' as const,
-  environmentRef: 'environment', bootRef: 'boot', callId: 'call' };
+const context = {
+  workId: 'work',
+  executionId: 'execution',
+  invocationId: 'invocation',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  callId: 'call',
+};
 test('rotation fences real Records current projections/raw snapshots; duplicate registration is a no-op; new output is filtered', async () => {
-  const f = await fixture(); const auth = await openFactoryOAuth(f.options);
-  const out = await f.records.openOutput(context); await out.write(Buffer.from('ordinary text'));
+  const f = await fixture();
+  const auth = await openFactoryOAuth(f.options);
+  const out = await f.records.openOutput(context);
+  await out.write(Buffer.from('ordinary text'));
   const done = await out.finish();
   const projection = f.records.projectText({ context, reference: done.reference, expectedBytes: done.bytes });
-  for await (const _ of projection.chunks) { /* exhaust */ }
+  for await (const _ of projection.chunks) {
+    /* exhaust */
+  }
   projection.assertCompleteAndCurrent();
   await auth.credentials.read('openai'); // duplicates must not invalidate.
   projection.assertCompleteAndCurrent();
@@ -336,7 +459,8 @@ test('rotation fences real Records current projections/raw snapshots; duplicate 
 });
 
 test('qualification exposes only OAuth metadata and fails closed for logout, invalid scope and unsafe OWN profile', async () => {
-  const f = await fixture(); const auth = await openFactoryOAuth(f.options);
+  const f = await fixture();
+  const auth = await openFactoryOAuth(f.options);
   assert.deepEqual(await auth.credentials.list(), [{ providerId: 'openai', type: 'oauth' }]);
   await assert.rejects(auth.credentials.delete('openai'), closed);
   await chmod(f.options.profileDirectory, 0o755);
@@ -350,7 +474,9 @@ test('qualification exposes only OAuth metadata and fails closed for logout, inv
 
 test('native refresh local registry failure prevents commit; denied initial ACK prevents even fake HTTP', async () => {
   const f = await fixture();
-  f.options.acknowledgeSecrets = async () => { throw new Error('private future-owner failure'); };
+  f.options.acknowledgeSecrets = async () => {
+    throw new Error('private future-owner failure');
+  };
   const auth = await openFactoryOAuth(f.options);
   const before = attempts.fetch;
   await assert.rejects(auth.getAuth(), closed);
@@ -366,9 +492,11 @@ test('missing credentials directory/root and symlink directory cannot trigger na
     await assert.rejects(openFactoryOAuth(f.options), closed);
     await assert.rejects(lstat(path), { code: 'ENOENT' });
   }
-  const f = await fixture(); const directory = join(f.root, 'credentials');
+  const f = await fixture();
+  const directory = join(f.root, 'credentials');
   await rm(directory, { recursive: true });
-  const target = join(f.root, 'target'); await mkdir(target, { mode: 0o700 });
+  const target = join(f.root, 'target');
+  await mkdir(target, { mode: 0o700 });
   await writeFile(join(target, 'chatgpt.json'), JSON.stringify({ openai: initial }), { mode: 0o600 });
   await symlink(target, directory);
   await assert.rejects(openFactoryOAuth(f.options), closed);
@@ -376,9 +504,10 @@ test('missing credentials directory/root and symlink directory cannot trigger na
 
 test('canonical excluded roots cannot disguise a source intersection behind a symlink alias', async () => {
   const f = await fixture();
-  const alias = `${f.root}-source-alias`; roots.push(alias); await symlink(f.root, alias);
-  await assert.rejects(openFactoryOAuth({ ...f.options,
-    excludedRoots: { ...f.options.excludedRoots, source: alias } }), closed);
+  const alias = `${f.root}-source-alias`;
+  roots.push(alias);
+  await symlink(f.root, alias);
+  await assert.rejects(openFactoryOAuth({ ...f.options, excludedRoots: { ...f.options.excludedRoots, source: alias } }), closed);
 });
 
 test('four selected OAuth module pins reject same-size byte drift before native operation without modifying SDK files', async () => {
@@ -389,13 +518,19 @@ test('four selected OAuth module pins reject same-size byte drift before native 
     const stub = mock.method(fs, 'readFileSync', (...args: unknown[]) => {
       const result = Reflect.apply(original, fs, args);
       if (String(args[0]).endsWith(`/sdk/dist/core/${name}`)) {
-        const bytes = Buffer.from(result as Buffer); bytes[0] = bytes[0] === 65 ? 66 : 65; return bytes;
+        const bytes = Buffer.from(result as Buffer);
+        bytes[0] = bytes[0] === 65 ? 66 : 65;
+        return bytes;
       }
       return result;
     });
     syncBuiltinESMExports();
-    try { await assert.rejects(openFactoryOAuth(f.options), closed); }
-    finally { stub.mock.restore(); syncBuiltinESMExports(); }
+    try {
+      await assert.rejects(openFactoryOAuth(f.options), closed);
+    } finally {
+      stub.mock.restore();
+      syncBuiltinESMExports();
+    }
   }
   assert.equal(attempts.fetch, before);
 });
@@ -403,7 +538,8 @@ test('four selected OAuth module pins reject same-size byte drift before native 
 test('profile identity and literal private runtime/type selections reject metadata drift with no SDK/profile edits', async () => {
   const before = attempts.fetch;
   for (const variant of ['profile', 'runtime-alias', 'types-alias'] as const) {
-    const f = await fixture(); const original = fs.readFileSync;
+    const f = await fixture();
+    const original = fs.readFileSync;
     const stub = mock.method(fs, 'readFileSync', (...args: unknown[]) => {
       const result = Reflect.apply(original, fs, args);
       const path = String(args[0]);
@@ -418,14 +554,19 @@ test('profile identity and literal private runtime/type selections reject metada
       return result;
     });
     syncBuiltinESMExports();
-    try { await assert.rejects(openFactoryOAuth(f.options), closed); }
-    finally { stub.mock.restore(); syncBuiltinESMExports(); }
+    try {
+      await assert.rejects(openFactoryOAuth(f.options), closed);
+    } finally {
+      stub.mock.restore();
+      syncBuiltinESMExports();
+    }
   }
   assert.equal(attempts.fetch, before);
 });
 
 test('native raw key/command replacement is rejected before resolver dispatch; failure latches against stale fallback', async () => {
-  const f = await fixture(); const auth = await openFactoryOAuth(f.options);
+  const f = await fixture();
+  const auth = await openFactoryOAuth(f.options);
   assert.deepEqual(await auth.credentials.read('openai'), initial);
   // Child-process functions are already inert deny sentinels before SDK import.
   // This string is synthetic and never allowed to reach resolveConfigValue.
@@ -436,5 +577,8 @@ test('native raw key/command replacement is rejected before resolver dispatch; f
   assert.equal(attempts.physical, before);
   await writeFile(f.path, JSON.stringify({ openai: initial }));
   await assert.rejects(auth.credentials.read('openai'), closed);
-  await assert.rejects(auth.credentials.modify('openai', async () => initial), closed);
+  await assert.rejects(
+    auth.credentials.modify('openai', async () => initial),
+    closed,
+  );
 });

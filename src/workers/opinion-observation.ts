@@ -16,8 +16,13 @@ export type OpinionObservation = { kind: 'opinion'; opinion: ReviewOpinion } | {
  * Locates the complete opinion a reviewer worker preserved in the protected Records BEFORE notifying (worker-session.ts), without its
  * notification and without rerunning anything. A streamed or half-written capture is never an opinion.
  */
-export async function observeOpinionRecord(records: Records, input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation> {
-  const found = await records.find({ workId: input.workId, executionId: input.executionId, invocationId: input.invocationId, callId: 'review-opinion' }).catch(() => null);
+export async function observeOpinionRecord(
+  records: Records,
+  input: { workId: string; executionId: string; invocationId: string },
+): Promise<OpinionObservation> {
+  const found = await records
+    .find({ workId: input.workId, executionId: input.executionId, invocationId: input.invocationId, callId: 'review-opinion' })
+    .catch(() => null);
   if (!found || found.completeness !== 'complete') return { kind: 'uncertain', code: 'OPINION_LISTING_INCOMPLETE' };
   if (found.captures.length === 0) return { kind: 'absent' };
   if (found.captures.length > 1) return { kind: 'uncertain', code: 'OPINION_RECORD_MULTIPLE' };
@@ -37,11 +42,19 @@ export async function observeOpinionRecord(records: Records, input: { workId: st
     }
     const stored = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { context?: Record<string, unknown>; event?: Record<string, unknown> };
     const context = stored.context ?? {};
-    if (context.workId !== input.workId || context.executionId !== input.executionId || context.invocationId !== input.invocationId ||
-        context.callId !== 'review-opinion' || stored.event?.kind !== 'review-opinion') return { kind: 'uncertain', code: 'OPINION_RECORD_MISMATCH' };
+    if (
+      context.workId !== input.workId ||
+      context.executionId !== input.executionId ||
+      context.invocationId !== input.invocationId ||
+      context.callId !== 'review-opinion' ||
+      stored.event?.kind !== 'review-opinion'
+    )
+      return { kind: 'uncertain', code: 'OPINION_RECORD_MISMATCH' };
     const { kind: _kind, ...event } = stored.event;
     const parsed = opinionSchema.safeParse({ ...event, reference: capture.reference });
     if (!parsed.success || parsed.data.invocationId !== input.invocationId) return { kind: 'uncertain', code: 'OPINION_RECORD_INVALID' };
     return { kind: 'opinion', opinion: parsed.data as ReviewOpinion };
-  } catch { return { kind: 'uncertain', code: 'OPINION_RECORD_INVALID' }; }
+  } catch {
+    return { kind: 'uncertain', code: 'OPINION_RECORD_INVALID' };
+  }
 }

@@ -17,21 +17,35 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
     const operation = async (call: Parameters<ToolProjection['executeTool']>[1]) => {
       const result = await sandbox.executeTool(context, call);
       if (result.status === 'failure') {
-        if (['PROTECTED_WRITE_UNAVAILABLE', 'WRITE_EFFECTS_UNCERTAIN', 'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN',
-          'TOOL_CHANNEL_CLOSED', 'STALE_TOOL_CONTEXT'].includes(result.code)) onCritical();
+        if (
+          [
+            'PROTECTED_WRITE_UNAVAILABLE',
+            'WRITE_EFFECTS_UNCERTAIN',
+            'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN',
+            'TOOL_CHANNEL_CLOSED',
+            'STALE_TOOL_CONTEXT',
+          ].includes(result.code)
+        )
+          onCritical();
         throw new Error(result.code);
       }
     };
-    const options: LexicalWriteOptions = { mutationQueueMode: 'lexical', operations: {
-      mkdir: path => operation({ name: 'write', operation: 'mkdir', path, callId: randomUUID() }),
-      writeFile: (path, content) => operation({ name: 'write', operation: 'create', path, content, callId: randomUUID() }),
-    } };
+    const options: LexicalWriteOptions = {
+      mutationQueueMode: 'lexical',
+      operations: {
+        mkdir: path => operation({ name: 'write', operation: 'mkdir', path, callId: randomUUID() }),
+        writeFile: (path, content) => operation({ name: 'write', operation: 'create', path, content, callId: randomUUID() }),
+      },
+    };
     return createWriteTool(cwd, options);
   };
   // Fixed host composition: the shared channel admits one tool at a time.
-  return { name: 'write', label: 'write',
+  return {
+    name: 'write',
+    label: 'write',
     executionMode: 'sequential',
-    description: 'Create or overwrite a regular file in the confined guest. All symlinks are denied. Non-atomic direct writes preserve existing inode/mode; truncation, partial data or directories may remain on failure, including empty writes. Development transport content limit: 8192 characters and 49152 encoded bytes.',
+    description:
+      'Create or overwrite a regular file in the confined guest. All symlinks are denied. Non-atomic direct writes preserve existing inode/mode; truncation, partial data or directories may remain on failure, including empty writes. Development transport content limit: 8192 characters and 49152 encoded bytes.',
     parameters: native('/workspace').parameters,
     async execute(toolCallId, args, signal, onUpdate, ctx) {
       if (context.role !== 'builder') throw new Error('WRITE_ROLE_DENIED');

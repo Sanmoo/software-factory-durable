@@ -17,13 +17,27 @@ test('ticket 51: the 48th request and the 160th tool call run; the next one clos
   const model = { provider: 'openai', id: 'gpt-6-luna', api: 'openai-responses' };
   const runtime = { streamSimple: () => ({ push() {}, end() {} }) } as unknown as ModelRuntime;
   let aborted = 0;
-  const gate = qualifyOAuth(runtime, new AbortController().signal, () => true, () => { aborted++; }, reviewerBudget);
+  const gate = qualifyOAuth(
+    runtime,
+    new AbortController().signal,
+    () => true,
+    () => {
+      aborted++;
+    },
+    reviewerBudget,
+  );
   const request = () => runtime.streamSimple(model as never, { messages: [] } as never, {});
   for (let i = 0; i < 48; i++) request();
   assert.throws(request, /WORKER_QUALIFICATION_CLOSED/);
   assert.equal(aborted, 1);
 
-  const tools = qualifyOAuth({ streamSimple: () => ({ push() {}, end() {} }) } as unknown as ModelRuntime, new AbortController().signal, () => true, () => {}, reviewerBudget);
+  const tools = qualifyOAuth(
+    { streamSimple: () => ({ push() {}, end() {} }) } as unknown as ModelRuntime,
+    new AbortController().signal,
+    () => true,
+    () => {},
+    reviewerBudget,
+  );
   const read = tools.tool({ name: 'read', execute: async () => ({ content: [], details: undefined }) } as unknown as ToolDefinition);
   for (let i = 0; i < 160; i++) await read.execute(`c${i}`, { path: '/workspace/a' } as never, undefined, undefined, undefined as never);
   await assert.rejects(read.execute('c160', { path: '/workspace/a' } as never, undefined, undefined, undefined as never), /WORKER_QUALIFICATION_CLOSED/);

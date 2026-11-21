@@ -14,21 +14,41 @@ const flat = (text: string) => text.replace(/\s+/g, ' ');
 test('factory-skills-v11: run the exact gate command alone, as the last command before the handoff, never inside a compound command', async () => {
   const pack = await loadSkillPack(v11.directory, 'factory-skills-v11');
   assert.deepEqual([pack.id, pack.version, pack.manifest.guestDirectory], ['factory-skills-v11', '11.0.0', '/artifacts/factory/skill-pack/factory-skills-v11']);
-  for (const file of pack.manifest.files) assert.equal(createHash('sha256').update(await readFile(join(v11.directory, file.path))).digest('hex'), file.sha256, file.path);
+  for (const file of pack.manifest.files)
+    assert.equal(
+      createHash('sha256')
+        .update(await readFile(join(v11.directory, file.path)))
+        .digest('hex'),
+      file.sha256,
+      file.path,
+    );
   const implement = flat(await readFile(join(v11.directory, 'skills/implement/SKILL.md'), 'utf8'));
-  for (const rule of ['**Run each gate exactly, alone, last.**', 'Run the exact documented gate command as its own `bash` call, by itself, as the last command(s) before the `handoff`',
-    'never inside a compound command (`git add && git commit && <gate>`, `git status && <gate>`', 'A gate run inside a compound command is never bound to the gate, even when it passes',
-    'The `handoff` refuses a `run` gate whose last exact call failed or never happened']) assert.ok(implement.includes(rule), rule);
+  for (const rule of [
+    '**Run each gate exactly, alone, last.**',
+    'Run the exact documented gate command as its own `bash` call, by itself, as the last command(s) before the `handoff`',
+    'never inside a compound command (`git add && git commit && <gate>`, `git status && <gate>`',
+    'A gate run inside a compound command is never bound to the gate, even when it passes',
+    'The `handoff` refuses a `run` gate whose last exact call failed or never happened',
+  ])
+    assert.ok(implement.includes(rule), rule);
 });
 
 test('factory-skills-v11: carries v10 and earlier rules, guest paths point at v11, continuation, credits; v10 stays unchanged', async () => {
   const pack = await loadSkillPack(v11.directory, 'factory-skills-v11');
   const implement = await readFile(join(v11.directory, 'skills/implement/SKILL.md'), 'utf8');
   const diagnostics = await readFile(join(v11.directory, 'skills/alpine-diagnostics/SKILL.md'), 'utf8');
-  for (const rule of ['**The declared environment is ready.**', 'that match the repository\'s existing architecture count as approved', '`timeout: 1800` seconds',
-    'Never declare `fixed` without a change', 'PUBLISH-ONLY activation', '`review-rounds=multi`', 'Continue in the SAME session (`continue` message)',
-    'declare it `not-run` with the reason AND ask the operator']) assert.ok(flat(implement).includes(rule), rule);
-  assert.ok(flat(diagnostics).includes('**The repository\'s declared environment is already installed.**'));
+  for (const rule of [
+    '**The declared environment is ready.**',
+    "that match the repository's existing architecture count as approved",
+    '`timeout: 1800` seconds',
+    'Never declare `fixed` without a change',
+    'PUBLISH-ONLY activation',
+    '`review-rounds=multi`',
+    'Continue in the SAME session (`continue` message)',
+    'declare it `not-run` with the reason AND ask the operator',
+  ])
+    assert.ok(flat(implement).includes(rule), rule);
+  assert.ok(flat(diagnostics).includes("**The repository's declared environment is already installed.**"));
   assert.match(pack.prompts.find(item => item.name === 'implement')!.content, /factory-skills-v11\/skills\/implement\/SKILL\.md/);
   const files = await skillPackGuestFiles('factory-skills-v11');
   for (const text of [implement, diagnostics, ...pack.prompts.map(item => item.content)]) {

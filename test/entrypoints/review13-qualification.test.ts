@@ -3,15 +3,34 @@ import { mock, test } from 'node:test';
 
 // Import and --plan of the ticket 13 real-run recipe must be inert: no process, socket, filesystem or SDK effect.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, request: deny, open: deny, mkdir: deny, readFile: deny, access: deny, readdir: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./review13-qualification.js');
 
 test('AC7 recipe: import and --plan are inert and declare the fixed bounds of the one-shot real rounds run', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
@@ -19,8 +38,19 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds of th
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q13-rounds-v5');
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.equal(plan.model.builder.skillPack, 'factory-skills-v5');
-  assert.deepEqual([plan.model.builder.maxRequests, plan.model.builder.captures, plan.model.reviewers.maxRequestsEach, plan.model.reviewers.maxRounds,
-    plan.model.reviewers.maxActivations, plan.model.maxRequestsTotal, plan.model.providerRetries, plan.model.sdkRetries], [60, 4, 24, 4, 8, 252, 0, 0]);
+  assert.deepEqual(
+    [
+      plan.model.builder.maxRequests,
+      plan.model.builder.captures,
+      plan.model.reviewers.maxRequestsEach,
+      plan.model.reviewers.maxRounds,
+      plan.model.reviewers.maxActivations,
+      plan.model.maxRequestsTotal,
+      plan.model.providerRetries,
+      plan.model.sdkRetries,
+    ],
+    [60, 4, 24, 4, 8, 252, 0, 0],
+  );
   assert.deepEqual(plan.model.reviewers.tools, ['read']);
   assert.equal(plan.github.reviewerCredentials, 'none');
   assert.match(plan.github.writes, /^none/);
