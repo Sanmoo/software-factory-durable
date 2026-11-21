@@ -32,7 +32,13 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
     failure?: string } |
   { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' } |
   /** v2 ticket 07: the Builder asks the human (no handoff happened) leaving `head` checked out in the guest. */
-  { kind: 'ask'; head: string; question: string; questionId: string };
+  { kind: 'ask'; head: string; question: string; questionId: string } |
+  /**
+   * v2 ticket 09: the Builder works (leaving `head` checked out and `dirty` uncommitted paths) until it yields for a boot swap: at the
+   * Host's `boot-swap` directive (`directive`), only once the sandbox interrupted its call (`interrupt`), or never (`never`: it runs until
+   * its activation is interrupted).
+   */
+  { kind: 'work'; head: string; dirty?: number; yields: 'directive' | 'interrupt' | 'never' };
 /** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
 export type GuestWorkspace = { head: string | null; modified: number; untracked: number; stashes: number; remoteDown: boolean;
   /** v2 ticket 08 (decision 3D): what the sandbox reports it re-sent into `/artifacts` of every boot after the first one. */
@@ -59,22 +65,26 @@ export const publishOwn = (overrides: Partial<PullRequestCandidate> = {}) => (re
 };
 
 /** `diskless` (v2 ticket 06): a sandbox that declares NO persistent disk: prepare returns no host checkout, start clones the commit Control names. */
-export function executionDoubles(remote: Remote, scripts: Script[], options: { reviews?: boolean; diskless?: boolean } = {}) {
+export function executionDoubles(remote: Remote, scripts: Script[], options: { reviews?: boolean; diskless?: boolean;
+  /** v2 ticket 09: the monotonic clock of the Executions (boot clock and timeout), when the test controls it. */ clock?: ExecutionPorts['clock'] } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   let sessions = 0;
   let delivered: ((directive: BuilderDirective) => void) | undefined;
+  // v2 ticket 09: how the working Builder of a `work` script yields (set while it runs).
+  let yielding: { directive(): void; interrupt(): void } | undefined;
   const captures = new Map<number, HandoffEvent>();
   const guest: GuestWorkspace = { head: null, modified: 0, untracked: 0, stashes: 0, remoteDown: false };
   const receipt = (invocation: Invocation) => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
     invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
   const ports: ExecutionPorts = {
-    configuration: { schemaVersion: 1 }, capacity: 1,
+    configuration: { schemaVersion: 1 }, capacity: 1, ...(options.clock ? { clock: options.clock } : {}),
     builder: { skillPack: 'factory-skills-v6', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     ...(options.reviews === false ? {} : { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 }, rounds: { max: 4 } } }),
     sandbox: {
       ...(options.diskless ? { capabilities: { docker: true, persistentDisk: false, bootDuration: { maxSeconds: 3600, rotationMarginSeconds: 600 },
         egress: { mediation: 'none' as const, publicTcp: true, udp: false, ipv6: false, privateNetwork: false } },
       async observeCheckout() { calls.push({ kind: 'observe-checkout' }); return { status: 'unavailable' as const, code: 'CHECKOUT_NOT_ON_HOST' }; },
+      async interruptCalls(input) { calls.push({ kind: 'interrupt-calls', detail: input }); yielding?.interrupt(); return { status: 'interrupted' as const, calls: 1 }; },
       async preservationGate(input): Promise<PreservationObservation> {
         calls.push({ kind: 'gate', detail: input });
         if (!guest.head) return { status: 'unavailable', code: 'PRESERVATION_OBSERVATION_FAILED' };
@@ -91,12 +101,13 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       },
       async start(input) {
         calls.push({ kind: 'start', detail: input.checkout ?? null });
+        calls.push({ kind: 'start-reason', detail: input.reason ?? 'start' });
         if (options.diskless && !input.checkout) return { status: 'failure', code: 'CHECKOUT_REQUIRED' };
         return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never,
           ...(options.diskless ? { seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }] } : {}),
           ...(options.diskless && guest.restored && calls.filter(call => call.kind === 'start').length > 1 ? { artifacts: structuredClone(guest.restored) as never } : {}) };
       },
-      async stop() { calls.push({ kind: 'stop' }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
+      async stop(input) { calls.push({ kind: 'stop', detail: input.reason }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
       async observeProposal(input): Promise<ProposalIdentity> {
         const event = captures.get(input.round);
         return { status: 'observed', sha256: event?.status === 'captured' ? event.summary.content!.sha256 : 'x', indexSha256: event?.status === 'captured' ? event.summary.indexSha256 : '',
@@ -144,6 +155,17 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           });
           return { worker: invocation.context.invocationId, started: Promise.resolve(receipt(invocation)), completed, ...(invocation.handoff ? { handoffs: { async next() { await completed; return null; } } } : {}), close() {} };
         }
+        if (script.kind === 'work') {
+          Object.assign(guest, { head: script.head, modified: script.dirty ?? 0 });
+          const completed = new Promise<{ status: 'boot-swap'; receipt: { workId: string; id: string }; session: WorkerSessionRef }>((resolve, reject) => {
+            const yielded = () => { yielding = undefined; resolve({ status: 'boot-swap', receipt: receipt(invocation).receipt, session }); };
+            yielding = { directive: () => { if (script.yields === 'directive') yielded(); }, interrupt: () => { if (script.yields === 'interrupt') yielded(); } };
+            invocation.signal.addEventListener('abort', () => { yielding = undefined; reject(new Error('WORKER_CHANNEL_CLOSED')); }, { once: true });
+          });
+          void completed.catch(() => {});
+          return { worker: invocation.context.invocationId, started: Promise.resolve(receipt(invocation)), completed,
+            ...(invocation.handoff ? { handoffs: { async next() { await completed.catch(() => {}); return null; } } } : {}), close() {} };
+        }
         if (script.kind === 'publish') {
           const started = script.end === 'receipt-lost' ? new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('WORKER_START_RECEIPT_LOST')), 5))
             : Promise.resolve(receipt(invocation));
@@ -190,6 +212,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       async deliver(_worker, directive) {
         calls.push({ kind: `deliver-${directive.kind}` });
         if (directive.kind === 'review-results') { delivered?.(directive); return { status: 'delivered' as const }; }
+        if (directive.kind === 'boot-swap') { yielding?.directive(); return { status: 'delivered' as const }; }
         return { status: directive.kind === 'credential' ? 'delivered' as const : 'withdrawn' as const };
       },
       async observe(input) { calls.push({ kind: 'observe' }); return { session: { state: 'compatible' as const, session: input.session }, limitations: [] }; },

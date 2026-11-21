@@ -52,7 +52,11 @@ const transient = new Set([environmentEndedCode, 'WORKER_EXECUTION_UNCERTAIN', '
   'WORKER_BUDGET_EXHAUSTED',
   // Ticket 59: the owner could not deliver a secret-sync ACK in time or at all (transport, like a lost channel). Every other refused sync
   // (`WORKER_SECRET_SYNC_LIMIT`, replay, schema...) is a Host protocol/limit fact and blocks.
-  'WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND']);
+  'WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND',
+  // v2 ticket 09 (V2-13): a planned swap whose gate accepted and whose old boot ceased, but that could not continue in a new boot (the
+  // session was not preserved, `origin` could not be confirmed as continuous, or the new boot was refused). The work is on `origin`: the
+  // Execution ends and a substitute resumes it through the queue. `NO_PROGRESS_BETWEEN_BOOTS` (V2-14) is NOT here: it blocks.
+  'BOOT_SWAP_SESSION_NOT_PRESERVED', 'BOOT_SWAP_ORIGIN_NOT_CONTINUOUS', 'BOOT_SWAP_START_REFUSED']);
 // Phase prefixes of the dispatch holds (`${phase}_${code}`) that may wrap a transient worker failure.
 const phases = ['ACTIVATE_', 'STARTED_', 'REVIEW_', 'COMPLETED_', 'STOP_'];
 

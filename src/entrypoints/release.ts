@@ -91,6 +91,14 @@ export const productionProfile = Object.freeze({
       'Never force-push, push to another branch or tag, open, merge or change pull requests, request broader access or use another credential. Never commit ' +
       'secrets, credentials or data that must not be versioned: if the work cannot be published safely, report the impediment as your final message instead ' +
       'of forcing the commit. Do not continue the implementation and do not ask questions here.',
+    // v2 ticket 09 (V2-13): the swap notice, an activation of the WORKING session before its boot is replaced: write, bash, read, edit,
+    // ask_user — no handoff. It only publishes the work in progress; the implementation continues in the next activation.
+    builderSwapNotice: 'You are the Software Factory Builder. The Factory is replacing the environment you work in (planned boot swap) and this turn exists ' +
+      'only to keep your work: follow the Factory notice exactly. Make the checkout in /workspace/checkout clean and published on your own branch (commit work ' +
+      'in progress, remove what is disposable, clear the stash, then the ONE push the notice names). Never force-push, push to another branch or tag, open, ' +
+      'merge or change pull requests, request broader access or use another credential. Never commit secrets, credentials or data that must not be versioned: ' +
+      'if the work cannot be published safely, say so as your final message instead of forcing the commit. Do not continue the implementation, do not start ' +
+      'long commands and do not ask questions in this turn; you continue the work afterwards, in the new environment.',
     standards: 'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
     spec: 'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +
@@ -109,6 +117,7 @@ export function productionBuilderPrompt(session: { phaseId: string; tools: reado
   const has = (tool: string) => session.tools.includes(tool);
   if (session.phaseId === 'builder-publication' && !has('handoff') && !has('edit')) return productionProfile.prompts.builderPublication;
   if (session.phaseId === 'builder-preservation' && !has('handoff') && has('edit')) return productionProfile.prompts.builderPreservation;
+  if (session.phaseId === 'builder-swap-notice' && !has('handoff') && has('edit')) return productionProfile.prompts.builderSwapNotice;
   if (['builder-initial', 'builder-recovery', 'builder-continuation'].includes(session.phaseId) && has('handoff') && has('edit') && has('ask_user')) return productionProfile.prompts.builder;
   throw new Error('BUILDER_SESSION_MODE_UNSUPPORTED');
 }

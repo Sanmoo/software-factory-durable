@@ -26,7 +26,10 @@ import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { recordGateCheck, recordGateCorrection } from './preservation.js';
-import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateRefusalLimit, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
+import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice } from './boot-swap.js';
+import { bootSchedule, noProgressCode, swapContinuationPrompt, swapNoticePrompt } from '../rules/boot-rotation.js';
+import { inheritedFindings as findingsOf, inheritedRounds as roundsInherited } from '../rules/review.js';
+import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateRefusalLimit, gateRefusedCode, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
@@ -36,7 +39,7 @@ import { failureCodeAfter } from '../rules/channel-report.js';
 import { recordChannelReport } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
-import type { WorkerQuestion } from '../../workers/index.js';
+import type { WorkerCompletion, WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
 import { fingerprint, queueOrder, repairPreserve, repairSection, repairTriggers, observationDriven, updateTarget } from '../rules/repair.js';
 import { observeRepair, recordRepairRevalidation } from './repair.js';
@@ -840,6 +843,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const diskless = ports.sandbox.capabilities?.persistentDisk === false;
     let environment: EnvironmentRef | undefined;
     let boot: BootRef | undefined;
+    // v2 ticket 09 (V2-12): the clock of the CURRENT boot, from the declared capability only (absent = the sandbox never rotates). It is
+    // not the Execution timeout: that clock keeps running across a swap.
+    const schedule = diskless ? bootSchedule(ports.sandbox.capabilities?.bootDuration) : null;
+    let bootMono = 0;
+    let bootBegin: 'start' | 'planned-swap' = 'start';
+    let bootStartTip: OriginObservation = { state: 'unknown', code: 'ORIGIN_NOT_READ' };
+    let bootClock = new AbortController();
+    /** `working`: the Builder activation doing the work of this Execution, while it runs (the only one a swap is asked of). */
+    const rotation: { due: boolean; requested: boolean; interrupted: boolean; working: { worker: string; invocationId: string } | null } = { due: false, requested: false, interrupted: false, working: null };
     // A Question recorded by THIS Execution whose activation then failed or became uncertain: explicit impediment, never a silent wait.
     const questionUncertain = async () => {
       for (const id of (await readWork(session, work.work_id))?.questions ?? []) {
@@ -887,7 +899,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Ticket 25: `cancelled` — the operator cancelled the Work (its credentials were withdrawn first). The first reason is kept.
     // v2 ticket 10 (V2-15): `environment-ended` — the sandbox confirmed that the environment of the own boot ended on its own.
     const interruption: { reason: 'timeout' | 'delivered' | 'cancelled' | 'environment-ended' } = { reason: 'timeout' };
-    const environmentWatch = new AbortController();
+    let environmentWatch = new AbortController();
     let environmentEnd: { reason: string | null; terminatedAt: string | null } | null = null;
     interrupts.set(work.work_id, reason => { if (!interrupt.signal.aborted) interruption.reason = reason; interrupt.abort(); });
     const activitySignal = AbortSignal.any([stopping.signal, interrupt.signal]);
@@ -1043,7 +1055,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           await wait(corrector.started);
           await activity('preservation-correction-started');
           const result = await wait(lifecycle!.renewWhile(corrector.completed));
-          await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status, code: result.status === 'failure' ? result.code : null });
+          await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status === 'boot-swap' ? 'failure' : result.status, code: result.status === 'failure' ? result.code : null });
         } finally { corrector.close(); }
       }
       const blocked = gateHold({ occasion, refusal: refusal! });
@@ -1058,7 +1070,75 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (report) await recordChannelReport(session, work.work_id, executionId, boot, report).catch(() => {});
       return report;
     };
-    const stopOwnBoot = async (reason: string) => environment && boot ? (await channelReport(), ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' }))) : undefined;
+    /**
+     * v2 ticket 09 (V2-13): the working Builder is told that the swap is due. Nothing is interrupted: its Host lets the call in flight
+     * return and then ends the activation `boot-swap` with the session preserved. A delivery that fails changes nothing here: the boot
+     * clock goes on to the interruption and, at the end of the boot, to the loss path.
+     */
+    const requestYield = async () => {
+      if (!rotation.due || rotation.requested || !rotation.working) return;
+      rotation.requested = true;
+      const delivered = await ports.workers.deliver(rotation.working.worker, { kind: 'boot-swap' }).catch(() => ({ status: 'failure' as const, code: 'DELIVERY_UNCONFIRMED' }));
+      observe(work.work_id, 'boot-swap-requested', [delivered.status === 'failure' ? delivered.code : delivered.status]);
+    };
+    const setWorking = (working: typeof rotation.working) => { rotation.working = working; rotation.requested = false; if (working) void requestYield().catch(() => {}); };
+    /**
+     * The clock of one boot, started when its start was requested: at the margin the swap becomes due; with half the margin left a call
+     * that has not returned is interrupted by the sandbox; at the maximum duration the boot is over and whatever the gate did not accept
+     * is lost (the loss path of the environment that ended, V2-13).
+     */
+    const armBootClock = () => {
+      bootClock.abort();
+      bootClock = new AbortController();
+      Object.assign(rotation, { due: false, requested: false, interrupted: false });
+      if (!schedule) return;
+      const signal = AbortSignal.any([bootClock.signal, stopping.signal, interrupt.signal]);
+      const origin = bootMono;
+      const until = async (offset: number) => { for (let left = offset - (clock.monotonic() - origin); left > 0 && !signal.aborted; left = offset - (clock.monotonic() - origin)) await clock.sleep(left, signal); };
+      void (async () => {
+        await until(schedule.marginAtMs);
+        if (signal.aborted) return;
+        rotation.due = true;
+        await requestYield();
+        await until(schedule.interruptAtMs);
+        if (signal.aborted) return;
+        if (rotation.working && environment && boot && ports.sandbox.interruptCalls) {
+          rotation.interrupted = true;
+          const result = await ports.sandbox.interruptCalls({ environment, boot, invocationId: rotation.working.invocationId }).catch(() => ({ status: 'unavailable' as const, code: 'INTERRUPTION_FAILED' }));
+          observe(work.work_id, 'boot-swap-call-interrupted', [result.status === 'interrupted' ? String(result.calls) : result.code]);
+        }
+        await until(schedule.endAtMs);
+        if (signal.aborted) return;
+        environmentEnd = { reason: 'BOOT_DURATION_REACHED', terminatedAt: null };
+        interruption.reason = 'environment-ended';
+        interrupt.abort();
+      })().catch(() => {});
+    };
+    // v2 ticket 10 (V2-15): the sandbox watches the environment (Control keeps no watchdog over silent work). Its confirmed cessation
+    // interrupts the whole activity scope of this Execution: Builder, reviewers and the publication activation. One watch per boot.
+    const watchEnvironment = () => {
+      environmentWatch.abort();
+      const watch = environmentWatch = new AbortController();
+      if (!environment || !boot || !ports.sandbox.capabilities?.environmentWatch || !ports.sandbox.awaitEnvironmentEnd) return;
+      void ports.sandbox.awaitEnvironmentEnd({ environment, boot, signal: AbortSignal.any([watch.signal, stopping.signal]) }).then(observed => {
+        if (!observed || watch.signal.aborted || interrupt.signal.aborted) return;
+        environmentEnd = observed;
+        interruption.reason = 'environment-ended';
+        interrupt.abort();
+      }, () => {});
+    };
+    /**
+     * v2 ticket 09 (V2-14): one ended boot of this Work enters its ledger; the limit against loops is decided in that same commit. `loss`
+     * reads the Work branch tip on `origin` itself (Control's own read); an ordinary end is never counted, so nothing is read for it.
+     */
+    const noteBootEnd = async (end: 'loss' | 'end') => {
+      if (!diskless || !boot) return;
+      const endTip: OriginObservation = end === 'end' ? { state: 'unknown', code: 'ORIGIN_NOT_READ' }
+        : await readOrigin(work, execution.request.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_READ_FAILED' }));
+      if (end === 'loss') await endSwap(session, work.work_id, executionId, { status: 'lost', code: environmentEndedCode }).catch(() => {});
+      await recordBootEnd(session, work.work_id, { boot, executionId, begin: bootBegin, end, startTip: bootStartTip, endTip, at: new Date().toISOString() }, execution.request.branch).catch(() => {});
+    };
+    const stopOwnBoot = async (reason: string) => { bootClock.abort(); return environment && boot ? (await channelReport(), ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' }))) : undefined; };
     try {
       checkStop();
       // Ticket 50: an operator remedy accepted with a retry (recreate the divergent artifact seeds) is applied by THIS preparation only.
@@ -1148,20 +1228,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const pass = passes.get(work.work_id);
       // Ticket 47: the operator's disk remedy (repair/replace of a preserved disk that failed its check) is applied by THIS boot only.
       const diskRemedy = remedy && isDiskRemedy(remedy.remedy) ? remedy.remedy : null;
+      bootMono = clock.monotonic();
+      if (originAtStart) bootStartTip = originAtStart;
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}), ...(diskRemedy ? { diskRemedy } : {}),
         ...(clone ? { checkout: clone } : {}) });
       if (started.status !== 'success') { await refused('start', started); return; }
       boot = started.boot;
-      // v2 ticket 10 (V2-15): the sandbox watches the environment (Control keeps no timer and no watchdog of its own). Its confirmed
-      // cessation interrupts the whole activity scope of this Execution: Builder, reviewers and the publication activation.
-      if (ports.sandbox.capabilities?.environmentWatch && ports.sandbox.awaitEnvironmentEnd) {
-        void ports.sandbox.awaitEnvironmentEnd({ environment, boot, signal: AbortSignal.any([environmentWatch.signal, stopping.signal]) }).then(observed => {
-          if (!observed || environmentWatch.signal.aborted || interrupt.signal.aborted) return;
-          environmentEnd = observed;
-          interruption.reason = 'environment-ended';
-          interrupt.abort();
-        }, () => {});
-      }
+      watchEnvironment();
+      // v2 ticket 09 (V2-12): the boot's own clock starts with it.
+      armBootClock();
       // v2 ticket 06: a boot without a persistent disk starts empty; the skill pack is the one written into THIS boot.
       const bootPack = started.seeds?.find(seed => seed.name.startsWith('factory/skill-pack/'));
       if (!pack && bootPack) pack = bootPack;
@@ -1252,7 +1327,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Ticket 13: round numbers continue the earlier Executions of this Work (their /artifacts/review/r<N> directories are preserved; without a
       // persistent disk they are not sent back to a new boot, decision 3D, and the numbering still never reuses a round).
       const earlier = [...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])];
-      const firstRound = 1 + Math.max(0, ...earlier.flatMap(item => item.review?.rounds ?? []).map(item => item.round));
+      let firstRound = 1 + Math.max(0, ...earlier.flatMap(item => item.review?.rounds ?? []).map(item => item.round));
       // Real run R-CAND v2: a continuation after a Question may treat the findings its predecessor delivered (its session holds them); its handoff
       // must know them (otherwise HANDOFF_TREATMENT_UNKNOWN_FINDING refuses every treatment of the earlier round).
       const delivered = inheritedFindings(inheritedRounds(execution, earlier));
@@ -1279,23 +1354,160 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         if (!diskless) void lifecycle!.withdraw('external-wait', { notifyWorker: true }).catch(() => {});
         return { status: 'recorded' as const };
       };
-      const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : execution.request.reconciliation && resume?.reason !== 'QUESTION_ANSWERED' ? 'builder-reconciliation'
-          : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
-        prompt, signal: activitySignal, ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder),
+      // The Host policies of the Builder activation that does the work, and of the one that continues it after a planned swap.
+      const builderPolicies = { ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder),
         // Ticket 48: the repository's Builder budget adjustment recorded with this Execution's policies.
         ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
         // Ticket 21 review: the exact leased push Control derived; any other push form is refused by the Builder Host.
         ...(execution.request.publication ? { pushPolicy: { branch: execution.request.publication.branch, head: execution.request.publication.head, remote: publicationRemote(work.repository.repository),
-          expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}),
-        // Publish-only (review HIGH 1): no handoff for a publication activation; its Builder can never open a review round.
-        // Ticket 22: a repair that updates the branch onto the current base is reviewed against THAT base tip (never the stale prepared base).
-        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max, ...(delivered.length ? { delivered } : {}) } } : {}),
-          // Ticket 21: every capture of a reconciliation Execution checks that the authorized remote tip is still an ancestor of HEAD.
-          ...(execution.request.reconciliation ? { preserve: execution.request.reconciliation.authorizedRemote }
-            // Ticket 22: a repair over human commits — every capture proves the latest incorporated tip is still an ancestor of HEAD.
-            : repairPreserve(execution.request.repair) ? { preserve: repairPreserve(execution.request.repair)! } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
+          expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}) };
+      // Publish-only (review HIGH 1): no handoff for a publication activation; its Builder can never open a review round.
+      // Ticket 22: a repair that updates the branch onto the current base is reviewed against THAT base tip (never the stale prepared base).
+      const handoffPolicy = (first: number, findings: typeof delivered) => ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first, max: ports.reviews.rounds.max, ...(findings.length ? { delivered: findings } : {}) } } : {}),
+        // Ticket 21: every capture of a reconciliation Execution checks that the authorized remote tip is still an ancestor of HEAD.
+        ...(execution.request.reconciliation ? { preserve: execution.request.reconciliation.authorizedRemote }
+          // Ticket 22: a repair over human commits — every capture proves the latest incorporated tip is still an ancestor of HEAD.
+          : repairPreserve(execution.request.repair) ? { preserve: repairPreserve(execution.request.repair)! } : {}) } } : {};
+      let handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
+        environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : execution.request.reconciliation && resume?.reason !== 'QUESTION_ANSWERED' ? 'builder-reconciliation'
+          : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
+        prompt, signal: activitySignal, ...builderPolicies, ...handoffPolicy(firstRound, delivered), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
+      /**
+       * v2 ticket 09 (V2-10, V2-13, V2-14): the planned swap of this Execution's boot. The working session yielded; the swap notice is its
+       * OWN activation of that same session, in the boot that is about to end (publish the work in progress); the preservation gate must
+       * accept; the cessation of the old boot must be confirmed; ONLY THEN is the new boot started (never two boots of one Work), at the
+       * tip of the Work branch on `origin`, and the same session continues in it after the fixed new-boot notice. Work, Execution, Slot,
+       * timeout clock and budget charge are untouched; nothing is admitted and no operational recovery is consumed.
+       */
+      const plannedSwap = async (yielded: Extract<WorkerCompletion, { status: 'boot-swap' }>): Promise<{ kind: 'return' } | { kind: 'continued'; handle: Handle; firstRound: number }> => {
+        const oldBoot = boot!, own = environment!;
+        const branch = execution.request.branch;
+        const remote = publicationRemote(work.repository.repository);
+        const callInterrupted = rotation.interrupted;
+        if (await beginSwap(session, work.work_id, executionId, { fromBoot: oldBoot, yieldedInvocationId: execution.invocationId, interrupted: callInterrupted }) === 'stale') { observe(work.work_id, 'stale'); return { kind: 'return' }; }
+        await activity('boot-swap-due');
+        observe(work.work_id, 'boot-swap-due', callInterrupted ? ['CALL_INTERRUPTED'] : []);
+        let continued = yielded.session ?? null;
+        // The swap notice goes to the session that is doing the work (continued, in the old boot). Without its preserved session the
+        // gate still decides, and its refusals go to the preservation session of ticket 07.
+        if (continued) {
+          const invocationId = randomUUID();
+          const credential = lifecycle?.current;
+          const fresh = await readWork(session, work.work_id);
+          const prompt = swapNoticePrompt({ branch, push: gateCorrectionPush(branch, remote), secondsLeft: Math.max(0, (schedule!.endAtMs - (clock.monotonic() - bootMono)) / 1000), interrupted: callInterrupted,
+            pullRequest: Boolean(fresh?.pullRequest || fresh?.publication?.pullRequest || fresh?.execution?.inBootPublication) });
+          if (!credential) await recordSwapNotice(session, work.work_id, executionId, { invocationId, status: 'not-started', code: 'CREDENTIALS_WITHDRAWN' });
+          // The invocation is recorded BEFORE the launch: an activation of this Execution is never unknown to the authority.
+          else if (await recordSwapNotice(session, work.work_id, executionId, { invocationId }) === 'stale') { observe(work.work_id, 'stale'); return { kind: 'return' }; }
+          else {
+            checkStop();
+            let notifier: Handle | null = null;
+            try {
+              notifier = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: own, bootRef: oldBoot, phaseId: 'builder-swap-notice' },
+                prompt, signal: activitySignal, ...ports.builder,
+                ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
+                pushPolicy: { branch, head: checkout.baseCommit, expected: null, remote, wip: true }, continuation: { session: continued } }, { credential: credential.delivery });
+            } catch (error) {
+              if (interrupted() || stopping.signal.aborted) throw error;
+              await recordSwapNotice(session, work.work_id, executionId, { invocationId, status: 'not-started', code: codeOf(error, 'SWAP_NOTICE_ACTIVATION_FAILED') });
+            }
+            if (notifier) {
+              await lifecycle!.attach(notifier.worker);
+              try {
+                await wait(notifier.started);
+                await activity('boot-swap-notice-started');
+                const result = await wait(lifecycle!.renewWhile(notifier.completed));
+                await recordSwapNotice(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status === 'question' ? 'question' : 'failure',
+                  code: result.status === 'failure' ? result.code : result.status === 'boot-swap' ? 'SWAP_NOTICE_YIELDED' : null });
+                // The notice is part of the session from here on; a notice that failed leaves the session as the work left it.
+                if (result.status !== 'failure' && result.session) continued = result.session;
+              } finally { notifier.close(); }
+            }
+          }
+        }
+        const gate = await preservationGate('planned-swap');
+        const preserved = gate === 'accepted' ? (await readWork(session, work.work_id))?.preservation ?? null : null;
+        if (!preserved) {
+          await endSwap(session, work.work_id, executionId, { status: 'held', code: gate === 'held' ? gateRefusedCode : 'PRESERVATION_NOT_RECORDED' }).catch(() => {});
+          return { kind: 'return' };
+        }
+        // Cessation confirmed BEFORE anything else starts: never two boots of one Work at the same time.
+        environmentWatch.abort();
+        const stop = await lifecycle!.renewWhile(stopOwnBoot('planned-swap'));
+        if (!stop?.cessationConfirmed) {
+          await endSwap(session, work.work_id, executionId, { status: 'held', code: 'BOOT_SWAP_CESSATION_UNCONFIRMED' }).catch(() => {});
+          await hold('BOOT_SWAP_CESSATION_UNCONFIRMED', 'The preservation gate accepted, but the cessation of the boot being replaced is not confirmed: no new boot was started ' +
+            '(never two boots of one Work at once). The Slot is kept; the next controller boot reconciles it (ticket 26).');
+          return { kind: 'return' };
+        }
+        // The Execution ends here instead of continuing: its old boot ceased, so the Slot is released at once.
+        const endWithoutBoot = async (status: 'blocked' | 'failed', code: string, detail = code) => {
+          timerStop.abort();
+          await endSwap(session, work.work_id, executionId, { status, code: detail }).catch(() => {});
+          await recordEnd(session, work.work_id, executionId, 'failure', code, null, elapsed(), continued);
+          endCode = code;
+          await lifecycle!.withdraw('ended', { notifyWorker: false });
+          await releaseAfterCessation(session, work.work_id, executionId, 'confirmed');
+          observe(work.work_id, `boot-swap-${status}`, [detail]);
+          return { kind: 'return' as const };
+        };
+        // V2-14: two boots in a row that published nothing block the Work instead of a third boot (decided in the ledger's commit).
+        const ended = await recordBootEnd(session, work.work_id, { boot: oldBoot, executionId, begin: bootBegin, end: 'planned-swap', startTip: bootStartTip,
+          endTip: { state: 'present', sha: preserved.commit }, at: new Date().toISOString() }, branch);
+        if (ended !== 'stale' && ended.outcome === 'blocked') return endWithoutBoot('blocked', noProgressCode);
+        // Without the preserved session there is nothing to continue: the work is on origin, and a substitute resumes it through the queue.
+        if (!continued) return endWithoutBoot('failed', 'BOOT_SWAP_SESSION_NOT_PRESERVED');
+        // V2-11: continuity is a fact of `origin`; the new boot starts at the tip (the confirmed commit, or whatever descends from it).
+        const origin = await readOrigin(work, branch, preserved.commit);
+        const read = origin.kind === 'observed' ? originContinuity({ preserved, branch, origin: origin.branch, comparison: origin.comparison }) : { outcome: 'unknown' as const, code: origin.code };
+        // Not continuous (or unread): the next Execution's own read of origin decides it (ticket 08), as after any interruption.
+        if (origin.kind !== 'observed' || read.outcome !== 'continuous') return endWithoutBoot('failed', 'BOOT_SWAP_ORIGIN_NOT_CONTINUOUS', `BOOT_SWAP_ORIGIN_NOT_CONTINUOUS:${read.outcome === 'continuous' ? 'UNREAD' : 'code' in read ? read.code : read.outcome}`);
+        checkStop();
+        bootMono = clock.monotonic();
+        const next = await lifecycle!.renewWhile(ports.sandbox.start({ environment: own, configuration: ports.configuration, ...(pass ? { pass } : {}),
+          checkout: { repository: work.repository.repository, installationId: configured.installationId, commit: read.startCommit, branch }, reason: 'planned-swap' }));
+        // A definitive refusal started nothing: the Execution ends and comes back through the queue. An indeterminate one may have.
+        if (next.status === 'failure') return endWithoutBoot('failed', 'BOOT_SWAP_START_REFUSED', `BOOT_SWAP_START_REFUSED:${next.code}`);
+        if (next.status !== 'success') {
+          await endSwap(session, work.work_id, executionId, { status: 'held', code: `BOOT_SWAP_START_${next.code}` }).catch(() => {});
+          await hold(`BOOT_SWAP_START_${next.code}`, 'The boot that replaces the swapped one did not become operational and its state is not known; no automatic retry. Observe/stop the environment explicitly.', false, next.detail);
+          return { kind: 'return' };
+        }
+        boot = next.boot;
+        bootBegin = 'planned-swap';
+        bootStartTip = origin.branch;
+        watchEnvironment();
+        armBootClock();
+        const abandon = async () => { observe(work.work_id, 'stale'); await stopOwnBoot('boot swap abandoned'); return { kind: 'return' as const }; };
+        if (await completeSwap(session, work.work_id, executionId, { fromBoot: oldBoot, toBoot: next.boot, commit: preserved.commit }) === 'stale') return abandon();
+        // Interrupted while the boot started (timeout, cancellation, delivery): the ordinary interruption stops this new boot.
+        if (interrupted()) throw new Error('EXECUTION_TIMEOUT');
+        // V2-11: the same session continues, starting with the fixed notice of the new boot (it is the first activation it sees there).
+        const due = bootNoticeDue({ lastSeen: oldBoot, boot: next.boot });
+        const artifacts = { restored: [...(next.artifacts?.restored ?? [])], lost: (next.artifacts?.lost.length ?? 0) > 0 };
+        const notice = newBootNotice({ branch, checkout: checkout.path, startCommit: read.startCommit, confirmed: read.confirmed, commits: read.commits, truncated: read.truncated, artifacts });
+        const prompt = `${due ? `${notice}\n\n` : ''}${swapContinuationPrompt({ interrupted: callInterrupted })}`;
+        // Review rounds go on after the ones this Execution already used; the session holds the findings delivered so far.
+        const shown = (await readWork(session, work.work_id))?.execution;
+        const first = 1 + Math.max(0, ...[...earlier, ...(shown ? [shown] : [])].flatMap(item => item.review?.rounds ?? []).map(item => item.round));
+        const findings = findingsOf([...roundsInherited(execution, earlier), ...(shown?.review?.rounds ?? []).filter(round => (round.kind ?? 'review') === 'review' && round.delivery?.outcome === 'delivered')]);
+        const credential = lifecycle?.current;
+        if (!credential) throw new Error('CREDENTIALS_WITHDRAWN');
+        const invocationId = randomUUID();
+        if (await recordSwapContinuation(session, work.work_id, executionId, { boot: next.boot, invocationId, bootNotice: due ? { boot: next.boot, previousBoot: oldBoot, startCommit: read.startCommit,
+          confirmed: read.confirmed, commits: read.commits.length, restored: artifacts.restored, lost: artifacts.lost } : null }) === 'stale') return abandon();
+        // The Builder invocation of this Execution is now the one that continues the session (Questions and receipts are correlated with it).
+        execution.invocationId = invocationId;
+        checkStop();
+        const successor = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: own, bootRef: next.boot, phaseId: 'builder-continuation' },
+          prompt, signal: activitySignal, ...builderPolicies, ...handoffPolicy(first, findings), continuation: { session: continued } }, { credential: credential.delivery }, { question: onQuestion });
+        await lifecycle!.attach(successor.worker);
+        try { await wait(successor.started); } catch (error) { successor.close(); throw error; }
+        await activity('boot-swap-continued');
+        observe(work.work_id, 'boot-swapped', [next.boot]);
+        return { kind: 'continued', handle: successor, firstRound: first };
+      };
       activated = true;
       await lifecycle.attach(handle.worker);
       try {
@@ -1311,36 +1523,53 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         startedAt.set(executionId, startMark);
         armTimeout(execution.timing?.timeoutSeconds ?? null);
         observe(work.work_id, 'started');
-        if (ports.reviews && handle.handoffs) {
-          phase = 'review';
-          const handoffs = handle.handoffs;
-          // The grant keeps its time-based renewal while the Builder is suspended for review (tools stay refused by its Host);
-          // reviewers never receive it.
-          const reviewed = reviewTask = (async () => {
-            for (let event = await wait(handoffs.next()); event; event = await wait(handoffs.next())) {
-              if (!await reviewRound(work, execution, environment, boot, handle, event, hold, { wait, signal: activitySignal, interrupted, activity }, firstRound)) return false;
+        // v2 ticket 09 (V2-10, V2-13): the Builder activation that does the work, once per boot of this Execution. On a sandbox that
+        // declares a boot duration it may end `boot-swap` (it yielded at a call boundary): the swap then continues the SAME session in a
+        // new boot and the loop goes round. Everywhere else it runs exactly once.
+        let completed: Exclude<WorkerCompletion, { status: 'boot-swap' }>;
+        for (;;) {
+          setWorking({ worker: handle.worker, invocationId: execution.invocationId });
+          if (ports.reviews && handle.handoffs) {
+            phase = 'review';
+            const handoffs = handle.handoffs, working = handle, first = firstRound;
+            // The grant keeps its time-based renewal while the Builder is suspended for review (tools stay refused by its Host);
+            // reviewers never receive it.
+            const reviewed = reviewTask = (async () => {
+              for (let event = await wait(handoffs.next()); event; event = await wait(handoffs.next())) {
+                if (!await reviewRound(work, execution, environment, boot, working, event, hold, { wait, signal: activitySignal, interrupted, activity }, first)) return false;
+              }
+              return true;
+            })();
+            if (!await wait(lifecycle.renewWhile(reviewed))) {
+              // Ticket 51: REVIEWER_RETRY_LIMIT waits for an operator decision (new review round or cancel) with nothing running: the own boot
+              // (suspended Builder) is stopped now and the Execution settled like an interruption, so its Slot is released and it never
+              // stays held. Unconfirmed cessation keeps it held (RECOVERY_CESSATION_UNCONFIRMED) for the next boot, as usual.
+              const shown = await readWork(session, work.work_id);
+              if (shown?.execution?.executionId === executionId && shown.execution.state === 'held' && shown.execution.held?.code === reviewerRetryLimitCode) {
+                timerStop.abort();
+                const stop = await stopOwnBoot('reviewer retry limit: waiting for the operator decision');
+                const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'review-retry-limit',
+                  { result: stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', basis: stop?.cessationConfirmed ? 'sandbox-stop' : `sandbox-stop:${stop && 'code' in stop ? stop.code : 'UNCONFIRMED'}`,
+                    environment, boot }).catch(() => ({ decision: 'stale' as const }));
+                observe(work.work_id, 'review-retry-limit-settled', [String(decision)]);
+              }
+              return;
             }
-            return true;
-          })();
-          if (!await wait(lifecycle.renewWhile(reviewed))) {
-            // Ticket 51: REVIEWER_RETRY_LIMIT waits for an operator decision (new review round or cancel) with nothing running: the own boot
-            // (suspended Builder) is stopped now and the Execution settled like an interruption, so its Slot is released and it never
-            // stays held. Unconfirmed cessation keeps it held (RECOVERY_CESSATION_UNCONFIRMED) for the next boot, as usual.
-            const shown = await readWork(session, work.work_id);
-            if (shown?.execution?.executionId === executionId && shown.execution.state === 'held' && shown.execution.held?.code === reviewerRetryLimitCode) {
-              timerStop.abort();
-              const stop = await stopOwnBoot('reviewer retry limit: waiting for the operator decision');
-              const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'review-retry-limit',
-                { result: stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', basis: stop?.cessationConfirmed ? 'sandbox-stop' : `sandbox-stop:${stop && 'code' in stop ? stop.code : 'UNCONFIRMED'}`,
-                  environment, boot }).catch(() => ({ decision: 'stale' as const }));
-              observe(work.work_id, 'review-retry-limit-settled', [String(decision)]);
-            }
-            return;
           }
+          phase = 'completed';
+          // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
+          const outcome: WorkerCompletion = await wait(lifecycle.renewWhile(handle.completed));
+          setWorking(null);
+          if (outcome.status !== 'boot-swap') { completed = outcome; break; }
+          // A sandbox that declares no boot duration never asked for a swap.
+          if (!schedule) { completed = { status: 'failure', code: 'BOOT_SWAP_NOT_REQUESTED' }; break; }
+          phase = 'swap';
+          const swapped = await plannedSwap(outcome);
+          if (swapped.kind === 'return') return;
+          handle.close();
+          handle = swapped.handle;
+          firstRound = swapped.firstRound;
         }
-        phase = 'completed';
-        // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
-        const completed = await wait(lifecycle.renewWhile(handle.completed));
         // The activity ended: its clock stops (also before an external wait). v2 ticket 06: an Execution that publishes in this boot keeps its
         // clock until the publication activation ended too (stopped by the `finally` below).
         // v2 ticket 07: so does one that returns control on a sandbox without a persistent disk, until its preservation gate ended.
@@ -1415,6 +1644,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'stop';
       // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
       const stop = await stopOwnBoot('builder execution ended');
+      // v2 ticket 09 (V2-14): an ordinary end is a boot of the Work too; it breaks a sequence of boots without progress.
+      if (stop?.cessationConfirmed) await noteBootEnd('end');
       // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
       const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? diskless ? {
         // v2 ticket 06 (decision 2a): the boot left nothing on the host; progress is the Work branch tip on `origin` having advanced.
@@ -1458,6 +1689,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await reviewTask?.catch(() => {});
         await lifecycle?.withdraw('ended', { notifyWorker: false }).catch(() => {});
         if (boot && observed) await recordEnvironmentEnd(session, work.work_id, executionId, boot, observed).catch(() => {});
+        // v2 ticket 09 (V2-13, V2-14): a swap that was open when the boot ended is a loss, and the lost boot enters the Work's ledger.
+        await noteBootEnd('loss');
         const ended = await recordEnd(session, work.work_id, executionId, 'failure', environmentEndedCode, null, elapsed()).catch(() => ({ kind: 'stale' as const }));
         await questionUncertain().catch(() => {});
         const stop = await stopOwnBoot('environment ended');
@@ -1521,7 +1754,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await hold(`${phase.toUpperCase()}_${code}`, proven
         ? 'No worker was launched; the reservation was released without consumption. Never retried automatically.'
         : 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).', proven).catch(() => {});
-    } finally { timerStop.abort(); environmentWatch.abort(); lifecycles.delete(work.work_id); interrupts.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
+    } finally { timerStop.abort(); environmentWatch.abort(); bootClock.abort(); lifecycles.delete(work.work_id); interrupts.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 
   /**

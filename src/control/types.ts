@@ -156,8 +156,9 @@ export type ExecutionPorts = {
     /** `checkout` (v2 ticket 06): given ONLY when the sandbox declares no persistent disk and `prepare` returned no checkout: the boot clones
      * this commit of `origin` inside the guest, on the Work branch. Control names the commit from its own read of `origin`. The successful
      * result then also carries `seeds` (Factory material written into the guest of this boot). */
+    /** `reason` (v2 ticket 09, V2-10): `planned-swap` when this boot replaces another boot of the same Execution; absent = `start`. */
     start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: 'repair-disk' | 'replace-disk';
-      checkout?: { repository: string; installationId: number; commit: string; branch: string } }): Promise<StartResult>;
+      checkout?: { repository: string; installationId: number; commit: string; branch: string }; reason?: 'start' | 'planned-swap' }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
     /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
     observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;
@@ -188,6 +189,12 @@ export type ExecutionPorts = {
      * sandbox observes is its own business: Control never learns an interval and keeps no watchdog over silent work.
      */
     awaitEnvironmentEnd?(input: { environment: EnvironmentRef; boot: BootRef; signal: AbortSignal }): Promise<{ reason: string | null; terminatedAt: string | null } | null>;
+    /**
+     * v2 ticket 09 (V2-13): half the rotation margin is left and the call of this invocation has not returned: the sandbox interrupts
+     * it (the call then answers as one whose result is not known). Asked only of a sandbox that declares a boot duration. Absent or
+     * `unavailable` = nothing is interrupted, and the boot ends with whatever the gate did not accept (the loss path).
+     */
+    interruptCalls?(input: { environment: EnvironmentRef; boot: BootRef; invocationId: string }): Promise<{ status: 'interrupted'; calls: number } | { status: 'unavailable'; code: string }>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -397,7 +404,26 @@ export type ExecutionView = {
    * Control then ended the activation (`end.code` = `SANDBOX_ENVIRONMENT_ENDED`). `reason` is what the sandbox reported, as given.
    */
   environmentEnd?: { at: string; boot: string; reason: string | null; terminatedAt: string | null };
+  /**
+   * v2 ticket 09 (V2-10, V2-13): the planned boot swaps of THIS Execution, in order. A swap keeps the Work, the Execution, the Slot, the
+   * timeout clock and the Builder session; only `dispatch.boot` changes (and `invocationId`, the Builder activation that continues the
+   * session in the new boot). It never consumes an operational recovery.
+   */
+  swaps?: BootSwapRecord[];
 };
+export type BootSwapRecord = { fromBoot: string; dueAt: string;
+  /** The Builder activation that yielded for this swap (the working session). */ yieldedInvocationId: string;
+  /** Half the margin was reached before the call in flight returned: the sandbox was asked to interrupt it. */ interrupted: boolean;
+  /** The swap notice: its own activation of the SAME session in the old boot, recorded before its launch, and how it ended. */
+  notice?: { invocationId: string; status?: 'completed' | 'failure' | 'question' | 'not-started'; code?: string | null };
+  /** The Builder activation that continues the session in the new boot, recorded before its launch. */
+  continuation?: { invocationId: string };
+  /**
+   * `swapped`: gate accepted at `commit`, cessation of `fromBoot` confirmed, `toBoot` started. `lost`: the old boot ended before the gate
+   * accepted (the loss path). `blocked`: V2-14. `held`: the gate or the cessation left the Execution held. `failed`: the new boot could
+   * not be started or continued (`code`).
+   */
+  outcome?: { at: string; status: 'swapped' | 'lost' | 'blocked' | 'held' | 'failed'; code: string | null; commit?: string; toBoot?: string } };
 /** v2 ticket 06: the Work branch tip on `origin` from Control's own read, or why it is not known. */
 /** v2 ticket 07 (V2-05): where the gate applies. `question`: a Question to the human; `ci-wait`: the Execution completed and the waits on
  * GitHub follow (CI, readiness); `planned-swap` (ticket 09) and `substitute-end` (ticket 13) call the same gate. */
@@ -409,6 +435,13 @@ export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'su
  */
 export type PreservationView = { commit: string; branch: string; confirmedAt: string; executionId: string; boot: string; occasion: PreservationOccasion; heads: string[] };
 export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
+/**
+ * v2 ticket 09 (V2-10, V2-14): one ended boot of a Work on a sandbox without a persistent disk, as Control recorded it: why it began and
+ * ended, and the Work branch tip on `origin` (Control's own reads) when it started and when it ended. `end`: `planned-swap`, `loss`, or
+ * `end` for every ordinary return of control.
+ */
+export type BootLedgerEntry = { boot: string; executionId: string; begin: 'start' | 'planned-swap'; end: 'planned-swap' | 'loss' | 'end';
+  startTip: OriginObservation; endTip: OriginObservation; at: string };
 /** `commits`: how many commits the notice named as new since `confirmed` (the gate-confirmed commit; null = none was ever confirmed). */
 export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean };
 /** One indeterminate effect as Control keeps it: the sandbox's report plus the boot it ran in and when Control recorded it. */
@@ -841,6 +874,9 @@ export type WorkView = {
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
   /** v2 ticket 07: absent until a preservation gate accepted (only on a sandbox without a persistent disk). */
   preservation?: PreservationView;
+  /** v2 ticket 09 (V2-14): the ended boots of this Work, oldest first and bounded, across its Executions (only on a sandbox without a
+   * persistent disk). Two consecutive ones ended by a swap or a loss without a new commit on `origin` block the next boot. */
+  bootLedger?: BootLedgerEntry[];
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
@@ -878,7 +914,8 @@ export type WorkView = {
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
-      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused';
+      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' |
+      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
