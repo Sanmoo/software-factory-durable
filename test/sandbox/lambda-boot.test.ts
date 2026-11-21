@@ -114,7 +114,7 @@ test('a commit that origin does not have, a failed run hook and a refused RunMic
   fake.account.runHookFails = false;
   fake.account.runRefusal = { kind: 'capacity', detail: 'InsufficientCapacityException' };
   const refused = await start();
-  assert.deepEqual([refused.status, refused.status !== 'success' && refused.code], ['failure', 'MICROVM_CAPACITY_REFUSED']);
+  assert.deepEqual([refused.status, refused.status !== 'success' && refused.code], ['failure', 'SERVICE_CAPACITY_REFUSED']);
   assert.equal(fake.account.microvms.length, 2);
   // An answer that does not say whether a MicroVM was created is not a failure: the boot stays unconfirmed.
   fake.account.runRefusal = { kind: 'unknown', detail: 'Unreadable answer' };

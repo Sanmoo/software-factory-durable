@@ -222,3 +222,4 @@ export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits,
 // v2 ticket 01 (V2-03/V2-04): the capabilities a sandbox adapter declares; Control reads these, never the adapter or its service.
 export { declaresCapability, sandboxCapabilityNames, type SandboxCapabilities, type SandboxCapabilityName } from './sandbox-capabilities.js';
 export { effectDescriptionLimit, type ChannelDropOutcome, type ChannelReport, type IndeterminateEffect } from './channel-report.js';
+export type { BootUsage, BootUsageReport, EnvironmentBuildReport, EnvironmentBuilds } from './boot-usage.js';

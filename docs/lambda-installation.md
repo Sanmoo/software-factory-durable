@@ -170,3 +170,60 @@ Trabalhos sob ele (o `doctor` mostra `sandbox-adapter` bloqueado).
   de início (início ou troca planejada) e de fim (troca planejada, perda ou fim), tamanho, início e
   fim. A evidência do guest é a que o host leu pelo canal (`evidence/`); o que não foi lido antes
   de uma morte consta como perdido.
+
+## 7. Consumo e custo
+
+A Factory mede **MicroVM-segundos** e não calcula valor em dinheiro: não há preço, estimativa nem
+teto em dólares em lugar nenhum. Os limites de um Trabalho continuam sendo as retomadas
+operacionais, o timeout por Execução e a duração máxima do boot.
+
+- **Por boot:** `boot.json` guarda também os segundos, que são o `terminatedAt` menos o `startedAt`
+  informados pelo serviço (`GetMicrovm`), nunca o relógio do host. Um boot cujo fim o serviço não
+  confirmou, ou cujo início ficou sem resposta legível, fica com consumo **desconhecido**, não
+  zero. Um início recusado antes de existir MicroVM consta como não executado.
+- **Por Trabalho:** `factory usage <trabalho>` mostra, em `boots`, cada boot (identidade, motivo de
+  início e de fim, tamanho, início, fim, segundos) e a soma dos segundos medidos por todos os boots
+  e Execuções do Trabalho, sem reinício. Com algum boot ainda rodando ou desconhecido, `lowerBound`
+  é verdadeiro: o total real é pelo menos a soma mostrada. A soma continua visível depois do
+  Remover.
+- **Builds de imagem:** `factory usage` (instalação) mostra, em `environmentBuilds`, os builds
+  pedidos por chave de ambiente, quantos Trabalhos usam cada chave e o resultado do último build.
+  O registro fica em `<raiz>/lambda/image-builds.jsonl`. O retry de um build falho conta como outro
+  build da mesma chave.
+
+### Conferir o custo pela tag da instalação
+
+O custo é o que a AWS cobra, e a conferência é do Operador, na própria conta:
+
+1. No console de Billing, em **Cost allocation tags**, ative a tag definida pelo usuário
+   `software-factory-installation` (e, se quiser o custo por Trabalho, `software-factory-work`).
+   A tag só aparece na lista depois de existir num recurso cobrado, e só vale para o uso posterior
+   à ativação; os dados costumam levar até 24 horas para aparecer.
+2. No **Cost Explorer**, filtre por `software-factory-installation = <instalação>` e agrupe por
+   serviço, ou por `software-factory-work` para ver por Trabalho. Pela CLI, com um perfil que tenha
+   `ce:GetCostAndUsage` (a role de operação da Factory não tem e não precisa ter):
+
+   ```sh
+   aws ce get-cost-and-usage --time-period Start=2026-11-01,End=2026-12-01 \
+     --granularity DAILY --metrics UnblendedCost \
+     --filter '{"Tags":{"Key":"software-factory-installation","Values":["<instalação>"]}}' \
+     --group-by Type=TAG,Key=software-factory-work
+   ```
+
+3. Compare com `factory usage`: os MicroVM-segundos por Trabalho e os builds por chave dizem o que
+   a Factory pediu; a cobrança diz o que a AWS mediu.
+
+Limites conhecidos, nenhum deles conferido numa conta real: se o serviço atribui o uso de uma
+MicroVM às tags passadas no `RunMicrovm` (o campo de tags do `RunMicrovm` não é documentado); o
+bucket de artefatos e as imagens levam a tag, o log group do build não. Recursos sem a tag não
+entram no filtro: confira também o total do serviço na conta dedicada.
+
+### Recusa por quota ao iniciar
+
+Quando o serviço recusa o `RunMicrovm` por quota ou capacidade, nada inicia e nada é consumido. O
+Trabalho mostra o impedimento com a causa devolvida pelo serviço e não tenta de novo sozinho.
+Confira o que está ocupando a quota (boots de outros Trabalhos, MicroVMs deixadas para trás) e o
+que o `factory doctor` diz sobre concorrência contra a quota; depois peça o retry indicado no
+impedimento (`factory resume <trabalho> --retry-blocked-start START_SERVICE_CAPACITY_REFUSED
+--request-id <id>`), que **não consome retomada operacional**, ou cancele o Trabalho. O nome do erro
+de quota do serviço nunca foi observado: a classificação fica num único ponto do adapter.
