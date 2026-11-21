@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "id": "alpine-guest-on-lambda-proof",
+  "version": 1,
+  "scope": "Somente o perfil testado: Lambda MicroVMs em us-east-1, ARM64, base image gerenciada al2023-1, container da aplicação a partir de Alpine v3.23, baseline 1 GB / 0,5 vCPU com pico de 4 GB / 2 vCPU, additionalOsCapabilities ALL, declaração e projeto sintéticos, sem harness e sem modelo. Cobre só o que a prova de infraestrutura não cobriu por ter usado Amazon Linux 2023. Cada critério recebe approved, rejected ou inconclusive. Não é aceite da fábrica, homologação de produção nem suporte oficial da AWS.",
+  "criteria": [
+    {
+      "id": "A1-build",
+      "kind": "contract",
+      "requirement": "Uma imagem de MicroVM é construída a partir de Alpine por um Dockerfile fixo, montado no host só com os valores validados de um .factory/environment.yaml de esquema v1, sem comandos livres vindos da declaração.",
+      "witness": "Declaração e Dockerfile gerado, com seus sha256; molde do Dockerfile sem trecho que dependa da declaração além dos pares nome=versão; identificador, estado final e duração do build; imagem em estado utilizável lida pela API.",
+      "fixtures": [
+        "Declaração sintética positiva: apk com openjdk e maven em versões exatas, uma imagem por digest",
+        "FROM Alpine v3.23 fixado por digest, ARM64"
+      ],
+      "excludes": [
+        "Reuso de imagem por chave (repositório, hash, pin), que é lógica do adapter",
+        "x86_64",
+        "Mediação de egress do build do MVP"
+      ]
+    },
+    {
+      "id": "A2-apk-exato",
+      "kind": "contract",
+      "requirement": "Os pacotes apk declarados estão instalados no guest exatamente nas versões declaradas, vindos só dos repositórios main e community do branch fixado; uma versão inexistente faz o build falhar com causa visível, sem outra versão no lugar e sem imagem utilizável.",
+      "witness": "apk info -v no guest em execução comparado, pacote a pacote, com a declaração; para a declaração negativa: estado de falha do build, causa legível na API ou nos logs de build, e ausência de imagem utilizável.",
+      "fixtures": [
+        "Declaração sintética positiva",
+        "Declaração sintética negativa: a mesma, com uma versão que não existe no mirror"
+      ],
+      "excludes": [
+        "Desaparecimento futuro de uma versão do mirror",
+        "Verificação de assinatura além da que o apk já faz"
+      ]
+    },
+    {
+      "id": "A3-boot",
+      "kind": "contract",
+      "requirement": "No guest Alpine, dockerd e sshd nascem no hook de início, não no snapshot de build, e o Docker fica operacional.",
+      "witness": "Log do hook com horários; ausência de dockerd e sshd no fim do build; docker info completo (versão, storage driver, cgroup driver) e docker run hello-world com exit code 0, em duas MicroVMs distintas da mesma imagem.",
+      "fixtures": [
+        "Imagem positiva de A1; docker, compose e openssh dos pacotes do Alpine fixados no molde"
+      ],
+      "excludes": [
+        "Suporte oficial da AWS a Docker",
+        "Escolha do storage driver: registra-se o efetivo"
+      ]
+    },
+    {
+      "id": "A4-ssh",
+      "kind": "contract",
+      "requirement": "O sshd do Alpine atende, por SSH sobre WebSocket no HTTP_INGRESS, execução de comando com exit code e transferência íntegra de arquivo.",
+      "witness": "Comando remoto com stdout, stderr e exit code distinto de zero observados no host; arquivo binário enviado e trazido de volta com sha256 igual; host key e chave de sessão criadas no boot.",
+      "fixtures": [
+        "Imagem positiva de A1; um único componente de túnel no guest, o que estiver disponível para musl ARM64, registrado no perfil"
+      ],
+      "excludes": [
+        "Papéis Builder e revisor, ociosidade, expiração de token e reconexão, já cobertos pela prova de infraestrutura",
+        "Throughput"
+      ]
+    },
+    {
+      "id": "A5-digest",
+      "kind": "contract",
+      "requirement": "A imagem Docker declarada por digest é baixada no boot e fica presente com o digest declarado; um digest inexistente falha com causa visível, sem imagem substituta.",
+      "witness": "docker pull por digest no boot com horários; docker image inspect com RepoDigests igual ao declarado; docker run dessa referência; saída e exit code do pull do digest inexistente.",
+      "fixtures": [
+        "Imagem pública multi-arquitetura referenciada por registry explícito e digest",
+        "Referência com digest que não existe"
+      ],
+      "excludes": [
+        "Imagens embutidas na imagem de MicroVM",
+        "Registros privados"
+      ]
+    },
+    {
+      "id": "A6-compose",
+      "kind": "contract",
+      "requirement": "Compose, instalado dos pacotes do Alpine, sobe dois serviços em rede própria que se resolvem por nome e se comunicam.",
+      "witness": "docker compose up; requisição de um serviço ao outro pelo nome com resposta; docker compose down sem containers, redes ou volumes restantes.",
+      "fixtures": [
+        "compose.yaml sintético com dois serviços"
+      ],
+      "excludes": [
+        "Perfis, GPUs, swarm"
+      ]
+    },
+    {
+      "id": "A7-testcontainers",
+      "kind": "contract",
+      "requirement": "Um projeto Java que roda sobre o JDK do Alpine (musl) executa um teste com Testcontainers, Ryuk e PostgreSQL: criação, comunicação e cleanup reais.",
+      "witness": "Saída do build com o teste passando; container do Ryuk observado durante o teste; docker ps -a sem containers do teste depois dele; versão do JDK e a libc efetiva registradas.",
+      "fixtures": [
+        "Projeto Maven sintético com um teste que grava e lê no PostgreSQL",
+        "JDK e Maven vindos da declaração positiva"
+      ],
+      "excludes": [
+        "Outras linguagens ou bancos",
+        "Ryuk desabilitado",
+        "Repositório real"
+      ]
+    },
+    {
+      "id": "P1-perfil",
+      "kind": "auxiliary",
+      "requirement": "O perfil efetivo do guest Alpine está medido.",
+      "witness": "Versão do Alpine e do kernel, libc, versões de docker, compose e openssh, storage driver, disco livre após o boot e após o pull, tempo de build, tempo de RunMicrovm até SSH utilizável e até dockerd pronto.",
+      "fixtures": [
+        "Imagem positiva de A1"
+      ],
+      "excludes": [
+        "Comparação de desempenho com Amazon Linux 2023 além dos números já publicados"
+      ]
+    },
+    {
+      "id": "C1-custo",
+      "kind": "auxiliary",
+      "requirement": "O consumo ficou dentro dos tetos autorizados e está contabilizado.",
+      "witness": "Ledger de builds e de segundos de MicroVM; estimativa de custo; leitura do Cost Explorer com a data, ou registro de que ainda não há linha do serviço.",
+      "fixtures": [
+        "Tetos da autorização registrada no plano de execução"
+      ],
+      "excludes": [
+        "Fatura final, que chega com atraso"
+      ]
+    },
+    {
+      "id": "C2-cleanup",
+      "kind": "contract",
+      "requirement": "Tudo o que a prova criou foi removido, com cada remoção verificada, depois de a evidência estar preservada.",
+      "witness": "Inventário antes e depois: MicroVMs, imagens, log groups, bucket, roles e arquivos locais sensíveis; sequência do helper de finalização (cessação, evidência, avaliação, remoção) com seus registros.",
+      "fixtures": [
+        "Recursos com o prefixo sfv2alpine"
+      ],
+      "excludes": [
+        "Retenção mínima do armazenamento de imagem cobrada pelo serviço após a remoção",
+        "Evidência local e branch de protótipo, retidas de propósito"
+      ]
+    }
+  ]
+}

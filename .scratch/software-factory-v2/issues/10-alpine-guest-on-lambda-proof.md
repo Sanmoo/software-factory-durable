@@ -37,3 +37,4 @@ atualizado com o que foi provado ou com a decisão que substituir a hipótese.
 
 - 2026-11-20: aberto ao consolidar a spec da v2; único filho que bloqueia o fechamento do mapa.
 - 2026-11-21: reivindicado; preparação da rubrica e do pedido de autorização, sem consumo de recursos.
+- 2026-11-21: [plano de execução](../research/alpine-guest-execution-plan.md) e [rubrica v1](../research/alpine-guest-rubric.json) propostos; aguardam aprovação e autorização do Operador. Nada executado.
