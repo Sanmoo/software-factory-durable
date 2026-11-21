@@ -152,3 +152,11 @@ At the end of this run Static metrics is pending by approval, so the engineering
 - **Adopted**: Types, Context boundaries, Dependency rule, Guide pointers — proofs in [GATE-PROOFS.md](GATE-PROOFS.md).
 - **Rehearsal of the modes**: 4/4 scenarios passed (dependent caught without widening; shared configuration widens; over budget is inconclusive and starts nothing; integral runs the periodic checks change mode only reports).
 - **Remains pending**: Format, Lint, Secrets, Avoided terms (S2); Unit tests, Integration tests, Dependency vulnerabilities (S3); E2E tests (S4); Mutation (S5); Static metrics (S6).
+
+### S2 — completed 2026-11-21
+
+- **Changed**: approved one-off reformat with Prettier 3.9.10 (`5dff6f6`, in `.git-blame-ignore-revs`), the 8 synthetic tokens split so gitleaks no longer matches them, and 6 source-shape tests reading source through `test/architecture/source-text.ts` (approved expectation update); Format, Secrets (`scripts/test-runner/secrets.ts`, policy `scripts/test-runner/secrets-tolerated.json`) and Avoided terms (`scripts/test-runner/avoided-terms.ts`) wired into both Entry Points; ESLint adds typescript-eslint 8.72.1 `recommended`; the 110 findings fixed, except that the project's leading-underscore convention for bindings kept on purpose is configured on `no-unused-vars` (49 of them were such bindings, so the 110 became 61 fixes).
+- **Amendments approved during the stage**: 'lane' leaves GLOSSARY.md's _Avoid_ lists ('job' was removed on a faulty scan and restored); Secrets scans the history of HEAD instead of every local ref, and its policy keeps the 8 entries in that history (the 17 others were outside the tree).
+- **Not needed**: no `job` identifier existed to rename (the one occurrence is a comment in `src/sandbox/stop.ts`).
+- **Adopted**: Format, Lint, Secrets, Avoided terms; Types, Context boundaries, Dependency rule and Guide pointers re-proved on this tree — [GATE-PROOFS.md](GATE-PROOFS.md).
+- **Remains pending**: Unit tests, Integration tests, Dependency vulnerabilities (S3); E2E tests (S4); Mutation (S5); Static metrics (S6).
