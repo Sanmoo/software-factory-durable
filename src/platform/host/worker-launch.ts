@@ -58,6 +58,25 @@ export function planWorkerLaunch(hostInput: unknown, bindingInput: unknown) {
   };
 }
 
+/**
+ * v2 ticket 06: a boot whose guest is NOT a process of this host (no systemd unit owns it). Its workers are children of the trusted host
+ * process that owns the boot's tool channel and its owner endpoint (the controller owner process); the boot identity and the private
+ * runtime directory are what the launch is correlated with. `ownerEndpoint` is that process's own discovery of the endpoint it serves.
+ */
+export type HostedWorkerBoot = { supervision: 'host-process'; workId: string; environmentRef: string; bootRef: string; runtimeDirectory: string;
+  ownerEndpoint(context: WorkerLaunch['context']): Promise<string> };
+function planHostedLaunch(boot: HostedWorkerBoot, bindingInput: unknown) {
+  const binding = bindingSchema.safeParse(bindingInput);
+  if (!binding.success || !bootRef.safeParse(boot.bootRef).success) throw new Error('WORKER_LAUNCH_INVALID');
+  const request = binding.data;
+  if (boot.workId !== request.workId || boot.environmentRef !== request.environmentRef || boot.bootRef !== request.bootRef ||
+      !isAbsolute(boot.runtimeDirectory) || resolve(boot.runtimeDirectory) !== boot.runtimeDirectory) throw new Error('WORKER_BOOT_MISMATCH');
+  if (process.versions.node.split('.')[0] !== '24' || !isAbsolute(process.execPath)) throw new Error('WORKER_NODE24_REQUIRED');
+  return { executable: process.execPath, argv: [fileURLToPath(new URL('../../entrypoints/worker.js', import.meta.url))],
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'] as const, detached: false as const,
+    env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(boot.runtimeDirectory, 't'), XDG_CACHE_HOME: join(boot.runtimeDirectory, 'c') } };
+}
+
 export async function unitState(unit: string) {
   // Read-only query of the exact name derived from a validated boot, never a caller-supplied command.
   const { stdout } = await run('systemctl', ['--user', 'show', unit,
@@ -166,15 +185,17 @@ export function secretChannelEndCode(reason: SecretChannelFailure): string {
 
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
-export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
+export async function launchWorker(host: WorkerBootHost | HostedWorkerBoot, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
   secrets: { registerSecret(value: string): void; revoke(): void },
   /** Builder ask_user relay: the owner forwards the preserved request to the Control and returns its ACK (spec §5.5). */
   relay?: { question(question: WorkerQuestionRequest): Promise<QuestionRelayAck> },
   /** Ticket 12: the suspended Builder's handoff notice, forwarded by the owner on the host-boot channel. */
   onHandoff: (event: Record<string, unknown>) => void = () => {}) {
   const request = workerLaunchSchema.parse(input);
-  const plan = planWorkerLaunch(host, { workId: request.context.workId, environmentRef: request.context.environmentRef,
-    bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role });
+  const binding = { workId: request.context.workId, environmentRef: request.context.environmentRef,
+    bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role };
+  const hosted = 'supervision' in host ? host : null;
+  const plan = hosted ? planHostedLaunch(hosted, binding) : planWorkerLaunch(host, binding);
   // Ticket 59: derived before any effect, so an invalid budget never leaves a spawned child without its receiver.
   const secretSyncs = secretSyncLimit(sessionRequestBudget(request));
   await privatePath(host.runtimeDirectory);
@@ -189,13 +210,25 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   const bootstrap = { ...launched, ...(continuedSession ? { continuedSession } : {}), ...(request.review ? { review: { ...request.review, ...(session ? { session } : {}) } } : {}), version: 1,
     profile: { ...request.profile, directory: profileDirectory }, endpoint, recordsRoot: root };
   if (Buffer.byteLength(JSON.stringify(bootstrap)) > 65536 || signal.aborted) throw new Error('WORKER_BOOTSTRAP_INVALID');
+  if (hosted) {
+    // The owner endpoint this process serves for the boot must be the one of the runtime directory the worker is created in.
+    if (await hosted.ownerEndpoint(request.context) !== join(host.runtimeDirectory, 'owner') || signal.aborted) throw new Error('WORKER_BOOT_MISMATCH');
+  } else await supervisedByUnit(host as WorkerBootHost, request, root, signal);
+  const child = spawn(plan.executable, plan.argv, { stdio: [...plan.stdio], detached: plan.detached,
+    env: { ...plan.env, TMPDIR: join(directory, 't'), XDG_CACHE_HOME: join(directory, 'c') } });
+  return superviseWorker(child, request, root, sessionsDirectory, signal, secrets, secretSyncs, relay, onHandoff, bootstrap);
+}
+async function supervisedByUnit(host: WorkerBootHost, request: WorkerLaunch, root: string, signal: AbortSignal) {
   const state = await unitState(host.unit);
   if (state.ActiveState !== 'active' || state.MainPID !== String(process.pid) || state.InvocationID !== host.invocation ||
       state.ControlGroup !== host.cgroup || (await readFile('/proc/self/cgroup', 'utf8')).trim() !== `0::${host.cgroup}` ||
       await readlink('/proc/self/ns/cgroup') !== host.cgroupNamespace || await readlink('/proc/self/ns/mnt') !== host.mountNamespace ||
       await workerOwnerEndpoint(root, request.context) !== join(host.runtimeDirectory, 'owner') || signal.aborted) throw new Error('WORKER_BOOT_MISMATCH');
-  const child = spawn(plan.executable, plan.argv, { stdio: [...plan.stdio], detached: plan.detached,
-    env: { ...plan.env, TMPDIR: join(directory, 't'), XDG_CACHE_HOME: join(directory, 'c') } });
+}
+/** The launched child's protocol (start receipt, result, handoff, secrets, questions): the same whatever supervises the boot. */
+function superviseWorker(child: ReturnType<typeof spawn>, request: WorkerLaunch, root: string, sessionsDirectory: string, signal: AbortSignal,
+  secrets: { registerSecret(value: string): void; revoke(): void }, secretSyncs: number,
+  relay: { question(question: WorkerQuestionRequest): Promise<QuestionRelayAck> } | undefined, onHandoff: (event: Record<string, unknown>) => void, bootstrap: object) {
   let startResolve!: (value: { receipt: z.infer<typeof reference>; invocation: z.infer<typeof startedInvocation> }) => void;
   let startReject!: (error: Error) => void;
   const started = new Promise<{ receipt: z.infer<typeof reference>; invocation: z.infer<typeof startedInvocation> }>((resolve, reject) => { startResolve = resolve; startReject = reject; });

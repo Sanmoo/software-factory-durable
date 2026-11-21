@@ -23,8 +23,29 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   vm: GuestOwner, host: WorkerBootHost, capabilities?: Pick<ReadBinding, 'profileOrigin' | 'copyOutput'>) {
   const privateCapabilities = Object.freeze({ ...(capabilities?.profileOrigin === undefined ? {} : { profileOrigin: capabilities.profileOrigin }),
     copyOutput: capabilities?.copyOutput === true });
-  const directory = bootRuntimePaths(root, identity.bootRef).directory;
   const bindings = await serveReadToolBindings([], vm);
+  return serveBootOwner(root, identity, { directory: bootRuntimePaths(root, identity.bootRef).directory,
+    copyOutput: privateCapabilities.copyOutput && privateCapabilities.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1',
+    add: binding => bindings.add({ ...privateCapabilities, ...binding }), close: () => bindings.close(),
+    launch: (request, endpoint, signal, secrets, relay, onHandoff) => launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff) });
+}
+
+/** What one invocation's tool binding states (the adapter adds its own qualification and guest conventions). */
+export type OwnerBinding = Omit<ReadBinding, 'profileOrigin' | 'guestConventions'>;
+/**
+ * The parts of a boot owner an adapter supplies (v2 ticket 06): where its private endpoint lives, how one invocation's tools are bound to
+ * the guest, and how a worker process is launched under this boot. The protocol of the owner endpoint is the same for every adapter.
+ */
+export type BootOwnerParts = { directory: string;
+  /** Whether a Builder may be launched with the output copy policy under this owner (the adapter's qualified profile). */ copyOutput: boolean;
+  add(binding: OwnerBinding): Promise<void>; close(): Promise<void>;
+  launch(request: Parameters<typeof launchWorker>[1], endpoint: string, signal: AbortSignal, secrets: Parameters<typeof launchWorker>[5],
+    relay?: Parameters<typeof launchWorker>[6], onHandoff?: Parameters<typeof launchWorker>[7]): ReturnType<typeof launchWorker> };
+
+/** The boot owner endpoint over an adapter's parts. Only this endpoint accepts registration and worker launches of the boot. */
+export async function serveBootOwner(root: string, identity: { workId: string; environmentRef: string; bootRef: BootRef }, parts: BootOwnerParts) {
+  const { directory } = parts;
+  const bindings = { add: parts.add, close: parts.close };
   const records = await createRecords({ root });
   const lifetimes = new Map<Channel, AbortController>();
   const invocations = new Set<string>();
@@ -90,8 +111,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       if (request.kind === 'launch-worker') {
         const parsed = workerLaunchSchema.safeParse(request.payload);
         if (!parsed.success || lifetimes.has(channel) || (parsed.data.copyOutput === true &&
-            (parsed.data.context.role !== 'builder' || !privateCapabilities.copyOutput ||
-             privateCapabilities.profileOrigin !== 'factory-development-gondolin-0.14.0-stdin-capacity-v1'))) {
+            (parsed.data.context.role !== 'builder' || !parts.copyOutput))) {
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'WORKER_LAUNCH_INVALID' }, request.message_id));
           return;
         }
@@ -111,13 +131,13 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         for (const secret of [...parsed.data.knownSecrets, ...('apiKey' in parsed.data.profile ? [parsed.data.profile.apiKey] : [])]) records.registerSecret(secret);
         const endpoint = join(directory, `b${++sequence}`);
         try {
-          await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
+          await bindings.add({ copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
             ...(credential === undefined ? {} : { credential: Object.freeze({ current: () => credential.token }) }),
             ...(parsed.data.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: parsed.data.selectedOutputCopies }),
             ...(parsed.data.skillPackFiles === undefined ? {} : { skillPackFiles: parsed.data.skillPackFiles }),
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
-          const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal, {
+          const worker = await parts.launch({ ...parsed.data, context }, endpoint, lifetime.signal, {
             // EXACT same Records instance already passed to bindings.add above.
             registerSecret(value) { records.registerSecret(value); },
             revoke() { lifetime.abort(); },
@@ -173,7 +193,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       lifetimes.set(channel, lifetime);
       const endpoint = join(directory, `b${++sequence}`);
       // Context-only registration carries no trusted per-invocation opt-in.
-      await bindings.add({ ...privateCapabilities, copyOutput: false, endpoint, context, signal: lifetime.signal, records });
+      await bindings.add({ copyOutput: false, endpoint, context, signal: lifetime.signal, records });
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
     closed(_error, _peer, channel) {

@@ -21,7 +21,9 @@ export type StartResult = { status: 'success'; boot: BootRef;
   /** Ticket 47: how the environment's previous boot was stopped (clean = its root was left read-only; forced otherwise), recorded with this boot. */
   previousStop?: GuestStop & { boot: BootRef };
   /** Ticket 47: the operator's disk remedy requested with this start and what it did. */
-  remedy?: StartRemedyOutcome } |
+  remedy?: StartRemedyOutcome;
+  /** v2 ticket 06: Factory material the adapter wrote into the guest of THIS boot (an adapter without a persistent disk seeds every boot). */
+  seeds?: { name: string; manifestSha256: string; reused: boolean }[] } |
   /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields). */
   { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure; detail?: string };
 const run = promisify(execFile);

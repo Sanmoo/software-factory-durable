@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts } from '../../control/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
-import { createPreparationVm, createSandbox, selectSandboxAdapter, type GuestAssetPin } from '../../sandbox/index.js';
+import { createPreparationVm, createSandbox, selectSandboxAdapter, type GuestAssetPin, type GuestTransport, type LambdaBootClock, type LambdaImageWait, type LambdaServiceFactory,
+  type LambdaWorkerLauncher } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
@@ -37,6 +38,12 @@ export type ProductionInput = {
   /** Guest asset pin of the VERIFIED running release (trusted composition data, never YAML). */
   guestAssets: GuestAssetPin;
   github: GitHubAccess;
+  /**
+   * v2 ticket 06: what stands UNDER the Lambda adapter (the AWS account, the transport to the guest, the clocks of its waits and the worker
+   * process launch). Production passes none: the `aws` CLI, the host's `ssh`/`websocat`, the wall clock and the fixed worker executable.
+   * The composed journey test passes the in-memory account and guest; nothing else of the composition changes.
+   */
+  lambda?: { service?: LambdaServiceFactory; transport?: GuestTransport; clock?: LambdaBootClock; imageWait?: LambdaImageWait; workerLauncher?: LambdaWorkerLauncher };
 };
 
 /**
@@ -121,8 +128,9 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   // Control receives the capabilities only; the lifecycle below is that adapter's.
   const adapter = selectSandboxAdapter(input.effective.sandbox);
   if (adapter.status !== 'selected') return { status: 'refused', code: adapter.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID', roles: [] };
-  // v2 ticket 02: a Lambda installation can be validated, but this release composes no Lambda lifecycle yet; never Gondolin in its place.
-  if (adapter.adapter !== 'gondolin') return { status: 'refused', code: 'SANDBOX_ADAPTER_UNAVAILABLE', roles: [] };
+  // v2 ticket 06: the Lambda adapter is composed with its own lifecycle. Its profile stays inside the composition: Control receives the
+  // declared capabilities and an opaque `configuration` that is null for it (the profile is given to the Sandbox here, never through Control).
+  const lambda = adapter.adapter === 'lambda';
   const profile = (role: Role) => ({ id: productionProfile.sdkProfileId, systemPrompt: productionProfile.prompts[role],
     auth: productionProfile.model.auth, providerId: productionProfile.model.providerId, modelId: productionProfile.model.modelId, api: productionProfile.model.api });
   const profiles = { builder: profile('builder'), standards: profile('standards'), spec: profile('spec') };
@@ -132,11 +140,20 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     repositoryFetch: createRepositoryFetchCredentials({ github: input.github, repositories: input.effective.repositories }),
     artifactSeeds: [{ name: pack.seedName, directory: pack.directory }],
     // Ticket 44: environment bases are prepared in their own supervised preparation VM (transient unit), never in the controller process.
-    preparationVm: createPreparationVm({ root: input.root }) });
+    preparationVm: createPreparationVm({ root: input.root }),
+    // v2 ticket 06: this process launches the workers, so it hosts the owner of every Lambda boot it starts.
+    lambdaBootOwner: true,
+    ...(input.lambda?.service ? { lambdaService: input.lambda.service } : {}), ...(input.lambda?.transport ? { lambdaTransport: input.lambda.transport } : {}),
+    ...(input.lambda?.clock ? { lambdaBootClock: input.lambda.clock } : {}), ...(input.lambda?.imageWait ? { lambdaImageWait: input.lambda.imageWait } : {}),
+    ...(input.lambda?.workerLauncher ? { lambdaWorkerLauncher: input.lambda.workerLauncher } : {}) });
+  // The adapter's configuration as the Sandbox reads it: Control's opaque value for Gondolin (unchanged), the composition's own for Lambda.
+  const configured = <T extends { configuration: unknown }>(request: T): T => lambda ? { ...request, configuration: input.effective.sandbox } : request;
   // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
-  const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt });
+  const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt,
+    // v2 ticket 06: the owner of a boot is found by the Sandbox (a Lambda boot's owner is served by this process).
+    ...(lambda ? { ownerEndpoint: context => sandbox.workerOwnerEndpoint(context) } : {}) });
   const ports: ExecutionPorts = {
-    sandbox: { capabilities: adapter.capabilities, prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
+    sandbox: { capabilities: adapter.capabilities, prepare: request => sandbox.prepare(configured(request)), start: request => sandbox.start(configured(request)), stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),
       // Ticket 48: Host fingerprint of the checkout (start of the Execution / after a budget end): progress decides continuation vs recovery.
       observeCheckout: input => sandbox.observeCheckout(input),
@@ -160,7 +177,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     // Ticket 28: partial review recovery (only the failed reviewer re-obtained on the unchanged proposal; lost notifications from Records).
     reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds }, partialRecovery: true },
     credentials: createBuilderCredentials({ github: input.github, repositories: input.effective.repositories }),
-    configuration: input.effective.sandbox,
+    configuration: lambda ? null : input.effective.sandbox,
     capacity: input.effective.concurrency,
     // No `deadlineMs` policy: the worker gets no clock from production (spec §4.4). `modelBudget` bounds requests/tools/bytes only.
     // Per-repository correction/recovery limits and the optional `timeoutSeconds` (ticket 19) reach Control with the configured repositories.

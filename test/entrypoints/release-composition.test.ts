@@ -89,7 +89,13 @@ test('production composition refuses any role whose configured provider/model is
   }
 });
 
-test('v2 ticket 01: a sandbox adapter this release cannot run refuses the whole composition (no fallback to another sandbox)', async () => {
-  const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' } }, guestAssets, github });
-  assert.deepEqual(refused, { status: 'refused', code: 'SANDBOX_ADAPTER_UNAVAILABLE', roles: [] });
+test('v2 ticket 06: the Lambda adapter is composed with its declared capabilities and its profile never reaches Control; an invalid profile refuses the whole composition', async () => {
+  const lambda = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
+  const composed = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: lambda }, guestAssets, github });
+  assert.equal(composed.status, 'composed');
+  if (composed.status !== 'composed') return;
+  assert.deepEqual([composed.ports.sandbox.capabilities?.persistentDisk, composed.ports.sandbox.capabilities?.docker, composed.ports.configuration], [false, true, null]);
+  // No fallback to another sandbox: a selection that cannot be composed refuses everything.
+  const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: { adapter: 'lambda', schemaVersion: 1 } }, guestAssets, github });
+  assert.deepEqual(refused, { status: 'refused', code: 'SANDBOX_CONFIGURATION_INVALID', roles: [] });
 });

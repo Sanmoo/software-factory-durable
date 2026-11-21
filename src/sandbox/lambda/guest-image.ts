@@ -23,7 +23,12 @@ export const lambdaGuestPin = Object.freeze({
     { name: 'docker', version: '29.5.2-r0' }, { name: 'docker-cli-compose', version: '2.40.3-r6' }, { name: 'docker-cli-buildx', version: '0.30.1-r6' },
     { name: 'openssh', version: '10.2_p1-r1' }, { name: 'git', version: '2.52.1-r0' }, { name: 'python3', version: '3.12.16-r0' },
     { name: 'bash', version: '5.3.3-r1' }, { name: 'websocat', version: '1.14.0-r1' }, { name: 'iptables', version: '1.8.11-r1' },
-    { name: 'curl', version: '8.23.0-r0' }] as readonly { name: string; version: string }[]),
+    { name: 'curl', version: '8.23.0-r0' },
+    // v2 ticket 06 (Operator decision, 2026-11-21): the Builder opens the pull request itself in the boot that verified the content, so
+    // `gh` is part of the template. Its token still arrives only as process environment of one command. NOT observed in a proof: this
+    // version must be confirmed against the `community` index of the pinned branch before the first real build (a wrong pin fails the
+    // build with that cause; there is never a fallback version).
+    { name: 'github-cli', version: '2.83.0-r0' }] as readonly { name: string; version: string }[]),
   /** `ready` is mandatory whenever a lifecycle hook is enabled (first Lambda proof, finding 3). */
   hooks: Object.freeze({ port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 }),
   user: 'builder',

@@ -73,6 +73,9 @@ function quotedWords(text: string): string[] | null {
   return words;
 }
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+/** v2 ticket 06: the parameters of a fixed observation program (every word of its script is single-quoted: interpreter, flags, program text, parameters). */
+const observationParameters = (request: GuestExecRequest): string[] => (quotedWords(request.script.replace(/^exec /, '')) ?? []).slice(5);
+const answer = (value: unknown): FakeProgramResult => ({ exitCode: 0, stdout: `${JSON.stringify(value)}\n` });
 const roots = ['/workspace', '/artifacts'];
 
 /** The fixed guest programs of the tool backends, applied to the fake disk as `run.user`. Exit statuses are the programs' own. */
@@ -136,7 +139,8 @@ async function toolProgram(guest: FakeGuest, request: GuestExecRequest, run: Fak
 export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
   const world = {
     /** `origin` per remote URL: the commits it has and the one Git credential it accepts. */
-    origins: {} as Record<string, { commits: string[]; token: string }>,
+    /** `token`: the exact credential, or a predicate when the host mints it per start (v2 ticket 06). */
+    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean) }>,
     /** Seconds after the MicroVM runs until its `sshd` answers (observed: about 7 s). */
     sshReadySeconds: 7,
     /** Image references whose pull by digest fails at boot. */
@@ -164,13 +168,47 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const origin = remote ? world.origins[remote] : undefined;
       if (!remote || !checkout || !origin) return { exitCode: 128, stderr: `fatal: repository '${remote ?? ''}' not found\n` };
       if (guest.repository) return { exitCode: 4, stderr: 'The guest already has a repository directory\n' };
-      if (request.environment?.FACTORY_GIT_TOKEN !== origin.token) return { exitCode: 128, stderr: `fatal: Authentication failed for '${remote}'\n` };
+      const presented = request.environment?.FACTORY_GIT_TOKEN ?? '';
+      if (typeof origin.token === 'string' ? presented !== origin.token : !origin.token(presented)) return { exitCode: 128, stderr: `fatal: Authentication failed for '${remote}'\n` };
       if (!origin.commits.includes(checkout[2]!)) return { exitCode: 128, stderr: `fatal: reference is not a tree: ${checkout[2]}\n` };
       guest.repository = { remote, commit: checkout[2]!, branch: checkout[1] ?? null };
       return { exitCode: 0, stdout: `HEAD ${checkout[2]}\n` };
     },
     evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
     tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
+    // v2 ticket 06: the fixed observation programs (`src/sandbox/lambda/artifacts.ts`), answered from the fake disk. The real programs are
+    // exercised with a local interpreter in `lambda-artifacts.test.ts`; here only their contract (parameters in, one JSON line out) is modelled.
+    'proposal-identity': (guest, request) => {
+      const [, checkout, artifacts, round] = observationParameters(request);
+      const raw = guest.files.get(`${artifacts}/review/r${round}/index.json`);
+      if (raw === undefined) return answer({ status: 'unavailable', code: 'PROPOSAL_INDEX_MISSING' });
+      const index = JSON.parse(raw) as { entries: { path: string; present: boolean; sha256?: string }[] };
+      const files = index.entries.map(entry => { const content = guest.files.get(`${checkout}/${entry.path}`); return [entry.path, content === undefined ? 'absent' : 'file', content === undefined ? null : sha256(content)]; });
+      const consistent = index.entries.every((entry, position) => entry.present ? files[position]![2] === (entry.sha256 ?? null) : files[position]![1] === 'absent');
+      return answer({ status: 'observed', sha256: sha256(JSON.stringify({ index: sha256(raw), files, head: guest.repository?.commit ?? null })), indexSha256: sha256(raw), entries: index.entries.length, consistent });
+    },
+    'preserved-source': (guest, request) => {
+      const [, artifacts, kind, version, file] = observationParameters(request);
+      const raw = guest.files.get(`${artifacts}/${kind}/${version}/sources.json`);
+      if (raw === undefined) return answer({ status: 'invalid', code: 'PRESERVED_SOURCE_INDEX_MISSING' });
+      const listed = ((JSON.parse(raw) as { sources?: { copy?: string }[] }).sources ?? []).map(entry => (entry.copy ?? '').replace(/^\.\//, ''));
+      if (!listed.includes(file!)) return answer({ status: 'invalid', code: 'PRESERVED_SOURCE_NOT_LISTED' });
+      return answer(guest.files.has(`${artifacts}/${kind}/${version}/${file}`) ? { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' } : { status: 'invalid', code: 'PRESERVED_SOURCE_MISSING' });
+    },
+    'collect-artifacts': (guest, request) => {
+      const [, artifacts] = observationParameters(request);
+      const found = [...guest.files].filter(([path]) => ['review', 'spec', 'instructions'].some(tree => path.startsWith(`${artifacts}/${tree}/`))).sort(([left], [right]) => left < right ? -1 : 1);
+      const lines = found.map(([path, content]) => JSON.stringify({ path: path.slice(artifacts!.length + 1), data: Buffer.from(content, 'utf8').toString('base64') }));
+      return { exitCode: 0, stdout: [...lines, JSON.stringify({ status: 'success', files: found.length, bytes: found.reduce((sum, [, content]) => sum + Buffer.byteLength(content), 0) })].join('\n') + '\n' };
+    },
+    'artifact-seed': (guest, request, run) => {
+      const [, target] = observationParameters(request);
+      if (run.user !== guest.owner) return answer({ status: 'failure', code: 'ARTIFACT_SEED_UNAVAILABLE' });
+      if ([...guest.files.keys()].some(path => path.startsWith(`${target}/`))) return answer({ status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' });
+      const entries = Buffer.from(request.stdin ?? []).toString('utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; data: string });
+      for (const entry of entries) guest.files.set(`${target}/${entry.path}`, Buffer.from(entry.data, 'base64').toString('utf8'));
+      return answer({ status: 'written', files: entries.length });
+    },
   };
 
   /** The guest of a running MicroVM, born on first contact from what the service handed to its run hook. */

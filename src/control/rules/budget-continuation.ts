@@ -25,6 +25,21 @@ export function budgetEndProgress(start: CheckoutFingerprint | null | undefined,
   return { kind: 'none' };
 }
 
+/**
+ * v2 ticket 06 (Operator decision 2a, the same measure as V2-14): progress of an Execution on a sandbox WITHOUT a persistent disk, from
+ * Control's two reads of the Work branch on `origin`. Only a published commit survives such a boot, so only a moved (or created) remote
+ * tip is progress; an unread side is `unknown` (never assumed) and the budget end then goes to recovery.
+ */
+export function originProgress(start: { state: string; sha?: string; code?: string } | null | undefined, end: { state: string; sha?: string; code?: string } | null | undefined): BudgetEndProgress {
+  if (!start) return { kind: 'unknown', code: 'ORIGIN_START_NOT_OBSERVED' };
+  if (start.state === 'unknown') return { kind: 'unknown', code: `ORIGIN_START_${start.code ?? 'UNKNOWN'}` };
+  if (!end) return { kind: 'unknown', code: 'ORIGIN_END_NOT_OBSERVED' };
+  if (end.state === 'unknown') return { kind: 'unknown', code: `ORIGIN_END_${end.code ?? 'UNKNOWN'}` };
+  // A branch that disappeared is not progress: nothing of this boot survived it.
+  if (end.state === 'absent') return { kind: 'none' };
+  return start.state === 'absent' || start.sha !== end.sha ? { kind: 'progress', commits: true, checkout: false } : { kind: 'none' };
+}
+
 /** Ticket 48: the Builder budget override a repository configured, in the worker's terms; absent = the release values (no override sent). */
 export function builderBudgetPolicy(configured: BuilderBudgetConfiguration | null | undefined): { requests: number; tools: number; deadlineMs: number } | null {
   if (!configured || (configured.requests === undefined && configured.toolCalls === undefined && configured.requestTimeoutMinutes === undefined)) return null;

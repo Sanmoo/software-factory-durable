@@ -23,11 +23,18 @@ export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaSer
 export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 // v2 ticket 04: a boot under the Lambda adapter (RunMicrovm, channel, clone in the guest; observe and stop by the service) and the seam
 // to the guest: SSH over WebSocket in production (`createSshTransport`), an in-process guest in tests (`lambdaTransport`).
-import { defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, startLambdaBoot, stopLambdaBoot,
+import { currentLambdaBoot, defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, startLambdaBoot, stopLambdaBoot,
   type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation } from './lambda/boot.js';
 import { createSshTransport } from './lambda/ssh-transport.js';
 // v2 ticket 05: the MVP role tools over a Lambda boot (`lambda/tools.ts`): the host binds each invocation to a role on the boot.
 import { serveLambdaTools } from './lambda/tools.js';
+// v2 ticket 06: the Lambda boot owner (worker launch in the host process), the channel observations that replace the host reads of the
+// workspace, the evidence collection before a stop and Remove.
+import { lambdaOwnerEndpoint, removeLambdaEnvironment, serveLambdaOwner, type LambdaWorkerLauncher } from './lambda/owner.js';
+import { observeLambdaProposal, verifyLambdaPreservedSource } from './lambda/artifacts.js';
+import { workerOwnerEndpoint, type WorkerLaunch } from '../platform/host/index.js';
+export type { LambdaWorkerLauncher } from './lambda/owner.js';
+export type { BootOwnerParts } from './owner-registration.js';
 export { guestUserOfRole, lambdaToolOrigin, type LambdaToolBinding, type LambdaTools } from './lambda/tools.js';
 import type { GuestTransport } from './lambda/transport.js';
 export type { BootBeginReason, BootEndReason, LambdaBootClock, LambdaBootRecord, LambdaCheckout, LambdaObservation } from './lambda/boot.js';
@@ -54,7 +61,7 @@ export { environmentIdentityDiagnostic } from './environment-identity.js';
 export { reconcileInterruptedCaches, type CacheReconciliation } from './checkout.js';
 import { observeProposal } from './proposal-identity.js';
 import { fingerprintCheckout } from './checkout-fingerprint.js';
-import type { CheckoutFingerprint } from '../contracts/index.js';
+import type { CheckoutFingerprint, ProposalIdentity } from '../contracts/index.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView;
   seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[];
   /** Ticket 44: the environment base the root disk was copied from (declaration hash + resolved manifest). */
@@ -82,6 +89,8 @@ export type { StopResult } from './stop.js';
 import { removeEnvironment } from './remove.js';
 import { exportEvidence } from './evidence-export.js';
 export type { EvidenceExport } from './evidence-export.js';
+import type { EvidenceExport } from './evidence-export.js';
+import type { RemoveResult } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
@@ -102,19 +111,42 @@ export type { WriteCall } from './write-tools.js';
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
 export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait,
-  lambdaTransport, lambdaBootClock = defaultLambdaBootClock }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+  lambdaTransport, lambdaBootClock = defaultLambdaBootClock, lambdaBootOwner = false, lambdaWorkerLauncher }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
   preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory;
   /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait;
   /** v2 ticket 04: the transport to the guest (SSH over WebSocket with the host's `ssh` and `websocat` by default) and the clock of the boot waits. */
-  lambdaTransport?: GuestTransport; lambdaBootClock?: LambdaBootClock }) {
+  lambdaTransport?: GuestTransport; lambdaBootClock?: LambdaBootClock;
+  /** v2 ticket 06: THIS process is the one that launches the workers of the boots it starts (the controller owner): each started Lambda boot
+   * gets its boot owner here (owner endpoint, tool bindings, worker processes), closed by `stop`. Absent: boots are started without one. */
+  lambdaBootOwner?: boolean;
+  /** v2 ticket 06: how a worker process is launched under a Lambda boot owner (the fixed worker executable by default; tests script it). */
+  lambdaWorkerLauncher?: LambdaWorkerLauncher }) {
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
   const bootLedger = createBootLedger(async () => (await inspectMemory())?.availableBytes);
   let sshTransport: GuestTransport | undefined;
   const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock });
+  // v2 ticket 06: the boot owners THIS process serves (owner endpoint, tool bindings and workers of each active Lambda boot).
+  const lambdaOwners = new Map<string, { close(): Promise<void> }>();
+  /** One fixed observation program over the channel of the environment's CURRENT boot (decisions 1A and 2b-A): guest-attested. */
+  const onCurrentBoot = async <T>(environment: EnvironmentRef, unavailable: T, read: (channel: Awaited<ReturnType<typeof openLambdaBootChannel>> & { status: 'open' }) => Promise<T>): Promise<T> => {
+    try {
+      const boot = await currentLambdaBoot(root, environment);
+      const opened = boot ? await openLambdaBootChannel(lambdaBoots(), { environment, boot }) : null;
+      if (!opened || opened.status !== 'open') return unavailable;
+      try { return await read(opened); } finally { opened.channel.close(); }
+    } catch { return unavailable; }
+  };
   return {
+    /**
+     * v2 ticket 06: where the workers of a boot connect (the boot owner's private endpoint). A Lambda boot's owner lives in this process;
+     * a Gondolin boot's owner is its own supervised process.
+     */
+    async workerOwnerEndpoint(context: WorkerLaunch['context']): Promise<string> {
+      return await isLambdaEnvironment(root, context.environmentRef as EnvironmentRef) ? lambdaOwnerEndpoint(root, context) : workerOwnerEndpoint(root, context);
+    },
     /** v2 ticket 04: the boots recorded for a Lambda environment (identity, reasons, size, start and end) and one of them; read-only. */
     async boots({ environment }: { environment: EnvironmentRef }) { return listLambdaBoots(root, environment); },
     async bootRecord({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return readLambdaBoot(root, environment, boot); },
@@ -153,11 +185,16 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** Host-side identity of the handed-off proposal of `round` (confined reads; no host git, no guest command). */
     async observeProposal({ environment, round }: { environment: EnvironmentRef; round: number }) {
       if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'refused' as const, code: 'ENVIRONMENT_REF_INVALID' };
+      // v2 ticket 06 (decision 1A): without a host workspace the identity is computed IN the guest by a fixed host-run program.
+      if (await isLambdaEnvironment(root, environment)) return onCurrentBoot<ProposalIdentity>(environment, { status: 'unavailable', code: 'PROPOSAL_IDENTITY_UNAVAILABLE' },
+        opened => observeLambdaProposal(opened.channel, round));
       return observeProposal(join(await realpath(root), 'environments', environment), round);
     },
     /** Ticket 48: Host fingerprint of the Work's checkout (confined Git metadata reads + bounded no-follow tree walk; no host git, no guest command). */
     async observeCheckout({ environment }: { environment: EnvironmentRef }): Promise<CheckoutFingerprint> {
       if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'unavailable', code: 'ENVIRONMENT_REF_INVALID' };
+      // v2 ticket 06 (decisions 2a/2d): there is no host checkout to fingerprint; progress is the Work branch on `origin` (Control's read).
+      if (await isLambdaEnvironment(root, environment)) return { status: 'unavailable', code: 'CHECKOUT_NOT_ON_HOST' };
       return fingerprintCheckout(join(await realpath(root), 'environments', environment));
     },
     /**
@@ -166,6 +203,9 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
      */
     async verifyPreservedSource({ environment, reference }: { environment: EnvironmentRef; reference: string }) {
       if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'invalid' as const, code: 'ENVIRONMENT_REF_INVALID' };
+      // v2 ticket 06 (decision 2b-A): the same two facts, read over the channel while the boot lives.
+      if (await isLambdaEnvironment(root, environment)) return onCurrentBoot<{ status: 'verified' | 'invalid'; code: string }>(environment,
+        { status: 'invalid', code: 'PRESERVED_SOURCE_UNAVAILABLE' }, opened => verifyLambdaPreservedSource(opened.channel, reference));
       const match = /^\/artifacts\/(spec|instructions)\/(v[1-9][0-9]{0,3})\/([^#]+)$/.exec(reference.split('#')[0]!);
       if (!match) return { status: 'invalid' as const, code: 'AUTHORIZATION_REFERENCE_INVALID' };
       const kind = match[1]!, version = match[2]!, file = match[3]!;
@@ -183,15 +223,26 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       } catch { return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_UNSAFE' }; }
     },
     /** Ticket 17: copy the own environment's review/spec/instructions evidence into a caller-owned private directory before removal. */
-    async exportEvidence({ environment, destination }: { environment: EnvironmentRef; destination: string }) {
+    async exportEvidence({ environment, destination }: { environment: EnvironmentRef; destination: string }): Promise<EvidenceExport> {
+      // v2 ticket 06 (decision 2c): a Lambda environment's evidence was collected before each boot stopped; nothing is left to export.
+      if (await isLambdaEnvironment(root, environment)) return { status: 'absent' };
       return exportEvidence(root, environment, destination);
     },
-    async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
+    async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }): Promise<RemoveResult> {
+      if (await isLambdaEnvironment(root, environment)) {
+        for (const [key, owner] of lambdaOwners) if (key.startsWith(`${environment}/`)) { lambdaOwners.delete(key); await owner.close().catch(() => {}); }
+        try { return await removeLambdaEnvironment(lambdaBoots(), { environment, cleanup }); }
+        catch { return { status: 'indeterminate', code: 'REMOVE_UNAVAILABLE', resources: [] }; }
+      }
       return removeEnvironment(root, environment, cleanup);
     },
     async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult> {
       // v2 ticket 04 (V2-02 Parar): a Lambda boot is ended by the service and confirmed by it; no disk is kept.
       if (await isLambdaEnvironment(root, environment)) {
+        // v2 ticket 06: the boot owner of this process ends first (bindings, workers, channel); the stop then collects over its own connection.
+        const owner = lambdaOwners.get(`${environment}/${boot}`);
+        lambdaOwners.delete(`${environment}/${boot}`);
+        await owner?.close().catch(() => {});
         try { return await stopLambdaBoot(lambdaBoots(), { environment, boot, reason }); }
         catch { return { status: 'indeterminate', code: 'STOP_UNAVAILABLE', cessationConfirmed: false }; }
       }
@@ -203,14 +254,36 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** `checkout`/`reason` (v2 ticket 04): under the Lambda adapter the starting commit is cloned from `origin` INSIDE the guest with the
      * given in-memory credential, and the boot is recorded as a first start or a planned swap. The Gondolin adapter ignores both. */
     async start({ environment, configuration, diskRemedy, checkout, reason }: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: DiskRemedy;
-      checkout?: LambdaCheckout; reason?: BootBeginReason }): Promise<StartResult> {
+      checkout?: Omit<LambdaCheckout, 'credential'> & { credential?: LambdaCheckout['credential']; installationId?: number }; reason?: BootBeginReason }): Promise<StartResult> {
       const selection = selectSandboxAdapter(configuration);
       if (selection.adapter === 'lambda') {
         if (selection.status !== 'selected') return { status: 'failure', code: selection.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
+        // v2 ticket 06 (V2-24): without a credential given, the clone uses the host's one-fetch reduced credential (Contents:read), delivered
+        // as process environment of that one `git` in the guest and revoked right after (one attempt), never kept anywhere.
+        let fetched: { readonly token: string } | null = null;
+        if (checkout && !checkout.credential) {
+          if (!repositoryFetch || checkout.installationId === undefined) return { status: 'failure', code: 'CHECKOUT_NOT_COMPOSED' };
+          try { fetched = await repositoryFetch.fetch({ repository: checkout.repository, installationId: checkout.installationId, workflows: false }); }
+          catch { return { status: 'failure', code: 'CHECKOUT_CREDENTIAL_UNAVAILABLE' }; }
+        }
+        let started: Awaited<ReturnType<typeof startLambdaBoot>>;
         try {
-          return await startLambdaBoot(lambdaBoots(), { environment, profile: selection.configuration, ...(checkout ? { checkout } : {}), ...(reason ? { reason } : {}),
-            remoteUrl: remoteUrl ?? (scope => `https://github.com/${scope.repository}.git`) });
+          const credential = checkout?.credential ?? fetched;
+          started = await startLambdaBoot(lambdaBoots(), { environment, profile: selection.configuration, seeds: artifactSeeds,
+            ...(checkout && credential ? { checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }), credential } } : {}),
+            ...(reason ? { reason } : {}), remoteUrl: remoteUrl ?? (scope => `https://github.com/${scope.repository}.git`) });
         } catch { return { status: 'indeterminate', code: 'START_UNAVAILABLE' }; }
+        finally { if (fetched) await repositoryFetch!.revoke(fetched).catch(() => {}); }
+        if (started.status !== 'success' || !lambdaBootOwner) return started;
+        // The boot is usable only with its owner: the endpoint the workers of this boot connect to, served by this process.
+        const owner = await serveLambdaOwner({ ...lambdaBoots(), ...(lambdaWorkerLauncher ? { launcher: lambdaWorkerLauncher } : {}) }, { environment, boot: started.boot })
+          .catch(() => ({ status: 'unavailable' as const, code: 'BOOT_OWNER_UNAVAILABLE' }));
+        if (owner.status !== 'serving') {
+          const stopped = await stopLambdaBoot(lambdaBoots(), { environment, boot: started.boot, reason: 'end' }).catch(() => null);
+          return stopped?.cessationConfirmed ? { status: 'failure', code: owner.code, boot: started.boot } : { status: 'indeterminate', code: 'CESSATION_NOT_CONFIRMED', boot: started.boot, detail: owner.code };
+        }
+        lambdaOwners.set(`${environment}/${started.boot}`, owner);
+        return started;
       }
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: parsed.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
@@ -270,13 +343,10 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       // v2 ticket 02 (V2-02 Validar): a Lambda installation is diagnosed against its AWS account, never against this host's QEMU/KVM. An
       // invalid profile names no account, so nothing is contacted. Nothing is created or started.
       if (selection.adapter === 'lambda') {
-        const lifecycle: Diagnostic = { id: 'sandbox-adapter', status: 'blocked',
-          message: 'The lambda adapter is not composed into the controller in this release: its installation is validated, its images are prepared and its boots start and stop, but Works cannot run under it yet.',
-          nextStep: 'Use this diagnosis to prepare the account; operate with an adapter this release can run. There is no fallback to another sandbox.' };
-        if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [lifecycle], versions: {} as Record<string, string | null> };
+        if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [] as Diagnostic[], versions: {} as Record<string, string | null> };
         const profile = selection.configuration;
         return { configuration: { valid: true as const, effective: profile }, versions: {} as Record<string, string | null>, checks: [
-          ...await validateLambdaInstallation({ profile, concurrency, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }) }), lifecycle] };
+          ...await validateLambdaInstallation({ profile, concurrency, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }) })] };
       }
       const validated = validateConfiguration(configuration);
       const checks: Diagnostic[] = [

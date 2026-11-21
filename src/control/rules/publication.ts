@@ -17,11 +17,19 @@ const finalSummary = (execution: ExecutionView) => execution.review?.rounds.at(-
  * Spec §9.1/§9.3: only the content the end-of-Execution verification established may be published, and only as the commit that holds it
  * (clean tree, HEAD holding exactly that content). A COMPLETED Execution is never success by itself; absence of evidence is never success.
  */
-export function publishableContent(execution: ExecutionView): { ok: true; verified: NonNullable<PublicationView['verified']> } | { ok: false; reasons: string[] } {
+/**
+ * `live` (v2 ticket 06, decision 1A): the Execution is still running in the boot that produced the content — its Builder activation
+ * completed and the verification is recorded, but no end and no cessation exist yet. Every other requirement is the same.
+ */
+export function publishableContent(execution: ExecutionView, options: { live?: boolean } = {}): { ok: true; verified: NonNullable<PublicationView['verified']> } | { ok: false; reasons: string[] } {
   const reasons: string[] = [];
   if (execution.request.publication) reasons.push('PUBLICATION_EXECUTION');
-  if (execution.end?.outcome !== 'completed') reasons.push('EXECUTION_NOT_COMPLETED');
-  if (execution.end?.cessation !== 'confirmed') reasons.push('CESSATION_NOT_CONFIRMED');
+  if (options.live) {
+    if (execution.state !== 'started' || execution.end) reasons.push('EXECUTION_NOT_LIVE');
+  } else {
+    if (execution.end?.outcome !== 'completed') reasons.push('EXECUTION_NOT_COMPLETED');
+    if (execution.end?.cessation !== 'confirmed') reasons.push('CESSATION_NOT_CONFIRMED');
+  }
   const verification = verificationOf(execution);
   if (!execution.review) reasons.push('REVIEWS_NOT_RECORDED');
   else if (!verification) reasons.push('REVIEW_VERIFICATION_ABSENT');

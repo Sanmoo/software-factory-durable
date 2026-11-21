@@ -179,7 +179,5 @@ test('v2 ticket 01: sandbox.adapter selects the installation adapter; Gondolin n
   // v2 ticket 02: the Lambda adapter has its own profile; without the AWS profile name and the installation name no account is contacted.
   assert.deepEqual(lambda.report.configuration, { valid: false, errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.awsProfile' },
     { code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.installation' }] });
-  const check = lambda.report.checks.find((item: { id: string }) => item.id === 'sandbox-adapter');
-  assert.equal(check.status, 'blocked');
-  assert.match(check.message, /lambda/);
+  assert.equal(lambda.report.checks.some((item: { id: string }) => item.id === 'sandbox-adapter'), false, 'v2 ticket 06: the adapter is composed; an invalid profile is a configuration error only');
 });

@@ -9,7 +9,7 @@ import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, in
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
-import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity } from '../types.js';
+import type { AccessDependencies, BranchObservation, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PublicationView } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
@@ -21,10 +21,10 @@ import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
-import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
+import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
-import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
+import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
@@ -141,6 +141,8 @@ function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; wo
 
   return {
     get withdrawn() { return withdrawn.signal.aborted; },
+    /** v2 ticket 06: the grant in force (the same-boot publication activation is launched with it; never after a withdrawal). */
+    get current() { return withdrawn.signal.aborted ? undefined : current; },
     /** Initial issuance, visible to a concurrent withdrawal while in flight (its grant is then revoked, never delivered). */
     async issueInitial(): Promise<BuilderGrant> {
       const pending = ports.credentials.issue(deps.context).then(grant => { known.push({ ref: 'initial', grant, revoked: false }); current = grant; return grant; });
@@ -240,6 +242,23 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.ownCycles, work.ticket, attemptId);
     await deps.record(work.work_id, evaluation);
     return { attemptId, evaluation };
+  }
+
+  /**
+   * v2 ticket 06: Control's own read of `origin` (never the guest's word): the tip of the base and of the Work branch. It names the commit
+   * a boot without a persistent disk clones, and it is the measure of progress after a budget end (decision 2a).
+   */
+  async function readOrigin(work: WorkRecord, branch: string): Promise<{ kind: 'observed'; base: string; branch: BranchObservation } | { kind: 'unavailable'; code: string }> {
+    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+    if (!configured) return { kind: 'unavailable', code: 'REPOSITORY_NOT_CONFIGURED' };
+    try {
+      const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [branch, work.repository.base] });
+      if (read.kind !== 'observed') return { kind: 'unavailable', code: `ORIGIN_NOT_READ_${read.code}`.slice(0, 64) };
+      const base = read.branches[work.repository.base], tip = read.branches[branch];
+      if (!base || base.state !== 'present') return { kind: 'unavailable', code: base?.state === 'absent' ? 'ORIGIN_BASE_ABSENT' : 'ORIGIN_BASE_NOT_READ' };
+      if (!tip || tip.state === 'unknown') return { kind: 'unavailable', code: 'ORIGIN_BRANCH_NOT_READ' };
+      return { kind: 'observed', base: base.sha, branch: tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' } };
+    } catch { return { kind: 'unavailable', code: 'ORIGIN_NOT_READ' }; }
   }
 
   type Handle = Awaited<ReturnType<ExecutionPorts['workers']['activate']>>;
@@ -702,33 +721,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const attempts = publication.verified ? attemptsOf(publication, publication.verified.head) : [];
     return attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent';
   };
-  /** Returns whether a discovery read was made. */
-  /** `listing`: every Work of the installation, read BEFORE this Work's remote read — another Work's attempt is recorded at its activation
-   * commit, before any push, so each concurrent own publication the read can observe is already in it (ticket 61). */
-  async function reconcileOne(listed: WorkRecord, listing: readonly WorkRecord[]): Promise<boolean> {
-    let step = publicationStep(listed);
-    if (step.kind === 'evaluate') {
-      const evaluated = await evaluatePublication(session, listed.work_id, step.basisExecutionId);
-      if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery') { observe(listed.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); return false; }
-      const attempted = publicationAttempted({ publication: evaluated });
-      step = { kind: 'discover', trigger: attempted ? 'after-publication' : 'verified', attempted };
-    }
-    if (step.kind === 'resolve') {
-      // Ticket 21: the accepted answer of the divergence Question (a local read; the answer itself arrived by the Question desk).
-      const resolved = await resolveDivergence(session, listed.work_id, step.divergenceId);
-      if (resolved !== 'waiting' && resolved !== 'stale') observe(listed.work_id, `reconciliation-${resolved.decision}`, resolved.code ? [resolved.code] : []);
-      return false;
-    }
-    if (step.kind !== 'discover') return false;
-    const work = await readWork(session, listed.work_id);
-    const publication = work?.publication;
-    if (!work || !publication?.verified || running.has(work.work_id)) return false;
+  /**
+   * One discovery read of the Work's own publication (Git remote ref + correlated pull requests) and the pure decision over it. Shared by
+   * the discovery pass after cessation and by the same-boot publication of a live basis (v2 ticket 06); it records nothing.
+   */
+  async function discover(work: WorkRecord, publication: PublicationView & { verified: NonNullable<PublicationView['verified']> }, attempted: boolean, listing: readonly WorkRecord[]) {
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     const app = await appIdentity();
     // Ticket 21: the Factory's own remote history and the authorization in force (its basis must be the reconciliation Execution).
     const authorization = authorizationInForce(publication);
     const basis = [...(work.previousExecutions ?? []), ...(work.execution ? [work.execution] : [])].find(item => item.executionId === publication.basisExecutionId);
-    const known = knownRemote(publication, step.attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId));
+    const known = knownRemote(publication, attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId));
     const compareFrom = comparisonBase(known);
     let observation: DiscoveryObservation;
     let observedAt: string | null = null;
@@ -753,11 +756,36 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
     }
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
-      repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: step.attempted, previousHeads: publication.linkedHeads ?? [],
+      repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: publication.linkedHeads ?? [],
       prOnlyRecovery: prOnlyRecovery(publication), known,
       refsBefore: publication.refsBefore ?? null, observation,
       // Ticket 61: the other Works' own publication expectations (Control state): their own branch at a recorded head is not unexpected.
       others: otherPublications(listing, { workId: work.work_id, repositoryId: work.repository.repositoryId }) });
+    return { observation, observedAt, decision };
+  }
+  /** Returns whether a discovery read was made. */
+  /** `listing`: every Work of the installation, read BEFORE this Work's remote read — another Work's attempt is recorded at its activation
+   * commit, before any push, so each concurrent own publication the read can observe is already in it (ticket 61). */
+  async function reconcileOne(listed: WorkRecord, listing: readonly WorkRecord[]): Promise<boolean> {
+    let step = publicationStep(listed);
+    if (step.kind === 'evaluate') {
+      const evaluated = await evaluatePublication(session, listed.work_id, step.basisExecutionId);
+      if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery') { observe(listed.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); return false; }
+      const attempted = publicationAttempted({ publication: evaluated });
+      step = { kind: 'discover', trigger: attempted ? 'after-publication' : 'verified', attempted };
+    }
+    if (step.kind === 'resolve') {
+      // Ticket 21: the accepted answer of the divergence Question (a local read; the answer itself arrived by the Question desk).
+      const resolved = await resolveDivergence(session, listed.work_id, step.divergenceId);
+      if (resolved !== 'waiting' && resolved !== 'stale') observe(listed.work_id, `reconciliation-${resolved.decision}`, resolved.code ? [resolved.code] : []);
+      return false;
+    }
+    if (step.kind !== 'discover') return false;
+    const work = await readWork(session, listed.work_id);
+    const publication = work?.publication;
+    if (!work || !publication?.verified || running.has(work.work_id)) return false;
+    const verifiedPublication = { ...publication, verified: publication.verified };
+    const { observation, observedAt, decision } = await discover(work, verifiedPublication, step.attempted, listing);
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
       trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
       branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
@@ -769,6 +797,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const { executionId } = execution;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase())!;
     let phase = 'prepare';
+    // v2 (V2-03): decided from the declared capability only. Absent declaration = the MVP sandbox (persistent disk).
+    const diskless = ports.sandbox.capabilities?.persistentDisk === false;
     let environment: EnvironmentRef | undefined;
     let boot: BootRef | undefined;
     // A Question recorded by THIS Execution whose activation then failed or became uncertain: explicit impediment, never a silent wait.
@@ -870,6 +900,60 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // its reservation) before the end is recorded.
     let reviewTask: Promise<boolean> | undefined;
     let endCode: string | null = null;
+    /**
+     * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
+     * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
+     * THIS Execution (own invocation, the one leased push, `gh` for the draft pull request). Its effects are never assumed: the ordinary
+     * discovery after cessation links the pull request only at exactly the verified head.
+     */
+    const publishInBoot = async (checkoutPath: string) => {
+      const evaluated = await evaluateLivePublication(session, work.work_id, executionId);
+      if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery' || !evaluated.verified) { observe(work.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); return; }
+      const fresh = await readWork(session, work.work_id);
+      if (!fresh?.publication?.verified || !environment || !boot) return;
+      const { observation, observedAt, decision } = await discover(fresh, { ...fresh.publication, verified: fresh.publication.verified }, false, await deps.readWorks());
+      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: executionId, executionId, trigger: 'verified', observedAt, ticketNumber: work.ticket.number, decision, live: true,
+        branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
+      observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
+      if (recorded === 'stale') return;
+      if (recorded.state !== 'requested' || !recorded.verified || !recorded.expectedRemote) {
+        // An undecided read cannot be repeated after the stop: `origin` will not have the commit. Explicit block, never a queued publication.
+        if (recorded.state === 'awaiting-discovery') await blockLivePublication(session, work.work_id, executionId, decision.reasons);
+        return;
+      }
+      const prompt = publicationPrompt({ reason: 'SAME_BOOT_PUBLICATION', executionId, previousExecutionId: executionId,
+        skillDirectory: `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`, repository: work.repository.repository, base: recorded.base,
+        branch: recorded.branch, head: recorded.verified.head, marker: recorded.marker, ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: checkoutPath,
+        expectedRemote: recorded.expectedRemote, pullRequest: recorded.update ?? null, remote: publicationRemote(work.repository.repository),
+        verified: { reviewedRound: recorded.verified.reviewedRound, gates: recorded.verified.gates, requiredChecks: recorded.verified.requiredChecks } });
+      const grant = lifecycle?.current;
+      if (prompt.kind === 'too-large' || !grant) { await blockLivePublication(session, work.work_id, executionId, [prompt.kind === 'too-large' ? 'PROMPT_TOO_LARGE' : 'CREDENTIALS_WITHDRAWN']); return; }
+      checkStop();
+      const invocationId = randomUUID();
+      const request = await beginLivePublication(session, work.work_id, executionId, invocationId);
+      if (request === 'stale') return;
+      let publisher: Handle;
+      try {
+        publisher = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: environment, bootRef: boot, phaseId: 'builder-publication' },
+          prompt: prompt.prompt, signal: activitySignal, ...publishOnly(ports.builder),
+          ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
+          pushPolicy: { branch: request.branch, head: request.head, remote: publicationRemote(work.repository.repository), expected: request.expectedRemote.state === 'present' ? request.expectedRemote.sha : null } },
+        { credential: grant.delivery });
+      } catch (error) {
+        if (interrupted() || stopping.signal.aborted) throw error;
+        await settleLivePublication(session, work.work_id, executionId, { status: 'not-started', code: codeOf(error, 'PUBLICATION_ACTIVATION_FAILED') }); return;
+      }
+      // Renewals of the grant now reach the publishing Builder.
+      await lifecycle!.attach(publisher.worker);
+      try {
+        await wait(publisher.started);
+        await activity('publication-activation-started');
+        const result = await wait(lifecycle!.renewWhile(publisher.completed));
+        await settleLivePublication(session, work.work_id, executionId, { status: result.status === 'success' ? 'completed' : 'failure',
+          code: result.status === 'failure' ? result.code : result.status === 'question' ? 'PUBLICATION_ACTIVATION_ASKED' : null });
+        observe(work.work_id, 'in-boot-publication-ended', [result.status]);
+      } finally { publisher.close(); }
+    };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
@@ -885,18 +969,40 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         ...(remedy?.remedy === 'recreate-artifact-seed' ? { recreateSeeds: remedy.seeds } : {}),
         ...(pinned ? { environment: { ...pinned, repository: work.repository.repository, repositoryId: work.repository.repositoryId } } : {}),
         ...(environmentRetry ? { retryEnvironmentBase: true } : {}) });
-      if (prepared.status === 'success' && !('checkout' in prepared)) { await hold('PREPARE_CHECKOUT_MISSING', 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
+      // A sandbox WITH a persistent disk prepares the checkout on the host (MVP §7.3); only one that declares none may return without it.
+      if (prepared.status === 'success' && !('checkout' in prepared) && !diskless) { await hold('PREPARE_CHECKOUT_MISSING', 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
       if (prepared.status !== 'success') { await refused('prepare', prepared); return; }
       environment = prepared.environment;
-      const pack = prepared.seeds.find(seed => seed.name.startsWith('factory/skill-pack/'));
+      const seeds = 'seeds' in prepared ? prepared.seeds : [];
+      let pack = seeds.find(seed => seed.name.startsWith('factory/skill-pack/'));
+      // v2 ticket 06 (V2-02/V2-08): without a host checkout the clone happens in the guest, from `origin`. Control names the commit from its
+      // OWN read of `origin`: the Work branch tip when the branch exists, else the tip of the base. An unread origin starts nothing.
+      let checkout: { baseCommit: string; branch: string; path: string; reused: boolean };
+      let clone: { repository: string; installationId: number; commit: string; branch: string } | null = null;
+      let originAtStart: OriginObservation | null = null;
+      if ('checkout' in prepared) checkout = prepared.checkout;
+      else {
+        const origin = await readOrigin(work, execution.request.branch);
+        if (origin.kind !== 'observed') {
+          await releaseBeforeStart(session, work.work_id, executionId, [origin.code]);
+          observe(work.work_id, 'released-before-start', [origin.code]); return;
+        }
+        // The review base stays the commit the Work started from; a later Execution starts at whatever the Work branch holds on `origin`.
+        const firstBase = [...(work.previousExecutions ?? [])].map(item => item.request.baseCommit).find((commit): commit is string => typeof commit === 'string');
+        checkout = { baseCommit: firstBase ?? origin.base, branch: execution.request.branch, path: guestCheckoutPath, reused: false };
+        clone = { repository: work.repository.repository, installationId: configured.installationId, commit: origin.branch.state === 'present' ? origin.branch.sha : origin.base, branch: execution.request.branch };
+        originAtStart = origin.branch;
+      }
       // Ticket 48: the Host fingerprint of the checkout BEFORE any boot of this Execution (progress at a budget end is measured from it).
-      const atStart = ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment: prepared.environment })
+      // v2 ticket 06 (decision 2a): a sandbox without a persistent disk has no checkout on the host; progress is measured on `origin`.
+      const atStart = !diskless && ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment: prepared.environment })
         .catch(() => ({ status: 'unavailable' as const, code: 'CHECKOUT_OBSERVATION_FAILED' })) : null;
       if ((await recordPhase(session, work.work_id, executionId, 'reserved', 'prepared', 'execution-prepared', current => {
         current.dispatch.environment = prepared.environment;
-        current.checkout = { atStart };
-        current.request.baseCommit = prepared.checkout.baseCommit;
-        current.request.checkout = prepared.checkout.path;
+        if (clone && originAtStart) current.origin = { atStart: originAtStart, startCommit: clone.commit };
+        else current.checkout = { atStart };
+        current.request.baseCommit = checkout.baseCommit;
+        current.request.checkout = checkout.path;
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
         // Ticket 44: what this environment was created from (declaration hash + resolved manifest), recorded with the Execution.
         if ('base' in prepared && prepared.base) current.request.environment = prepared.base;
@@ -906,7 +1012,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         if (environmentRetry && current.environmentRetry?.request_id === environmentRetry.request_id) current.environmentRetry = null;
         // Ticket 47: a disk remedy is the boot's, settled by the boot phase commit below.
         if (!remedy || isDiskRemedy(remedy.remedy) || current.startRemedy?.request_id !== remedy.request_id) return;
-        const replaced = prepared.seeds.filter(seed => seed.replaced).map(seed => `${seed.name}->${seed.replaced}`);
+        const replaced = seeds.filter(seed => seed.replaced).map(seed => `${seed.name}->${seed.replaced}`);
         current.history.push({ at: new Date().toISOString(), event: 'start-remedy-applied', origin: 'controller-recovery', executionId,
           detail: `${remedy.request_id}:${remedy.remedy}:${replaced.length ? replaced.join(',') : 'no divergent copy found'}`.slice(0, 512) });
         current.startRemedy = null;
@@ -917,10 +1023,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const pass = passes.get(work.work_id);
       // Ticket 47: the operator's disk remedy (repair/replace of a preserved disk that failed its check) is applied by THIS boot only.
       const diskRemedy = remedy && isDiskRemedy(remedy.remedy) ? remedy.remedy : null;
-      const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}), ...(diskRemedy ? { diskRemedy } : {}) });
+      const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}), ...(diskRemedy ? { diskRemedy } : {}),
+        ...(clone ? { checkout: clone } : {}) });
       if (started.status !== 'success') { await refused('start', started); return; }
       boot = started.boot;
-      if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; }, current => {
+      // v2 ticket 06: a boot without a persistent disk starts empty; the skill pack is the one written into THIS boot.
+      const bootPack = started.seeds?.find(seed => seed.name.startsWith('factory/skill-pack/'));
+      if (!pack && bootPack) pack = bootPack;
+      if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot;
+        if (bootPack) current.request.skillPack = { name: bootPack.name, manifestSha256: bootPack.manifestSha256 }; }, current => {
         const at = new Date().toISOString();
         // Ticket 47: how the previous boot of this environment was stopped (clean = its root left read-only; forced otherwise), on the record.
         if (started.previousStop) current.history.push({ at, event: 'previous-boot-stop', origin: 'controller-recovery', executionId,
@@ -946,7 +1057,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (evaluation.conclusion !== 'satisfied') { await refuse([`DEPENDENCIES_${evaluation.conclusion.toUpperCase()}`]); return; }
       if (await deps.paused()) { await refuse(['GLOBAL_PAUSE']); return; }
       // The first prompt and, for a resumption, the continue/replace decision are planned BEFORE any credential is issued.
-      const plan = await activationPlan(work, execution, prepared, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
+      const plan = await activationPlan(work, execution, { checkout }, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
       if (plan.kind === 'refused') { await refuse(plan.reasons); return; }
       if (plan.kind === 'insufficient') {
         // Spec §5.5/§6.1: insufficient recovery context blocks explicitly (before any credential), never a `continue`/recovery without context.
@@ -1029,7 +1140,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}),
         // Publish-only (review HIGH 1): no handoff for a publication activation; its Builder can never open a review round.
         // Ticket 22: a repair that updates the branch onto the current base is reviewed against THAT base tip (never the stale prepared base).
-        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max, ...(delivered.length ? { delivered } : {}) } } : {}),
+        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max, ...(delivered.length ? { delivered } : {}) } } : {}),
           // Ticket 21: every capture of a reconciliation Execution checks that the authorized remote tip is still an ancestor of HEAD.
           ...(execution.request.reconciliation ? { preserve: execution.request.reconciliation.authorizedRemote }
             // Ticket 22: a repair over human commits — every capture proves the latest incorporated tip is still an ancestor of HEAD.
@@ -1080,7 +1191,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         phase = 'completed';
         // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
         const completed = await wait(lifecycle.renewWhile(handle.completed));
-        timerStop.abort(); // the activity ended: its clock stops (also before an external wait)
+        // The activity ended: its clock stops (also before an external wait). v2 ticket 06: an Execution that publishes in this boot keeps its
+        // clock until the publication activation ended too (stopped by the `finally` below).
+        if (!execution.request.publishInBoot || completed.status !== 'success') timerStop.abort();
         if (completed.status === 'question') {
           // Lost ACK/notification: the completion repeats the SAME identity and content; a missing record is registered once from it.
           // Content not intact and no record: explicit impediment, nothing invented or published.
@@ -1121,7 +1234,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
               if (result.status === 'verified') sources.push(reference);
             }
             await recordVerification(session, work.work_id, executionId, { sources });
+            // v2 ticket 06 (Operator decision 1A): the verified commit exists only in this boot's guest; it is published NOW, by a
+            // publish-only Builder activation of this same Execution and boot, under the MVP publication rules.
+            if (execution.request.publishInBoot) {
+              phase = 'publish';
+              try { await publishInBoot(checkout.path); }
+              catch (error) {
+                if (interrupted() || stopping.signal.aborted) throw error;
+                observe(work.work_id, 'in-boot-publication-failed', [codeOf(error, 'IN_BOOT_PUBLICATION_FAILED')]);
+              }
+              phase = 'completed';
+            }
           }
+          timerStop.abort();
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
             null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') endCode = completed.code;
@@ -1133,7 +1258,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
       const stop = await stopOwnBoot('builder execution ended');
       // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
-      const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? {
+      const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? diskless ? {
+        // v2 ticket 06 (decision 2a): the boot left nothing on the host; progress is the Work branch tip on `origin` having advanced.
+        atEnd: null, guestStop: null, origin: await readOrigin(work, execution.request.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }) } : {
         atEnd: ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment }).catch(() => ({ status: 'unavailable' as const, code: 'CHECKOUT_OBSERVATION_FAILED' })) : null,
         guestStop: 'guestShutdown' in stop && stop.guestShutdown ? `${stop.guestShutdown.result}:${stop.guestShutdown.reason}` : null } : undefined;
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', budgetEnd);
@@ -1423,10 +1550,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     try { builderBudget = ports.builder.modelBudget === 'builder-v1' ? builderBudgetPolicy(configuredScope?.builderBudget) : null; }
     catch { observe(work.work_id, 'refused', ['BUILDER_BUDGET_ABOVE_MAXIMUM']); return true; }
     const policies = { ...(publication ? publishOnly(ports.builder) : ports.builder), ...(builderBudget ? { builderBudget } : {}) };
+    // v2 ticket 06 (decision 1A): without a persistent disk the Execution publishes its verified commit in its own boot.
+    const publishInBoot = ports.sandbox.capabilities?.persistentDisk === false && !publication && Boolean(ports.reviews?.rounds);
     const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
       request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies, ...(publication ? { publication } : {}),
-        ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}) }, ...(resume ? { resume } : {}),
+        ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}), ...(publishInBoot ? { publishInBoot: true as const } : {}) }, ...(resume ? { resume } : {}),
       limits: configuredScope ?? {} });
     if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return true; }
     observe(work.work_id, 'reserved');

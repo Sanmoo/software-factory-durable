@@ -52,13 +52,11 @@ test('the Gondolin lifecycle refuses a Lambda selection and never falls back to 
   const root = await mkdtemp(join(tmpdir(), 'factory-adapter-selection-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sandbox = createSandbox({ root });
-  // An invalid Lambda profile names no account: validate contacts nothing and says Works cannot run under the adapter in this release.
+  // An invalid Lambda profile names no account: validate contacts nothing and reports the configuration errors (v2 ticket 06: the adapter is
+  // composed into the controller, so there is no "not available in this release" check any more).
   const report = await sandbox.validate({ adapter: 'lambda', schemaVersion: 1 });
   assert.equal(report.configuration.valid, false);
-  const check = report.checks.find(item => item.id === 'sandbox-adapter');
-  assert.equal(check?.status, 'blocked');
-  assert.match(check!.message, /lambda/);
-  assert.match(check!.nextStep, /no fallback/i);
+  assert.deepEqual(report.checks, []);
   // A VALID Lambda selection is never prepared or started under another adapter: Prepare is the Lambda adapter's own (v2 ticket 03; a Work
   // without a pinned declaration is refused before the account is contacted) and so is Start (v2 ticket 04: no MicroVM without a prepared image).
   const lambda = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };

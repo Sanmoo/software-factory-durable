@@ -153,7 +153,11 @@ export type ExecutionPorts = {
       environment?: PinnedEnvironment & { repository: string; repositoryId: number }; retryEnvironmentBase?: boolean }): Promise<PreparedWork>;
     /** `pass`: identity of the dispatch pass that reserved this Execution (ticket 24; correlation/evidence only). */
     /** `diskRemedy` (ticket 47): the operator's repair/replace decision for a preserved disk that fails its check, applied by this boot only. */
-    start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: 'repair-disk' | 'replace-disk' }): Promise<StartResult>;
+    /** `checkout` (v2 ticket 06): given ONLY when the sandbox declares no persistent disk and `prepare` returned no checkout: the boot clones
+     * this commit of `origin` inside the guest, on the Work branch. Control names the commit from its own read of `origin`. The successful
+     * result then also carries `seeds` (Factory material written into the guest of this boot). */
+    start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: 'repair-disk' | 'replace-disk';
+      checkout?: { repository: string; installationId: number; commit: string; branch: string } }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
     /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
     observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;
@@ -288,6 +292,13 @@ export type ExecutionView = {
     publication?: PublicationRequest | null;
     /** Scope updates bound to this Execution at admission (delivered in its first prompt; `delivered` once its start is confirmed). */
     scopeUpdateIds?: string[];
+    /**
+     * v2 ticket 06 (Operator decision 1A): set at admission when the sandbox declares no persistent disk. The verified commit exists only in
+     * the guest of the boot that produced it, so THIS Execution publishes it in the same boot (a publication activation after the
+     * verification) and its grant has write access (purpose `builder-publish`); the Builder Host still refuses every push outside the one
+     * leased push of that activation. Absent: the MVP flow (a separate publication Execution on the preserved workspace).
+     */
+    publishInBoot?: true;
     /** Session decision of a resumed Builder (spec §5.5/§6.1): `continue` the previous compatible session, or `replace` it with the reason. */
     session?: { mode: 'continue' | 'replace'; reason: string; previousExecutionId: string; previous: WorkerSessionRef | null; decidedAt: string } | null };
   credential: BuilderGrantMetadata | null;
@@ -332,7 +343,21 @@ export type ExecutionView = {
   /** Ticket 48: the Host's fingerprint of the Work's checkout when this Execution was prepared and, after a budget end, when its boot ceased,
    * with the progress decided from them (never from the model's claim). */
   checkout?: { atStart: CheckoutFingerprint | null; atEnd?: CheckoutFingerprint | null; progress?: BudgetEndProgress | null; guestStop?: string | null };
+  /**
+   * v2 ticket 06 (Operator decision 2a): without a persistent disk there is no checkout on the host to fingerprint. The tip of the Work
+   * branch on `origin` as Control read it before the boot and, after a budget end, after the boot ceased; "progress" is that tip having
+   * advanced (the only progress that survives the boot). `startCommit`: the commit Control named to the boot's clone.
+   */
+  origin?: { atStart: OriginObservation; startCommit: string; atEnd?: OriginObservation | null };
+  /**
+   * v2 ticket 06 (Operator decision 1A): the publication activation of THIS Execution, in the boot that verified the content: its own
+   * invocation, the verified commit, the lease expectation and how it ended. The attempt is also recorded in the Work's publication.
+   */
+  inBootPublication?: { invocationId: string; head: string; branch: string; expectedRemote: BranchObservation; pullRequest: number | null; requestedAt: string;
+    outcome?: { at: string; status: 'completed' | 'failure' | 'not-started'; code: string | null } };
 };
+/** v2 ticket 06: the Work branch tip on `origin` from Control's own read, or why it is not known. */
+export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
 export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: string };
 /** What one publication activation may publish (spec §9.1): fixed by Control, never chosen by the model. */

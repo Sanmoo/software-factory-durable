@@ -12,7 +12,7 @@ import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFi
 import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-export { planWorkerLaunch, launchWorker, prepareReviewerContinuation, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type WorkerBootHost } from './worker-launch.js';
+export { planWorkerLaunch, launchWorker, prepareReviewerContinuation, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type HostedWorkerBoot, type WorkerBootHost } from './worker-launch.js';
 
 /** A refused installation path, with the relative path that caused it (diagnosable; never repaired). */
 export class InstallationPathError extends Error {

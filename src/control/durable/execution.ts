@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/index.js';
-import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, ExecutionView } from '../types.js';
+import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, ExecutionView, OriginObservation } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { observationDriven } from '../rules/repair.js';
 import { undeliveredHuman } from '../rules/feedback.js';
@@ -18,7 +18,7 @@ import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyContinuationRequest, applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
-import { budgetEndProgress, budgetExhaustedCode } from '../rules/budget-continuation.js';
+import { budgetEndProgress, budgetExhaustedCode, originProgress } from '../rules/budget-continuation.js';
 import type { CheckoutFingerprint } from '../../contracts/index.js';
 import { settleCancellation } from '../rules/cycles.js';
 
@@ -335,7 +335,8 @@ export const confirmActivation = (session: Session, work_id: string, executionId
   });
 
 /** The fixed grant purpose of an activity (spec §8): publication activations publish; every other Builder activation only reads. */
-export const purposeOf = (execution: Pick<ExecutionView, 'request'>) => execution.request.publication ? 'builder-publish' as const : 'builder-start' as const;
+/** v2 ticket 06 (decision 1A): an Execution that publishes in its own boot holds the write grant from its start (the Builder Host refuses every push but the one leased push). */
+export const purposeOf = (execution: Pick<ExecutionView, 'request'>) => execution.request.publication || execution.request.publishInBoot ? 'builder-publish' as const : 'builder-start' as const;
 const blankGrant = (): CredentialGrantRecord => ({ requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null,
   revocation: null, revocationCode: null, risk: null, revocationAttemptedAt: null });
 // Records written before ticket 20 lack these fields; every credential commit completes them in place.
@@ -616,7 +617,9 @@ export async function reconcileDurations(session: Session, live: (executionId: s
 }
 
 /** Ticket 48: what the Host observed when a Builder that ended its budget had ceased (its checkout fingerprint and how the guest stopped). */
-export type BudgetEndObservation = { atEnd: CheckoutFingerprint | null; guestStop: string | null };
+export type BudgetEndObservation = { atEnd: CheckoutFingerprint | null; guestStop: string | null;
+  /** v2 ticket 06 (decision 2a): the Work branch on `origin` after the boot ceased, when the sandbox keeps no disk; progress is then decided from `origin` alone. */
+  origin?: OriginObservation };
 
 /** Slot is released only after confirmed cessation of the Execution's own boot (spec §5.3: "Slot só após cessação"). */
 export async function releaseAfterCessation(session: Session, work_id: string, executionId: string, cessation: 'confirmed' | 'unconfirmed', budgetEnd?: BudgetEndObservation) {
@@ -628,7 +631,8 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     execution.dispatch.phase = 'stopped';
     if (budgetEnd && execution.end.code === budgetExhaustedCode) {
       // Ticket 48: progress is decided from the Host's two fingerprints only (start recorded at preparation, end after the clean stop).
-      const progress = budgetEndProgress(execution.checkout?.atStart ?? null, budgetEnd.atEnd);
+      if (budgetEnd.origin && execution.origin) execution.origin.atEnd = budgetEnd.origin;
+      const progress = budgetEnd.origin ? originProgress(execution.origin?.atStart ?? null, budgetEnd.origin) : budgetEndProgress(execution.checkout?.atStart ?? null, budgetEnd.atEnd);
       execution.checkout = { atStart: execution.checkout?.atStart ?? null, atEnd: budgetEnd.atEnd, progress, guestStop: budgetEnd.guestStop };
       document.work.history.push({ at: new Date().toISOString(), event: 'budget-end-observed', origin: 'controller-budget', executionId,
         detail: `${progress.kind === 'progress' ? `progress:${progress.commits ? 'commits' : ''}${progress.commits && progress.checkout ? '+' : ''}${progress.checkout ? 'checkout' : ''}`

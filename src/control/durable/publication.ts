@@ -79,6 +79,82 @@ export async function evaluatePublication(session: Session, work_id: string, bas
 }
 
 /**
+ * v2 ticket 06 (Operator decision 1A): the publication basis of a LIVE Execution, on a sandbox without a persistent disk. The Builder
+ * activation completed and the verification was recorded, but the boot is still up: the verified commit exists only in its guest, so the
+ * basis is evaluated NOW. `awaiting-discovery` with the verified content, or `not-publishable` with its reasons; nothing is requested here.
+ */
+export async function evaluateLivePublication(session: Session, work_id: string, executionId: string): Promise<PublicationView | 'stale'> {
+  return onWork(session, work_id, work => {
+    const basis = work.execution;
+    if (!basis || basis.executionId !== executionId || !basis.request.publishInBoot || basis.state !== 'started' || basis.end || work.publication?.basisExecutionId === executionId) return 'stale' as const;
+    const decision = publishableContent(basis, { live: true });
+    const now = new Date().toISOString();
+    const earlier = work.publication ?? null;
+    work.publication = { state: decision.ok ? 'awaiting-discovery' : 'not-publishable', basisExecutionId: executionId, marker: publicationMarker(work.work_id),
+      branch: basis.request.branch, base: basis.request.base, verified: decision.ok ? decision.verified : null, expectedRemote: null, requestedAt: null,
+      pullRequest: earlier?.pullRequest ?? null, description: earlier?.description ?? null, discoveries: earlier?.discoveries ?? [],
+      attempts: earlier?.attempts ?? [], linkedHeads: earlier?.linkedHeads ?? [], refsBefore: null, update: null, reasons: decision.ok ? [] : decision.reasons,
+      divergences: earlier?.divergences ?? [], reconciliation: earlier?.reconciliation ?? null, baseChange: earlier?.baseChange ?? null,
+      nextStep: decision.ok ? 'The own publication is discovered (Git remote + pull requests) before the Builder publishes in this same boot.'
+        : 'Nothing is published: the Execution content is not verified (reasons). A new verified Execution (correction/scope update) is needed.', updatedAt: now };
+    history(work, 'publication-evaluated', executionId, `${work.publication.state}${decision.ok ? `:${decision.verified.head}` : `:${decision.reasons.join(',')}`}`);
+    return copy(work.publication);
+  });
+}
+
+/**
+ * v2 ticket 06: the same-boot publication activation is ATTEMPTED from this commit, before its worker is launched: the attempt is recorded
+ * with the lease it carries and the Execution names the activation's own invocation. From now on only a discovery after cessation decides.
+ */
+export async function beginLivePublication(session: Session, work_id: string, executionId: string, invocationId: string):
+  Promise<NonNullable<ExecutionView['inBootPublication']> & { marker: string; base: string; verified: NonNullable<PublicationView['verified']> } | 'stale'> {
+  return onWork(session, work_id, work => {
+    const execution = work.execution;
+    const publication = work.publication;
+    if (!execution || execution.executionId !== executionId || execution.state !== 'started' || execution.end || execution.inBootPublication || !publication?.verified ||
+      publication.state !== 'requested' || publication.basisExecutionId !== executionId || !publication.expectedRemote) return 'stale' as const;
+    const at = new Date().toISOString();
+    const head = publication.verified.head;
+    execution.inBootPublication = { invocationId, head, branch: publication.branch, expectedRemote: { ...publication.expectedRemote }, pullRequest: publication.update ?? null, requestedAt: at };
+    publication.attempts = [...(publication.attempts ?? []), { executionId, head, at, expectedRemote: { ...publication.expectedRemote } }].slice(-20);
+    Object.assign(publication, { state: 'awaiting-discovery', updatedAt: at, nextStep: 'A publication activation was requested in the boot that verified the content: its effects are discovered after its cessation, never assumed.' });
+    work.history.push({ at, event: 'publication-started', origin: 'controller-publication', executionId, detail: head });
+    return { ...copy(execution.inBootPublication), marker: publication.marker, base: publication.base, verified: copy(publication.verified) };
+  });
+}
+
+/** v2 ticket 06: how the same-boot publication activation ended (the worker's word; the publication itself is decided by discovery). */
+export async function settleLivePublication(session: Session, work_id: string, executionId: string, outcome: { status: 'completed' | 'failure' | 'not-started'; code: string | null }) {
+  return onWork(session, work_id, work => {
+    const execution = work.execution;
+    if (!execution || execution.executionId !== executionId || !execution.inBootPublication || execution.inBootPublication.outcome) return 'stale' as const;
+    execution.inBootPublication.outcome = { at: new Date().toISOString(), ...outcome };
+    return 'recorded' as const;
+  });
+}
+
+/** The commit a live basis verified was NOT published before its boot ends: it dies with the boot (V2-08: nothing else preserves it). */
+export const unpublishedBeforeStop = 'VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP';
+/**
+ * v2 ticket 06: the live discovery could not decide (incomplete or held read) while the boot was up. A later publication Execution would
+ * start from `origin`, which does not have the verified commit: the publication is blocked explicitly instead of being queued.
+ */
+export async function blockLivePublication(session: Session, work_id: string, executionId: string, reasons: string[]): Promise<PublicationView | 'stale'> {
+  return onWork(session, work_id, work => {
+    const publication = work.publication;
+    if (!publication || publication.basisExecutionId !== executionId || work.execution?.executionId !== executionId || (publication.state !== 'awaiting-discovery' && publication.state !== 'requested') ||
+      publicationAttempted(work)) return 'stale' as const;
+    const at = new Date().toISOString();
+    const nextStep = `The verified commit ${publication.verified?.head ?? ''} was not published before its boot ended (${reasons.join(', ')}); the sandbox keeps no disk, so it no longer exists. ` +
+        'Nothing is repeated automatically: the operator decides explicitly (a new Execution reproduces the work from the Ticket).';
+    Object.assign(publication, { state: 'blocked', reasons: [unpublishedBeforeStop, ...reasons].slice(0, 16), updatedAt: at, nextStep });
+    if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep });
+    history(work, 'publication-blocked', executionId, publication.reasons.join(','));
+    return copy(publication);
+  });
+}
+
+/**
  * The publication activation is ATTEMPTED from its activation commit ("activation-requested", before any launch or receipt): from now on
  * only a discovery after cessation decides, and this verified head is never requested again, whatever happens to the receipt.
  */
@@ -103,13 +179,19 @@ const own = (pull: NonNullable<Extract<DiscoveryDecision, { outcome: 'linked' }>
  * automatically; `incomplete`: recorded, nothing decided.
  */
 export async function recordDiscovery(session: Session, work_id: string, input: { basisExecutionId: string; executionId: string | null; trigger: PublicationDiscovery['trigger'];
-  observedAt: string | null; branch: PublicationDiscovery['branch']; decision: DiscoveryDecision; ticketNumber: number }): Promise<PublicationView | 'stale'> {
+  observedAt: string | null; branch: PublicationDiscovery['branch']; decision: DiscoveryDecision; ticketNumber: number;
+  /** v2 ticket 06: the discovery of a LIVE basis (same-boot publication): the Execution is running, nothing is queued. */ live?: boolean }): Promise<PublicationView | 'stale'> {
   return onWork(session, work_id, async (work, tx) => {
     const publication = work.publication;
+    if (input.live) {
+      const execution = work.execution;
+      if (!publication || publication.state !== 'awaiting-discovery' || publication.basisExecutionId !== input.basisExecutionId || !execution ||
+        execution.executionId !== input.executionId || execution.executionId !== input.basisExecutionId || execution.state !== 'started' || execution.end) return 'stale' as const;
+    }
     // Ticket 61: a blocked publication is discovered again only for the operator's pending re-evaluation.
     const reevaluation = publication?.state === 'blocked' && publication.reevaluation?.state === 'pending' ? publication.reevaluation : null;
     if (!publication || (publication.state !== 'awaiting-discovery' && publication.state !== 'base-changed' && !reevaluation) || publication.basisExecutionId !== input.basisExecutionId ||
-      (work.execution?.executionId ?? null) !== input.executionId || publicationStep(work).kind !== 'discover') return 'stale' as const;
+      (work.execution?.executionId ?? null) !== input.executionId || (!input.live && publicationStep(work).kind !== 'discover')) return 'stale' as const;
     const { decision } = input;
     const at = new Date().toISOString();
     const previous = publication.discoveries.at(-1);
@@ -178,7 +260,8 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
             'activation is queued to create only the pull request (no push). Never repeated after it.'
           : decision.update ? `A later verified basis: a publication activation is queued to update the own pull request #${decision.update.number} (lease on its current head).`
           : 'No own publication exists (complete read): a publication activation of the Builder is queued with the observed lease expectation.' });
-      work.queue = { ...work.queue, pending: true };
+      // A live basis is published by its own running Execution: nothing enters the queue.
+      if (!input.live) work.queue = { ...work.queue, pending: true };
       history(work, 'publication-requested', input.executionId, `${decision.recovery ? `${decision.recovery}:` : ''}${decision.expectedRemote.state === 'absent' ? 'remote:absent' : `remote:${decision.expectedRemote.sha}`}`);
     } else if (decision.outcome === 'blocked') {
       if (decision.pullRequest) link(decision.pullRequest);

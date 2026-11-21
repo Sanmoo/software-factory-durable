@@ -44,7 +44,8 @@ export const publishOwn = (overrides: Partial<PullRequestCandidate> = {}) => (re
   else remote.pulls[3] = [...(remote.pulls[3] ?? []), ownPull(workId, branch, head, overrides)];
 };
 
-export function executionDoubles(remote: Remote, scripts: Script[], options: { reviews?: boolean } = {}) {
+/** `diskless` (v2 ticket 06): a sandbox that declares NO persistent disk: prepare returns no host checkout, start clones the commit Control names. */
+export function executionDoubles(remote: Remote, scripts: Script[], options: { reviews?: boolean; diskless?: boolean } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   let sessions = 0;
   let delivered: ((directive: BuilderDirective) => void) | undefined;
@@ -56,13 +57,22 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
     builder: { skillPack: 'factory-skills-v6', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     ...(options.reviews === false ? {} : { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 }, rounds: { max: 4 } } }),
     sandbox: {
+      ...(options.diskless ? { capabilities: { docker: true, persistentDisk: false, bootDuration: { maxSeconds: 3600, rotationMarginSeconds: 600 },
+        egress: { mediation: 'none' as const, publicTcp: true, udp: false, ipv6: false, privateNetwork: false } },
+      async observeCheckout() { calls.push({ kind: 'observe-checkout' }); return { status: 'unavailable' as const, code: 'CHECKOUT_NOT_ON_HOST' }; } } : {}),
       async prepare(input) {
         calls.push({ kind: 'prepare' });
+        if (options.diskless) return { status: 'success', environment: `env-${'c'.repeat(64)}` as never };
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: calls.filter(call => call.kind === 'prepare').length > 1, preparedAt: new Date().toISOString() } };
       },
-      async start() { calls.push({ kind: 'start' }); return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never }; },
+      async start(input) {
+        calls.push({ kind: 'start', detail: input.checkout ?? null });
+        if (options.diskless && !input.checkout) return { status: 'failure', code: 'CHECKOUT_REQUIRED' };
+        return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never,
+          ...(options.diskless ? { seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }] } : {}) };
+      },
       async stop() { calls.push({ kind: 'stop' }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
       async observeProposal(input): Promise<ProposalIdentity> {
         const event = captures.get(input.round);

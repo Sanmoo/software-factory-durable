@@ -16,7 +16,7 @@ test('the Dockerfile starts from the pinned Alpine, installs the template and th
   const rendered = renderGuestImage(declaration);
   assert.deepEqual(file(rendered, 'Dockerfile').split('\n'), [
     'FROM public.ecr.aws/docker/library/alpine@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2',
-    `RUN ${apk} 'docker=29.5.2-r0' 'docker-cli-compose=2.40.3-r6' 'docker-cli-buildx=0.30.1-r6' 'openssh=10.2_p1-r1' 'git=2.52.1-r0' 'python3=3.12.16-r0' 'bash=5.3.3-r1' 'websocat=1.14.0-r1' 'iptables=1.8.11-r1' 'curl=8.23.0-r0'`,
+    `RUN ${apk} 'docker=29.5.2-r0' 'docker-cli-compose=2.40.3-r6' 'docker-cli-buildx=0.30.1-r6' 'openssh=10.2_p1-r1' 'git=2.52.1-r0' 'python3=3.12.16-r0' 'bash=5.3.3-r1' 'websocat=1.14.0-r1' 'iptables=1.8.11-r1' 'curl=8.23.0-r0' 'github-cli=2.83.0-r0'`,
     `RUN ${apk} 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r0'`,
     "RUN adduser -D -s /bin/bash builder && sed -i 's/^builder:!/builder:*/' /etc/shadow && addgroup builder docker && mkdir -p /workspace /artifacts /etc/ssh/authorized && chown builder:builder /workspace /artifacts",
     "RUN adduser -D -s /bin/bash reviewer && sed -i 's/^reviewer:!/reviewer:*/' /etc/shadow",
@@ -67,7 +67,7 @@ test('the start hook brings up sshd and dockerd; none of them is started at buil
 });
 
 test('the template packages are pinned to exact Alpine versions in the release pin', () => {
-  assert.deepEqual(lambdaGuestPin.packages.map(entry => entry.name), ['docker', 'docker-cli-compose', 'docker-cli-buildx', 'openssh', 'git', 'python3', 'bash', 'websocat', 'iptables', 'curl']);
+  assert.deepEqual(lambdaGuestPin.packages.map(entry => entry.name), ['docker', 'docker-cli-compose', 'docker-cli-buildx', 'openssh', 'git', 'python3', 'bash', 'websocat', 'iptables', 'curl', 'github-cli']);
   for (const entry of lambdaGuestPin.packages) assert.match(entry.version, /^[0-9][0-9a-z._]*-r[0-9]+$/, entry.name);
 });
 

@@ -100,7 +100,9 @@ export type WorkerCompletion = { status: 'success'; receipt: { workId: string; i
  * will have (`builderToolNames`, the same prediction session continuation uses), so a prompt never names a tool its session lacks. A throw
  * refuses the activation before any launch. Absent: the profile's fixed prompt. */
 type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[]; profiles?: Partial<Record<'builder' | 'standards' | 'spec', WorkerLaunch['profile']>>;
-  builderPrompt?: (session: { phaseId: string; tools: string[] }) => string };
+  builderPrompt?: (session: { phaseId: string; tools: string[] }) => string;
+  /** v2 ticket 06: where the owner of a boot listens (the Sandbox's own discovery). Absent: the supervised per-boot owner of the MVP. */
+  ownerEndpoint?: (context: WorkerLaunch['context']) => Promise<string> };
 export { builderToolNames } from './session-ref.js';
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObject({ executionId: z.string(), invocationId: z.string() }) });
@@ -291,7 +293,7 @@ export function createWorkers(configuration?: Configuration) {
         required: [...review.required], missing: [...review.missing], ...(review.continueFrom === undefined ? {} : { continueFrom: review.continueFrom }) } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(builderBudget === undefined ? {} : { builderBudget: { ...builderBudget } }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(secretAckTimeoutMs === undefined ? {} : { secretAckTimeoutMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
       ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }),
       ...(pushPolicy === undefined ? {} : { pushPolicy: { branch: pushPolicy.branch, expected: pushPolicy.expected, head: pushPolicy.head, ...(pushPolicy.remote === undefined ? {} : { remote: pushPolicy.remote }) } }) };
-    const endpoint = await workerOwnerEndpoint(configuration.root, context);
+    const endpoint = await (configuration.ownerEndpoint ? configuration.ownerEndpoint(context) : workerOwnerEndpoint(configuration.root, context));
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,
       environmentRef: context.environmentRef, bootRef: context.bootRef } });
     const close = () => { if (live.get(context.invocationId)?.channel === channel) live.delete(context.invocationId); channel.close(); };

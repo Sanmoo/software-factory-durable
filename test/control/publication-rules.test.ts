@@ -229,3 +229,17 @@ test('ticket 18: after a publication attempt, the reasons that show a guest effe
     'PUBLISHED_HEAD_NOT_VERIFIED', 'MULTIPLE_OWN_PULL_REQUESTS:4,5']);
   assert.deepEqual(guestEffectOutOfScope(['DESCRIPTION_NONCONFORMANT:x', 'PUBLICATION_OUTCOME_UNCONFIRMED']), [], 'a missing or badly described publication is not an out-of-scope effect');
 });
+
+test('v2 ticket 06: a LIVE basis (started, not ended) is publishable under the same requirements, and only when asked as live', () => {
+  const reasons = (decision: ReturnType<typeof publishableContent>) => decision.ok ? [] : decision.reasons;
+  const live = { ...execution(), state: 'started', end: null } as unknown as ExecutionView;
+  assert.deepEqual(reasons(publishableContent(live)), ['EXECUTION_NOT_COMPLETED', 'CESSATION_NOT_CONFIRMED'], 'the MVP rule still needs the end and the cessation');
+  const ok = publishableContent(live, { live: true });
+  assert.ok(ok.ok);
+  if (ok.ok) assert.deepEqual([ok.verified.executionId, ok.verified.head], ['e1', head]);
+  assert.deepEqual(reasons(publishableContent(execution(), { live: true })), ['EXECUTION_NOT_LIVE'], 'an ended Execution is never a live basis');
+  const unverified = { ...execution({ verification: { status: 'not-verified', reasons: ['GATE_FAILED:t1'], contentSha256: 'f'.repeat(64) } }), state: 'started', end: null } as unknown as ExecutionView;
+  assert.deepEqual(reasons(publishableContent(unverified, { live: true })), ['REVIEW_NOT_VERIFIED', 'VERIFICATION:GATE_FAILED:t1']);
+  const dirty = { ...execution({ content: { sha256: 'f'.repeat(64), clean: false, headMatches: true } }), state: 'started', end: null } as unknown as ExecutionView;
+  assert.deepEqual(reasons(publishableContent(dirty, { live: true })), ['VERIFIED_CONTENT_NOT_COMMITTED']);
+});

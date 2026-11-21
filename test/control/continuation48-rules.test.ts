@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CheckoutFingerprint, GateEvidence } from '../../src/contracts/index.js';
-import { budgetEndProgress, builderBudgetPolicy, stateSummary, summaryLimits } from '../../src/control/rules/budget-continuation.js';
+import { budgetEndProgress, builderBudgetPolicy, originProgress, stateSummary, summaryLimits } from '../../src/control/rules/budget-continuation.js';
 import { chargeDecision, counterOf, exhaustionImpediment, initialBudget } from '../../src/control/rules/budget.js';
 import { classifyInterruption, interruptionRecoveryPrompt } from '../../src/control/rules/recovery.js';
 import type { WorkBudget } from '../../src/control/types.js';
@@ -88,4 +88,17 @@ test('ticket 48: the repository Builder budget in worker terms (absent values ke
   assert.deepEqual(builderBudgetPolicy({ toolCalls: 600 }), { requests: 150, tools: 600, deadlineMs: 3_600_000 });
   assert.deepEqual(builderBudgetPolicy({ requests: 10, toolCalls: 20, requestTimeoutMinutes: 5 }), { requests: 10, tools: 20, deadlineMs: 300_000 });
   assert.throws(() => builderBudgetPolicy({ requests: 301 }), /BUILDER_BUDGET_ABOVE_MAXIMUM/);
+});
+
+test('v2 ticket 06 (decision 2a): without a persistent disk, progress after a budget end is the Work branch on origin having advanced', () => {
+  const at = (sha: string) => ({ state: 'present' as const, sha });
+  assert.deepEqual(originProgress({ state: 'absent' }, at('a'.repeat(40))), { kind: 'progress', commits: true, checkout: false }, 'the branch was published');
+  assert.deepEqual(originProgress(at('a'.repeat(40)), at('b'.repeat(40))), { kind: 'progress', commits: true, checkout: false });
+  assert.deepEqual(originProgress(at('a'.repeat(40)), at('a'.repeat(40))), { kind: 'none' }, 'unpublished work did not survive the boot');
+  assert.deepEqual(originProgress({ state: 'absent' }, { state: 'absent' }), { kind: 'none' });
+  assert.deepEqual(originProgress(at('a'.repeat(40)), { state: 'absent' }), { kind: 'none' }, 'a branch that disappeared is not progress');
+  assert.deepEqual(originProgress(null, at('a'.repeat(40))), { kind: 'unknown', code: 'ORIGIN_START_NOT_OBSERVED' });
+  assert.deepEqual(originProgress({ state: 'unknown', code: 'ORIGIN_NOT_READ' }, at('a'.repeat(40))), { kind: 'unknown', code: 'ORIGIN_START_ORIGIN_NOT_READ' });
+  assert.deepEqual(originProgress(at('a'.repeat(40)), null), { kind: 'unknown', code: 'ORIGIN_END_NOT_OBSERVED' });
+  assert.deepEqual(originProgress(at('a'.repeat(40)), { state: 'unknown', code: 'ORIGIN_BRANCH_NOT_READ' }), { kind: 'unknown', code: 'ORIGIN_END_ORIGIN_BRANCH_NOT_READ' });
 });

@@ -56,6 +56,8 @@ export function sessionDecision(input: { previous: Facts & { session: SessionRef
   return { mode: 'continue', reason: 'SESSION_COMPATIBLE' };
 }
 
+/** The guest path of the Work's checkout (MVP §7.3): where a sandbox without a host workspace clones it. */
+export const guestCheckoutPath = '/workspace/checkout';
 type Git = { baseCommit: string | null; branch: string | null; checkout: string | null };
 /**
  * Spec §5.5/§6.1: a resumption must reference the SAME Work context (base commit, own branch, checkout) that was actually PRESERVED — the

@@ -7,6 +7,9 @@ import type { EnvironmentRef } from '../prepare.js';
 import type { StartResult } from '../start.js';
 import type { StopResult } from '../stop.js';
 import { bootReady, bootReadyProgram, clonedHead, cloneProgram, evidenceProgram } from './guest-programs.js';
+import { collectLambdaArtifacts, uploadLambdaSeeds } from './artifacts.js';
+import type { ArtifactSeed } from '../artifact-seeds.js';
+import { preserveEvidence } from '../../records/index.js';
 import { readWorkImage } from './image.js';
 import { installationTagKey, workTagKey } from './installation.js';
 import { lambdaBootSize, type LambdaProfile } from './profile.js';
@@ -28,6 +31,7 @@ export const defaultLambdaBootClock: LambdaBootClock = Object.freeze({ now: () =
 export const lambdaBootWaits = Object.freeze({ intervalSeconds: 2, runningSeconds: 120, channelSeconds: 90, cessationSeconds: 120 });
 
 export type LambdaBootDependencies = { root: string; service: LambdaServiceFactory; transport: GuestTransport; clock: LambdaBootClock };
+export type LambdaStartResult = StartResult;
 
 /** Why a boot began and why it ended (V2-10). A boot whose start did not complete ends with `end` and the failure code. */
 export type BootBeginReason = 'start' | 'planned-swap';
@@ -58,6 +62,15 @@ const bootRecordSchema = z.strictObject({
     /** The failure code of a start that did not complete. */ code: z.string().optional() }).optional(),
   /** Guest evidence the host read over the channel (files under the boot's `evidence/`); `lost` says what never was (V2-34). */
   evidence: z.strictObject({ collected: z.array(z.strictObject({ label: z.string(), at: instant, bytes: z.number().int() })), lost: z.string().nullable() }),
+  /**
+   * v2 ticket 06 (decision 2c, V2-34): the `/artifacts` trees (review, spec, instructions) the host collected over the channel before this
+   * boot stopped, as a protected Records reference (`<root>/<work>/evidence/<id>/files/`). Ticket 08 re-sends `spec/` and `instructions/`
+   * of the latest `preserved` collection to the next boot. `absent`: the guest had none; `lost`: not collected before the boot ended.
+   */
+  artifacts: z.discriminatedUnion('status', [
+    z.strictObject({ status: z.literal('preserved'), at: instant, reference: z.strictObject({ workId: z.string(), id: z.string(), manifestSha256: z.string(), files: z.number().int(), bytes: z.number().int() }) }),
+    z.strictObject({ status: z.literal('absent'), at: instant }),
+    z.strictObject({ status: z.literal('lost'), at: instant, code: z.string() })]).optional(),
 });
 export type LambdaBootRecord = z.infer<typeof bootRecordSchema>;
 const currentSchema = z.strictObject({ version: z.literal(1), environment: z.string(), boot: bootRecordSchema.shape.boot });
@@ -108,6 +121,8 @@ function ended(record: LambdaBootRecord, reason: BootEndReason, clock: LambdaBoo
   const lost = reason === 'loss' && record.evidence.lost === null
     ? `The boot ended before a final collection: guest evidence after ${last ? `the collection of ${last.at}` : 'its start'} is lost.` : record.evidence.lost;
   return { ...record, phase: 'ended', evidence: { ...record.evidence, lost },
+    // Decision 2c: what was not collected before a death is declared lost, never reconstructed.
+    ...(record.artifacts ? {} : { artifacts: { status: 'lost' as const, at: iso(clock), code: reason === 'loss' ? 'BOOT_LOST_BEFORE_COLLECTION' : 'NOT_COLLECTED' } }),
     ...(microvm?.startedAt && !record.startedAt ? { startedAt: microvm.startedAt } : {}),
     end: { reason, at: iso(clock), ...(microvm?.terminatedAt ? { terminatedAt: microvm.terminatedAt } : {}),
       ...(microvm?.stateReason ? { stateReason: microvm.stateReason } : {}), ...(code ? { code } : {}) } };
@@ -137,6 +152,23 @@ async function collectEvidence(dependencies: LambdaBootDependencies, record: Lam
   return { ...record, evidence: { ...record.evidence, collected: [...record.evidence.collected.filter(entry => entry.label !== label), { label, at: iso(dependencies.clock), bytes: text.byteLength }] } };
 }
 
+/**
+ * Decision 2c: the `/artifacts` evidence trees of a living boot, staged into the protected Records area of its Work. One collection per
+ * stop; a boot that already has a preserved collection keeps it when a repeated stop finds nothing more.
+ */
+async function collectArtifacts(dependencies: LambdaBootDependencies, record: LambdaBootRecord, channel: LambdaChannel): Promise<NonNullable<LambdaBootRecord['artifacts']>> {
+  const at = iso(dependencies.clock);
+  const earlier = record.artifacts?.status === 'preserved' ? record.artifacts : null;
+  // An empty or missing tree leaves no empty Records entry behind: the stage refuses and the incomplete directory is removed.
+  const preserved = await preserveEvidence({ root: dependencies.root, workId: record.workId, label: `${record.environment}/${record.boot}`, stage: async destination => {
+    const collected = await collectLambdaArtifacts(channel, destination);
+    if (collected.status === 'failure') throw new Error(collected.code);
+    if (collected.status === 'absent' || collected.files === 0) throw new Error('EVIDENCE_ABSENT');
+  } }).catch(() => ({ status: 'failed' as const, code: 'EVIDENCE_PRESERVATION_FAILED' }));
+  if (preserved.status !== 'preserved') return earlier ?? (preserved.code === 'EVIDENCE_ABSENT' ? { status: 'absent', at } : { status: 'lost', at, code: preserved.code });
+  return { status: 'preserved', at, reference: preserved.reference };
+}
+
 export type LambdaCheckout = { repository: string; commit: string; branch?: string;
   /** The Builder's reduced Git credential, in memory only: delivered to the clone as process environment over the channel (V2-24). */
   credential: { readonly token: string } };
@@ -147,8 +179,9 @@ export type LambdaCheckout = { repository: string; commit: string; branch?: stri
  * from `origin` in the guest. Success only with all three. Any failure after a MicroVM exists terminates it; an end the service does not
  * confirm is `indeterminate`, never a plain failure.
  */
-export async function startLambdaBoot(dependencies: LambdaBootDependencies, { environment, profile, checkout, reason = 'start', remoteUrl }: { environment: EnvironmentRef;
-  profile: LambdaProfile; checkout?: LambdaCheckout; reason?: BootBeginReason; remoteUrl: (scope: { repository: string }) => string }): Promise<StartResult> {
+export async function startLambdaBoot(dependencies: LambdaBootDependencies, { environment, profile, checkout, reason = 'start', remoteUrl, seeds = [] }: { environment: EnvironmentRef;
+  profile: LambdaProfile; checkout?: LambdaCheckout; reason?: BootBeginReason; remoteUrl: (scope: { repository: string }) => string;
+  /** v2 ticket 06: Factory material written into the guest of this boot (a boot starts empty, so it is sent at every start). */ seeds?: readonly ArtifactSeed[] }): Promise<LambdaStartResult> {
   const { root, clock, transport } = dependencies;
   if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'failure', code: 'ENVIRONMENT_REF_INVALID' };
   const image = await readWorkImage(root, environment);
@@ -246,9 +279,12 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   if (cloned.exitCode !== 0) return fail('CLONE_FAILED', scrub(cloned.stderr) || `git exited ${cloned.exitCode}`);
   // Guest-attested (V2-26): it tells the host the boot is usable, it authorizes nothing.
   if (clonedHead(cloned.stdout) !== checkout.commit) return fail('STARTING_COMMIT_MISMATCH');
+  // v2 ticket 06: the skill pack is Factory material of the release; nothing of an earlier boot exists, so it is written now.
+  const seeded = await uploadLambdaSeeds(channel, seeds).catch(() => ({ status: 'failure' as const, code: 'ARTIFACT_SEED_UNAVAILABLE' }));
+  if (seeded.status !== 'success') return fail('ARTIFACT_SEED_UPLOAD_FAILED', seeded.code);
   await save(await collectEvidence(dependencies, record, channel, 'start').catch(() => null) ?? record);
   await save({ ...record, phase: 'active', checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) } });
-  return { status: 'success', boot };
+  return { status: 'success', boot, seeds: seeded.seeds };
 }
 
 export type LambdaObservation = Observation & {
@@ -317,9 +353,12 @@ export async function stopLambdaBoot(dependencies: LambdaBootDependencies, { env
   if (record.hostKey && identity) {
     const channel = openChannel({ service, transport: dependencies.transport, microvmId, endpoint, identityFile, hostKey: record.hostKey, now: clock.now });
     const collected = await collectEvidence(dependencies, record, channel, 'stop').catch(() => null);
+    // Decision 2c: review captures and the preserved request/instruction versions leave the guest NOW or never (V2-34).
+    const artifacts = await collectArtifacts(dependencies, record, channel);
     channel.close();
-    record = collected ?? { ...record, evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The final collection over the channel failed: guest evidence after the last collection is lost.' } };
-  } else record = { ...record, evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The channel was never established or access was already withdrawn: no final guest evidence was collected.' } };
+    record = { ...(collected ?? { ...record, evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The final collection over the channel failed: guest evidence after the last collection is lost.' } }), artifacts };
+  } else record = { ...record, artifacts: record.artifacts ?? { status: 'lost', at: iso(clock), code: 'CHANNEL_UNAVAILABLE' },
+    evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The channel was never established or access was already withdrawn: no final guest evidence was collected.' } };
   // Access is withdrawn by removing the session key and ending the MicroVM; a still-valid token alone opens nothing without the key.
   await rm(identityFile, { force: true });
   await saveRecord(root, record);
