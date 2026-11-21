@@ -53,6 +53,9 @@ export type World = {
   /** Ticket 14: branch tips of acme/project (`refs/heads/<name>` → commit sha), served at /git/matching-refs/heads/<prefix>.
    * POST /git/refs (contents:write) adds one; POST /pulls (pull_requests:write) creates a pull request authored by the App bot. */
   refs?: Record<string, string>;
+  /** v2 ticket 12: loss marker refs of acme/project (FULL name `refs/factory/lost/<work>/<boot>` → sha), served at
+   * /git/matching-refs/factory/<prefix> and deletable by the same atomic `updateRefs` as a branch. */
+  factoryRefs?: Record<string, string>;
   /** POST /pulls: answer with this status; `created` decides whether the pull request was created anyway (ambiguous 5xx). */
   pullFault?: { status: number; created: boolean };
   /** Ticket 14: tags of acme/project (name → sha) served at /git/matching-refs/tags. */
@@ -268,15 +271,16 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   trace.body = input;
   const update = request.variables?.refUpdates?.[0];
   if (!/^mutation\\(\\$repositoryId: ID!, \\$refUpdates: \\[RefUpdate!\\]!\\) \\{ updateRefs\\(/.test(request.query ?? '') || request.variables.refUpdates.length !== 1 ||
-    update.afterOid !== '0'.repeat(40) || update.force !== false || !/^refs\\/heads\\/./.test(update.name)) process.exit(23);
+    update.afterOid !== '0'.repeat(40) || update.force !== false || !/^refs\\/(heads\\/.|factory\\/lost\\/[0-9a-f-]{36}\\/boot-[0-9a-f-]{36}$)/.test(update.name)) process.exit(23);
   const target = repositories.find(r => 'R_' + r.id === request.variables.repositoryId && token.split('-').at(-1) === 'r' + r.id);
   const granted = known?.permissions ?? {};
-  const branch = update.name.slice(11);
-  const refs = world.refs ?? {};
+  const marker = update.name.startsWith('refs/factory/');
+  const branch = marker ? update.name : update.name.slice(11);
+  const refs = (marker ? world.factoryRefs : world.refs) ?? {};
   if (!target) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to a node' }] }; }
   else if (granted.contents !== 'write') { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
   else if (refs[branch] !== update.beforeOid) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'UNPROCESSABLE', message: 'A ref was not at its expected beforeOid' }] }; }
-  else { delete refs[branch]; world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); body = { data: { updateRefs: { clientMutationId: null } } }; }
+  else { delete refs[branch]; if (marker) world.factoryRefs = refs; else world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); body = { data: { updateRefs: { clientMutationId: null } } }; }
   } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
   else if (!repo) process.exit(11);
   else if (rest === '') body = { id: repo.id, node_id: 'R_' + repo.id, full_name: repo.name, default_branch: 'main', owner: { login: repo.name.split('/')[0] } };
@@ -336,7 +340,11 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     else { status = 201; body = { ...created, html_url: 'https://github.com/' + repo.name + '/pull/' + number }; }
   }
   } else if (method !== 'GET') process.exit(16);
-  else if (/^\\/git\\/matching-refs\\/(heads|tags)(\\/.*)?$/.test(rest)) {
+  else if (/^\\/git\\/matching-refs\\/factory(\\/.*)?$/.test(rest)) {
+  const prefix = 'refs/' + decodeURIComponent(url.pathname.split('/git/matching-refs/')[1]);
+  body = page(Object.entries(world.factoryRefs ?? {}).filter(([name]) => name.startsWith(prefix)).sort()
+    .map(([name, sha]) => ({ ref: name, node_id: 'REF_' + name, object: { sha, type: 'commit' } })));
+  } else if (/^\\/git\\/matching-refs\\/(heads|tags)(\\/.*)?$/.test(rest)) {
   const [kind, ...parts] = url.pathname.split('/git/matching-refs/')[1].split('/');
   const prefix = decodeURIComponent(parts.join('/'));
   const source = kind === 'heads' ? { main: 'b'.repeat(40), ...(world.refs ?? {}) } : (world.tags ?? {});

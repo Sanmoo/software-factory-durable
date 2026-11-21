@@ -58,6 +58,17 @@ test('the preservation program tells modified, untracked and stashed work apart'
   assert.deepEqual(await g.observe().then(result => result.status === 'observed' && [result.modified, result.untracked, result.stashes]), [0, 0, 1]);
 });
 
+test('NEGATIVE (v2 ticket 12, V2-16): a loss marker ref holding HEAD on `origin` changes nothing: the program reports the Work BRANCH tip only', async t => {
+  const g = await guest(t);
+  const published = g.head();
+  await writeFile(join(g.checkout, 'a.txt'), 'two\n');
+  g.git(g.checkout, 'commit', '--quiet', '-am', 'committed, never pushed to the branch');
+  // What the terminate hook of an earlier boot would have left: the unpublished commit under the Factory's marker namespace.
+  g.git(g.checkout, 'push', '--quiet', g.origin, 'HEAD:refs/factory/lost/0b0f6c0e-5d0e-4c53-9d53-0a4f6f1f3c11/boot-6f2c1a52-0d6b-4a54-8a35-3d1f0f0c9a10');
+  const observed = await g.observe();
+  assert.deepEqual(observed.status === 'observed' && [observed.head === published, observed.remote], [false, { state: 'present', sha: published }]);
+});
+
 test('the preservation program asks `origin` itself: an unpushed commit, a stale tracking ref, a missing branch and an unreachable remote are all visible', async t => {
   const g = await guest(t);
   const published = g.head();

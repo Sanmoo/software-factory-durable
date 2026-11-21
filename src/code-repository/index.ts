@@ -6,6 +6,7 @@ import { createPullRequestReader, type PullRequestObservation, type PullRequestQ
 
 export type { BranchRule, CheckRunFact, ClassicChecks, ClassicSettings, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
 import { feedbackOperations, type FeedbackObservation, type FeedbackQuery } from './feedback.js';
+import { lossMarkerOperations, type LostMarkerCleanupResult, type LostMarkerSelection, type LostMarkersObservation } from './loss-markers.js';
 import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type OwnPullRequestObservation, type PullRequestRef } from './delivery.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
@@ -74,6 +75,10 @@ export interface CodeRepository {
   readOwnMerge?(pr: PullRequestRef): Promise<OwnPullRequestObservation>;
   /** Ticket 17 (Q4B): delete ONE selected own branch under its own cleanup grant, revalidating ownership/concurrency first. */
   cleanupBranch?(selection: BranchCleanupSelection, effect: CleanupEffect): Promise<BranchCleanupResult>;
+  /** v2 ticket 12 (V2-17): the loss marker refs of one Work on `origin`, by a complete read; never a branch, never a decision. */
+  readLostMarkers?(selection: LostMarkerSelection): Promise<LostMarkersObservation>;
+  /** v2 ticket 12 (V2-02 Remover): delete the loss marker refs of one Work, atomically; never a branch nor a pull request. */
+  cleanupLostMarkers?(selection: LostMarkerSelection, effect: CleanupEffect): Promise<LostMarkerCleanupResult>;
   /** Ticket 25 (`factory reopen`): reopen ONE known own pull request closed without merge, correlated by the effect identity. Never merge. */
   reopenPullRequest?(pr: { repo: GitHubScope; number: number; nodeId: string }, effect: { effectId: string }): Promise<PullRequestReopen>;
   /** Ticket 23: human feedback facts (reviews, inline review comments, PR conversation) of a KNOWN own pull request; GET only, never a decision. */
@@ -84,6 +89,7 @@ export interface CodeRepository {
 }
 export { parseEnvironmentDeclaration } from './environment.js';
 export type { ConversationCommentFact, FeedbackAuthor, FeedbackObservation, FeedbackQuery, ReviewCommentFact, ReviewFact } from './feedback.js';
+export type { LostMarker, LostMarkerCleanupResult, LostMarkerSelection, LostMarkersObservation } from './loss-markers.js';
 export type { PullRequestRef, OwnPullRequestFacts, OwnPullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
 const pullSchema = z.object({
@@ -247,6 +253,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         nextStep: written.nextStep, revocation: written.revocation };
     },
     ...deliveryOperations(options),
+    ...lossMarkerOperations(options),
     ...feedbackOperations(options),
     ...environmentOperations(options),
     checkAccess(repo, base) {

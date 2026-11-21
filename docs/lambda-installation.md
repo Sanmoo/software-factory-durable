@@ -290,3 +290,30 @@ que o `factory doctor` diz sobre concorrência contra a quota; depois peça o re
 impedimento (`factory resume <trabalho> --retry-blocked-start START_SERVICE_CAPACITY_REFUSED
 --request-id <id>`), que **não consome retomada operacional**, ou cancele o Trabalho. O nome do erro
 de quota do serviço nunca foi observado: a classificação fica num único ponto do adapter.
+
+## 10. Perda e ref de marcador
+
+Sem disco persistente, o que não estava na branch do Trabalho no `origin` morre com a MicroVM. Quando
+o serviço confirma o fim de um ambiente em uso, a Factory registra uma **perda** no Trabalho
+(`factory show <trabalho>`, campo `losses`, e o evento `loss-recorded` no histórico): a Execução e o
+boot, o motivo informado pelo serviço, o último commit confirmado (a ponta da branch do Trabalho lida
+pela própria Factory no `origin` naquele momento), o tempo da Execução e a sessão antiga, que fica
+guardada como evidência e nunca é continuada.
+
+Como melhor esforço, o hook de término do guest empurra o `HEAD` commitado para
+`refs/factory/lost/<trabalho>/<boot>`. O hook não aceita nenhum parâmetro de quem o chama: só aciona
+um processo que o host armou pelo canal, com o remoto, a ref e o token reduzido do Builder em
+ambiente de processo (nada gravado no guest, sem deploy key). Esse processo existe enquanto a
+credencial do Builder está entregue; ao ser retirada, ele é encerrado.
+
+- A ref de marcador **não é preservação**: não satisfaz o gate, não vira o commit confirmado e não é
+  uma branch (nenhum PR a usa). Ela existe para a sessão substituta aproveitar em vez de refazer.
+- Se ela existe é decidido pela leitura do `origin` feita pela Factory (`marker.state`: `present`
+  com o commit, `absent` ou `unknown` quando a leitura falhou), nunca pelo que o guest disse.
+- **Limites, não erros:** arquivos sem commit não entram; um push que não termina em 40 s é
+  abandonado; remoto indisponível, token vencido ou revogado e morte que o serviço não anuncia pelo
+  hook não deixam marcador; um boot sem credencial entregue (Execução retida, por exemplo) não tem
+  processo armado. Em todos esses casos a perda é registrada do mesmo jeito, com `absent`.
+- **Remover** (limpeza do Trabalho entregue, ou `factory cleanup <trabalho> --select environment` de
+  um cancelado) apaga as refs `refs/factory/lost/<trabalho>/*` por exclusão condicional atômica e
+  registra o resultado no recurso `lost-markers`; não toca a branch nem o PR.

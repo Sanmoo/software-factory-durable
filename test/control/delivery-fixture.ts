@@ -108,7 +108,8 @@ export const merged = (overrides: Partial<OwnPullRequestFacts> = {}) => ownFacts
   reported: { mergeCommitSha: 'value', merged: 'value' }, ...overrides });
 
 /** CodeRepository double for ticket 17 (only the two delivery operations; everything else throws). */
-export function deliveryRepository(state: { pull: OwnPullRequestFacts | 'unavailable'; branch: Record<string, string>; branchOutcomes?: BranchCleanupResult['outcome'][] }) {
+export function deliveryRepository(state: { pull: OwnPullRequestFacts | 'unavailable'; branch: Record<string, string>; branchOutcomes?: BranchCleanupResult['outcome'][];
+  /** v2 ticket 12: loss marker refs on the remote (full ref name → sha); `markersUnreadable`: their listing fails. */ markers?: Record<string, string>; markersUnreadable?: boolean }) {
   const calls: { method: string; args: unknown }[] = [];
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used'); },
@@ -133,6 +134,14 @@ export function deliveryRepository(state: { pull: OwnPullRequestFacts | 'unavail
       if (tip !== selection.expectedTip) return result('refused', 'BRANCH_TIP_CHANGED', tip);
       delete state.branch[selection.branch];
       return result('removed', 'BRANCH_DELETED', tip);
+    },
+    async cleanupLostMarkers(selection, effect) {
+      calls.push({ method: 'cleanupLostMarkers', args: { selection, effect } });
+      const observedAt = new Date().toISOString();
+      if (state.markersUnreadable) return { outcome: 'indeterminate', code: 'GITHUB_QUERY_FAILED', observedAt, removed: [], remaining: [], nextStep: 'synthetic', effectId: effect.effectId };
+      const own = Object.keys(state.markers ?? {}).filter(ref => ref.startsWith(`refs/factory/lost/${selection.workId}/`));
+      for (const ref of own) delete state.markers![ref];
+      return { outcome: own.length ? 'removed' : 'absent', code: own.length ? 'LOST_MARKERS_DELETED' : 'LOST_MARKERS_ABSENT', observedAt, removed: own, remaining: [], nextStep: 'synthetic', effectId: effect.effectId };
     },
   };
   return { repository, calls };

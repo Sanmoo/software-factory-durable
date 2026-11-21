@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CodeRepository } from '../../code-repository/index.js';
 import type { EnvironmentRef } from '../../sandbox/index.js';
 import type { CleanupPorts, ConfiguredRepository } from '../types.js';
-import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, explicitCancelledCleanup, explicitPending, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
+import { markersOutcome, branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, explicitCancelledCleanup, explicitPending, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
 import { consumeExplicitCleanup, recordCleanupIntent, recordCleanupResult, recordMergeObservation, recordPreservation, recordSweep } from './delivery.js';
 import { dropExplicitResources, preserveSessions } from './retention.js';
 import { retentionProtections } from '../rules/retention.js';
@@ -130,6 +130,9 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     const merge = work.delivery?.merge;
     const own = ownPullRequestOf(work);
     if (!deps.stopped() && branch && scope && merge && own && work.branch && deps.repository.cleanupBranch && work.result === 'delivered') await sweepBranch(work, branch, scope, merge);
+    // v2 ticket 12 (V2-02 Remover): the Work's loss marker refs, delivered or cancelled; never its branch nor its pull request.
+    const markers = pending.find(item => item.kind === 'lost-markers');
+    if (!deps.stopped() && markers && scope && deps.repository.cleanupLostMarkers) await sweepMarkers(work, markers, scope);
     if (explicit && !deps.stopped()) await consumeExplicitCleanup(deps.session, work.work_id, explicit.planId);
   }
   async function sweepBranch(work: WorkRecord, branch: { id: string }, scope: ConfiguredRepository, merge: NonNullable<NonNullable<WorkRecord['delivery']>['merge']>) {
@@ -139,6 +142,14 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
       expectedTip: merge.headSha, pullRequest: { number: merge.number, pullRequestId: merge.pullRequestId } }, { effectId })
       .catch(() => ({ outcome: 'indeterminate' as const, code: 'BRANCH_CLEANUP_UNAVAILABLE', observedAt: '', tip: null, revocation: 'unknown', nextStep: '', effectId }));
     await recordCleanupResult(deps.session, work.work_id, effectId, { [branch.id]: branchOutcome(result) });
+  }
+
+  async function sweepMarkers(work: WorkRecord, markers: { id: string }, scope: ConfiguredRepository) {
+    const effectId = randomUUID();
+    if (await recordCleanupIntent(deps.session, work.work_id, [markers.id], effectId) !== 'recorded') return;
+    const result = await deps.repository.cleanupLostMarkers!({ repo: scope, repositoryId: work.repository.repositoryId, workId: work.work_id }, { effectId })
+      .catch(() => ({ outcome: 'indeterminate' as const, code: 'LOST_MARKER_CLEANUP_UNAVAILABLE' }));
+    await recordCleanupResult(deps.session, work.work_id, effectId, { [markers.id]: markersOutcome(result) });
   }
 
   return {

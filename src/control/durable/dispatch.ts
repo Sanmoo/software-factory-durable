@@ -26,6 +26,8 @@ import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { recordGateCheck, recordGateCorrection } from './preservation.js';
+import { recordLoss } from './loss.js';
+import { confirmedAt, markerOf } from '../rules/loss.js';
 import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateRefusalLimit, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
@@ -267,6 +269,28 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (unread.outcome === 'accepted' || unread.code !== 'REMOTE_UNCONFIRMED') return { observation, decision: unread };
     const origin = await readOrigin(work, at.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
     return { observation, decision: gateDecision({ observation, origin }) };
+  }
+  /**
+   * v2 ticket 12 (V2-16/V2-17): records the loss of the environment of `execution`. Both facts about `origin` are Control's own reads:
+   * the Work branch tip (the last commit that survived) and the listing of the Work's loss marker refs. A marker ref is recorded for
+   * the substitute to reuse; it never becomes the confirmed commit and never satisfies the preservation gate.
+   */
+  async function recordLossOf(work: WorkRecord, execution: ExecutionView, { environment, boot }: { environment: string | null; boot: string }, observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null) {
+    const branch = execution.request.branch;
+    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+    const origin = await readOrigin(work, branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
+    const read = !configured ? { state: 'unknown' as const, code: 'REPOSITORY_NOT_CONFIGURED' }
+      : !deps.access.repository.readLostMarkers ? { state: 'unknown' as const, code: 'LOST_MARKER_READ_NOT_COMPOSED' }
+        : await deps.access.repository.readLostMarkers({ repo: configured, repositoryId: work.repository.repositoryId, workId: work.work_id })
+          .catch(() => ({ state: 'unknown' as const, code: 'LOST_MARKER_READ_FAILED' }));
+    const current = (await readWork(session, work.work_id)) ?? work;
+    const loss = { at: new Date().toISOString(), executionId: execution.executionId, boot, environment,
+      reason: observed.reason?.slice(0, 512) ?? null, terminatedAt: observed.terminatedAt,
+      confirmed: confirmedAt({ branch, origin, preservation: current.preservation ?? null }), consumption: { executionMs },
+      session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' as const }, marker: markerOf({ workId: work.work_id, boot, read }) };
+    const recorded = await recordLoss(session, work.work_id, loss);
+    if (recorded === 'recorded') observe(work.work_id, 'loss-recorded', [boot, loss.marker.state]);
+    return recorded;
   }
   /**
    * v2 ticket 06: Control's own read of `origin` (never the guest's word): the tip of the base and of the Work branch. It names the commit
@@ -627,7 +651,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           ...(execution.request.policies.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: execution.request.policies.editSourceMaxBytes }), handoff: Boolean(ports.reviews) } })
         .catch(() => ({ session: { state: 'unavailable' as const, code: 'SESSION_OBSERVATION_FAILED', differences: [] }, limitations: [] }))).session;
     }
-    const decided = sessionDecision({ previous: { session: recorded, skillPack: previous.request.skillPack, policies: previous.request.policies },
+    const decided = sessionDecision({ previous: { session: recorded, skillPack: previous.request.skillPack, policies: previous.request.policies,
+      environmentLost: Boolean(previous.environmentEnd) || Boolean(current?.losses?.some(loss => loss.executionId === previous.executionId)) },
       next: { skillPack: pack, policies: execution.request.policies }, observation });
     const decision = { mode: decided.mode, reason: decided.reason, previousExecutionId: previous.executionId, previous: recorded, decidedAt: new Date().toISOString() };
     const answer = answered?.answer ? { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator',
@@ -1461,6 +1486,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         const ended = await recordEnd(session, work.work_id, executionId, 'failure', environmentEndedCode, null, elapsed()).catch(() => ({ kind: 'stale' as const }));
         await questionUncertain().catch(() => {});
         const stop = await stopOwnBoot('environment ended');
+        // v2 ticket 12 (V2-17): without a persistent disk the death is a LOSS, recorded on the Work before the Slot is released (so before
+        // any substitute can start): what Control itself reads on `origin` now (the Work branch tip and whether the terminate hook left a
+        // marker ref), never the guest's word. The old session stays where it was recorded, as evidence; nothing continues it.
+        if (diskless && boot && observed && ended.kind === 'advanced') await recordLossOf(work, execution, { environment: environment ?? null, boot }, observed, elapsed()).catch(() => {});
         if (ended.kind === 'advanced') await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
         else await hold('ENVIRONMENT_ENDED_START_UNCONFIRMED', 'The environment ended while the start of the activity was not confirmed; the Slot is kept and the next controller boot reconciles it (ticket 26).').catch(() => {});
         observe(work.work_id, stop?.cessationConfirmed && ended.kind === 'advanced' ? 'environment-ended-slot-released' : 'environment-ended-cessation-unconfirmed', [environmentEndedCode]);

@@ -411,6 +411,28 @@ export type PreservationView = { commit: string; branch: string; confirmedAt: st
 export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
 /** `commits`: how many commits the notice named as new since `confirmed` (the gate-confirmed commit; null = none was ever confirmed). */
 export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean };
+/**
+ * v2 ticket 12 (V2-17): one environment of this Work that died before its work was published, as Control recorded it when the sandbox
+ * confirmed the end. Whatever the guest held that was not on the Work branch of `origin` is gone; nothing here says it was recovered.
+ * A substitute session (ticket 13) reads this; the old session is evidence and is never continued.
+ */
+export type LossRecord = { at: string; executionId: string; boot: string; environment: string | null;
+  /** What the sandbox reported about the end, as given. */ reason: string | null; terminatedAt: string | null;
+  /**
+   * The last commit of the Work known to be on `origin` at the loss: the Work branch tip by Control's own read made then (`origin-read`),
+   * else the last commit a preservation gate confirmed (`preservation-gate`), else none. Everything after it in the guest is lost.
+   */
+  confirmed: { commit: string | null; source: 'origin-read' | 'preservation-gate' | 'none'; branch: string; origin: OriginObservation };
+  /** What the lost activation consumed, as far as Control measures it (MicroVM time of the boot: ticket 14, by `boot`). */
+  consumption: { executionMs: number | null };
+  /** The Builder session of the lost activation: kept where it was recorded, as evidence; no later activation continues it. */
+  session: { invocationId: string; disposition: 'conserved-as-evidence' };
+  /**
+   * The loss marker ref (V2-16) by Control's OWN read of `origin`, never the guest's word. `present`: the terminate hook pushed the
+   * committed HEAD there (`commit`), for a substitute to reuse instead of redoing; it is NOT preservation and satisfies no gate.
+   * `absent`: a complete read found none. `unknown`: the read did not conclude.
+   */
+  marker: { ref: string; state: 'present'; commit: string; observedAt: string } | { ref: string; state: 'absent'; observedAt: string } | { ref: string | null; state: 'unknown'; code: string } };
 /** One indeterminate effect as Control keeps it: the sandbox's report plus the boot it ran in and when Control recorded it. */
 export type IndeterminateEffectRecord = IndeterminateEffect & { boot: string; recordedAt: string };
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
@@ -841,6 +863,8 @@ export type WorkView = {
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
   /** v2 ticket 07: absent until a preservation gate accepted (only on a sandbox without a persistent disk). */
   preservation?: PreservationView;
+  /** v2 ticket 12 (V2-17): environments of this Work lost before publication, oldest first (bounded). Absent: none was recorded. */
+  losses?: LossRecord[];
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
@@ -878,7 +902,7 @@ export type WorkView = {
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
-      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused';
+      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' | /* v2 ticket 12 */ 'loss-recorded';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
@@ -1041,7 +1065,8 @@ export type DeliveryView = {
   lastReadAt?: string | null;
   nextStep: string;
 };
-export type CleanupResourceKind = 'environment' | 'checkout' | 'local-branch' | 'temporaries' | 'remote-branch';
+/** `lost-markers` (v2 ticket 12): the Work's loss marker refs on `origin` (`refs/factory/lost/<work>/*`); never a branch. */
+export type CleanupResourceKind = 'environment' | 'checkout' | 'local-branch' | 'temporaries' | 'remote-branch' | 'lost-markers';
 /** `refused`/`kept` are never retried automatically: an operator decides (no fresh write grant is issued for them). */
 export type CleanupOutcome = 'removed' | 'absent' | 'partial' | 'failed' | 'refused' | 'kept' | 'indeterminate';
 /** Intent recorded BEFORE the effect, result after it; an intent without result (crash) becomes `indeterminate`, never success. */

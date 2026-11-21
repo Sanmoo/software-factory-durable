@@ -180,12 +180,14 @@ export function planExplicitCleanup(work: Work, select: ExplicitCleanupSelection
       if (work.cancellation && work.cancellation.state !== 'ceased' && work.result === 'cancelled') {
         refusals.push({ target, code: 'CANCELLATION_STOPPING', detail: 'Cessation of the cancelled activity is not confirmed yet.' }); continue;
       }
-      const kinds = target === 'environment' ? ['environment', 'checkout', 'local-branch', 'temporaries'] : ['remote-branch'];
+      // v2 ticket 12: the Work's loss marker refs go with its environment (V2-02 Remover), delivered or cancelled; never the branch.
+      const kinds = target === 'environment' ? ['environment', 'checkout', 'local-branch', 'temporaries', 'lost-markers'] : ['remote-branch'];
       const open = (work.result === 'delivered' ? (work.cleanup?.resources ?? []).filter(item => kinds.includes(item.kind) && !concluded(item.state)).map(item => ({ id: item.id, kind: item.kind, target: item.target }))
         : facts.plannedResources.filter(item => kinds.includes(item.kind) && !work.cleanup?.resources.some(entry => entry.id === item.id && concluded(entry.state))));
       if (!open.length) { refusals.push({ target, code: 'NOTHING_TO_REMOVE', detail: 'Every own resource of this kind is already removed or proven absent.' }); continue; }
       for (const resource of open) items.push({ id: resource.id, kind: target, target: resource.target, bytes: null, state: 'planned', code: null,
-        loss: target === 'environment' ? `${resource.kind} ${resource.target} is removed after its evidence and recorded sessions are preserved.`
+        loss: resource.kind === 'lost-markers' ? `Loss marker refs ${resource.target} are deleted from origin (the commits a dead environment pushed there as best effort); no branch or pull request is touched.`
+          : target === 'environment' ? `${resource.kind} ${resource.target} is removed after its evidence and recorded sessions are preserved.`
           : `Remote branch ${resource.target} is deleted only while its tip is still the merged own head.` });
       if (target === 'environment') warnings.push(work.result === 'delivered' ? 'One fresh, revalidated attempt per own resource; a refused/kept resource is never forced.'
         : 'The environment of a cancelled cycle is destroyed (evidence and recorded sessions are preserved first); `factory new` never reuses it.');
