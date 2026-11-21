@@ -1,0 +1,3 @@
+# Standalone binaries the quality gates shell out to, pinned exactly. Node stays pinned by .node-version and package.json engines.
+[tools]
+gitleaks = "8.30.1"

@@ -141,3 +141,13 @@ Nothing is blocked at approval time. Environment checked: Node 24.21.0 via mise,
 ## Establishment expectation
 
 At the end of this run Static metrics is pending by approval, so the engineering harness **will not be established**; the final report will say so and name every other quality gate's state.
+
+## Stage records
+
+### S1 — completed 2026-11-21
+
+- **Changed**: the runner's two modes and versioned selection policy (`scripts/test-runner/policy.json`, `selection.ts`, `changes.ts`, `architecture.ts`; `ci` = validation by change with the 900 s budget, `full` = integral validation that runs every check and records its result); dependency-cruiser and the documentary checker joined the fast Entry Point; the documentary checker now covers GLOSSARY.md, `docs/guides/`, `docs/adr/`, backticked paths, and the Entry-Point-only command rule; the nightly unit and script validate `main`; versioned `pre-commit` hook; `mise.toml` pins gitleaks; the rehearsal (`scripts/test-runner/rehearse-modes.ts`) and the Gate Proof file (`scripts/test-runner/gate-proofs.ts`, attribution tested in `test/runner/proof-attribution.test.ts`); Guides: AGENTS.md amended, CLAUDE.md, GLOSSARY.md, `docs/guides/{architecture,coding-standards,testing-strategy}.md` (the last moved from `docs/agents/testing.md`), ADRs 0001–0002.
+- **Regression investigation**: at the pinned tree `test:ci` was red: `test/sandbox/audited-vfs-guard.test.ts` and `test/sandbox/sandbox-adapter-diagnostics.test.ts` read the hash-pinned gondolin package from a fixed path into a sibling worktree that no longer exists (`test/sandbox/fixtures/audited-vfs-manifest.ts`). Fixed within the budget by resolving that root from the checkout's own `node_modules`; the recorded hashes still pin every file, so the asserted behavior is unchanged.
+- **Adopted**: Types, Context boundaries, Dependency rule, Guide pointers — proofs in [GATE-PROOFS.md](GATE-PROOFS.md).
+- **Rehearsal of the modes**: 4/4 scenarios passed (dependent caught without widening; shared configuration widens; over budget is inconclusive and starts nothing; integral runs the periodic checks change mode only reports).
+- **Remains pending**: Format, Lint, Secrets, Avoided terms (S2); Unit tests, Integration tests, Dependency vulnerabilities (S3); E2E tests (S4); Mutation (S5); Static metrics (S6).

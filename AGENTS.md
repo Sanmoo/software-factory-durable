@@ -1,5 +1,18 @@
 # Agent instructions
 
+Software Factory: fábrica local que transforma tickets autorizados em PRs revisáveis, com agentes, controle durável e merge humano.
+
+## Engineering harness
+
+- Entry Point rápido: `npm run test:fast` (ciclo de TDD e hook `pre-commit`).
+- Entry Point completo: `npm run test:ci` é a **validação por mudança**; verde cobre só o escopo afetado que o relatório nomeia. `npm run test:full` é a **validação integral** noturna; verde vale para aquela árvore. Uma mudança só está pronta quando `npm run test:ci` está verde.
+- O código é a fonte da verdade: quando um Guide e o código divergem, o código vence e o Guide é corrigido; para nomes, [GLOSSARY.md](GLOSSARY.md) vence e o código é corrigido.
+- [GLOSSARY.md](GLOSSARY.md): antes de nomear algo do produto.
+- [docs/guides/architecture.md](docs/guides/architecture.md): antes de criar módulo, import entre módulos ou mudar fronteira.
+- [docs/guides/coding-standards.md](docs/guides/coding-standards.md): ao escrever código.
+- [docs/guides/testing-strategy.md](docs/guides/testing-strategy.md): antes de escrever ou rodar testes.
+- [docs/adr/](docs/adr/): antes de reverter uma decisão de arquitetura ou de engenharia.
+
 ## Issue tracker
 
 Antes de consultar ou alterar specs, tickets ou mapas, ler `docs/agents/issue-tracker.md`.
@@ -16,12 +29,8 @@ Ao interpretar registros migrados, ler `docs/migrations/software-factory-from-pk
 
 ## Testes
 
-Antes de escrever ou rodar testes, ler `docs/agents/testing.md`.
-O gate de desenvolvimento é `npm run test:ci` (uma vez antes de entregar e de novo após rebase);
-no ciclo de TDD usar `npm run test:fast`. Isso substitui a regra antiga do handoff
-"um arquivo compilado por vez". Teste lento ou não paralelizável ganha entrada justificada em
-`test/tiers.json`; relógio falso em vez de `sleep`; sem caminho ou porta fixos; crash/SIGKILL reais
-só fora de `fast`, com um cenário representativo por mecanismo e as variações como testes de regra pura.
+`npm run test:ci` uma vez antes de entregar e de novo após rebase; `npm run test:fast` no ciclo de TDD.
+As regras para quem escreve teste estão em [docs/guides/testing-strategy.md](docs/guides/testing-strategy.md).
 
 ## Integração e push
 

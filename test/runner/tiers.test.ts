@@ -85,7 +85,7 @@ test('concurrency: fast uses at most half the cores, ci/full all of them, never 
 
 test('budgets are fixed per tier and the overrun message is explicit; full has no ceiling', () => {
   assert.equal(budgetsMs.fast, 180_000);
-  assert.equal(budgetsMs.ci, 600_000);
+  assert.equal(budgetsMs.ci, undefined, 'validation by change takes the approved budget from scripts/test-runner/policy.json');
   assert.equal(budgetsMs.full, undefined);
   assert.equal(budgetExceeded('ci', 599_999, 600_000), undefined);
   assert.match(budgetExceeded('ci', 600_001, 600_000) ?? '', /^BUDGET_EXCEEDED: tier ci took 600\.0 s, over its 600 s ceiling .*test\/tiers\.json/);
