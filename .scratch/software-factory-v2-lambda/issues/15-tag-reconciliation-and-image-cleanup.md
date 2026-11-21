@@ -87,6 +87,9 @@ Pendências e limites:
 - MicroVM da instalação cujo Trabalho o armazenamento não conhece (registro de boot existe, Controle não tem o Trabalho) NÃO é encerrada:
   vira `UNKNOWN_RESOURCE` e fecha o despacho, como qualquer recurso de dono desconhecido no MVP. Não há comando para encerrá-la.
 - O inventário roda só na subida do controlador; não há varredura periódica.
+- Visto no cenário de SIGKILL (não é do Lambda, é do MVP): o processo morto pode deixar um diretório transitório `run/github-*` de uma
+  chamada GitHub em curso, que o inventário do host reporta como `UNKNOWN_RESOURCE` e mantém o despacho fechado. O cenário confere só a
+  parte da conta (`lambda/...`) por isso.
 - `cleanup-images` roda sem lock ao lado do controlador: um Preparar que passe a usar a imagem entre o plano e a remoção não é excluído.
 - A coleta de evidência no Parar de um boot órfão usa o canal com a chave de sessão ainda no host; se falhar, a evidência fica `lost`.
 - O `owner.ts` continua exigindo os guest assets da release numa instalação Lambda (nota do ticket 06), e o texto das seções 1 e 6 de
