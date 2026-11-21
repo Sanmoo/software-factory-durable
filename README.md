@@ -3,6 +3,8 @@
 Repositório da Software Factory: proposta de transformação de tickets autorizados em PRs revisáveis,
 com agentes, controle local durável, validação e merge humano.
 
+Comece pelo [guia do MVP v2: do ticket ao merge](docs/guia-mvp-v2.md) para entender o produto, a arquitetura e o que muda com o perfil Lambda.
+
 ## Planejamento aprovado
 
 - [PRD do MVP](.scratch/software-factory/prd.md).
