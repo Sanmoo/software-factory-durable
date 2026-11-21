@@ -1,6 +1,7 @@
 # Definir contratos, persistência e compatibilidade com GitHub Issues
 
-Status: open
+Status: claimed
+Assignee: Samuel Santos
 Type: grilling
 Label: wayfinder:grilling
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
