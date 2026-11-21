@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupLambdaImages, createSandbox, installationTagKey, planImageCleanup, type EnvironmentRef } from '../../src/sandbox/index.js';
@@ -71,6 +71,16 @@ test('once every Work that held it had its environment removed, the image leaves
   assert.deepEqual([cleaned.status, cleaned.images.map(image => [image.imageName, image.outcome])], ['cleaned', [[name, 'removed']]]);
   assert.deepEqual(deletions(), ['deleteImageVersion', 'deleteImage', 'deleteBuildArtifact', 'deleteBuildLog']);
   assert.deepEqual([fake.account.images, Object.values(fake.account.objects).flatMap(bucket => Object.keys(bucket)), Object.keys(fake.account.logs)], [[], [], []]);
+});
+
+test('the cleanup leaves the build ledger alone: the builds per environment key are still reported after the image is gone (ticket 14)', async t => {
+  const { root, sandbox, prepare, remove, cleanup } = await installation(t);
+  await remove(first, await prepare(first, 'a'));
+  const ledger = join(root, 'lambda', 'image-builds.jsonl');
+  const before = [await readFile(ledger, 'utf8'), await sandbox.environmentBuilds()];
+  assert.ok((before[0] as string).includes('"requested"'), 'the Prepare recorded its build');
+  assert.deepEqual((await cleanup({ confirm: true })).images.map(image => image.outcome), ['removed']);
+  assert.deepEqual([await readFile(ledger, 'utf8'), await sandbox.environmentBuilds()], before);
 });
 
 test('an image a MicroVM still runs from, or that is still being built, is in use whatever the host records say', async t => {

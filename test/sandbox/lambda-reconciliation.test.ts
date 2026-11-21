@@ -128,6 +128,11 @@ test('AC4: a MicroVM held by a boot that has not ended is not terminated by the 
   assert.deepEqual([(await sandbox.stop({ environment, boot, reason: 'controller recovery: own survivor stopped, not adopted' })).cessationConfirmed, fake.account.microvms[0]!.state], [true, 'TERMINATED']);
   assert.deepEqual(await reconcile().then(next => next.status === 'reconciled' && next.environments), []);
   assert.equal((await records()).length, 1, 'an inventory that finds nothing running leaves no record');
+  // Ticket 14: the boot the recovery ended is measured like any other, by the service's own instants (terminatedAt - startedAt).
+  const microvm = fake.account.microvms[0]!, record = await sandbox.bootRecord({ environment, boot });
+  assert.equal(record?.end?.seconds, (microvm.terminatedAt! - microvm.startedAt) / 1000);
+  const usage = await sandbox.usage({ environment });
+  assert.deepEqual(usage.status === 'reported' && usage.boots.map(item => [item.boot, item.state, item.seconds]), [[boot, 'measured', record!.end!.seconds]]);
 });
 
 test('a listing the account refuses is an UNKNOWN inventory: nothing is terminated, nothing is closed, and dispatch stays closed', async t => {
