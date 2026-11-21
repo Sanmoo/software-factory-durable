@@ -1,6 +1,6 @@
 # Definir o vínculo durável entre Ticket Jira, Trabalho e pull request
 
-Status: open
+Status: claimed
 Type: grilling
 Label: wayfinder:grilling
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
