@@ -17,7 +17,7 @@ import { untilHolds } from '../runner/budget.js';
 // activation and the Question. A scripted Builder proves nothing about a model's conduct (dublê não comprova fronteira substituída).
 const main = 'b'.repeat(40), lost = 'c'.repeat(40), done = 'e'.repeat(40), head = 'd'.repeat(40);
 const questionId = '11111111-2222-4333-8444-000000000013';
-async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (guest: GuestWorkspace) => Script[], options: { recoveryLimit?: number } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (guest: GuestWorkspace) => Script[], options: { recoveryLimit?: number; /** The sandbox cannot read the channel record of any boot. */ reportUnreadable?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-substitute-flow-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
@@ -40,7 +40,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (gu
           input.signal.addEventListener('abort', () => resolve(null), { once: true });
         }),
         // The call in flight when the first environment died: recorded by the sandbox, reported per boot.
-        channelReport: async (input): Promise<ChannelReport> => { reports.push(input); return { unrecoverable: null, indeterminateEffects: input.boot !== boots[0] ? [] : [{ at: '2026-11-21T09:59:00.000Z',
+        channelReport: async (input): Promise<ChannelReport> => { reports.push(input); if (options.reportUnreadable) throw new Error('unreadable line'); return { unrecoverable: null, indeterminateEffects: input.boot !== boots[0] ? [] : [{ at: '2026-11-21T09:59:00.000Z',
           executionId: 'as-the-sandbox-wrote-it', invocationId: 'invocation-1', role: 'builder', tool: 'bash', callId: 'call-7', description: 'mvn deploy -DskipTests', outcome: 'environment-ended' }] }; },
         usage: async () => ({ status: 'reported', unit: 'MicroVM-seconds', boots: boots.map((boot, index) => index === boots.length - 1
           ? { boot, begin: 'start', end: null, size: 's', startedAt: null, endedAt: null, seconds: null, state: 'running' as const }
@@ -151,4 +151,16 @@ test('V2-10: without an operational recovery left, the loss follows the budget r
   assert.equal(h.activations().length, 1, 'no substitute was activated');
   assert.equal(h.kinds().filter(kind => kind === 'start').length, 1);
   assert.equal(work.losses!.length, 1);
+});
+
+test('final review, standards 4: a channel record that cannot be read never becomes "no uncertain effect": the package says it is unread and that earlier effects are to be taken as uncertain', async t => {
+  const h = await harness(t, () => [{ kind: 'hang', head: lost }, { kind: 'hang', head: lost }], { reportUnreadable: true });
+  const first = await lose(h);
+  await h.settle('substitute started', value => value?.execution?.executionId !== first.executionId && value?.execution?.state === 'started');
+  const prompt = h.activations().at(-1)!.prompt;
+  assert.ok(prompt.includes('The Factory could NOT read its record of tool calls of uncertain result for the lost environment (CHANNEL_REPORT_UNREADABLE)'), prompt);
+  assert.equal(prompt.includes('recorded NO tool call of uncertain result'), false);
+  assert.ok(prompt.includes('1. NEVER repeat an effect of uncertain result'));
+  // Visible to the Operator too, on the Work's history.
+  assert.ok((await h.work())!.history.some(item => item.event === 'channel-report-unread' && item.executionId === first.executionId));
 });

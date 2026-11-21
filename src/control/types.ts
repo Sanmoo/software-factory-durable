@@ -962,7 +962,7 @@ export type WorkView = {
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
       /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' |
-      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded' |
+      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded' | /* final review */ 'channel-report-unread' |
       /* v2 ticket 13 */ 'origin-rewrite-followed' | 'origin-branch-absent-asked' | 'origin-branch-absent-resolved';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';

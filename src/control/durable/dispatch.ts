@@ -1,7 +1,7 @@
 import { confirmedWithdrawal } from '../rules/cycles.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { BuilderGrant } from '../../contracts/index.js';
+import type { BuilderGrant, ChannelReport } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { PreservationObservation, ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
@@ -42,7 +42,7 @@ import type { SessionRef } from '../types.js';
 import { environmentEndedCode, interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { recordEnvironmentEnd } from './environment-end.js';
 import { channelLossReason, channelUnrecoverableCode, failureCodeAfter } from '../rules/channel-report.js';
-import { recordChannelReport } from './channel-report.js';
+import { recordChannelReport, recordChannelReportUnread } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerCompletion, WorkerQuestion } from '../../workers/index.js';
@@ -671,15 +671,33 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   }
 
   /**
+   * v2 ticket 11 (V2-21): reads what a dropped tool channel left unconfirmed on a boot and records it durably (idempotent). Only a sandbox
+   * that declares channel recovery is asked. `unread`: the code of a read or a record that FAILED: visible on the Work's history, and
+   * never the same as an empty report.
+   */
+  async function readChannelReport(work_id: string, executionId: string, environment: EnvironmentRef, boot: BootRef): Promise<{ report: ChannelReport | null; unread: string | null }> {
+    if (!ports.sandbox.capabilities?.channelRecovery || !ports.sandbox.channelReport) return { report: null, unread: null };
+    let report: ChannelReport | null = null;
+    let unread: string | null = null;
+    try { report = await ports.sandbox.channelReport({ environment, boot }); } catch { unread = 'CHANNEL_REPORT_UNREADABLE'; }
+    if (report) {
+      const recorded = await recordChannelReport(session, work_id, executionId, boot, report).catch(() => 'failed' as const);
+      if (recorded === 'failed' || recorded === 'stale') unread = 'CHANNEL_REPORT_NOT_RECORDED';
+    }
+    if (unread) {
+      observe(work_id, 'channel-report-unread', [boot, unread]);
+      await recordChannelReportUnread(session, work_id, executionId, boot, unread).catch(() => observe(work_id, 'channel-report-unread-not-recorded', [boot, unread!]));
+    }
+    return { report, unread };
+  }
+  /**
    * v2 ticket 13 (V2-18): the package of the substitute session, from Control's records. The channel report of the LOST boot is read and
    * recorded first (only the live dispatch path reads it otherwise: a loss settled by a restarted controller never did); then the boots
    * with their reasons and the accumulated consumption as the sandbox reports them. Nothing here comes from the lost session.
    */
   async function substituteInstruction(current: WorkRecord, execution: ExecutionView, prepared: Prepared, loss: NonNullable<WorkRecord['losses']>[number], skillDirectory: string): Promise<string> {
-    if (loss.environment && ports.sandbox.capabilities?.channelRecovery && ports.sandbox.channelReport) {
-      const report = await ports.sandbox.channelReport({ environment: loss.environment as EnvironmentRef, boot: loss.boot as BootRef }).catch(() => null);
-      if (report) await recordChannelReport(session, current.work_id, loss.executionId, loss.boot, report).catch(() => {});
-    }
+    // Final review, standards 4: a report that cannot be read or recorded is never taken for "no uncertain effect". The package says so.
+    const effectsUnread = loss.environment ? await readChannelReport(current.work_id, loss.executionId, loss.environment as EnvironmentRef, loss.boot as BootRef).then(read => read.unread) : null;
     const fresh = (await readWork(session, current.work_id)) ?? current;
     const earlier = [...fresh.previousExecutions, ...(fresh.execution && fresh.execution.executionId !== execution.executionId ? [fresh.execution] : [])];
     const environments = [...new Set([...earlier.map(item => item.dispatch.environment), prepared.recreated?.environment ?? null].filter((item): item is EnvironmentRef => Boolean(item)))];
@@ -692,7 +710,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const recoveries = fresh.budget?.recoveries ?? null;
     return substitutePackage({ workId: current.work_id, executionId: execution.executionId, ticketUrl: current.ticket.url, repository: current.repository.repository, base: current.repository.base,
       branch: execution.request.branch, checkout: prepared.checkout.path, remote: publicationRemote(current.repository.repository), skillDirectory, loss,
-      startCommit: prepared.recreated?.startCommit ?? null, boots, effects: substituteEffects(earlier, loss.executionId),
+      startCommit: prepared.recreated?.startCommit ?? null, boots, effects: substituteEffects(earlier, loss.executionId), effectsUnread,
       consumption: { executions: earlier.length + 1, executionMs: measured.length ? measured.reduce((sum, item) => sum + item, 0) : null,
         boots: usage ? { unit: usage.unit, seconds: usage.seconds, lowerBound: usage.lowerBound } : null,
         // The unit this Execution reserved counts: it is consumed when this session starts.
@@ -1150,12 +1168,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     };
     // v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on this boot, recorded durably before the end and before the stop
     // (idempotent). Only a sandbox that declares channel recovery is asked; a report that cannot be read is retried at the stop.
-    const channelReport = async () => {
-      if (!environment || !boot || !ports.sandbox.capabilities?.channelRecovery || !ports.sandbox.channelReport) return null;
-      const report = await ports.sandbox.channelReport({ environment, boot }).catch(() => null);
-      if (report) await recordChannelReport(session, work.work_id, executionId, boot, report).catch(() => {});
-      return report;
-    };
+    const channelReport = async () => environment && boot ? (await readChannelReport(work.work_id, executionId, environment, boot)).report : null;
     /**
      * v2 ticket 09 (V2-13): the working Builder is told that the swap is due. Nothing is interrupted: its Host lets the call in flight
      * return and then ends the activation `boot-swap` with the session preserved. A delivery that fails changes nothing here: the boot

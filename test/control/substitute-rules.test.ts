@@ -86,3 +86,12 @@ test('effect descriptions are data: one line, no control characters or backticks
     { executionId: 'c', end: { outcome: 'failure' }, indeterminateEffects: [effect('c1', 'y', 'c')] }];
   assert.deepEqual(substituteEffects(executions, 'c').map(item => item.callId), ['b1', 'c1']);
 });
+
+test('final review, standards 4: an unread channel record is said so, with or without effects recorded earlier, and never as "none recorded"', () => {
+  const unread = substitutePackage(input({ effects: [], effectsUnread: 'CHANNEL_REPORT_UNREADABLE' }));
+  assert.ok(unread.includes('The Factory could NOT read its record of tool calls of uncertain result for the lost environment (CHANNEL_REPORT_UNREADABLE): the list ' +
+    'may be incomplete. Treat every effect outside the checkout that an earlier session may have made (deployments, migrations, messages, external writes) as of UNCERTAIN result'));
+  assert.equal(unread.includes('recorded NO tool call'), false);
+  const partial = substitutePackage(input({ effectsUnread: 'CHANNEL_REPORT_UNREADABLE' }));
+  assert.ok(partial.includes('mvn deploy -DskipTests') && partial.includes('could NOT read its record'));
+});

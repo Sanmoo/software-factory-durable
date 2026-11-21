@@ -22,3 +22,19 @@ export async function recordChannelReport(session: Session, work_id: string, exe
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }
+
+/**
+ * Final review, standards 4: the sandbox's channel record of a boot could not be read (or its content not recorded). Never silent and
+ * never "nothing happened": the fact is on the Work's history, once per Execution, boot and code, and the substitute's package says it.
+ */
+export async function recordChannelReportUnread(session: Session, work_id: string, executionId: string, boot: string, code: string) {
+  return session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work;
+    if (!work) return 'stale' as const;
+    const detail = `${boot}:${code}`.slice(0, 256);
+    if (!work.history.some(item => item.event === 'channel-report-unread' && item.executionId === executionId && item.detail === detail)) {
+      work.history.push({ at: new Date().toISOString(), event: 'channel-report-unread', origin: 'controller-dispatch', executionId, detail });
+    }
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
