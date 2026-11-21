@@ -154,7 +154,9 @@ test('production Builder prompt is per session mode and names ONLY the tools tha
   const policies = { skillPack: 'factory-skills-v6', copyOutput: true, editSourceMaxBytes: 8192 };
   const sessions = { implementation: { phaseId: 'builder-initial', tools: builderToolNames({ ...policies, handoff: true }) },
     // Ticket 14 publish-only policies: no edit tool, never a handoff (dispatch.ts publicationPolicies).
-    publication: { phaseId: 'builder-publication', tools: builderToolNames({ skillPack: policies.skillPack, copyOutput: true, handoff: false }) } };
+    publication: { phaseId: 'builder-publication', tools: builderToolNames({ skillPack: policies.skillPack, copyOutput: true, handoff: false }) },
+    // v2 ticket 07: the session a preservation gate refusal is returned to (full Builder tools, never a handoff).
+    preservation: { phaseId: 'builder-preservation', tools: builderToolNames({ ...policies, handoff: false }) } };
   const named = (prompt: string) => ['write', 'bash', 'read', 'edit', 'ask_user', 'handoff'].filter(tool =>
     new RegExp(`\\b${tool}\\b|the ${tool} tool`).test(prompt) || (tool === 'handoff' && /hand ?off/i.test(prompt)));
   for (const [mode, session] of Object.entries(sessions)) {
@@ -163,6 +165,8 @@ test('production Builder prompt is per session mode and names ONLY the tools tha
   }
   assert.equal(productionBuilderPrompt(sessions.implementation), productionProfile.prompts.builder);
   assert.equal(productionBuilderPrompt(sessions.publication), productionProfile.prompts.builderPublication);
+  assert.equal(productionBuilderPrompt(sessions.preservation), productionProfile.prompts.builderPreservation);
+  assert.match(productionProfile.prompts.builderPreservation, /Never commit secrets[\s\S]*report the impediment/);
   assert.match(productionProfile.prompts.builderPublication, /publish-only session the Factory requested/);
   assert.match(productionProfile.prompts.builderPublication, /Never merge, approve, mark ready/);
   assert.match(productionProfile.prompts.builder, /Never push, open pull requests/);

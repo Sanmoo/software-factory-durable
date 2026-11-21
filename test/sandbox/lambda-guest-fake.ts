@@ -34,6 +34,8 @@ export type FakeGuest = { microvmId: string;
   /** The user that owns `/workspace` and `/artifacts`: the only one that writes there. */ owner: string;
   /** What `docker pull` fetched in THIS boot. */ dockerImages: string[]; pullFailed: boolean;
   /** `/workspace/checkout` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
+  /** v2 ticket 07: what `git status` and `git stash list` would count in the checkout (tests set it; a fresh clone is clean). */
+  worktree: { modified: number; untracked: number; stashes: number };
   logs: Record<string, string>;
   /** Every program that ran here, with the NAMES of its environment (values are checked by the handlers, never kept). */
   executions: { program: string; user: string; script: string; environmentNames: string[] }[];
@@ -150,7 +152,8 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
   const world = {
     /** `origin` per remote URL: the commits it has and the one Git credential it accepts. */
     /** `token`: the exact credential, or a predicate when the host mints it per start (v2 ticket 06). */
-    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean) }>,
+    /** `tip` (v2 ticket 07): what `ls-remote` answers for a branch NOW (`null`: no such branch; a throw: the remote does not answer). */
+    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean); tip?: (branch: string) => string | null | Promise<string | null> }>,
     /** Seconds after the MicroVM runs until its `sshd` answers (observed: about 7 s). */
     sshReadySeconds: 7,
     /** Image references whose pull by digest fails at boot. */
@@ -185,6 +188,20 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       if (!origin.commits.includes(checkout[2]!)) return { exitCode: 128, stderr: `fatal: reference is not a tree: ${checkout[2]}\n` };
       guest.repository = { remote, commit: checkout[2]!, branch: checkout[1] ?? null };
       return { exitCode: 0, stdout: `HEAD ${checkout[2]}\n` };
+    },
+    // v2 ticket 07: the fixed preservation program (`src/sandbox/lambda/preservation.ts`), answered from the fake checkout and `origin`. The
+    // real program is exercised with the local bash and git in `lambda-preservation.test.ts`; here only its contract is modelled.
+    'preservation-gate': async (guest, request) => {
+      const asked = /ls-remote -- '([^']+)' 'refs\/heads\/([^']+)'/.exec(request.script);
+      if (!guest.repository || !asked) return { exitCode: 3 };
+      const origin = world.origins[asked[1]!];
+      const presented = request.environment?.FACTORY_GIT_TOKEN ?? '';
+      let remote = 'unavailable';
+      if (origin?.tip && (typeof origin.token === 'string' ? presented === origin.token : origin.token(presented))) {
+        try { remote = await origin.tip(asked[2]!) ?? 'absent'; } catch { /* The remote did not answer. */ }
+      }
+      const { modified, untracked, stashes } = guest.worktree;
+      return { exitCode: 0, stdout: `GATE head=${guest.repository.commit} modified=${modified} untracked=${untracked} stashes=${stashes} remote=${remote}\n` };
     },
     evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
     tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
@@ -257,7 +274,7 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     const dockerImages = declared.filter(reference => !world.pullFailures.includes(reference));
     const pullFailed = dockerImages.length !== declared.length;
     const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? Object.fromEntries(Object.entries(users).filter(([, user]) => user.login).map(([name]) => [name, payload.builder!])) : {},
-      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, executions: [], processes: [],
+      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, worktree: { modified: 0, untracked: 0, stashes: 0 }, executions: [], processes: [],
       logs: { '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`, '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n') } };
     guests.set(microvm.microvmId, guest);
     return guest;

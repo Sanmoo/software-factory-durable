@@ -51,7 +51,9 @@ const bootstrap = z.strictObject({
   // Ticket 21 review: the exact push of a publication activation (Builder only).
   pushPolicy: z.strictObject({ branch: z.string().regex(/^factory\/[0-9]+-[0-9a-f]{8}$/), expected: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
     head: z.string().regex(/^[0-9a-f]{40}$/),
-    remote: z.string().regex(/^(origin|https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.git)$/).optional() }).optional(),
+    remote: z.string().regex(/^(origin|https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.git)$/).optional(),
+    // v2 ticket 07: the fast-forward push of HEAD an activation gets after a preservation gate refusal (`head`/`expected` unused).
+    wip: z.literal(true).optional() }).optional(),
   review: z.strictObject({ round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9), handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
     required: z.array(z.string().max(1024).regex(/^\/(workspace|artifacts)\//)).max(32).readonly(),
     missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly(),

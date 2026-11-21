@@ -186,6 +186,13 @@ export type GateEvidence = { id: string; source: string; command: string; cwd: s
 /** Treatments and gate evidence attached by the Builder host to one capture (handoff or closing). */
 export type HandoffDeclarations = { treatments: FindingTreatment[]; gates: GateEvidence[] };
 /** Host-side identity of a handed-off proposal (hashes of every indexed path plus Git metadata), computed with confined reads. */
+/**
+ * v2 ticket 07 (V2-06): what the fixed preservation program saw IN the guest: HEAD, the tracked changes, the untracked files that are not
+ * ignored, the stash, and the Work branch tip as `ls-remote` of `origin` answered it (never the local tracking ref). Guest-attested: the
+ * caller confirms the tip with its own read of `origin` before it treats anything as preserved.
+ */
+export type PreservationObservation = { status: 'observed'; head: string; modified: number; untracked: number; stashes: number;
+  remote: { state: 'present'; sha: string } | { state: 'absent' } | { state: 'unavailable' } } | { status: 'unavailable'; code: string };
 export type ProposalIdentity = { status: 'observed'; sha256: string; indexSha256: string; entries: number; consistent: boolean; observedAt: string } | { status: 'unavailable' | 'refused'; code: string };
 /** The exact reviewer output contract (the prompt is Control's; the parser is the reviewer worker's). */
 export const reviewVerdictFormat = 'Your FINAL message must be ONLY the JSON verdict object (bare, or alone inside one ```json fenced block): no prose before or after, ' +

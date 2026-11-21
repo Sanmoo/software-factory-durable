@@ -273,16 +273,17 @@ test('second layer: inside the guest, the reviewer user can neither write in the
   assert.match(text('sshd_config'), /^PermitRootLogin no$/m);
 });
 
-test('a call whose connection ends without an exit status is never reported as a result: effects are unknown', async t => {
+test('a call whose connection ends because the environment died is never reported as a result: it answers "environment ended" and the boot serves nothing more', async t => {
   const { fake, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
   guests.world.commands['mvn verify'] = (_guest, run) => { run.emit('building\n'); fake.kill(guest.microvmId); return 0; };
   const builder = await invocation();
-  assert.deepEqual(await builder.call({ name: 'bash', command: 'mvn verify' }, () => {}), { status: 'failure', code: 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' });
   const writer = await invocation();
-  assert.deepEqual(await writer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), { status: 'failure', code: 'WRITE_EFFECTS_UNCERTAIN' });  // v2 ticket 11: the service says the environment ended, so nothing is reconnected and no orphan is looked for. That is the path of the
-  // end of the activation (ticket 10): the invocation is over, the boot is recorded as lost and the started call as an uncertain effect.
+  // v2 tickets 11 and 10: the dropped call asks the service, which says the environment ended. Nothing is reconnected, no orphan is
+  // looked for, the started call is an uncertain effect, the boot is recorded as lost and every later call is denied (V2-15).
+  assert.deepEqual(await builder.call({ name: 'bash', command: 'mvn verify' }, () => {}), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
+  assert.deepEqual(await writer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
   assert.deepEqual(guest.executions.filter(execution => execution.program === 'end-call'), []);
-  assert.deepEqual(await builder.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  assert.deepEqual(await builder.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
   assert.equal((await sandbox.bootRecord({ environment, boot }))?.end?.reason, 'loss');
   const report = await sandbox.channelReport({ environment, boot });
   assert.deepEqual(report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome]), [['bash', 'mvn verify', 'environment-ended']]);

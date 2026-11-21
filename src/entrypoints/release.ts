@@ -84,6 +84,13 @@ export const productionProfile = Object.freeze({
       'names). Never merge, approve, mark ready, push to the base or any other branch or tag, request broader access, use another credential or change anything ' +
       'else on GitHub. When you need information or an approval you do not have, use the ask_user tool instead of working around it. Report blockers instead ' +
       'of working around them.',
+    // v2 ticket 07 (V2-07): the session a preservation gate refusal is returned to: write, bash, read, edit, ask_user — no handoff, no review.
+    builderPreservation: 'You are the Software Factory Builder in a session the Factory opened because its preservation gate refused: the environment ' +
+      'keeps no disk and is about to end. Follow the Factory preservation instruction exactly and do nothing else: make the checkout in /workspace/checkout ' +
+      'clean and published on your own branch (commit work in progress, remove what is disposable, clear the stash, then the ONE push the instruction names). ' +
+      'Never force-push, push to another branch or tag, open, merge or change pull requests, request broader access or use another credential. Never commit ' +
+      'secrets, credentials or data that must not be versioned: if the work cannot be published safely, report the impediment as your final message instead ' +
+      'of forcing the commit. Do not continue the implementation and do not ask questions here.',
     standards: 'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
     spec: 'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +
@@ -94,12 +101,14 @@ export const productionProfile = Object.freeze({
 /**
  * Ticket 18: the production Builder system prompt of one session, by its mode and the exact tool set the SDK session will have. The
  * publish-only session (phase `builder-publication`, no edit, no handoff) gets the publication prompt; an implementation/review-round session
- * (with the handoff tool) the implementation prompt. Any other combination (e.g. a future reconciliation mode, ticket 21) has no production
+ * (with the handoff tool) the implementation prompt; the session a preservation gate refusal is returned to (phase `builder-preservation`, v2
+ * ticket 07: edit, no handoff) its own. Any other combination (e.g. a future reconciliation mode, ticket 21) has no production
  * prompt yet and refuses the activation before launch, never a prompt naming tools the session lacks.
  */
 export function productionBuilderPrompt(session: { phaseId: string; tools: readonly string[] }): string {
   const has = (tool: string) => session.tools.includes(tool);
   if (session.phaseId === 'builder-publication' && !has('handoff') && !has('edit')) return productionProfile.prompts.builderPublication;
+  if (session.phaseId === 'builder-preservation' && !has('handoff') && has('edit')) return productionProfile.prompts.builderPreservation;
   if (['builder-initial', 'builder-recovery', 'builder-continuation'].includes(session.phaseId) && has('handoff') && has('edit') && has('ask_user')) return productionProfile.prompts.builder;
   throw new Error('BUILDER_SESSION_MODE_UNSUPPORTED');
 }

@@ -24,8 +24,10 @@ export const authorizationInForce = (publication: Pick<PublicationView, 'reconci
  * Spec §10.1: the heads attributable to the Factory by recoverable evidence — those it linked as its own PR head and those its publication
  * activations pushed (recorded at their activation commit). The branch name never proves authorship.
  */
-export function knownRemote(publication: PublicationView, attempted: boolean, verifiedBasisReconciles: boolean): KnownRemote {
-  const heads = [...new Set([...(publication.linkedHeads ?? []), ...(publication.attempts ?? []).map(item => item.head)])];
+export function knownRemote(publication: PublicationView, attempted: boolean, verifiedBasisReconciles: boolean,
+  /** v2 ticket 07: commits a preservation gate confirmed on `origin` (work in progress the Builder published under the gate). */
+  preserved: readonly string[] = []): KnownRemote {
+  const heads = [...new Set([...(publication.linkedHeads ?? []), ...(publication.attempts ?? []).map(item => item.head), ...preserved])];
   const authorization = authorizationInForce(publication);
   const lastAttempt = (publication.attempts ?? []).filter(item => item.head === publication.verified?.head).at(-1) ?? null;
   // The expectation of the next write: the lease the last attempt used, else the authorized remote, else the last linked head.

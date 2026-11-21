@@ -336,7 +336,9 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
     return decision.outcome === 'absent' ? { ...decision, recovery: 'create-pull-request-only' } : decision;
   }
   if (input.attempted) return blocked(['PUBLICATION_OUTCOME_UNCONFIRMED', where]);
-  if (where === 'REMOTE_BRANCH_UNKNOWN_CHANGE') return blocked([where]);
+  // v2 ticket 07: a tip the Factory itself confirmed under a preservation gate (work in progress published before any PR) is its own; the
+  // verified head is then published over exactly that tip. Any other tip is an unknown change.
+  if (where === 'REMOTE_BRANCH_UNKNOWN_CHANGE' && !(tip.state === 'present' && (input.known?.heads ?? []).includes(tip.sha))) return blocked([where]);
   // The verified commit already on the own branch is a compatible push (only reachable from this Work's workspace); only the PR is missing.
   return request(tip.state === 'absent' ? { state: 'absent' } : { state: 'present', sha: tip.sha }, null);
 }

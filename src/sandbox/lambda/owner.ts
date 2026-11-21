@@ -7,7 +7,7 @@ import type { EnvironmentRef } from '../prepare.js';
 import { cleanupAuthorizationSchema } from '../cleanup-records.js';
 import type { RemoveResult } from '../remove.js';
 import { currentLambdaBoot, listLambdaBoots, readLambdaBoot, stopLambdaBoot, type LambdaBootDependencies } from './boot.js';
-import { serveLambdaTools } from './tools.js';
+import { serveLambdaTools, type LambdaEnvironmentEnd } from './tools.js';
 
 /**
  * v2 ticket 06: the boot owner of a Lambda boot. The guest is not a process of this host, so no per-boot systemd unit exists: the owner
@@ -36,12 +36,19 @@ export async function lambdaOwnerEndpoint(root: string, context: Pick<WorkerLaun
 /**
  * Serves the owner endpoint of one active boot in THIS process. `close` ends every binding, worker lifetime and connection of the boot's
  * channel; it must happen before the boot is stopped (stop collects the last evidence over its own connection).
+ *
+ * v2 ticket 10 (V2-15): the tool owner watches the environment. When the service confirms its end, the tools are already denied and the
+ * calls in flight answered; this owner then aborts the lifetime of EVERY worker it launched (the signal the worker launch supervises: the
+ * worker process is told to abort its session, so it makes no further model request) and resolves `ended` for Control.
  */
 export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { launcher?: LambdaWorkerLauncher }, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }):
-  Promise<{ status: 'serving'; close(): Promise<void> } | { status: 'unavailable'; code: string }> {
+  Promise<{ status: 'serving'; close(): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd> } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
-  const served = await serveLambdaTools(dependencies, { environment, boot });
+  const environmentGone = new AbortController();
+  let reportEnd!: (observed: LambdaEnvironmentEnd) => void;
+  const ended = new Promise<LambdaEnvironmentEnd>(resolve => { reportEnd = resolve; });
+  const served = await serveLambdaTools(dependencies, { environment, boot }, { environmentEnded: observed => { environmentGone.abort(); reportEnd(observed); } });
   if (served.status !== 'serving') return served;
   const { tools } = served;
   try {
@@ -61,9 +68,14 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         if (bound.status !== 'bound') throw new Error(bound.code);
       },
       close: () => tools.close(),
-      launch: dependencies.launcher ?? ((request, endpoint, signal, secrets, relay, onHandoff) => launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff)),
+      launch: async (request, endpoint, lifetime, secrets, relay, onHandoff) => {
+        // No worker starts on an environment that ended, and none outlives it.
+        if (environmentGone.signal.aborted) throw new Error('ENVIRONMENT_ENDED');
+        const signal = AbortSignal.any([lifetime, environmentGone.signal]);
+        return dependencies.launcher ? dependencies.launcher(request, endpoint, signal, secrets, relay, onHandoff) : launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff);
+      },
     });
-    return { status: 'serving', close: () => owner.close() };
+    return { status: 'serving', close: () => owner.close(), ended };
   } catch {
     await tools.close();
     return { status: 'unavailable', code: 'BOOT_OWNER_UNAVAILABLE' };
