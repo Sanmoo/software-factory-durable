@@ -15,6 +15,8 @@ export type LambdaServiceFailure = {
     /** The identity lacks `action`. */
     | 'access-denied'
     | 'not-found'
+    /** The resource already exists or is in a state that refuses the operation (ticket 03: an image of that name already exists). */
+    | 'conflict'
     /** The service has no endpoint in the profile's region. */
     | 'region-unavailable'
     | 'unknown';
@@ -26,6 +28,17 @@ export type LambdaServiceFailure = {
 export type LambdaServiceResult<T> = { ok: true; value: T } | { ok: false; failure: LambdaServiceFailure };
 
 export type LambdaArchitecture = 'arm64' | 'x86_64';
+
+/** Image states the adapter decides on (observed: `CREATING`, `CREATED`, `CREATE_FAILED`); any other value is passed through as text. */
+export type LambdaImage = { name: string; imageArn: string; state: string; tags: Record<string, string>;
+  latestActiveImageVersion?: string; latestFailedImageVersion?: string };
+
+/** One CreateMicrovmImage request. Size, architecture, OS capabilities and hooks are properties of the IMAGE, fixed here. */
+export type LambdaImageRequest = { name: string; description: string; baseImageArn: string; baseImageVersion: string; buildRoleArn: string;
+  /** `s3://<bucket>/<key>` of the build artifact, in the image's region. */ artifactUri: string;
+  architecture: LambdaArchitecture; minimumMemoryMiB: number; additionalOsCapabilities: readonly string[];
+  hooks: { port: number; runTimeoutSeconds: number; terminateTimeoutSeconds: number; readyTimeoutSeconds: number };
+  tags: Readonly<Record<string, string>> };
 
 export interface LambdaService {
   /** STS GetCallerIdentity: the account and principal ARN behind the named profile. */
@@ -39,6 +52,20 @@ export interface LambdaService {
   bucketRegion(bucket: string): Promise<LambdaServiceResult<{ region: string }>>;
   /** Lambda MicroVMs ListMicrovmImages in the profile's region (read-only; also the proof that the service answers there). */
   listImages(): Promise<LambdaServiceResult<{ name: string; state: string; imageArn?: string }[]>>;
+  /** S3 PutObject with object tags: the build artifact (a zip with the `Dockerfile` at its root) of one MicroVM image. Changes the account. */
+  putBuildArtifact(input: { bucket: string; key: string; body: Uint8Array; tags: Readonly<Record<string, string>> }): Promise<LambdaServiceResult<{ uri: string }>>;
+  /** Lambda MicroVMs CreateMicrovmImage: starts ONE build and returns at once (`CREATING`). `conflict`: an image of that name exists. Changes the account. */
+  createImage(input: LambdaImageRequest): Promise<LambdaServiceResult<{ imageArn: string; state: string }>>;
+  /** Lambda MicroVMs GetMicrovmImage, by ARN (the service refuses the name). `not-found`: no such image. */
+  image(imageArn: string): Promise<LambdaServiceResult<LambdaImage>>;
+  /** Lambda MicroVMs ListMicrovmImageBuilds: the build records of an image (one request gives one record per chip generation). */
+  imageBuilds(imageArn: string): Promise<LambdaServiceResult<{ buildId: string; imageVersion: string; state: string; stateReason?: string }[]>>;
+  /** The build log of an image, oldest line first: the only place the cause of a failed build is written (the API gives a generic reason). */
+  buildLog(logGroup: string): Promise<LambdaServiceResult<string[]>>;
+  /** Lambda MicroVMs DeleteMicrovmImageVersion. Changes the account. */
+  deleteImageVersion(input: { imageArn: string; version: string }): Promise<LambdaServiceResult<null>>;
+  /** Lambda MicroVMs DeleteMicrovmImage (its versions first). Changes the account. */
+  deleteImage(imageArn: string): Promise<LambdaServiceResult<null>>;
   /** The account's allocated-memory quota for MicroVMs of one architecture, in MiB. */
   allocatedMemoryQuota(architecture: LambdaArchitecture): Promise<LambdaServiceResult<{ mebibytes: number }>>;
 }

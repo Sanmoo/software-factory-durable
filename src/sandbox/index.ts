@@ -15,6 +15,10 @@ import { validateLambdaInstallation } from './lambda/validate.js';
 import { createLambdaCliService } from './lambda/cli-service.js';
 import type { LambdaServiceFactory } from './lambda/service.js';
 export { createLambdaCliService, type AwsCliRunner } from './lambda/cli-service.js';
+// v2 ticket 03: Prepare under the Lambda adapter guarantees the MicroVM image of the environment key (`lambda/image.ts`).
+import { prepareLambdaImage, type LambdaImageWait } from './lambda/image.js';
+export type { LambdaImageWait } from './lambda/image.js';
+export type { LambdaImage, LambdaImageRequest } from './lambda/service.js';
 export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaServiceFailure, LambdaServiceResult } from './lambda/service.js';
 export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 export { installationResources, installationTagKey, operationPolicy, workTagKey, type PolicyStatement } from './lambda/installation.js';
@@ -83,9 +87,10 @@ export type { WriteCall } from './write-tools.js';
 /** `preparationVm`/`alpine` (ticket 44): the port that runs environment preparation VMs (absent: a declared environment is refused, never
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
-export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
-  preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory }) {
+  preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory;
+  /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait }) {
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
@@ -184,6 +189,16 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** `environment`/`retryEnvironmentBase` (ticket 44): the Work's pinned declaration and the operator's retry of a failed base preparation. */
     async prepare({ workId, configuration, checkout, recreateSeeds, environment, retryEnvironmentBase }: { workId: string; configuration: unknown; checkout?: CheckoutRequest;
       recreateSeeds?: readonly string[]; environment?: EnvironmentRequest; retryEnvironmentBase?: boolean }): Promise<PreparedWork> {
+      // v2 ticket 03 (V2-02 Preparar): under the Lambda adapter Prepare guarantees the MicroVM image of the environment key. There is no host
+      // checkout, disk or artifact seed (the clone happens in the guest at start, ticket 04): the result carries the environment and its base.
+      const selection = selectSandboxAdapter(configuration);
+      if (selection.status === 'selected' && selection.adapter === 'lambda') {
+        const profile = selection.configuration;
+        try {
+          return await prepareLambdaImage({ root, workId, profile, environment, retry: retryEnvironmentBase,
+            service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), wait: lambdaImageWait });
+        } catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
+      }
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: parsed.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
       let prepared: PrepareResult;
@@ -205,7 +220,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       // invalid profile names no account, so nothing is contacted. Nothing is created or started.
       if (selection.adapter === 'lambda') {
         const lifecycle: Diagnostic = { id: 'sandbox-adapter', status: 'blocked',
-          message: 'The lambda adapter can only be validated in this release: preparing and starting Works under it are not available yet.',
+          message: 'The lambda adapter can only be validated and prepared in this release: starting Works under it is not available yet.',
           nextStep: 'Use this diagnosis to prepare the account; operate with an adapter this release can run. There is no fallback to another sandbox.' };
         if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [lifecycle], versions: {} as Record<string, string | null> };
         const profile = selection.configuration;

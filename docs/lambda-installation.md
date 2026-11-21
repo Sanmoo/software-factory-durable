@@ -5,8 +5,9 @@ Operador. A Factory **nunca cria IAM** e **não guarda credenciais AWS**: o Oper
 conta com o template da release e configura um perfil AWS nomeado; a Factory passa só o nome do
 perfil ao `aws` (CLI), que resolve as credenciais.
 
-Nesta release o adapter é apenas **validado** por `factory doctor`. Preparar e iniciar Trabalhos
-nele ainda é recusado (`SANDBOX_ADAPTER_UNAVAILABLE`, check `sandbox-adapter`).
+Nesta release o adapter é **validado** por `factory doctor` e sabe **preparar** a imagem de
+MicroVM de um ambiente (seção 5). Iniciar Trabalhos nele ainda é recusado
+(`SANDBOX_ADAPTER_UNAVAILABLE`, check `sandbox-adapter`).
 
 ## 1. Preparar a conta (uma vez por instalação)
 
@@ -114,3 +115,29 @@ tem o seu):
 do perfil de aceite), `lambda-runtime` (build, boot e canal só são provados numa execução real
 autorizada), e qualquer leitura que não pôde ser feita (por exemplo `lambda-quota` quando a quota
 não pôde ser lida; a leitura de quota ainda não foi observada numa conta real).
+
+## 5. Imagens de MicroVM (Preparar)
+
+Cada repositório declara o ambiente em `.factory/environment.yaml` (mesmo esquema do Gondolin). No
+Preparar, o adapter garante uma imagem de MicroVM por **chave de ambiente**: repositório, hash do
+arquivo e pin da release (o perfil da imagem, arquitetura e memória baseline, entra junto).
+
+- O `Dockerfile` é montado pela Factory a partir dos valores validados: parte de Alpine por digest,
+  instala os pacotes do molde nas versões do pin da release e os pacotes declarados nas versões
+  exatas. Nenhum texto do repositório entra nele. As imagens Docker declaradas não são embutidas:
+  são baixadas por digest a cada boot.
+- A imagem se chama `factory-<instalação>-<32 hex da chave>`; o artefato de build vai para o bucket
+  como `<nome da imagem>.zip`. Os dois levam as tags `software-factory-installation` e
+  `software-factory-work` (o Trabalho cujo Preparar criou a imagem; outros Trabalhos com a mesma
+  chave reutilizam a imagem sem novo build). O log group do build
+  (`/aws/lambda-microvms/<nome da imagem>`) é criado pelo serviço, sem tags.
+- Mudar o arquivo de ambiente ou atualizar a release gera chave e imagem novas. Um Trabalho em
+  andamento continua na imagem com que começou.
+- Falha de build vira impedimento do Trabalho com a causa lida do log de build (por exemplo o
+  pacote e a versão que o `apk` recusou). Não há outra versão, outra imagem nem nova tentativa
+  automática: corrija a declaração (chave nova) ou peça o retry do ambiente, que apaga a imagem
+  falha e constrói a mesma chave de novo.
+- O mirror do Alpine guarda só o build atual de cada pacote: uma versão fixada (do molde ou da
+  declaração) deixa de construir quando o Alpine publica outra revisão. A causa aparece no
+  impedimento; para o molde, o remédio é uma release com pin novo.
+- Imagens não são apagadas pelo Preparar; a remoção é do cleanup explícito.

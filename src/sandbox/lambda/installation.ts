@@ -46,7 +46,7 @@ export function operationPolicy(profile: Pick<LambdaProfile, 'installation' | 'r
     { sid: 'PassBuildRole', actions: ['iam:PassRole', 'iam:GetRole'], resources: [resources.buildRoleArn] },
     { sid: 'SimulateOwnPolicy', actions: ['iam:SimulatePrincipalPolicy'], resources: [resources.operationRoleArn] },
     { sid: 'BuildArtifactBucket', actions: ['s3:ListBucket', 's3:GetBucketLocation'], resources: [`arn:aws:s3:::${resources.artifactBucket}`] },
-    { sid: 'BuildArtifacts', actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'], resources: [`arn:aws:s3:::${resources.artifactBucket}/*`] },
+    { sid: 'BuildArtifacts', actions: ['s3:PutObject', 's3:PutObjectTagging', 's3:GetObject', 's3:DeleteObject'], resources: [`arn:aws:s3:::${resources.artifactBucket}/*`] },
     { sid: 'BuildLogs', actions: ['logs:DescribeLogStreams', 'logs:GetLogEvents', 'logs:FilterLogEvents', 'logs:DeleteLogGroup'],
       resources: [resources.logGroupArnPattern, `${resources.logGroupArnPattern}:*`] },
     { sid: 'ReadQuotas', actions: ['servicequotas:ListServiceQuotas'], resources: ['*'] },

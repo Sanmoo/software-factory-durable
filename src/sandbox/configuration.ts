@@ -64,8 +64,9 @@ function invalid(issues: readonly { path: PropertyKey[] }[]) {
 
 /**
  * The GONDOLIN lifecycle's view of the configuration (prepare/start and the host diagnostics). A valid Lambda selection is
- * `SANDBOX_ADAPTER_UNAVAILABLE` here: this release validates a Lambda installation (ticket 02) but has no Lambda lifecycle yet, and a
- * Lambda Work is never prepared or started under Gondolin.
+ * `SANDBOX_ADAPTER_UNAVAILABLE` here: this release validates a Lambda installation (ticket 02) and prepares its MicroVM images (ticket
+ * 03, dispatched before this function is reached) but cannot start a Lambda boot yet, and a Lambda Work is never prepared or started
+ * under Gondolin.
  */
 export function validateConfiguration(configuration: unknown) {
   const selection = selectSandboxAdapter(configuration);

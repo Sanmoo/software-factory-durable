@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLambdaCliService, type AwsCliRunner } from '../../src/sandbox/index.js';
-import { awsCliEnvironment, createAwsCliRunner, memoryQuota } from '../../src/sandbox/lambda/cli-service.js';
+import { awsCliEnvironment, buildLogCommand, buildLogLines, createAwsCliRunner, imageBuildsCommand, memoryQuota } from '../../src/sandbox/lambda/cli-service.js';
 
 // v2 ticket 02: the CLI-backed LambdaService against a scripted runner. The real `aws` is never executed by any test.
 function scripted(answers: Record<string, { exitCode?: number; stdout?: unknown; stderr?: string } | 'unavailable'>) {
@@ -95,4 +95,78 @@ test('the aws process inherits no credential, profile or region from the environ
   assert.deepEqual(await createAwsCliRunner({ executable: standin, environment: { PATH: process.env.PATH, AWS_ACCESS_KEY_ID: 'leak' } })(['a b', '$(c)']),
     { status: 'exited', exitCode: 3, stdout: 'a b|$(c)|', stderr: 'none' });
   assert.deepEqual(await createAwsCliRunner({ executable: join(directory, 'absent') })(['x']), { status: 'unavailable' });
+});
+
+// v2 ticket 03: the image operations. Shapes proven by the Alpine proof unless a test says otherwise.
+const imageArn = 'arn:aws:lambda:us-east-1:123456789012:microvm-image:factory-acme-0123';
+const tags = { 'software-factory-installation': 'acme', 'software-factory-work': 'w-1' };
+
+test('an image build is requested with the profile, the hooks and the tags; the artifact is uploaded with its tags from a private temporary file', async () => {
+  const uploads: { body: string; argv: string[] }[] = [];
+  const run: AwsCliRunner = async argv => {
+    if (argv[8] === 'put-object') {
+      uploads.push({ body: await readFile(argv[argv.indexOf('--body') + 1]!, 'utf8'), argv: [...argv] });
+      return { status: 'exited', exitCode: 0, stdout: JSON.stringify({ ETag: '"x"' }), stderr: '' };
+    }
+    uploads.push({ body: '', argv: [...argv] });
+    return { status: 'exited', exitCode: 0, stdout: JSON.stringify({ imageArn, name: 'factory-acme-0123', state: 'CREATING', imageVersion: '1.0' }), stderr: '' };
+  };
+  const service = createLambdaCliService({ awsProfile: 'factory', region: 'us-east-1' }, run);
+  assert.deepEqual(await service.putBuildArtifact({ bucket: 'bucket-a', key: 'factory-acme-0123.zip', body: Buffer.from('zip-bytes'), tags }),
+    { ok: true, value: { uri: 's3://bucket-a/factory-acme-0123.zip' } });
+  const file = uploads[0]!.argv[uploads[0]!.argv.indexOf('--body') + 1]!;
+  assert.equal(uploads[0]!.body, 'zip-bytes');
+  assert.deepEqual(uploads[0]!.argv, [...prefix, 's3api', 'put-object', '--bucket', 'bucket-a', '--key', 'factory-acme-0123.zip', '--body', file,
+    '--tagging', 'software-factory-installation=acme&software-factory-work=w-1']);
+  await assert.rejects(readFile(file), { code: 'ENOENT' }, 'the temporary copy is removed');
+
+  assert.deepEqual(await service.createImage({ name: 'factory-acme-0123', description: 'd', baseImageArn: 'arn:aws:lambda:us-east-1:aws:microvm-image:al2023-1', baseImageVersion: '3',
+    buildRoleArn: 'arn:aws:iam::123456789012:role/factory-acme-build', artifactUri: 's3://bucket-a/factory-acme-0123.zip', architecture: 'arm64', minimumMemoryMiB: 1024,
+    additionalOsCapabilities: ['ALL'], hooks: { port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 }, tags }),
+  { ok: true, value: { imageArn, state: 'CREATING' } });
+  assert.deepEqual(uploads[1]!.argv, [...prefix, 'lambda-microvms', 'create-microvm-image', '--name', 'factory-acme-0123', '--description', 'd',
+    '--base-image-arn', 'arn:aws:lambda:us-east-1:aws:microvm-image:al2023-1', '--base-image-version', '3', '--build-role-arn', 'arn:aws:iam::123456789012:role/factory-acme-build',
+    '--code-artifact', 'uri=s3://bucket-a/factory-acme-0123.zip', '--cpu-configurations', 'architecture=ARM_64', '--resources', 'minimumMemoryInMiB=1024',
+    '--additional-os-capabilities', 'ALL',
+    '--hooks', '{"port":9000,"microvmHooks":{"run":"ENABLED","runTimeoutInSeconds":60,"terminate":"ENABLED","terminateTimeoutInSeconds":60},"microvmImageHooks":{"ready":"ENABLED","readyTimeoutInSeconds":120}}',
+    '--tags', '{"software-factory-installation":"acme","software-factory-work":"w-1"}']);
+});
+
+test('an image is read by ARN with its state, tags and versions; deleting prints nothing; an existing name is a conflict', async () => {
+  const { service, invocations } = scripted({
+    // The answers of the Alpine proof (evidence `image-pos.json`), with the account redacted.
+    'lambda-microvms get-microvm-image': { stdout: { imageArn, name: 'factory-acme-0123', state: 'CREATED', latestActiveImageVersion: '1.0', createdAt: '2026-11-21T06:44:22.648000-03:00', tags } },
+    'lambda-microvms delete-microvm-image-version': {}, 'lambda-microvms delete-microvm-image': {},
+    'lambda-microvms create-microvm-image': { exitCode: 254, stderr: 'An error occurred (ConflictException) when calling the CreateMicrovmImage operation: exists' },
+  });
+  assert.deepEqual(await service.image(imageArn), { ok: true, value: { name: 'factory-acme-0123', imageArn, state: 'CREATED', tags, latestActiveImageVersion: '1.0' } });
+  assert.deepEqual(await service.deleteImageVersion({ imageArn, version: '1.0' }), { ok: true, value: null });
+  assert.deepEqual(await service.deleteImage(imageArn), { ok: true, value: null });
+  assert.deepEqual(invocations, [[...prefix, 'lambda-microvms', 'get-microvm-image', '--image-identifier', imageArn],
+    [...prefix, 'lambda-microvms', 'delete-microvm-image-version', '--image-identifier', imageArn, '--image-version', '1.0'],
+    [...prefix, 'lambda-microvms', 'delete-microvm-image', '--image-identifier', imageArn]]);
+  const conflict = await service.createImage({ name: 'n', description: 'd', baseImageArn: 'b', baseImageVersion: '3', buildRoleArn: 'r', artifactUri: 's3://b/k', architecture: 'x86_64',
+    minimumMemoryMiB: 1024, additionalOsCapabilities: ['ALL'], hooks: { port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 }, tags });
+  assert.equal(!conflict.ok && conflict.failure.kind, 'conflict');
+  assert.ok(invocations.at(-1)!.includes('architecture=X86_64'));
+});
+
+test('the build records and the build log (unproven command shapes, isolated in one place) are read as observed answers', async () => {
+  assert.deepEqual(imageBuildsCommand(imageArn), ['lambda-microvms', 'list-microvm-image-builds', '--image-identifier', imageArn]);
+  assert.deepEqual(buildLogCommand('/aws/lambda-microvms/factory-acme-0123'), ['logs', 'filter-log-events', '--log-group-name', '/aws/lambda-microvms/factory-acme-0123']);
+  assert.deepEqual(buildLogLines({ events: [{ message: '#7 0.304 ERROR: unable to select packages:\n', timestamp: 1 }, { timestamp: 2 }, { message: 'Dockerfile:3\n' }] }),
+    ['#7 0.304 ERROR: unable to select packages:\n', 'Dockerfile:3\n']);
+  assert.equal(buildLogLines({ nextToken: 'x' }), undefined);
+  const { service, invocations } = scripted({
+    // Evidence `image-neg-builds.json`: one request, two build records.
+    'lambda-microvms list-microvm-image-builds': { stdout: { items: [
+      { imageArn, imageVersion: '1.0', buildId: '67b57745', buildState: 'FAILED', architecture: 'ARM_64', chipset: 'GRAVITON', chipsetGeneration: '4', stateReason: 'The container image build failed.' },
+      { imageArn, imageVersion: '1.0', buildId: '90ab745b', buildState: 'FAILED', architecture: 'ARM_64', chipset: 'GRAVITON', chipsetGeneration: '3', stateReason: 'The container image build failed.' }] } },
+    'logs filter-log-events': { stdout: { events: [{ message: 'error: failed to solve\n' }] } },
+  });
+  assert.deepEqual(await service.imageBuilds(imageArn), { ok: true, value: [
+    { buildId: '67b57745', imageVersion: '1.0', state: 'FAILED', stateReason: 'The container image build failed.' },
+    { buildId: '90ab745b', imageVersion: '1.0', state: 'FAILED', stateReason: 'The container image build failed.' }] });
+  assert.deepEqual(await service.buildLog('/aws/lambda-microvms/factory-acme-0123'), { ok: true, value: ['error: failed to solve\n'] });
+  assert.deepEqual(invocations.map(argv => argv.slice(7)), [imageBuildsCommand(imageArn), buildLogCommand('/aws/lambda-microvms/factory-acme-0123')]);
 });
