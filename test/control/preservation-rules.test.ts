@@ -86,7 +86,7 @@ test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP ti
   const expect = { workId: 'w', ticketNumber: 3, branch: 'factory/3-x', base: 'main', repositoryId: 3, head: 'c'.repeat(40), app: { login: 'factory-app[bot]', id: 1 } };
   const observation = { kind: 'observed' as const, repositoryId: 3, candidates: [], branch: { state: 'present' as const, sha: head },
     refs: { state: 'complete' as const, refs: {} }, baseProtection: { state: 'pull-request-required' as const } };
-  const decide = (heads: string[]) => decideDiscovery({ expect: expect as never, attempted: false, known: knownRemote(publication, false, false, heads), observation: observation as never });
+  const decide = (heads: string[]) => decideDiscovery({ expect: expect as never, attempted: false, known: knownRemote(publication, false, false, heads), preservedHeads: heads, observation: observation as never });
   assert.deepEqual(decide([]).reasons, ['REMOTE_BRANCH_UNKNOWN_CHANGE']);
   const decision = decide([head]);
   assert.equal(decision.outcome, 'absent');
