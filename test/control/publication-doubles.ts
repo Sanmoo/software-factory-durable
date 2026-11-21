@@ -38,7 +38,8 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
    * Host's `boot-swap` directive (`directive`), only once the sandbox interrupted its call (`interrupt`), or never (`never`: it runs until
    * its activation is interrupted).
    */
-  { kind: 'work'; head: string; dirty?: number; yields: 'directive' | 'interrupt' | 'never' } |
+  { kind: 'work'; head: string; dirty?: number; yields: 'directive' | 'interrupt' | 'never';
+    /** The first `boot-swap` directives that are NOT delivered (the worker's channel did not answer). */ undelivered?: number } |
   /** v2 ticket 12: the Builder works (leaving `head` checked out in the guest) and never returns; only its interruption ends it. */
   { kind: 'hang'; head: string };
 /** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
@@ -73,7 +74,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
   let sessions = 0;
   let delivered: ((directive: BuilderDirective) => void) | undefined;
   // v2 ticket 09: how the working Builder of a `work` script yields (set while it runs).
-  let yielding: { directive(): void; interrupt(): void } | undefined;
+  let yielding: { directive(): boolean; interrupt(): void } | undefined;
   const captures = new Map<number, HandoffEvent>();
   const guest: GuestWorkspace = { head: null, modified: 0, untracked: 0, stashes: 0, remoteDown: false };
   const receipt = (invocation: Invocation) => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
@@ -86,7 +87,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       ...(options.diskless ? { capabilities: { docker: true, persistentDisk: false, bootDuration: { maxSeconds: 3600, rotationMarginSeconds: 600 },
         egress: { mediation: 'none' as const, publicTcp: true, udp: false, ipv6: false, privateNetwork: false } },
       async observeCheckout() { calls.push({ kind: 'observe-checkout' }); return { status: 'unavailable' as const, code: 'CHECKOUT_NOT_ON_HOST' }; },
-      async interruptCalls(input) { calls.push({ kind: 'interrupt-calls', detail: input }); yielding?.interrupt(); return { status: 'interrupted' as const, calls: 1 }; },
+      async interruptCalls(input) { calls.push({ kind: 'interrupt-calls', detail: input }); const inFlight = yielding ? 1 : 0; yielding?.interrupt(); return { status: 'interrupted' as const, calls: inFlight }; },
       async preservationGate(input): Promise<PreservationObservation> {
         calls.push({ kind: 'gate', detail: input });
         if (!guest.head) return { status: 'unavailable', code: 'PRESERVATION_OBSERVATION_FAILED' };
@@ -167,7 +168,9 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           Object.assign(guest, { head: script.head, modified: script.dirty ?? 0 });
           const completed = new Promise<{ status: 'boot-swap'; receipt: { workId: string; id: string }; session: WorkerSessionRef }>((resolve, reject) => {
             const yielded = () => { yielding = undefined; resolve({ status: 'boot-swap', receipt: receipt(invocation).receipt, session }); };
-            yielding = { directive: () => { if (script.yields === 'directive') yielded(); }, interrupt: () => { if (script.yields === 'interrupt') yielded(); } };
+            let undelivered = script.undelivered ?? 0;
+            yielding = { directive: () => { if (undelivered > 0) { undelivered -= 1; return false; } if (script.yields === 'directive') yielded(); return true; },
+              interrupt: () => { if (script.yields === 'interrupt') yielded(); } };
             invocation.signal.addEventListener('abort', () => { yielding = undefined; reject(new Error('WORKER_CHANNEL_CLOSED')); }, { once: true });
           });
           void completed.catch(() => {});
@@ -220,7 +223,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       async deliver(_worker, directive) {
         calls.push({ kind: `deliver-${directive.kind}` });
         if (directive.kind === 'review-results') { delivered?.(directive); return { status: 'delivered' as const }; }
-        if (directive.kind === 'boot-swap') { yielding?.directive(); return { status: 'delivered' as const }; }
+        if (directive.kind === 'boot-swap') return yielding?.directive() === false ? { status: 'failure' as const, code: 'DELIVERY_UNCONFIRMED' } : { status: 'delivered' as const };
         return { status: directive.kind === 'credential' ? 'delivered' as const : 'withdrawn' as const };
       },
       async observe(input) { calls.push({ kind: 'observe' }); return { session: { state: 'compatible' as const, session: input.session }, limitations: [] }; },

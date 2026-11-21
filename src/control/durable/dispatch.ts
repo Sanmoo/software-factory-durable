@@ -1105,6 +1105,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       rotation.requested = true;
       const delivered = await ports.workers.deliver(rotation.working.worker, { kind: 'boot-swap' }).catch(() => ({ status: 'failure' as const, code: 'DELIVERY_UNCONFIRMED' }));
       observe(work.work_id, 'boot-swap-requested', [delivered.status === 'failure' ? delivered.code : delivered.status]);
+      // Not delivered (the worker had not started yet, or its channel did not answer): asked again with half the margin left.
+      if (delivered.status === 'failure') rotation.requested = false;
     };
     const setWorking = (working: typeof rotation.working) => { rotation.working = working; rotation.requested = false; if (working) void requestYield().catch(() => {}); };
     /**
@@ -1127,9 +1129,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await requestYield();
         await until(schedule.interruptAtMs);
         if (signal.aborted) return;
+        await requestYield();
         if (rotation.working && environment && boot && ports.sandbox.interruptCalls) {
-          rotation.interrupted = true;
           const result = await ports.sandbox.interruptCalls({ environment, boot, invocationId: rotation.working.invocationId }).catch(() => ({ status: 'unavailable' as const, code: 'INTERRUPTION_FAILED' }));
+          // Only a call that was really cut is told to the session as interrupted.
+          rotation.interrupted = result.status === 'interrupted' && result.calls > 0;
           observe(work.work_id, 'boot-swap-call-interrupted', [result.status === 'interrupted' ? String(result.calls) : result.code]);
         }
         await until(schedule.endAtMs);

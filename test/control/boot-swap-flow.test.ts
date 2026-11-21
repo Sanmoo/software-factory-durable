@@ -117,6 +117,19 @@ test('V2-13: a call that has not returned with half the margin left is interrupt
   assert.match(h.activations()[2]!.prompt, /A call was interrupted before the swap/);
 });
 
+test('a swap request that did not reach the Builder is repeated with half the margin left', async t => {
+  const h = await harness(t, guest => [{ kind: 'work', head: main, dirty: 1, yields: 'directive', undelivered: 1 }, { kind: 'publish', publish: pushWip(guest, wip), end: 'success' }, { kind: 'work', head: wip, yields: 'never' }]);
+  await h.working(1);
+  h.mono.advance(margin);
+  await h.settle('first request made', () => h.of('deliver-boot-swap').length === 1 && h.mono.sleepers() > 0);
+  assert.equal(((await h.work())!.execution!.swaps ?? []).length, 0);
+  h.mono.advance(half);
+  await h.settle('swapped', value => value?.execution?.swaps?.[0]?.outcome?.status === 'swapped');
+  assert.equal(h.of('deliver-boot-swap').length, 2);
+  // The Builder yielded at the repeated request: there was no call left to interrupt.
+  assert.equal((await h.work())!.execution!.swaps![0]!.interrupted, false);
+});
+
 test('V2-13: when the gate has not accepted by the end of the boot the loss path applies and is recorded as such', async t => {
   const h = await harness(t, () => [{ kind: 'work', head: main, dirty: 1, yields: 'directive' }, { kind: 'work', head: main, dirty: 1, yields: 'never' }]);
   await h.working(1);
