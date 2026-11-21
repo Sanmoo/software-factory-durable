@@ -7,11 +7,12 @@ import { connect, protocolVersion, type Envelope } from '../protocol/index.js';
 import { pathToFileURL } from 'node:url';
 import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
+import { cleanupImages, imageCleanupExitCode, imageCleanupText } from './image-cleanup.js';
 import { releaseInstallationRoot } from './release.js';
 // Ticket 41: the blocked reference shown by `factory show`; its shape is shared, Control checks it is exactly the blocked one.
 import { blockedReferencePattern as blockedReference, blockedStartCodePattern, startRetryRemedies } from '../contracts/index.js';
 
-const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|cleanup-images [<image name>] [--yes]|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -198,7 +199,7 @@ export async function main(input: string[]): Promise<number> {
       return 2;
     }
   }
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'history', 'logs', 'usage', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'reevaluate-publication', 'request', ...cycleCommands,
+  let valid = ['setup', 'doctor', 'cleanup-images', 'run', 'status', 'list', 'show', 'history', 'logs', 'usage', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'reevaluate-publication', 'request', ...cycleCommands,
     ...cleanupCommands].includes(command ?? '');
   // Ticket 29: `history <work>`, `logs <work>` (filters/page or `--read <capture> [--offset <n>]`) and `usage [<work>]`.
   let inspection: Inspection = {};
@@ -246,7 +247,11 @@ export async function main(input: string[]): Promise<number> {
   // Ticket 23: `repair <work> --reason <text>` has the same shape (the controller decides concreteness and the phase answer).
   const text = command === 'answer' ? args[2] : withReason && args[2] === '--reason' ? args[3] : undefined;
   if ((command === 'answer' || withReason) && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
-  for (let index = command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || withReason || command === 'cleanup' ? 4
+  // v2 ticket 15: `cleanup-images [<image name>] [--yes]`, the explicit cleanup of the installation's MicroVM images (run by the CLI itself).
+  const imageName = command === 'cleanup-images' && args[1] !== undefined && !args[1].startsWith('--') ? args[1] : undefined;
+  if (imageName !== undefined && !/^factory-[a-z0-9-]{1,20}-[a-f0-9]{32}$/.test(imageName)) valid = false;
+  let imagesConfirmed = false;
+  for (let index = imageName !== undefined ? 2 : command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || withReason || command === 'cleanup' ? 4
     : command === 'request' || command === 'show' || command === 'question' || command === 'forget' || cycleCommands.includes(command ?? '') ||
     command === 'history' || command === 'logs' || (command === 'usage' && requested !== undefined) ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
@@ -256,6 +261,7 @@ export async function main(input: string[]): Promise<number> {
     else if (args[index] === '--retry-blocked-start' && command === 'resume' && retry === undefined && blockedStartCodePattern.test(args[index + 1] ?? '')) retry = args[++index];
     else if (args[index] === '--remedy' && command === 'resume' && remedy === undefined && (startRetryRemedies as readonly string[]).includes(args[index + 1] ?? '')) remedy = args[++index];
     else if (args[index] === '--yes' && (command === 'cleanup' || command === 'forget') && cleanup && !cleanup.yes) cleanup.yes = true;
+    else if (args[index] === '--yes' && command === 'cleanup-images' && !imagesConfirmed) imagesConfirmed = true;
     else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
     else if (args[index] === '--service-directory' && command === 'setup' && serviceDirectory === undefined &&
       args[index + 1] !== undefined && isAbsolute(args[index + 1]!) && resolve(args[index + 1]!) === args[index + 1]) {
@@ -297,6 +303,11 @@ export async function main(input: string[]): Promise<number> {
         cleanupCommands.includes(command ?? '') || command === 'history' || command === 'logs' || command === 'usage') {
       return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup, inspection, override, newReviewRound,
         retry ? { code: retry, ...(remedy ? { remedy } : {}) } : undefined);
+    }
+    if (command === 'cleanup-images') {
+      const report = await cleanupImages(root, { image: imageName, confirm: imagesConfirmed });
+      console.log(json ? JSON.stringify(report) : imageCleanupText(report));
+      return imageCleanupExitCode(report);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {

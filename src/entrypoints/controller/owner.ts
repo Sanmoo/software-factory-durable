@@ -3,10 +3,9 @@ import { inspectStorage, openControl } from '../../control/index.js';
 import { upgradeBlocksStart } from './upgrade.js';
 import { serveControl } from './serve.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
-import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
-import { composeProductionAccess, composeProductionExecution } from './composition.js';
+import { composeProductionAccess, composeProductionExecution, composeRuntimeInventory } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
 
 async function own(root: string): Promise<number> {
@@ -66,10 +65,10 @@ async function own(root: string): Promise<number> {
   // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   // Ticket 26: host inventory of own runtime resources, after the lock and before the storage opens (attributed, never ignored).
   // Repair-free reconciliation of host Git caches a dead owner left in preparation (proved quiescent + read-only verified, else kept blocked).
-  const caches = await reconcileInterruptedCaches(paths.root);
-  const listed = await inventoryRuntime(paths.root);
-  const runtimeInventory = { kind: 'listed' as const, observedAt: new Date().toISOString(), ...listed,
-    cache: listed.cache.map(item => ({ ...item, nextStep: caches.find(entry => entry.repositoryId === item.repositoryId)?.nextStep ?? null })) };
+  // v2 ticket 15: under the Lambda adapter the same step inventories the account by the installation tag (`composeRuntimeInventory`).
+  const { runtimeInventory, unavailable } = await composeRuntimeInventory({ root: paths.root, effective });
+  if (unavailable) console.error(JSON.stringify({ code: 'RUNTIME_INVENTORY_UNKNOWN', reason: unavailable.code, detail: unavailable.detail,
+    message: 'The installation\'s MicroVMs could not be listed; nothing was terminated and dispatch stays closed. Restore the access (`factory doctor`) and restart the controller.' }));
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory,
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by (composeProductionAccess).
     access: composeProductionAccess({ github, effective }),

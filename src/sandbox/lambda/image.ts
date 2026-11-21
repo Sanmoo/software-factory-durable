@@ -10,6 +10,7 @@ import { installationResources, installationTagKey, workTagKey } from './install
 import type { LambdaProfile } from './profile.js';
 import type { LambdaImage, LambdaService, LambdaServiceFailure } from './service.js';
 import { storedZip } from './zip.js';
+import { recordLambdaImageBuild } from './image-ledger.js';
 
 /**
  * How Prepare waits for a build: one read of the image every `intervalSeconds`, for at most `maxSeconds` (observed builds: 2 min 10 s to
@@ -91,9 +92,9 @@ const describe = (failure: LambdaServiceFailure) => [failure.kind, failure.actio
  * `ENVIRONMENT_BASE_PREPARATION_FAILED` (definitive for this key) and `ENVIRONMENT_BASE_PREPARATION_INCOMPLETE` (not concluded: the
  * account could not be read or changed, or the build is still running). Both return after every local step ended.
  */
-export async function prepareLambdaImage({ root, workId, profile, service, environment, retry = false, wait = defaultLambdaImageWait }:
+export async function prepareLambdaImage({ root, workId, profile, service, environment, retry = false, wait = defaultLambdaImageWait, now = Date.now }:
   { root: string; workId: string; profile: LambdaProfile; service: LambdaService; environment?: EnvironmentRequest | undefined; retry?: boolean | undefined;
-    wait?: LambdaImageWait | undefined }): Promise<PrepareResult> {
+    wait?: LambdaImageWait | undefined; /** v2 ticket 14: the instant written in the build ledger (tests give the fake clock). */ now?: (() => number) | undefined }): Promise<PrepareResult> {
   if (typeof workId !== 'string' || !workId || workId.length > 256) return { status: 'failure', code: 'WORK_ID_INVALID' };
   if (!environment) return { status: 'failure', code: 'ENVIRONMENT_NOT_PINNED', detail: 'The Lambda adapter builds the MicroVM image from the pinned .factory/environment.yaml; this Work has none.' };
   const rendered = renderGuestImage(environment.declaration);
@@ -133,6 +134,9 @@ export async function prepareLambdaImage({ root, workId, profile, service, envir
     packages: Object.fromEntries(rendered.declaration.apk.map(entry => [entry.name, entry.version])),
     images: rendered.declaration.images.map(image => ({ reference: image.reference, digest: imageReferenceParts(image.reference)?.digest ?? '' })) });
 
+  // The ledger is consumption evidence, not a step of Prepare: a line that cannot be written never fails or repeats a build.
+  const ledger = (event: 'requested' | 'created' | 'failed') =>
+    recordLambdaImageBuild(root, { at: new Date(now()).toISOString(), event, key, name, workId }).catch(() => {});
   /** Uploads the artifact and asks for ONE build. `conflict`: another Prepare created the image meanwhile, which is then simply read. */
   const build = async (): Promise<PrepareResult | null> => {
     const uploaded = await service.putBuildArtifact({ bucket: resources.artifactBucket, key: `${name}.zip`, body: artifact, tags });
@@ -142,6 +146,8 @@ export async function prepareLambdaImage({ root, workId, profile, service, envir
       artifactUri: uploaded.value.uri, architecture: profile.architecture, minimumMemoryMiB: profile.baselineMemoryMiB,
       additionalOsCapabilities: [...profile.additionalOsCapabilities], hooks: { ...lambdaGuestPin.hooks }, tags });
     if (!created.ok && created.failure.kind !== 'conflict') return unreachable('requesting the image build', created.failure);
+    // v2 ticket 14 (V2-32): the build THIS Prepare requested, under its environment key. A conflict is another Prepare's build.
+    if (created.ok) await ledger('requested');
     return null;
   };
   /** Reads the image until it leaves `state` or the wait ends; `null`: still in that state. */
@@ -171,6 +177,7 @@ export async function prepareLambdaImage({ root, workId, profile, service, envir
     const image = current.value;
     if (image.tags[installationTagKey] !== profile.installation) return failed(`An image named ${name} exists without this installation's tag; it is not used.`);
     if (image.state === 'CREATED') {
+      await ledger('created');
       const own = record(image);
       try { await recordWorkImage(root, own); }
       catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE', detail: 'the image is ready but its record for this Work could not be written' }; }
@@ -183,6 +190,7 @@ export async function prepareLambdaImage({ root, workId, profile, service, envir
       continue;
     }
     if (image.state !== 'CREATE_FAILED') return incomplete(`The image ${name} is ${image.state}; Prepare again once the service settles it.`);
+    await ledger('failed');
     if (!retry || builtHere || retried) return failed(await failureCause(service, image));
     // The Operator's explicit retry: the failed image is replaced under the same key (the service keeps one image per name).
     retried = true;

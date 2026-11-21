@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { microvmEgress, microvmIngress, type LambdaArchitecture, type LambdaMicrovmRequest, type LambdaService, type LambdaServiceFailure, type LambdaServiceResult } from './service.js';
+import { microvmEgress, microvmIngress, type LambdaArchitecture, type LambdaListedMicrovm, type LambdaMicrovmRequest, type LambdaService, type LambdaServiceFailure, type LambdaServiceResult } from './service.js';
 
 /** One `aws` invocation: its exit and output, or `unavailable` when the executable could not be run at all. */
 export type AwsCliRunner = (argv: readonly string[]) => Promise<{ status: 'exited'; exitCode: number; stdout: string; stderr: string } | { status: 'unavailable' }>;
@@ -132,6 +132,10 @@ export function createLambdaCliService({ awsProfile, region }: { awsProfile: str
     // Proven shapes (`bin/cleanup`).
     deleteImageVersion: ({ imageArn, version }) => call(['lambda-microvms', 'delete-microvm-image-version', '--image-identifier', imageArn, '--image-version', version], () => null),
     deleteImage: imageArn => call(['lambda-microvms', 'delete-microvm-image', '--image-identifier', imageArn], () => null),
+    // Long-standing S3 and CloudWatch Logs APIs; the proofs' cleanup removed the bucket and the groups with an administrative identity.
+    deleteBuildArtifact: ({ bucket, key }) => call(['s3api', 'delete-object', '--bucket', bucket, '--key', key], () => null),
+    deleteBuildLog: logGroup => call(['logs', 'delete-log-group', '--log-group-name', logGroup], () => null),
+    listMicrovms: () => call(listMicrovmsCommand, listedMicrovms),
     runMicrovm: input => call(runMicrovmCommand(input, region), output => {
       const microvmId = text(output.microvmId), endpoint = text(output.endpoint);
       return microvmId && endpoint ? { microvmId, endpoint } : undefined;
@@ -171,6 +175,28 @@ export function runMicrovmCommand(input: LambdaMicrovmRequest, region: string): 
     '--ingress-network-connectors', connector(microvmIngress), '--egress-network-connectors', connector(microvmEgress),
     '--maximum-duration-in-seconds', String(input.maximumDurationSeconds), '--run-hook-payload', input.runHookPayload,
     ...(Object.keys(input.tags).length > 0 ? ['--tags', JSON.stringify(input.tags)] : [])];
+}
+
+/**
+ * ListMicrovms as the proofs called it (`items[]` with `microvmId`, `state`, `imageArn`, `imageVersion`, `startedAt`; terminated MicroVMs
+ * stay listed). The CLI follows the pages (50 items each); more than one page was never exercised.
+ *
+ * NOT PROVEN, isolated here: `tags` on an item. The observed answer has none; an item that carries a `tags` map is read, so that the
+ * inventory of ticket 15 decides by the MicroVM's own tags if the service ever lists them, and by the tags of its image otherwise.
+ */
+export const listMicrovmsCommand: readonly string[] = ['lambda-microvms', 'list-microvms'];
+export function listedMicrovms(output: Record<string, unknown>): LambdaListedMicrovm[] | undefined {
+  if (!Array.isArray(output.items)) return undefined;
+  const items: LambdaListedMicrovm[] = [];
+  for (const item of output.items as Record<string, unknown>[]) {
+    // An item without id or state makes the whole listing unreadable: an inventory is never silently partial.
+    if (!item || typeof item.microvmId !== 'string' || !item.microvmId || typeof item.state !== 'string' || !item.state) return undefined;
+    const tags = item.tags && typeof item.tags === 'object' && !Array.isArray(item.tags)
+      ? Object.fromEntries(Object.entries(item.tags).map(([key, value]) => [key, String(value)])) : undefined;
+    items.push({ microvmId: item.microvmId, state: item.state, ...(typeof item.imageArn === 'string' && item.imageArn ? { imageArn: item.imageArn } : {}),
+      ...(typeof item.startedAt === 'string' && item.startedAt ? { startedAt: item.startedAt } : {}), ...(tags ? { tags } : {}) });
+  }
+  return items;
 }
 
 /**

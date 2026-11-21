@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, PreservationObservation, ChannelReport, IndeterminateEffect, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservation, ChannelReport, EnvironmentBuildReport, EnvironmentBuilds, IndeterminateEffect, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -176,6 +176,12 @@ export type ExecutionPorts = {
     /** v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot. Read only when the sandbox declares
      * `channelRecovery`, before the Execution's end is recorded and again before its boot is stopped; the result is recorded durably. */
     channelReport?(input: { environment: EnvironmentRef; boot: BootRef }): Promise<ChannelReport>;
+    /** v2 ticket 14 (V2-32): what the boots of one environment consumed, as the sandbox reports it (seconds, size label, reasons; its own
+     * unit). Read for inspection only; Control sums and shows it and never derives a duration or a price. Absent = the installation's
+     * sandbox has no such report and the usage view is unchanged. */
+    usage?(input: { environment: EnvironmentRef }): Promise<BootUsageReport>;
+    /** v2 ticket 14 (V2-32): builds of the environment base per environment key, for the installation usage view. Absent = not shown. */
+    environmentBuilds?(): Promise<EnvironmentBuildReport>;
     /**
      * v2 ticket 10 (V2-15): resolves when the sandbox CONFIRMED that the environment of this boot ended on its own (`null` once `signal`
      * aborts). Asked only of a sandbox that declares `environmentWatch`, for the boot of a running Execution. How and how often the
@@ -915,7 +921,9 @@ export type WorkView = {
 };
 /** Ticket 50: a boot/preparation refusal that blocks recovery (cessation from the reconciliation) and the operator's explicit, audited retry. */
 export type BlockedStartView = { code: string; detail: string | null; at: string; cessation: 'confirmed' | 'unconfirmed';
-  retry: { request_id: string; operator: { kind: 'local-administrator' }; at: string; code: string; remedy: StartRetryRemedy | null; recoveryRequest: 'requested' | 'already-open' } | null };
+  retry: { request_id: string; operator: { kind: 'local-administrator' }; at: string; code: string; remedy: StartRetryRemedy | null;
+    /** `not-required` (v2 ticket 14): the retry of a start the service refused for quota or capacity returns to the queue without a recovery unit. */
+    recoveryRequest: 'requested' | 'already-open' | 'not-required' } | null };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
@@ -1133,12 +1141,27 @@ export type UsageAggregate = { measurement: UsageMeasurement; activities: number
 export type WorkUsageView = { work_id: string; ticket: string; activities: UsageActivityView[]; byRole: Record<InspectionRole, UsageAggregate>; total: UsageAggregate;
   /** Non-token consumption (spec §4.4/§5.7): budgets, Executions and their measured durations. */
   budget: { corrections: CounterView | null; recoveries: CounterView | null; continuations?: CounterView | null; grants: number };
-  time: { executions: number; measuredMs: number; lowerBoundMs: number; unknown: number; measurement: UsageMeasurement } };
+  time: { executions: number; measuredMs: number; lowerBoundMs: number; unknown: number; measurement: UsageMeasurement };
+  /** v2 ticket 14 (V2-32): present only when the installation's sandbox reports boot usage. Accumulated over every boot of every Execution. */
+  boots?: BootConsumptionView };
+/**
+ * v2 ticket 14 (V2-32): the seconds of the sandbox's boots of one Work, in the sandbox's own `unit`, never restarted between boots or
+ * Executions and never a monetary value. `seconds` sums the measured boots only. `lowerBound`: some boot is still running or its final
+ * observation was not possible (`running`/`unknown` count them), so the real total is at least `seconds`; such a boot is never counted as
+ * zero. `notRun`: starts refused before anything ran (they consumed nothing). `measurement` `unavailable` with `seconds` null: nothing
+ * could be measured (`code` says why when the sandbox gave no report). `items`: the latest boots as reported (`omitted` earlier ones).
+ */
+export type BootConsumptionView = { unit: string | null; seconds: number | null; measured: number; running: number; unknown: number; notRun: number; lowerBound: boolean;
+  measurement: UsageMeasurement; code: string | null; omitted: number; items: BootUsage[] };
+/** v2 ticket 14 (V2-32): environment base builds per environment key as the sandbox recorded them (`builds`: total over the keys). */
+export type EnvironmentBuildsView = { status: 'reported'; builds: number; omitted: number; keys: EnvironmentBuilds[] } | { status: 'unavailable'; code: string };
 export type UsageView = { kind: 'usage'; scope: 'installation' | 'work'; at: string; works: WorkUsageView[];
   /** Total of THIS page's Works (the installation total only when the page holds every Work). */ total: UsageAggregate; page: PageView;
   slots: { capacity: number; held: number };
   /** Adapter RAM/CPU/I/O/disk are distinct from tokens/cost and from virtual/free capacity; not observed by this release. */
   resources: { state: 'unavailable'; code: 'ADAPTER_RESOURCE_METRICS_NOT_OBSERVED'; note: string };
+  /** v2 ticket 14: installation scope only, and only when the sandbox reports builds. */
+  environmentBuilds?: EnvironmentBuildsView;
   limitations: string[] };
 /** One external/derived observation behind the view, with its instant, freshness and completeness (spec §12.1). */
 export type ObservationView = { source: 'polling' | 'dependencies' | 'checks' | 'readiness' | 'delivery' | 'feedback' | 'publication';
