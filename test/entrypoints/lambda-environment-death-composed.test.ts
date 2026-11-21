@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { until } from '../runner/budget.js';
@@ -45,7 +45,10 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   const fake = lambdaAccountFake();
   const guests = lambdaGuestFake(fake);
-  guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-') };
+  // v2 ticket 12: what a push of the loss marker holder does on this remote: the ref appears in the gh world Control reads.
+  const pushes: Promise<void>[] = [];
+  guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-'),
+    push: (ref, sha) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); } };
   const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
   const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
   // ONE ordered log of everything the assertion is about: model requests, tool calls, and the instant the SERVICE confirms the cessation.
@@ -134,6 +137,19 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   assert.deepEqual([...new Set(watch.intervals())], [interval * 1000]);
   assert.deepEqual([(await work())!.execution!.state, aborted, log.filter(entry => entry === 'model-request').length], ['started', false, 2]);
 
+  // v2 ticket 12 (V2-16, V2-24): the host armed the loss marker holder of this boot when it delivered the Builder's grant: one fixed
+  // program as `builder`, the token in its process environment only, the ref named by the Work and the boot.
+  const workId = (await work())!.work_id;
+  const markerRef = `refs/factory/lost/${workId}/${boot}`;
+  const armed = guest.executions.filter(item => item.program === 'loss-marker-arm');
+  assert.deepEqual(armed.map(item => [item.user, item.environmentNames]), [['builder', ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']]]);
+  assert.deepEqual([guest.lossMarker?.remote, guest.lossMarker?.ref], [remoteUrl, markerRef]);
+  assert.equal(armed[0]!.script.includes(guest.lossMarker!.token), false, 'the token is in no script');
+  // The Builder committed work it never pushed; the service ends the MicroVM and calls the terminate hook, which takes no parameter.
+  const unpublished = 'd'.repeat(40);
+  guest.repository!.commit = unpublished;
+  assert.equal(guests.terminateHook(guest.microvmId), true);
+  await Promise.all(pushes);
   // The MicroVM dies. Its open connection just hangs: nothing tells the host (what the continuity proof observed).
   fake.kill(guest.microvmId, 'MicroVM exceeded maximum lifetime.');
   assert.equal(log.includes('cessation-confirmed'), false);
@@ -172,6 +188,17 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   assert.equal(typeof record.end.terminatedAt, 'string');
   assert.deepEqual(fake.mutations.filter(mutation => mutation.operation === 'terminateMicrovm'), []);
   assert.equal(watch.pending(), 0, 'the watch of the dead boot is over');
+  // v2 ticket 12 (V2-17): the loss is on the Work, from Control's own reads of `origin`: nothing of the Work branch was ever pushed, and
+  // the marker ref holds the commit the hook pushed. It is not preservation: nothing was confirmed and the Work has no branch on origin.
+  const lostWork = (await settle('loss recorded', value => value?.losses?.length === 1))!;
+  const [loss] = lostWork.losses!;
+  assert.deepEqual([loss!.executionId, loss!.boot, loss!.reason, loss!.confirmed.commit, loss!.confirmed.source, loss!.session],
+    [started.executionId, boot, 'MicroVM exceeded maximum lifetime.', null, 'none', { invocationId: started.invocationId, disposition: 'conserved-as-evidence' }]);
+  assert.deepEqual([loss!.marker.state, loss!.marker.ref, loss!.marker.state === 'present' && loss!.marker.commit], ['present', markerRef, unpublished]);
+  assert.equal(lostWork.preservation, undefined);
+  assert.equal(typeof loss!.consumption.executionMs, 'number');
+  // The old session's host directory (the boot's worker runtime) is still there: evidence, removed only by the Work's cleanup.
+  assert.equal(await stat(join(world.root, 'r')).then(entry => entry.isDirectory(), () => false), true);
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
 });

@@ -1,3 +1,4 @@
+import { lostMarkerPrefix } from '../../contracts/index.js';
 import type { BranchCleanupResult, CleanupOutcome, CleanupResourceKind, CleanupResourceView, CleanupView, DeliveryView, ExecutionView, MergeFacts,
   OwnPullRequestIdentity, PlannedCleanupResource, PublicationView, OwnPullRequestFacts } from '../types.js';
 
@@ -49,7 +50,8 @@ export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId:
     number: facts.number, url: facts.url, mergeCommitShaReport: facts.reported.mergeCommitSha } };
 }
 
-type CleanupWork = { result: string; branch: string | null; repository: { repository: string; repositoryId: number; base: string };
+type CleanupWork = { /** v2 ticket 12: names the Work's loss marker refs; absent on callers that never plan them. */ work_id?: string;
+  result: string; branch: string | null; repository: { repository: string; repositoryId: number; base: string };
   delivery?: Pick<DeliveryView, 'state'> & { merge: Pick<MergeFacts, 'headSha'> | null } | null; execution: ExecutionView | null; previousExecutions: ExecutionView[];
   /** Ticket 30: a cancelled Work is cleaned only by an operator-confirmed explicit plan, after its cancellation ceased. */
   cancellation?: { state: 'stopping' | 'ceased' } | null; cleanup?: Pick<CleanupView, 'explicit'> | null };
@@ -98,6 +100,13 @@ export function planCleanup(work: CleanupWork, input: { repositoryConfigured: bo
   if (branch && branch !== work.repository.base && input.repositoryConfigured && work.result === 'delivered') resources.push({ id: `remote-branch:${branch}`, kind: 'remote-branch',
     target: `${work.repository.repository}:refs/heads/${branch}`, environment: null,
     ownership: `The Work's own branch; deleted only while its tip is exactly the merged own pull request head ${work.delivery?.merge?.headSha ?? '?'}` });
+  // v2 ticket 12 (V2-02 Remover): a Work that ever ran on a sandbox without a persistent disk (its Executions carry Control's `origin`
+  // read) may have loss marker refs, recorded or not (a hook can push after Control looked). They are the Factory's own refs, outside
+  // `refs/heads/`: deleted whatever the Work's result, and neither the Work branch nor the pull request is touched by it.
+  const prefix = work.work_id ? lostMarkerPrefix(work.work_id) : null;
+  if (prefix && input.repositoryConfigured && executionsOf(work).some(execution => execution.origin)) resources.push({ id: `lost-markers:${work.work_id}`,
+    kind: 'lost-markers', target: `${work.repository.repository}:${prefix}*`, environment: null,
+    ownership: 'Loss marker refs named after this Work in the Factory\'s own ref namespace; each deleted only at the tip a complete read listed' });
   return { resources, protected: [
     { target: `${work.repository.repository}:refs/heads/${work.repository.base}`, reason: 'BASE_BRANCH' },
     { target: `cache/git/${work.repository.repositoryId}.git`, reason: 'SHARED_FACTORY_CACHE' },
@@ -140,7 +149,7 @@ type Removal = { status: 'success'; resources: { resource: string; status: strin
 const fromSandbox = (status: string | undefined): CleanupOutcome | undefined =>
   status === 'removed' || status === 'absent' || status === 'refused' || status === 'failed' ? status : undefined;
 /** Per-resource outcome of ONE Sandbox removal of an own environment (disk, workspace with checkout/local branch, artifacts + runtime). */
-export function environmentOutcomes(result: Removal): Record<Exclude<CleanupResourceKind, 'remote-branch'>, { outcome: CleanupOutcome; code: string | null }> {
+export function environmentOutcomes(result: Removal): Record<Exclude<CleanupResourceKind, 'remote-branch' | 'lost-markers'>, { outcome: CleanupOutcome; code: string | null }> {
   const code = 'code' in result ? result.code : null;
   const whole: CleanupOutcome | undefined = result.status === 'indeterminate' ? 'indeterminate'
     : result.status === 'failure' ? (code === 'CLEANUP_WORK_MISMATCH' ? 'refused' : 'failed') : undefined;
@@ -153,6 +162,9 @@ export function environmentOutcomes(result: Removal): Record<Exclude<CleanupReso
   };
   return { environment: of('disk'), checkout: of('workspace'), 'local-branch': of('workspace'), temporaries: of('artifacts', 'runtime') };
 }
+/** v2 ticket 12: the outcome of deleting the Work's loss marker refs, as the code repository reported it. */
+export const markersOutcome = (result: { outcome: CleanupOutcome; code: string }): { outcome: CleanupOutcome; code: string | null } =>
+  ({ outcome: result.outcome, code: result.outcome === 'removed' || result.outcome === 'absent' ? null : result.code });
 export const branchOutcome = (result: BranchCleanupResult): { outcome: CleanupOutcome; code: string | null } => ({ outcome: result.outcome, code: result.code });
 
 /** Separate, operator-facing explanations (spec §12.1): delivery never depends on cleanup. */

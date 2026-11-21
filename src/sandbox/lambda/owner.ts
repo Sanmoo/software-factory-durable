@@ -108,10 +108,12 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
 }
 
 /**
- * Remover (V2-02, partial; ticket 12 adds the lost-marker ref): ends whatever of the Work's environment still runs, confirmed by the
+ * Remover (V2-02), the adapter's part: ends whatever of the Work's environment still runs, confirmed by the
  * service, removes the boots' private host runtime directories and records the removal. It never touches the Work branch nor the pull
  * request, and there is no disk, workspace or artifacts tree on the host to delete (`absent`). The boot records stay: they are the
- * consumption history (ticket 14); the image record stays for the image cleanup (ticket 15).
+ * consumption history (ticket 14); the image record stays for the image cleanup (ticket 15). The Work's loss marker refs on `origin`
+ * (ticket 12) are deleted by Control's cleanup through the code repository (resource `lost-markers`), not here: the adapter holds no
+ * GitHub credential.
  */
 export async function removeLambdaEnvironment(dependencies: LambdaBootDependencies, { environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }): Promise<RemoveResult> {
   const none = (status: 'refused' | 'absent') => (['disk', 'workspace', 'artifacts', 'runtime'] as const).map(resource => ({ resource, status: resource === 'runtime' ? status : 'absent' as const }));

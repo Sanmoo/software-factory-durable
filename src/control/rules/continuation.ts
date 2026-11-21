@@ -40,9 +40,13 @@ const canonical = (policies: Facts['policies']) => Object.fromEntries(Object.ent
  * Spec §6.1: "Preferir sessão compatível; incompatível/perdida exige substituição registrada". Continue only the RECORDED session, observed
  * intact and compatible by the Host, with the same pack identity and Host policies; every other case replaces it with its reason.
  */
-export function sessionDecision(input: { previous: Facts & { session: SessionRef | null }; next: Facts; observation: SessionObservation | null }):
+export function sessionDecision(input: { previous: Facts & { session: SessionRef | null;
+  /** v2 ticket 12 (V2-17): the environment of the previous Execution was lost. Its session is evidence: it is never continued. */ environmentLost?: boolean };
+  next: Facts; observation: SessionObservation | null }):
   { mode: 'continue'; reason: 'SESSION_COMPATIBLE' } | { mode: 'replace'; reason: 'SESSION_NOT_RECORDED' | 'SESSION_OBSERVATION_NOT_COMPOSED' | 'SESSION_LOST' | 'SESSION_ALTERED' |
-    'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' | 'SESSION_CONTINUATION_UNSUPPORTED' } {
+    'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' | 'SESSION_CONTINUATION_UNSUPPORTED' | 'ENVIRONMENT_LOST' } {
+  // Before anything else: a session that worked on an environment that no longer exists describes a workspace that is gone.
+  if (input.previous.environmentLost) return { mode: 'replace', reason: 'ENVIRONMENT_LOST' };
   if (!input.previous.session) return { mode: 'replace', reason: 'SESSION_NOT_RECORDED' };
   if (!input.observation) return { mode: 'replace', reason: 'SESSION_OBSERVATION_NOT_COMPOSED' };
   const observed = input.observation;

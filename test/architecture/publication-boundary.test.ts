@@ -43,7 +43,11 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   assert.match(github, /'pull-request-reopen': \{ metadata: 'read', pull_requests: 'write' \}/);
   assert.equal((github.match(/issue\(scope, field === 'reopenPullRequest' \? 'pull-request-reopen' : 'readiness-write'\)/g) ?? []).length, 1, 'one fresh pull request mutation grant site');
   // Ticket 17: updateRefs only deletes ONE ref conditionally (beforeOid, afterOid zero, force false), under the single-use branch-cleanup grant.
-  assert.match(github, /refUpdates: \[\{ name: `refs\/heads\/\$\{branch\}`, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
+  // v2 ticket 12 (V2-02 Remover): the same closed deletion also takes ONE loss marker ref of the Factory's own namespace
+  // (`refs/factory/lost/<work>/<boot>`, checked against the contract's pattern); every other name is a validated branch under `refs/heads/`.
+  assert.match(github, /refUpdates: \[\{ name, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
+  assert.match(github, /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\)\n\s+: \/[^\n]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/);
+  assert.equal((github.match(/refUpdates: \[\{/g) ?? []).length, 1, 'one ref update site');
   assert.match(github, /'branch-cleanup': \{ metadata: 'read', contents: 'write', pull_requests: 'read' \}/);
   assert.equal((github.match(/issue\(scope, 'branch-cleanup'\)/g) ?? []).length, 1, 'one fresh cleanup grant site');
   assert.equal((github.match(/'POST', 'graphql'/g) ?? []).length, 1, 'one GraphQL call site');
@@ -55,7 +59,13 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // No shell parsing of Builder commands or effect-registration tool for push/PR (Q7): the Workers and Sandbox never look for them.
   // Ticket 21 review (supervisor/operator decision): ONE Builder-Host REFUSAL policy (`src/workers/push-policy.ts`) names the exact leased push
   // Control allows; it never publishes, registers effects or wraps git/gh, it only refuses other push forms before the guest sees them.
-  for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path) && item.path !== 'src/workers/push-policy.ts')) {
+  // v2 ticket 12 (V2-16): ONE fixed program of the Lambda adapter pushes, from the guest and only when the terminate hook pulls its
+  // trigger: the committed HEAD to the boot's loss marker ref. It is not a publication: the ref is no branch, the program takes no
+  // parameter from the agent, and the ref it is given must match the marker pattern.
+  const marker = files.find(item => item.path === 'src/sandbox/lambda/loss-marker.ts')!.text;
+  assert.deepEqual([...marker.matchAll(/ push --[^\n]*/g)].map(match => match[0].replace(/`,$/, '')), [' push --quiet --force -- "$FACTORY_MARKER_REMOTE" "$head:$FACTORY_MARKER_REF"']);
+  assert.match(marker, /if \(!lostMarkerPattern\.test\(ref\)/);
+  for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path) && !['src/workers/push-policy.ts', 'src/sandbox/lambda/loss-marker.ts'].includes(item.path))) {
     assert.doesNotMatch(file.text, /registrar_efeito|register_effect|git push|gh pr create|pr create/, file.path);
   }
 });

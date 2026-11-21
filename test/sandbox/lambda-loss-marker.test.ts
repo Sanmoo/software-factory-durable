@@ -50,7 +50,7 @@ async function guest(t: TestContext) {
   /** The hook agent's own terminate handler (the file's text up to the HTTP server), with the guest paths replaced by the temporary ones. */
   const terminate = (waitSeconds = 20) => {
     const source = guestFiles['hook-agent.py'].split('\nclass Hooks')[0]!;
-    const run = spawnSync('python3', ['-I', '-S', '-c', `${source}\nTERMINATE_FIFO = ${JSON.stringify(paths.fifo)}\nMARKER_DONE = ${JSON.stringify(join(paths.state, 'done'))}\nprint(on_terminate(${waitSeconds}))`],
+    const run = spawnSync('python3', ['-I', '-S', '-c', `${source}\nTERMINATE_FIFO = ${JSON.stringify(paths.fifo)}\nMARKER_DONE = ${JSON.stringify(join(paths.state, 'done'))}\nMARKER_READY = ${JSON.stringify(join(paths.state, 'ready'))}\nprint(on_terminate(${waitSeconds}))`],
       { encoding: 'utf8', timeout: remainingMs() });
     assert.equal(run.status, 0, run.stderr);
     return run.stdout.trim();

@@ -42,15 +42,22 @@ def on_run(raw):
 
 TERMINATE_FIFO = "/run/factory/terminate"
 MARKER_DONE = "/run/factory/marker/done"
+MARKER_READY = "/run/factory/marker/ready"
 
 def on_terminate(wait=45.0):
     """Best effort (V2-16): pulls the trigger of the loss marker holder the HOST armed, then waits for its one push. Nothing of the
     request is read: the remote, the ref and the credential are the holder's, fixed by the host. No reader on the trigger means no
     holder is armed, and nothing happens."""
-    try:
-        trigger = os.open(TERMINATE_FIFO, os.O_WRONLY | os.O_NONBLOCK)
-    except OSError:
-        return "unarmed"
+    trigger = None
+    # A holder that announced itself may be an instant away from waiting on the trigger: give it two seconds, and nobody else any.
+    for attempt in range(11):
+        try:
+            trigger = os.open(TERMINATE_FIFO, os.O_WRONLY | os.O_NONBLOCK)
+            break
+        except OSError:
+            if attempt == 10 or not os.path.lexists(MARKER_READY) or os.path.lexists(MARKER_DONE):
+                return "unarmed"
+            time.sleep(0.2)
     try:
         os.write(trigger, b"terminate\\n")
     except OSError:

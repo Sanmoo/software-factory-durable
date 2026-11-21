@@ -28,18 +28,23 @@ const pushSeconds = 40;
 
 const endHolder = [
   'old=$(cat "$state/holder.pid" 2>/dev/null) || old=',
-  'case "$old" in \'\'|*[!0-9]*) ;; *) kill -- "-$old" 2>/dev/null || kill "$old" 2>/dev/null; ended=1 ;; esac',
-  'rm -f "$state/holder.pid"'];
+  'rm -f "$state/ready" "$state/holder.pid"',
+  // The holder is gone before this program answers: a trigger pulled right after finds no reader (bounded wait, 5 s).
+  'case "$old" in \'\'|*[!0-9]*) ;; *) kill -- "-$old" 2>/dev/null || kill "$old" 2>/dev/null',
+  '  for attempt in $(seq 1 50); do kill -0 "$old" 2>/dev/null || break; sleep 0.1; done ;; esac'];
 
 // The holder itself. No single quote in it: it travels as ONE single-quoted word, and every value reaches it through the environment.
 const holder = [
   'echo $$ > "$FACTORY_MARKER_STATE/holder.pid"',
+  // Says it is about to wait: the arming program answers only after this, and the hook waits a moment for a holder that said so.
+  ': > "$FACTORY_MARKER_STATE/ready"',
   // Blocks until root opens the trigger for writing. Anything but the hook's one line is no trigger.
   'IFS= read -r line < "$FACTORY_MARKER_FIFO" || exit 0',
   '[ "$line" = terminate ] || exit 0',
   'cd "$FACTORY_MARKER_DIRECTORY" && head=$(git rev-parse --verify --quiet HEAD) && ' +
     `timeout ${pushSeconds} git -c credential.helper= -c "credential.helper=$FACTORY_MARKER_HELPER" push --quiet --force -- "$FACTORY_MARKER_REMOTE" "$head:$FACTORY_MARKER_REF"`,
-  'echo "push=$?" > "$FACTORY_MARKER_STATE/done"'].join('\n');
+  'echo "push=$?" > "$FACTORY_MARKER_STATE/done"',
+  'rm -f "$FACTORY_MARKER_STATE/holder.pid"'].join('\n');
 
 export type LossMarkerRequest = { remote: string; ref: string; token: string; directory?: string; paths?: LossMarkerPaths };
 /** `null`: a value is not one the host places in a script (the ref must be a marker ref, never a branch). */
@@ -56,12 +61,13 @@ export function armLossMarkerProgram({ remote, ref, token, directory = guestRepo
     `export FACTORY_MARKER_STATE="$state" FACTORY_MARKER_FIFO="$fifo" FACTORY_MARKER_DIRECTORY=${quote(directory)} FACTORY_MARKER_REMOTE=${quote(remote)} FACTORY_MARKER_REF=${quote(ref)} FACTORY_MARKER_HELPER=${quote(helper)}`,
     // Its own session: it outlives this connection and nothing of it is attached to the channel.
     `setsid sh -c ${quote(holder)} < /dev/null > /dev/null 2>&1 &`,
-    'echo $! > "$state/holder.pid"',
+    'for attempt in $(seq 1 50); do [ -e "$state/ready" ] && break; sleep 0.1; done',
+    '[ -e "$state/ready" ] || { echo "MARKER unavailable"; exit 0; }',
     'echo "MARKER armed"'].join('\n') };
 }
 export function disarmLossMarkerProgram(paths: LossMarkerPaths = lossMarkerPaths): GuestExecRequest | null {
   if (/[\u0000-\u001f\u007f]/.test(paths.state)) return null;
-  return { program: 'loss-marker-disarm', script: ['set -u', `state=${quote(paths.state)}`, 'ended=0', ...endHolder, 'echo "MARKER disarmed"'].join('\n') };
+  return { program: 'loss-marker-disarm', script: ['set -u', `state=${quote(paths.state)}`, ...endHolder, 'echo "MARKER disarmed"'].join('\n') };
 }
 
 /** Starts (or replaces) the holder of the boot behind `channel`. `unavailable` is never an error of the boot: the marker is best effort. */
