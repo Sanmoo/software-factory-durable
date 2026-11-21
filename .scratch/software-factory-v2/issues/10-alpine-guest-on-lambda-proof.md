@@ -1,6 +1,6 @@
 # Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs
 
-Status: open
+Status: claimed
 Type: prototype
 Label: wayfinder:prototype
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
@@ -36,3 +36,4 @@ atualizado com o que foi provado ou com a decisão que substituir a hipótese.
 ## Comments
 
 - 2026-11-20: aberto ao consolidar a spec da v2; único filho que bloqueia o fechamento do mapa.
+- 2026-11-21: reivindicado; preparação da rubrica e do pedido de autorização, sem consumo de recursos.
