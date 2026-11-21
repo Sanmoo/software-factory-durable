@@ -1,12 +1,13 @@
-# Aceite da v2 no perfil Lambda — plano de execução (proposta para autorização)
+# Aceite da v2 no perfil Lambda — plano de execução
 
 Data: 2026-11-21. Ticket: [Aceite da v2 no perfil Lambda](../../software-factory-v2-lambda/issues/16-v2-acceptance-on-lambda-profile.md).
 Requisitos em jogo: Seção 11 da [spec da v2](../spec.md) e os critérios CA-01 a CA-12 do
 [PRD do MVP](../../software-factory/prd.md). Rubrica proposta: [rubrica v1](lambda-acceptance-rubric.json).
 
-**Estado: proposta, ainda não autorizada.** Nenhum recurso é criado e nenhum orçamento é consumido antes
-de o Operador aprovar a tabela "Autorização pedida" e a rubrica. A autorização das provas anteriores não
-vale aqui.
+**Estado: autorizado pelo Operador em 2026-11-21**, como proposto na tabela "Autorização pedida", com a
+[rubrica v1](lambda-acceptance-rubric.json) aprovada ([registro](lambda-acceptance-rubric-approval.json)).
+A resposta do Operador foi "autorizo", dada à proposta que reunia a tabela e a rubrica. A autorização das
+provas anteriores não vale aqui.
 
 ## O que já se sabe e o que muda o desenho
 
