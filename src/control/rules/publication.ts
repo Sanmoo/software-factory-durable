@@ -1,6 +1,7 @@
 import { publicationMarkerPrefix } from '../../contracts/index.js';
 import type { BranchObservation, DivergenceComparison, ExecutionView, FactoryAppIdentity, PublicationDiscovery, PublicationView } from '../types.js';
 import { fenced } from './continuation.js';
+import { preservationClaim, withNotice, type RecreatedContext } from './boot-notice.js';
 import { repairPreserve } from './repair.js';
 
 // Pure rules of ticket 14 (spec §2.1/§9.1): what may be published, which pull request is the Work's own, the discovery decision, the
@@ -380,7 +381,9 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
   repository: string; base: string; branch: string; head: string; marker: string; ticket: { number: number; url: string }; workId: string; checkout: string;
   expectedRemote: BranchObservation; pullRequest: number | null; verified: { reviewedRound: number | null; gates: { id: string; outcome: string }[]; requiredChecks: string[] };
   /** Ticket 21/18: the exact remote token of the push/ls-remote (`origin` or the configured https URL); the Builder push policy gets the SAME value. */
-  remote?: string }):
+  remote?: string;
+  /** v2 ticket 08 (V2-11): the environment was recreated (no persistent disk); the prompt starts with the fixed notice and claims no preservation. */
+  recreated?: RecreatedContext | null }):
   { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const lease = input.expectedRemote.state === 'absent' ? '' : input.expectedRemote.sha;
   // Ticket 18 (real run q18-v3): the remote is the CONFIGURED repository's URL, never the guest-writable checkout's `origin` (it may be
@@ -414,9 +417,9 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
       'A PUSH_POLICY_DENIED is a LOCAL refusal: nothing was sent and it is not a publication attempt; correct it ONCE by running the exact command alone, then continue.',
     'Never merge, approve, mark ready, close, push to the base or to any other branch or tag, force-push without that explicit lease, or change labels, assignees or other pull requests. ' +
       'End with a short final message (the pull request URL). The Factory discovers and verifies the publication itself; your message is not evidence.'];
-  const prompt = [`Factory publication instruction (publish-only session, reason: ${input.reason}): Execution ${input.executionId} publishes the content verified at the end of ` +
-    `Execution ${input.previousExecutionId}. Your workspace (${input.checkout}), branch, commits and /artifacts are preserved. ` +
-    `Before anything else inspect git -C ${input.checkout} log and the remote (git ls-remote ${remote}) and never repeat an earlier effect blindly.`, ...facts, ...steps].join('\n');
+  const prompt = withNotice(input.recreated, [`Factory publication instruction (publish-only session, reason: ${input.reason}): Execution ${input.executionId} publishes the content verified at the end of ` +
+    `Execution ${input.previousExecutionId}. ${preservationClaim(input.recreated, `Your workspace (${input.checkout}), branch, commits and /artifacts are preserved.`)} ` +
+    `Before anything else inspect git -C ${input.checkout} log and the remote (git ls-remote ${remote}) and never repeat an earlier effect blindly.`, ...facts, ...steps]).join('\n');
   const bytes = new TextEncoder().encode(prompt).length;
   return bytes <= publicationPromptBudgetBytes ? { kind: 'prompt', prompt } : { kind: 'too-large', bytes };
 }

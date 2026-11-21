@@ -1,4 +1,5 @@
 import type { ExecutionView, SessionObservation, SessionRef } from '../types.js';
+import { preservationClaim, recreatedClaim, withNotice, type RecreatedContext } from './boot-notice.js';
 
 // Pure rules of ticket 11 (spec §5.5/§6.1/§6.2/§11.3): concrete scope updates, the continue/replace session decision, the sufficiency of
 // the recovery context and the `continue` message. No I/O, clock or randomness: callers supply every fact.
@@ -65,12 +66,19 @@ type Git = { baseCommit: string | null; branch: string | null; checkout: string 
  * carry what authorizes it (an accepted answer or a concrete scope update). Otherwise the context is insufficient: block, never an empty
  * continue/recovery that claims preservation it cannot prove.
  */
-export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean;
+export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean;
+  /**
+   * v2 ticket 08 (V2-11): the sandbox keeps no disk, so the environment is recreated by definition. The context is then the continuity
+   * Control read on `origin` (the caller blocks a divergence before any boot); `unconfirmed` (no gate-confirmed commit) is sufficient
+   * only after an interruption, which never had a gate.
+   */
+  recreated?: { continuity: 'continuous' | 'unconfirmed'; interruption?: boolean } }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean;
   /** Ticket 22: an open correction with effective impediments of the own PR. */ repair?: boolean } }):
   { sufficient: true } | { sufficient: false; reasons: string[] } {
   const reasons: string[] = [];
   if (!input.previous.baseCommit || !input.previous.branch || !input.previous.checkout) reasons.push('PREVIOUS_GIT_CONTEXT_MISSING');
   else if (input.previous.baseCommit !== input.prepared.baseCommit || input.previous.branch !== input.prepared.branch || input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
+  else if (input.prepared.recreated) { if (input.prepared.recreated.continuity !== 'continuous' && !input.prepared.recreated.interruption) reasons.push('PRESERVED_COMMIT_NOT_RECORDED'); }
   else if (!input.prepared.reused) reasons.push('PREVIOUS_ENVIRONMENT_NOT_REUSED');
   if (!input.trigger.answer && input.trigger.scopeUpdates === 0 && !input.trigger.publication && !input.trigger.repair) reasons.push('RESUME_TRIGGER_MISSING');
   return reasons.length ? { sufficient: false, reasons } : { sufficient: true };
@@ -99,17 +107,20 @@ export function continuationPrompt(input: { executionId: string; previousExecuti
   /** Ticket 13: the continued Builder keeps the multi-round review handoff (its rounds continue the Work's numbering). */
   reviewRounds?: boolean;
   /** Ticket 22: the repair section (effective impediments of the own PR); a trigger by itself. */
-  repair?: readonly string[] }):
+  repair?: readonly string[];
+  /** v2 ticket 08 (V2-11): the environment was recreated (no persistent disk); the prompt starts with the fixed notice and claims no preservation. */
+  recreated?: RecreatedContext | null }):
   { kind: 'prompt'; prompt: string } | { kind: 'insufficient'; reasons: ['RESUME_TRIGGER_MISSING' | 'CONTINUATION_TOO_LARGE'] } {
   if (!input.answer && input.scopeUpdates.length === 0 && !input.repair?.length) return { kind: 'insufficient', reasons: ['RESUME_TRIGGER_MISSING'] };
-  const prompt = ['continue',
+  const prompt = withNotice(input.recreated, ['continue',
     `Factory continuation of the SAME session: Execution ${input.executionId} continues after Execution ${input.previousExecutionId} ended. ` +
-      'Your workspace, branch, commits and /artifacts were preserved; check the effect of your last tool call before repeating anything.',
+      preservationClaim(input.recreated, 'Your workspace, branch, commits and /artifacts were preserved; check the effect of your last tool call before repeating anything.',
+        `${recreatedClaim} Check the effect of your last tool call before repeating anything.`),
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions for continuing this Work in the same session.`,
     ...(input.reviewRounds ? ['Execution context: reviews=factory-handoff review-rounds=multi'] : []),
     ...(input.answer ? ['', `Accepted answer to your question ${input.answer.questionId} (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
     ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
-      'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : []), ...(input.repair ?? [])].join('\n');
+      'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : []), ...(input.repair ?? [])]).join('\n');
   if (bytes(prompt) > promptBudgetBytes) return { kind: 'insufficient', reasons: ['CONTINUATION_TOO_LARGE'] };
   return { kind: 'prompt', prompt };
 }

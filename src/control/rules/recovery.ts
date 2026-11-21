@@ -1,6 +1,7 @@
 // Pure recovery rules (ticket 26, spec §4.4/§5.2/§5.3/§5.4/§11.4). No I/O, clock or randomness: callers supply every fact.
 import { blockedReferenceToken, blockedStartCodePattern, type StartRetryRemedy } from '../../contracts/index.js';
 import type { Impediment } from '../types.js';
+import { preservationClaim, recreatedClaim, withNotice, type RecreatedContext } from './boot-notice.js';
 
 /** Persisted waits of the operational recoveries of one Work (spec §4.4): 5/15/45 s, the last one repeated for explicitly granted extra units. */
 export const recoveryWaitsSeconds = [5, 15, 45] as const;
@@ -347,7 +348,9 @@ export function interruptionRecoveryPrompt(input: { ticketUrl: string; repositor
   skillDirectory: string; workId: string; executionId: string; previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP' | 'BUDGET_CONTINUATION'; code: string;
   reviews: boolean;
   /** Ticket 48: the bounded state summary (`stateSummary`): last phase, last gates, answered Questions. */
-  summary?: string | null }): string {
+  summary?: string | null;
+  /** v2 ticket 08 (V2-11): the environment was recreated (no persistent disk); the prompt starts with the fixed notice and claims no preservation. */
+  recreated?: RecreatedContext | null }): string {
   const why = input.reason === 'ADMINISTRATIVE_STOP'
     ? 'The previous Execution was stopped administratively (clean stop with confirmed cessation); this continuation is not a failure recovery.'
     : input.reason === 'BUDGET_CONTINUATION'
@@ -355,15 +358,16 @@ export function interruptionRecoveryPrompt(input: { ticketUrl: string; repositor
         'boot was stopped cleanly. This is a CONTINUATION of the same work, not a failure recovery: do not restart or redo finished work; continue ' +
         'from the preserved state and the summary below instead of re-reading everything.'
       : `The previous Execution was interrupted (${input.code}) and its activity ceased; the Factory starts this operational recovery after reconciliation.`;
-  return [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
+  return withNotice(input.recreated, [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
     `Execution context (from the Factory, authoritative): repository=${input.repository} base=${input.base} base-commit=${input.baseCommit} branch=${input.branch} ` +
       `checkout=${input.checkout} artifacts=/artifacts work=${input.workId} execution=${input.executionId} previous-execution=${input.previousExecutionId}` +
       (input.reviews ? ' reviews=factory-handoff' : ''),
     why,
-    'This is a NEW session on the same Work: its workspace, branch, commits and /artifacts were preserved; the previous session is not continued and ' +
+    preservationClaim(input.recreated, 'This is a NEW session on the same Work: its workspace, branch, commits and /artifacts were preserved; the previous session is not continued and ',
+      `This is a NEW session on the same Work. ${recreatedClaim} The previous session is not continued and `) +
       'no process of it survives. The output of its last tool call may be lost: inspect the current state (files, git status/log, /artifacts) before ' +
       'repeating anything, and never repeat a tool call blindly.',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions, resuming from the preserved state.`,
     ...(input.summary ? ['', input.summary] : []),
-    '', 'Reason recorded by the Factory:', fenced(`${input.reason}:${input.code}`)].join('\n');
+    '', 'Reason recorded by the Factory:', fenced(`${input.reason}:${input.code}`)]).join('\n');
 }
