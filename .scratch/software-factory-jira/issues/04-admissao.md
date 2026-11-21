@@ -1,6 +1,7 @@
 # Definir as condições de admissão diante de bloqueadores e leituras incompletas
 
-Status: open
+Status: claimed
+Assignee: Samuel Santos
 Type: grilling
 Label: wayfinder:grilling
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
