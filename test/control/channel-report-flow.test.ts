@@ -12,7 +12,9 @@ import { recoveryDoubles, type RecoveryScript } from './recovery-doubles.js';
 
 // v2 ticket 11 flow level (V2-21): real Control + Pi Durable/SQLite + Records; doubled: GitHub, a TEST sandbox that declares capabilities
 // and answers a channel report (file-backed host of the recovery doubles), the Builder and credentials. Not evidence of any real sandbox.
-const base: SandboxCapabilities = { docker: true, persistentDisk: false, bootDuration: null, egress: { mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false } };
+// The double prepares a host checkout, so it declares the disk it has: `channelRecovery` is independent of it, and a sandbox that
+// declares no persistent disk owes Control the preservation gate (v2 ticket 07), which is not this test's subject.
+const base: SandboxCapabilities = { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false } };
 const effect = (callId: string, outcome: ChannelReport['indeterminateEffects'][number]['outcome'], description = 'mvn deploy') =>
   ({ at: '2026-11-21T10:00:00.000Z', executionId: 'reported-by-the-sandbox', invocationId: 'invocation-1', role: 'builder', tool: 'bash' as const, callId, description, outcome });
 

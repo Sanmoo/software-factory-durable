@@ -3,7 +3,7 @@ import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPo
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import { createPreparationVm, createSandbox, selectSandboxAdapter, type GuestAssetPin, type GuestTransport, type LambdaBootClock, type LambdaImageWait, type LambdaServiceFactory,
-  type LambdaWorkerLauncher } from '../../sandbox/index.js';
+  type LambdaObservationTimer, type LambdaWorkerLauncher } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
@@ -43,7 +43,8 @@ export type ProductionInput = {
    * process launch). Production passes none: the `aws` CLI, the host's `ssh`/`websocat`, the wall clock and the fixed worker executable.
    * The composed journey test passes the in-memory account and guest; nothing else of the composition changes.
    */
-  lambda?: { service?: LambdaServiceFactory; transport?: GuestTransport; clock?: LambdaBootClock; imageWait?: LambdaImageWait; workerLauncher?: LambdaWorkerLauncher };
+  lambda?: { service?: LambdaServiceFactory; transport?: GuestTransport; clock?: LambdaBootClock; imageWait?: LambdaImageWait; workerLauncher?: LambdaWorkerLauncher;
+    /** v2 ticket 10: how the watch of a boot's environment waits between observations (tests move it by hand). */ observationTimer?: LambdaObservationTimer };
 };
 
 /**
@@ -145,7 +146,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     lambdaBootOwner: true,
     ...(input.lambda?.service ? { lambdaService: input.lambda.service } : {}), ...(input.lambda?.transport ? { lambdaTransport: input.lambda.transport } : {}),
     ...(input.lambda?.clock ? { lambdaBootClock: input.lambda.clock } : {}), ...(input.lambda?.imageWait ? { lambdaImageWait: input.lambda.imageWait } : {}),
-    ...(input.lambda?.workerLauncher ? { lambdaWorkerLauncher: input.lambda.workerLauncher } : {}) });
+    ...(input.lambda?.workerLauncher ? { lambdaWorkerLauncher: input.lambda.workerLauncher } : {}),
+    ...(input.lambda?.observationTimer ? { lambdaObservationTimer: input.lambda.observationTimer } : {}) });
   // The adapter's configuration as the Sandbox reads it: Control's opaque value for Gondolin (unchanged), the composition's own for Lambda.
   const configured = <T extends { configuration: unknown }>(request: T): T => lambda ? { ...request, configuration: input.effective.sandbox } : request;
   // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
@@ -161,8 +163,12 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
       // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.
       observe: input => sandbox.observe(input),
+      // v2 ticket 07 (V2-06): the preservation gate's observation in the guest; Control asks it only of a sandbox without a persistent disk.
+      preservationGate: input => sandbox.preservationGate(input),
       // v2 ticket 11 (V2-21): asked only of a sandbox that declares channel recovery; the boot's own host record answers.
       channelReport: input => sandbox.channelReport(input),
+      // v2 ticket 10 (V2-15): the boot owner of this process watches the environment; Control only waits for its confirmed end.
+      awaitEnvironmentEnd: input => sandbox.awaitEnvironmentEnd(input),
       // v2 ticket 14 (V2-32): boot seconds and environment builds, reported by a sandbox whose boots are measured by its service. The
       // sandbox with a persistent disk has no such report, and its usage view stays as it was.
       ...(lambda ? { usage: input => sandbox.usage(input), environmentBuilds: () => sandbox.environmentBuilds() } : {}) },

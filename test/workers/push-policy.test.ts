@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ToolContext, ToolProjection } from '../../src/sandbox/index.js';
 import { builderBash } from '../../src/workers/bash.js';
-import { allowedPush, pushDenied } from '../../src/workers/push-policy.js';
+import { allowedPush, allowedWipPush, pushDenied } from '../../src/workers/push-policy.js';
 
 // Ticket 21 review HIGH: the Builder Host refuses any push but the exact leased one BEFORE the guest sees it (no effect, not critical).
 const context = { workId: 'w', executionId: 'e', invocationId: 'i', role: 'builder', environmentRef: 'env', bootRef: 'boot' } as unknown as ToolContext;
@@ -64,4 +64,20 @@ test('ticket 18 compatibility: the policy accepts exactly the remote token Contr
   assert.match(pushDenied(allowedPush({ ...policy, remote: 'origin' }), policy) ?? '', /PUSH_POLICY_DENIED/, 'another remote form than the emitted one');
   assert.match(pushDenied(allowedPush({ ...policy, remote: 'https://github.com/other/repo.git' }), policy) ?? '', /PUSH_POLICY_DENIED/);
   assert.match(pushDenied(allowedPush(policy), { ...policy, remote: 'git@github.com:acme/project.git' }) ?? '', /no push is allowed/, 'unsupported token: nothing allowed');
+});
+
+test('v2 ticket 07: after a preservation gate refusal the only push is HEAD to the own branch without force; nothing can be rewritten or sent elsewhere', () => {
+  const policy = { branch, expected: null, head: local, remote: 'https://github.com/acme/project.git', wip: true as const };
+  const allowed = allowedWipPush(policy);
+  assert.equal(allowed, `git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/${branch}`);
+  assert.equal(pushDenied(allowed, policy), null);
+  for (const command of [`git -C /workspace/checkout push --force https://github.com/acme/project.git HEAD:refs/heads/${branch}`,
+    `git -C /workspace/checkout push https://github.com/acme/project.git +HEAD:refs/heads/${branch}`, 'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/main',
+    `git -C /workspace/checkout push https://github.com/acme/project.git :refs/heads/${branch}`, `${allowed} && git push origin HEAD:refs/heads/main`, allowedPush({ branch, expected: factory, head: local }),
+    `git -C /workspace/checkout push origin HEAD:refs/heads/${branch}`]) {
+    assert.match(pushDenied(command, policy) ?? '', /^PUSH_POLICY_DENIED/, command);
+  }
+  assert.match(pushDenied(`gh api -X PATCH repos/acme/project/git/refs/heads/${branch} -f sha=${local}`, policy) ?? '', /^PUSH_POLICY_DENIED/);
+  assert.match(pushDenied(allowed, { ...policy, remote: 'https://evil.example/x.git' }) ?? '', /no push is allowed/);
+  assert.equal(pushDenied('git -C /workspace/checkout commit -am "WIP"', policy), null);
 });

@@ -38,7 +38,12 @@ export function recoveryBackoff(notBeforeMs: number | null, nowMs: number): bool
 
 // Transient model/transport/worker/channel failures (spec §4.4: "Recuperação transitória de modelo/transporte/worker"). Every other code —
 // authorization, configuration, drift, integrity of records, preparation/boot failures, cancellation — blocks with a required action.
-const transient = new Set(['WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
+/**
+ * v2 ticket 10 (V2-15): the end of an Execution whose environment the sandbox confirmed ended on its own. V2-10: the loss ends the
+ * Execution and the substitute comes back through the queue consuming one operational recovery, so the code is transient.
+ */
+export const environmentEndedCode = 'SANDBOX_ENVIRONMENT_ENDED';
+const transient = new Set([environmentEndedCode, 'WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
   'WORKER_MODEL_UNAVAILABLE', 'WORKER_INTERRUPTED', 'TOOL_CHANNEL_CLOSED', 'CONTROLLER_CRASH', 'REVIEWER_CESSATION_UNCONFIRMED', 'REVIEW_DELIVERY_UNCERTAIN',
   'REVIEW_DELIVERY_FAILED', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED', 'ACTIVATION_REFUSED_CESSATION_UNCONFIRMED', 'ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED',
   'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED',

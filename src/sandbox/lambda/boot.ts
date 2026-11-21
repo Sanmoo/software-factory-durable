@@ -31,7 +31,23 @@ export const defaultLambdaBootClock: LambdaBootClock = Object.freeze({ now: () =
 /** Bounded waits of a boot (observed: Run to SSH usable about 7 s; Terminate to `TERMINATED` 4 to 8 s). One service read per interval. */
 export const lambdaBootWaits = Object.freeze({ intervalSeconds: 2, runningSeconds: 120, channelSeconds: 90, cessationSeconds: 120 });
 
-export type LambdaBootDependencies = { root: string; service: LambdaServiceFactory; transport: GuestTransport; clock: LambdaBootClock };
+/**
+ * v2 ticket 10 (V2-15): the wait between two observations of a boot's environment. It resolves when the interval elapsed OR `signal`
+ * aborted. Separate from the boot clock because it runs for the whole life of a boot, beside its calls: tests move it by hand.
+ */
+export type LambdaObservationTimer = (milliseconds: number, signal: AbortSignal) => Promise<void>;
+export const defaultLambdaObservationTimer: LambdaObservationTimer = (milliseconds, signal) => new Promise<void>(resolve => {
+  if (signal.aborted) { resolve(); return; }
+  const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+  // Never keeps the process alive: a watch is not work.
+  const timer = setTimeout(done, milliseconds);
+  timer.unref();
+  signal.addEventListener('abort', done, { once: true });
+});
+
+export type LambdaBootDependencies = { root: string; service: LambdaServiceFactory; transport: GuestTransport; clock: LambdaBootClock;
+  /** v2 ticket 10: how the watch of a boot's environment waits between observations (default: a real, unreferenced timer). */
+  observationTimer?: LambdaObservationTimer };
 export type LambdaStartResult = StartResult;
 
 /** Why a boot began and why it ended (V2-10). A boot whose start did not complete ends with `end` and the failure code. */
@@ -49,6 +65,8 @@ const bootRecordSchema = z.strictObject({
   /** The size of the boot comes from the profile the image was built with: GetMicrovm reports none. */
   size: z.strictObject({ baselineMemoryMiB: z.number(), peakMemoryMiB: z.number(), peakVcpus: z.number() }),
   maxBootSeconds: z.number().int().positive(),
+  /** v2 ticket 10 (V2-15): the profile's observation interval, kept here so the watch of this boot never needs the profile again. */
+  observationIntervalSeconds: z.number().int().positive().optional(),
   begin: z.strictObject({ reason: z.enum(['start', 'planned-swap']), requestedAt: instant }),
   /** `requested`: RunMicrovm not answered yet; `running`: a MicroVM exists; `active`: channel up and commit cloned; `ending`: stop requested. */
   phase: z.enum(['requested', 'running', 'active', 'ending', 'ended']),
@@ -218,7 +236,7 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   const size = lambdaBootSize(profile);
   let record: LambdaBootRecord = { version: 1, boot, environment, workId: image.workId, awsProfile: profile.awsProfile, region: profile.region, installation: profile.installation,
     imageArn: image.imageArn, imageVersion: image.imageVersion, size: { baselineMemoryMiB: size.baselineMemoryMiB, peakMemoryMiB: size.peakMemoryMiB, peakVcpus: size.peakVcpus },
-    maxBootSeconds: profile.maxBootSeconds, begin: { reason, requestedAt: iso(clock) }, phase: 'requested', evidence: { collected: [], lost: null } };
+    maxBootSeconds: profile.maxBootSeconds, observationIntervalSeconds: profile.observationIntervalSeconds, begin: { reason, requestedAt: iso(clock) }, phase: 'requested', evidence: { collected: [], lost: null } };
   const save = async (next: LambdaBootRecord) => { record = next; await saveRecord(root, record); };
   await save(record);
   await writeJson(join(await workDirectory(root, environment), 'current.json'), { version: 1, environment, boot });

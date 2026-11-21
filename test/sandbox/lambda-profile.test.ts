@@ -22,7 +22,7 @@ test('the Lambda adapter declares Docker, no disk that survives the boot, its bo
   assert.equal(selection.status, 'selected');
   if (selection.status !== 'selected') return;
   assert.deepEqual(selection.capabilities, { docker: true, persistentDisk: false, bootDuration: { maxSeconds: 1800, rotationMarginSeconds: 300 },
-    egress: { mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }, channelRecovery: true });
+    egress: { mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }, channelRecovery: true, environmentWatch: true });
   // V2-29: what Control receives (the capabilities) carries no region, size, architecture, account or AWS profile.
   assert.doesNotMatch(JSON.stringify(selection.capabilities), /us-east-1|arm64|1024|factory|acme/);
 });

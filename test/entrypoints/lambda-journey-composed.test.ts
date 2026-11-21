@@ -104,10 +104,20 @@ function scriptedWorkers(input: { root: string; executable: string; guests: Retu
           effects.push({ kind: 'push', detail: { head: guest.repository?.commit, status: await builderGh(input.executable, environment.GH_TOKEN ?? '', '/repos/acme/project/git/refs', { ref: `refs/heads/${branch}`, sha: verified }) } });
           return 0;
         });
-        await bash(`gh pr create --repo acme/project --draft --base main --head ${branch} --title "Factory smoke" --body-file /artifacts/publication/pr-body.md`, async (_guest, environment) => {
+        await bash(`gh pr create --repo acme/project --draft --base main --head ${branch} --title "Factory smoke" --body-file /artifacts/publication/pr-body.md`, async (guest, environment) => {
+          // v2 ticket 07: the publication leaves a scratch file in the checkout (untracked, not ignored): the preservation gate must see it.
+          guest.worktree.untracked = 1;
           effects.push({ kind: 'pr', detail: await builderGh(input.executable, environment.GH_TOKEN ?? '', '/repos/acme/project/pulls', { title: 'Factory smoke', head: branch, base: 'main', body, draft: true }) });
           return 0;
         });
+        return { status: 'success' as const, receipt };
+      })();
+      return { started, completed, deliver: async () => false };
+    }
+    if (context.phaseId === 'builder-preservation') {
+      // v2 ticket 07: the Builder the preservation gate returned a refusal to: it removes the leftover and ends its turn.
+      const completed = (async () => {
+        await bash('rm -f /workspace/checkout/pr-body.tmp', guest => { guest.worktree.untracked = 0; return 0; });
         return { status: 'success' as const, receipt };
       })();
       return { started, completed, deliver: async () => false };
@@ -159,7 +169,9 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   const guests = lambdaGuestFake(fake);
   // `origin` accepts the reduced installation token the host mints for the clone (one per start), never a fixed secret of the guest.
   const cloneTokens: string[] = [];
-  guests.world.origins[remoteUrl] = { commits: [tip], token: token => { cloneTokens.push(token); return token.startsWith('synthetic-installation-secret-'); } };
+  guests.world.origins[remoteUrl] = { commits: [tip], token: token => { cloneTokens.push(token); return token.startsWith('synthetic-installation-secret-'); },
+    // v2 ticket 07: `ls-remote` from the guest answers what the gh world holds for the branch at that instant.
+    tip: async branch => { let sha: string | null = null; await world.update(state => { sha = state.refs?.[branch] ?? null; }); return sha; } };
   const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
   const workers = scriptedWorkers({ root: world.root, executable: world.executable, guests });
   const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
@@ -197,7 +209,7 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   assert.deepEqual([execution.end?.outcome, execution.end?.cessation, execution.slot.held], ['completed', 'confirmed', false]);
   assert.deepEqual(fake.account.microvms.map(microvm => microvm.state), ['TERMINATED'], 'one MicroVM for the whole journey, ended by the service');
   // Everything ran in the SAME boot, with no checkpoint between the Builder and the reviewers.
-  assert.deepEqual(workers.launched.filter(item => item.role === 'builder').map(item => item.phaseId), ['builder-initial', 'builder-publication']);
+  assert.deepEqual(workers.launched.filter(item => item.role === 'builder').map(item => item.phaseId), ['builder-initial', 'builder-publication', 'builder-preservation']);
   assert.equal(new Set(workers.launched.map(item => item.boot)).size, 1);
   assert.deepEqual(workers.launched.filter(item => item.role !== 'builder').map(item => item.role).sort(), ['spec', 'spec', 'standards', 'standards'], 'two review rounds: the proposal, then the fix');
   // Reviews of standards and spec, the finding and its treatment, verified by Control.
@@ -212,9 +224,23 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   assert.equal(workers.effects.filter(effect => effect.kind.startsWith('read:')).every(effect => effect.detail === '/workspace/checkout/docs/FACTORY_SMOKE.md'), true);
   // The clone happened IN the guest, from `origin`, at the commit Control read there, with a reduced credential that never stayed anywhere.
   assert.deepEqual([execution.request.baseCommit, execution.origin?.startCommit, execution.origin?.atStart], [tip, tip, { state: 'absent' }]);
-  assert.equal(cloneTokens.length, 1);
+  // One reduced credential for the clone and one for each `ls-remote` of the preservation gate (two checks), each revoked after its use.
+  assert.equal(cloneTokens.length, 3);
   assert.deepEqual(guest.executions.filter(item => item.program === 'clone').map(item => item.environmentNames), [['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']]);
-  assert.equal([...guest.files].some(([, content]) => content.includes(cloneTokens[0]!)), false, 'no credential in a guest file');
+  assert.equal([...guest.files].some(([, content]) => cloneTokens.some(token => content.includes(token))), false, 'no credential in a guest file');
+  // v2 ticket 07 (V2-05..V2-09): before the boot ended for the waits on GitHub, the gate ran IN the guest (fixed program, as the Builder user,
+  // credential only in its environment, never in its text). It refused the leftover file, the refusal went back to the Builder in the same
+  // boot with the one fast-forward push allowed, and only the accepted gate let the MicroVM be terminated. The confirmed commit is on the Work.
+  const gates = guest.executions.filter(item => item.program === 'preservation-gate');
+  assert.deepEqual(gates.map(item => [item.user, item.environmentNames]), [['builder', ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']], ['builder', ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']]]);
+  assert.equal(gates.some(item => cloneTokens.some(token => item.script.includes(token))), false);
+  assert.deepEqual(execution.preservationGate?.attempts.map(item => [item.outcome, item.code, item.commit ?? null, item.correction?.status ?? null]),
+    [['refused', 'WORKSPACE_UNTRACKED', null, 'completed'], ['accepted', null, head, null]]);
+  assert.deepEqual([published.preservation?.commit, published.preservation?.occasion, published.preservation?.boot], [head, 'ci-wait', execution.dispatch.boot]);
+  const preserving = workers.launched.find(item => item.phaseId === 'builder-preservation')!;
+  assert.deepEqual(preserving.pushPolicy, { branch: published.branch, head, expected: null, remote: remoteUrl, wip: true });
+  assert.match(preserving.prompt, /does not authorize committing secrets/);
+  assert.equal(programs.lastIndexOf('preservation-gate') < programs.indexOf('collect-artifacts'), true, 'the gate precedes the stop');
   // The skill pack reached the guest of this boot.
   assert.equal([...guest.files.keys()].some(path => path.startsWith(`/artifacts/${execution.request.skillPack!.name}/`) && path.endsWith('/manifest.json')), true);
   // The same-boot publication: the Builder pushed exactly the verified commit and opened ONE draft PR, with the Execution's own write grant.
@@ -228,7 +254,7 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   // No workspace on the host and no mounted bare cache; no checkpoint other than the Git remote.
   const entries = await readdir(world.root);
   assert.equal(entries.includes('environments') || entries.includes('cache'), false, entries.join(','));
-  assert.deepEqual([...new Set(programs)].sort(), ['artifact-seed', 'boot-ready', 'clone', 'collect-artifacts', 'evidence', 'proposal-identity', 'tool']);
+  assert.deepEqual([...new Set(programs)].sort(), ['artifact-seed', 'boot-ready', 'clone', 'collect-artifacts', 'evidence', 'preservation-gate', 'proposal-identity', 'tool']);
   assert.deepEqual([...new Set(fake.mutations.map(mutation => mutation.operation))].sort(), ['createImage', 'putBuildArtifact', 'runMicrovm', 'terminateMicrovm']);
   // Decision 2c: the evidence was collected over the channel BEFORE the stop, into the protected Records of the Work.
   const environment = execution.dispatch.environment!, boot = execution.dispatch.boot!;
