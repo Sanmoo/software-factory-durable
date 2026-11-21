@@ -89,9 +89,8 @@ test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP ti
   assert.deepEqual(decision.outcome === 'absent' ? decision.expectedRemote : null, { state: 'present', sha: head });
 });
 
-test('the push the instruction names is exactly the one the Builder Host allows', async () => {
+test('the push the instruction names is exactly the one the Builder Host allows (the same literal is pinned in test/workers/push-policy.test.ts)', async () => {
   const { gateCorrectionPush } = await import('../../src/control/rules/preservation.js');
-  const { allowedWipPush } = await import('../../src/workers/push-policy.js');
-  const remote = 'https://github.com/acme/project.git', branch = 'factory/3-0123abcd';
-  assert.equal(gateCorrectionPush(branch, remote), allowedWipPush({ branch, remote }));
+  assert.equal(gateCorrectionPush('factory/3-0b9c6a52', 'https://github.com/acme/project.git'),
+    'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0b9c6a52');
 });
