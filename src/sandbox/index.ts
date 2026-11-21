@@ -25,10 +25,13 @@ export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 // v2 ticket 04: a boot under the Lambda adapter (RunMicrovm, channel, clone in the guest; observe and stop by the service) and the seam
 // to the guest: SSH over WebSocket in production (`createSshTransport`), an in-process guest in tests (`lambdaTransport`).
 import { currentLambdaBoot, defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, readLambdaChannelReport, startLambdaBoot, stopLambdaBoot,
-  type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation } from './lambda/boot.js';
+  type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation, type LambdaObservationTimer } from './lambda/boot.js';
+export type { LambdaObservationTimer } from './lambda/boot.js';
 import { createSshTransport } from './lambda/ssh-transport.js';
 // v2 ticket 05: the MVP role tools over a Lambda boot (`lambda/tools.ts`): the host binds each invocation to a role on the boot.
-import { serveLambdaTools } from './lambda/tools.js';
+import { serveLambdaTools, type LambdaEnvironmentEnd } from './lambda/tools.js';
+export type { LambdaEnvironmentEnd } from './lambda/tools.js';
+export { environmentEndedCode } from './tool-binding.js';
 // v2 ticket 06: the Lambda boot owner (worker launch in the host process), the channel observations that replace the host reads of the
 // workspace, the evidence collection before a stop and Remove.
 import { lambdaOwnerEndpoint, removeLambdaEnvironment, serveLambdaOwner, type LambdaWorkerLauncher } from './lambda/owner.js';
@@ -114,12 +117,14 @@ export type { WriteCall } from './write-tools.js';
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
 export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait,
-  lambdaTransport, lambdaBootClock = defaultLambdaBootClock, lambdaBootOwner = false, lambdaWorkerLauncher }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+  lambdaTransport, lambdaBootClock = defaultLambdaBootClock, lambdaObservationTimer, lambdaBootOwner = false, lambdaWorkerLauncher }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
   preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory;
   /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait;
   /** v2 ticket 04: the transport to the guest (SSH over WebSocket with the host's `ssh` and `websocat` by default) and the clock of the boot waits. */
   lambdaTransport?: GuestTransport; lambdaBootClock?: LambdaBootClock;
+  /** v2 ticket 10: how the watch of a Lambda boot's environment waits between observations (tests move it by hand). */
+  lambdaObservationTimer?: LambdaObservationTimer;
   /** v2 ticket 06: THIS process is the one that launches the workers of the boots it starts (the controller owner): each started Lambda boot
    * gets its boot owner here (owner endpoint, tool bindings, worker processes), closed by `stop`. Absent: boots are started without one. */
   lambdaBootOwner?: boolean;
@@ -130,9 +135,10 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
   const bindings = new Map<string, string>();
   const bootLedger = createBootLedger(async () => (await inspectMemory())?.availableBytes);
   let sshTransport: GuestTransport | undefined;
-  const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock });
+  const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock,
+    ...(lambdaObservationTimer ? { observationTimer: lambdaObservationTimer } : {}) });
   // v2 ticket 06: the boot owners THIS process serves (owner endpoint, tool bindings and workers of each active Lambda boot).
-  const lambdaOwners = new Map<string, { close(): Promise<void> }>();
+  const lambdaOwners = new Map<string, { close(): Promise<void>; ended: Promise<LambdaEnvironmentEnd> }>();
   /** One fixed observation program over the channel of the environment's CURRENT boot (decisions 1A and 2b-A): guest-attested. */
   const onCurrentBoot = async <T>(environment: EnvironmentRef, unavailable: T, read: (channel: Awaited<ReturnType<typeof openLambdaBootChannel>> & { status: 'open' }) => Promise<T>): Promise<T> => {
     try {
@@ -160,7 +166,23 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
      * workers. `tools.bind` binds one invocation to its role on the boot and serves the unchanged worker tool endpoint; reviewers get
      * `read` only and run in the guest as the read-only `reviewer` user.
      */
-    async serveTools({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return serveLambdaTools(lambdaBoots(), { environment, boot }); },
+    async serveTools({ environment, boot, environmentEnded }: { environment: EnvironmentRef; boot: BootRef;
+      /** v2 ticket 10 (V2-15): told once when the service confirmed the end of the environment this owner watches. */ environmentEnded?: (observed: LambdaEnvironmentEnd) => void }) {
+      return serveLambdaTools(lambdaBoots(), { environment, boot }, environmentEnded ? { environmentEnded } : {});
+    },
+    /**
+     * v2 ticket 10 (V2-15): resolves when the adapter CONFIRMED, through the service, that the environment of this boot ended on its own;
+     * `null` once `signal` aborts. Only the boot owner of this process watches, at the interval of the adapter's profile (never given to
+     * the caller); a boot without an owner here never resolves.
+     */
+    awaitEnvironmentEnd({ environment, boot, signal }: { environment: EnvironmentRef; boot: BootRef; signal: AbortSignal }): Promise<LambdaEnvironmentEnd | null> {
+      const owner = lambdaOwners.get(`${environment}/${boot}`);
+      return new Promise(resolve => {
+        if (signal.aborted) { resolve(null); return; }
+        signal.addEventListener('abort', () => resolve(null), { once: true });
+        void owner?.ended.then(resolve);
+      });
+    },
     /**
      * v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot, read from the boot's host record by any process:
      * the calls that started and whose result never arrived, and whether reconnection reached its limit. Empty for a boot without such

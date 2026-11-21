@@ -4,7 +4,7 @@ import { boundConditionalEditTools, boundWriteTools, writeCallSchema, type Write
 import { boundBashTools, bashCallSchema, bashProgressSchema, type BashCall, type BashProgress } from './bash-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
 import type { TextOutput, RawOutput } from '../records/index.js';
-import { contextSchema, profileQualified, referenceSchema, readResultSchema, type ToolContext, type ReadResult, type GuestOwner, type ReadBinding } from './tool-binding.js';
+import { contextSchema, environmentEndedCode, profileQualified, referenceSchema, readResultSchema, type ToolContext, type ReadResult, type GuestOwner, type ReadBinding } from './tool-binding.js';
 export { contextSchema } from './tool-binding.js';
 export type { ToolContext, ReadResult, GuestOwner, ReadBinding } from './tool-binding.js';
 
@@ -167,7 +167,16 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   const write = boundWriteTools({ ...options, signal }, valid, revoke);
   const commit = boundConditionalEditTools({ ...options, signal }, valid, revoke);
   const bash = boundBashTools({ ...options, signal }, valid, revoke, publishedCopies);
+  /**
+   * v2 ticket 10 (V2-15): once the adapter confirmed the end of the environment, no call reaches a tool backend, and the call that was in
+   * flight (cancelled by the adapter, so it fails) answers the same code instead of its own "effects unknown".
+   */
   async function executeTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
+    if (options.environmentEnded?.()) return failure(environmentEndedCode);
+    const result = await executeBoundTool(context, call, progress);
+    return result.status === 'failure' && options.environmentEnded?.() ? failure(environmentEndedCode) : result;
+  }
+  async function executeBoundTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
     if (call.name === 'bash') return bash(context, call, progress);
     if (call.name === 'write') return write(context, call);
     const editSource = call.name === 'edit-source';
@@ -366,7 +375,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   signal.addEventListener('abort', () => { void close().catch(() => {}); }, { once: true });
   // Covers an already-revoked binding and revocation during listen/chmod awaits.
   if (signal.aborted) await close();
-  return { endpoint: options.endpoint, close };
+  /** Resolves once every call that was in flight has answered (v2 ticket 10: what the adapter waits for after cancelling them). */
+  const idle = () => Promise.allSettled([...active]).then(() => {});
+  return { endpoint: options.endpoint, close, idle };
 }
 
 /** Private boot-owner collection. Invocation revocation never owns VM shutdown;

@@ -29,7 +29,8 @@ import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateR
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
-import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { environmentEndedCode, interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { recordEnvironmentEnd } from './environment-end.js';
 import { failureCodeAfter } from '../rules/channel-report.js';
 import { recordChannelReport } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
@@ -870,7 +871,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const interrupt = new AbortController();
     // Ticket 17: why the activity scope was interrupted — the timeout (default) or a confirmed delivery (merge observed meanwhile).
     // Ticket 25: `cancelled` — the operator cancelled the Work (its credentials were withdrawn first). The first reason is kept.
-    const interruption: { reason: 'timeout' | 'delivered' | 'cancelled' } = { reason: 'timeout' };
+    // v2 ticket 10 (V2-15): `environment-ended` — the sandbox confirmed that the environment of the own boot ended on its own.
+    const interruption: { reason: 'timeout' | 'delivered' | 'cancelled' | 'environment-ended' } = { reason: 'timeout' };
+    const environmentWatch = new AbortController();
+    let environmentEnd: { reason: string | null; terminatedAt: string | null } | null = null;
     interrupts.set(work.work_id, reason => { if (!interrupt.signal.aborted) interruption.reason = reason; interrupt.abort(); });
     const activitySignal = AbortSignal.any([stopping.signal, interrupt.signal]);
     const interrupted = () => interrupt.signal.aborted;
@@ -1113,6 +1117,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         ...(clone ? { checkout: clone } : {}) });
       if (started.status !== 'success') { await refused('start', started); return; }
       boot = started.boot;
+      // v2 ticket 10 (V2-15): the sandbox watches the environment (Control keeps no timer and no watchdog of its own). Its confirmed
+      // cessation interrupts the whole activity scope of this Execution: Builder, reviewers and the publication activation.
+      if (ports.sandbox.capabilities?.environmentWatch && ports.sandbox.awaitEnvironmentEnd) {
+        void ports.sandbox.awaitEnvironmentEnd({ environment, boot, signal: AbortSignal.any([environmentWatch.signal, stopping.signal]) }).then(observed => {
+          if (!observed || environmentWatch.signal.aborted || interrupt.signal.aborted) return;
+          environmentEnd = observed;
+          interruption.reason = 'environment-ended';
+          interrupt.abort();
+        }, () => {});
+      }
       // v2 ticket 06: a boot without a persistent disk starts empty; the skill pack is the one written into THIS boot.
       const bootPack = started.seeds?.find(seed => seed.name.startsWith('factory/skill-pack/'));
       if (!pack && bootPack) pack = bootPack;
@@ -1386,6 +1400,24 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         observe(work.work_id, stop?.cessationConfirmed ? 'delivered-slot-released' : 'delivered-cessation-unconfirmed', ['WORK_DELIVERED']);
         return;
       }
+      if (interrupted() && !stopping.signal.aborted && interruption.reason === 'environment-ended') {
+        // v2 ticket 10 (V2-15): the environment is gone. The interruption already aborted every worker of this Execution (no model request
+        // and no tool call follows; the sandbox denies them on its side too). The observed reason and the end are recorded, the own boot is
+        // settled through the sandbox's Stop (it confirms from the service and collects nothing: there is nothing left) and the Slot is
+        // released after that confirmation. V2-10: a loss; the substitute returns through the queue as an operational recovery.
+        const observed = environmentEnd as { reason: string | null; terminatedAt: string | null } | null;
+        await timer?.catch(() => {});
+        await reviewTask?.catch(() => {});
+        await lifecycle?.withdraw('ended', { notifyWorker: false }).catch(() => {});
+        if (boot && observed) await recordEnvironmentEnd(session, work.work_id, executionId, boot, observed).catch(() => {});
+        const ended = await recordEnd(session, work.work_id, executionId, 'failure', environmentEndedCode, null, elapsed()).catch(() => ({ kind: 'stale' as const }));
+        await questionUncertain().catch(() => {});
+        const stop = await stopOwnBoot('environment ended');
+        if (ended.kind === 'advanced') await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
+        else await hold('ENVIRONMENT_ENDED_START_UNCONFIRMED', 'The environment ended while the start of the activity was not confirmed; the Slot is kept and the next controller boot reconciles it (ticket 26).').catch(() => {});
+        observe(work.work_id, stop?.cessationConfirmed && ended.kind === 'advanced' ? 'environment-ended-slot-released' : 'environment-ended-cessation-unconfirmed', [environmentEndedCode]);
+        return;
+      }
       if (interrupted() && !stopping.signal.aborted) {
         // Timeout (spec §4.4/§5.7): recorded before the interruption; credentials withdrawn, own boot stopped, Slot only after cessation.
         // Blocked by EXECUTION_TIMEOUT for intervention: no retry, no new clock for it.
@@ -1441,7 +1473,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await hold(`${phase.toUpperCase()}_${code}`, proven
         ? 'No worker was launched; the reservation was released without consumption. Never retried automatically.'
         : 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).', proven).catch(() => {});
-    } finally { timerStop.abort(); lifecycles.delete(work.work_id); interrupts.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
+    } finally { timerStop.abort(); environmentWatch.abort(); lifecycles.delete(work.work_id); interrupts.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 
   /**

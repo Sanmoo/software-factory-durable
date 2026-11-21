@@ -176,6 +176,12 @@ export type ExecutionPorts = {
     /** v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot. Read only when the sandbox declares
      * `channelRecovery`, before the Execution's end is recorded and again before its boot is stopped; the result is recorded durably. */
     channelReport?(input: { environment: EnvironmentRef; boot: BootRef }): Promise<ChannelReport>;
+    /**
+     * v2 ticket 10 (V2-15): resolves when the sandbox CONFIRMED that the environment of this boot ended on its own (`null` once `signal`
+     * aborts). Asked only of a sandbox that declares `environmentWatch`, for the boot of a running Execution. How and how often the
+     * sandbox observes is its own business: Control never learns an interval and keeps no watchdog over silent work.
+     */
+    awaitEnvironmentEnd?(input: { environment: EnvironmentRef; boot: BootRef; signal: AbortSignal }): Promise<{ reason: string | null; terminatedAt: string | null } | null>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -372,6 +378,11 @@ export type ExecutionView = {
   /** v2 ticket 11 (V2-21): tool calls of this Execution that started and whose result never arrived (the channel dropped), as the sandbox
    * reported them. Their effects may have happened; a substitute session is told of them and never repeats one by assumption (V2-19). */
   indeterminateEffects?: IndeterminateEffectRecord[];
+  /**
+   * v2 ticket 10 (V2-15): the sandbox confirmed that the environment of this Execution's boot ended on its own while the activation ran.
+   * Control then ended the activation (`end.code` = `SANDBOX_ENVIRONMENT_ENDED`). `reason` is what the sandbox reported, as given.
+   */
+  environmentEnd?: { at: string; boot: string; reason: string | null; terminatedAt: string | null };
 };
 /** v2 ticket 06: the Work branch tip on `origin` from Control's own read, or why it is not known. */
 /** v2 ticket 07 (V2-05): where the gate applies. `question`: a Question to the human; `ci-wait`: the Execution completed and the waits on
