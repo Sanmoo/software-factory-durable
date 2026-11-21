@@ -22,6 +22,8 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 - [Investigar o que o Jira Cloud permite afirmar sobre Tickets e bloqueadores](issues/01-visibilidade-jira.md): um link visível comprova a relação; esgotar a busca JQL não distingue a ausência de bloqueio de um bloqueador oculto.
 - [Investigar identidades, permissões e comentários no Jira Cloud](issues/02-interacao-jira.md): o Jira identifica a conta autora, não sua autoridade sobre o Trabalho; reencontrar um comentário visível não garante publicação única.
 
+- [Definir a seleção de Tickets e o roteamento para um repositório](issues/03-roteamento.md): a etiqueta indica intenção; as rotas por componente devem apontar para um único repositório autorizado na revalidação, e o Ticket recebe o diagnóstico de impedimento quando for seguro comentar.
+
 ## Not yet specified
 
 - O desenho de persistência e reconciliação mostrará se algum estado legado exige um procedimento específico de atualização ou recuperação; não pressupor migração destrutiva nem ferramenta nova.
