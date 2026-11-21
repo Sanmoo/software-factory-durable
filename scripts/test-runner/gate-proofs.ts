@@ -2,7 +2,7 @@
 // over it, and the red result attributed by scripts/test-runner/proof-attribution.ts. Kept out of both Entry Points; run it with
 // the pinned Node: `node scripts/test-runner/gate-proofs.ts [gate id...] [--evidence <file>]`. The evidence it writes is
 // run output, not committed; GATE-PROOFS.md records each proof's row.
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +96,38 @@ export const proofs: Proof[] = [
     location: 'src/control/rules/budget.ts',
     violation: 'name a Slot identifier with the avoided synonym seat in src/control/rules/budget.ts',
     apply: copy => copy.edit('src/control/rules/budget.ts', append('export const seatLimit = 1;')),
+  },
+  {
+    id: 'unit-tests',
+    gate: 'Unit tests',
+    tier: 'fast',
+    location: 'test/control/budget-rules.test.ts',
+    violation: 'invert the boundary of timeoutReached (>= to >) in the domain rule src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', text => text.replace('elapsedMs >= timeoutSeconds * 1000', 'elapsedMs > timeoutSeconds * 1000')),
+  },
+  {
+    id: 'integration-tests',
+    gate: 'Integration tests',
+    tier: 'ci',
+    location: 'test/',
+    violation: "break the label mapping of the GitHub issue-tracker adapter (src/issue-tracker/index.ts reports each label's name upper-cased)",
+    apply: copy =>
+      copy.edit('src/issue-tracker/index.ts', text =>
+        text.replace(
+          'labels: issue.labels.map(label => ({ id: label.id, name: label.name })),',
+          'labels: issue.labels.map(label => ({ id: label.id, name: label.name.toUpperCase() })),',
+        ),
+      ),
+  },
+  {
+    id: 'vulnerabilities',
+    gate: 'Dependency vulnerabilities',
+    tier: 'ci',
+    location: 'minimist',
+    violation: 'lock minimist 0.0.8 (critical advisory GHSA-xvch-5gv4-984h, prototype pollution) as a dependency',
+    apply: copy => {
+      execFileSync('npm', ['install', '--save-exact', '--no-audit', '--no-fund', 'minimist@0.0.8'], { cwd: copy.dir, stdio: 'ignore' });
+    },
   },
 ];
 

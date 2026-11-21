@@ -43,6 +43,8 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
       integrals.push(record);
     },
     headCommit: async () => 'abc',
+    loadLevels: async () => () => 'integration',
+    audit: async () => ({ name: 'npm audit', ms: 1, ok: true, check: 'vulnerabilities', findings: [] }),
     acquireLock: async tier => {
       events.push(`lock ${tier}`);
       return { waitedMs: 5000, release: () => events.push('release') };
@@ -193,7 +195,7 @@ test('a failing file fails the gate without retry', async () => {
   );
   assert.equal(outcome.exitCode, 1);
   assert.deepEqual(runs, ['test/a.test.ts', 'test/serial.test.ts'], 'each file exactly once');
-  assert.match(outcome.report, /FAILURE: test\/a\.test\.ts failed/);
+  assert.match(outcome.report, /FAILURE: quality gate Integration tests \(tests\): test\/a\.test\.ts failed/);
   assert.ok(events.includes('timings'));
 });
 
@@ -359,7 +361,7 @@ test('validation by change runs the affected tests only and says the result cove
     ['run test/a.test.ts'],
   );
   assert.match(outcome.report, /mode: validation by change, policy 1\+sha256:[0-9a-f]{12}, base main/);
-  assert.match(outcome.report, /ran tests \[Regression suite\]: passed \(affected, 1 files\)/);
+  assert.match(outcome.report, /ran tests \[Integration tests\]: passed \(affected, 1 files\)/);
   assert.match(
     outcome.report,
     /periodic integral-pass \[Regression suite\]: left to integral validation \(30 3 \* \* \*\); last integral result: not recorded/,
@@ -432,7 +434,7 @@ test('integral validation runs every check even after one fails, and records eac
     integrals.map(record => [record.commit, record.checks]),
     [['abc', { types: 'failed', lint: 'passed', 'integral-pass': 'passed', 'random-order': 'passed', boundaries: 'not run', 'guide-pointers': 'not run' }]],
   );
-  assert.match(outcome.report, /covered tests \[Regression suite\]: by integral-pass/);
+  assert.match(outcome.report, /covered tests \[Integration tests\]: by integral-pass/);
   assert.match(outcome.report, /FAILURE: quality gate Types \(types\): TS2345 at src\/a\.ts:1/);
 });
 
@@ -460,4 +462,15 @@ test('finding parsers: tsc lines, ESLint JSON with the pure-rules marker, the do
   assert.deepEqual(pointerFindings('{"ok": false, "findings": [{"code": "BROKEN_LINK", "path": "AGENTS.md", "target": "docs/x.md"}]}'), [
     { rule: 'BROKEN_LINK', location: 'AGENTS.md → docs/x.md' },
   ]);
+});
+
+test('a failing test file is reported under the quality gate of its level', async () => {
+  const { steps } = fakeSteps({
+    loadLevels: async () => file => (file === 'test/a.test.ts' ? 'unit' : 'integration'),
+    runFile: async file => ({ file, ms: 1, ok: false, counts }),
+  });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 1);
+  assert.match(outcome.report, /FAILURE: quality gate Unit tests \(unit-tests\): test\/a\.test\.ts failed/);
+  assert.match(outcome.report, /FAILURE: quality gate Integration tests \(tests\): test\/serial\.test\.ts failed/);
 });

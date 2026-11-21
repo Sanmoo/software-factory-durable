@@ -10,7 +10,7 @@ export interface Violation {
 }
 interface CruiseModule {
   source: string;
-  dependencies: { resolved: string; couldNotResolve: boolean; coreModule: boolean; followable: boolean }[];
+  dependencies: { module?: string; resolved: string; couldNotResolve: boolean; coreModule: boolean; followable: boolean; dependencyTypes?: string[] }[];
 }
 interface Cruise {
   modules: CruiseModule[];
@@ -32,4 +32,50 @@ export function readCruise(output: string): { violations: Violation[]; graph: Gr
   }
   const violations = cruise.summary.violations.map(item => ({ rule: item.rule.name, from: item.from, to: item.to }));
   return { violations, graph: { edges, unresolved: unresolved.sort() } };
+}
+
+/** Node built-ins and packages through which a module performs I/O (the Unit tests Contract: unit tests perform none). */
+const ioBuiltin = /^(node:)?(fs|fs\/promises|child_process|net|http|https|http2|dgram|tls|worker_threads|cluster|sqlite|dns|readline|inspector)$/;
+const ioPackage = /^node_modules\/@earendil-works\/(pi-durable|gondolin|chord|pi-coding-agent)\//;
+
+/**
+ * The declared unit tests that reach runtime I/O, directly or through a project module they load. Type-only imports load
+ * nothing at runtime and do not count; an import the graph cannot resolve counts as I/O, since nothing shows it is pure.
+ */
+export function impureUnits(output: string, units: readonly string[]): { rule: string; location: string }[] {
+  const cruise = JSON.parse(output) as Cruise;
+  const modules = new Map(cruise.modules.map(module => [module.source, module]));
+  const runtime = (module: CruiseModule) => module.dependencies.filter(dep => !(dep.dependencyTypes ?? []).includes('type-only'));
+  const reason = new Map<string, string | null>();
+  const leak = (file: string, trail: Set<string>): string | null => {
+    if (reason.has(file)) return reason.get(file)!;
+    const module = modules.get(file);
+    if (!module || trail.has(file)) return null;
+    trail.add(file);
+    let found: string | null = null;
+    for (const dep of runtime(module)) {
+      if (dep.couldNotResolve) found = `imports the unresolvable ${dep.module ?? dep.resolved}`;
+      else if (dep.coreModule && ioBuiltin.test(dep.module ?? dep.resolved)) found = `imports ${dep.module ?? dep.resolved}`;
+      else if (ioPackage.test(dep.resolved)) found = `imports ${dep.resolved.split('/').slice(1, 3).join('/')}`;
+      else if (!dep.coreModule && !dep.resolved.startsWith('node_modules/')) {
+        const inner = leak(dep.resolved, trail);
+        if (inner) found = inner.startsWith(dep.resolved) || inner.includes(' → ') ? `${dep.resolved} → ${inner}` : `${dep.resolved} ${inner}`;
+      }
+      if (found) break;
+    }
+    reason.set(file, found);
+    return found;
+  };
+  return units.flatMap(file => {
+    if (!modules.has(file)) return [{ rule: 'unit-not-found', location: file }];
+    const found = leak(file, new Set());
+    return found
+      ? [
+          {
+            rule: 'unit-performs-io',
+            location: found.includes(' → ') || found.startsWith('src/') || found.startsWith('test/') ? `${file} → ${found}` : `${file} ${found}`,
+          },
+        ]
+      : [];
+  });
 }

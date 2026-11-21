@@ -6,6 +6,14 @@ Decisão do operador no ticket 36 (`.scratch/software-factory-mvp/issues/36-tier
 
 Os testes fixam o comportamento observado da fábrica: um teste de regressão registra o que ela faz hoje, mesmo quando parece surpreendente, para que uma mudança que o altere falhe em vez de passar despercebida. Um teste verde diz que o comportamento não mudou, não que ele está certo.
 
+## Níveis
+
+- **Unit**: exercita um módulo pela interface pública, sem I/O em runtime e sem substituir nada que a fábrica possui; fixa o comportamento das regras de domínio (`src/control/rules`, `src/contracts`). Os arquivos de nível unit são declarados em [test/levels.json](../../test/levels.json), e o quality gate Context boundaries recusa um teste declarado unit que alcance I/O.
+- **Integration**: todo outro arquivo de teste. Dirige um contexto contra a infraestrutura real (processos, sistema de arquivos, SQLite, preparação do SDK); só sistemas de terceiros são dublês na fronteira: GitHub pelo `gh` local de `test/entrypoints/github-world-fixture.ts` e provedores de modelo roteirizados.
+- **E2E**: cenários Gherkin em português que dirigem o CLI do release construído (estágio S4 do plano).
+
+Um comportamento novo é testado no nível mais baixo que o prova; um teste unit não ganha I/O para "testar de verdade" — vira integration e sai de `test/levels.json`.
+
 ## Entry Points
 
 - `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes sem `slow`; não substitui o completo.

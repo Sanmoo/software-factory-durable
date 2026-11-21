@@ -26,6 +26,8 @@ const outcome = await runTier(
     loadIntegral: async () => undefined,
     saveIntegral: async () => {},
     headCommit: async () => 'c',
+    loadLevels: async () => () => 'integration',
+    audit: async () => ({ name: 'npm audit', ms: 0, ok: true }),
     acquireLock: tier => acquireMachineLock(lockPath, { pid: process.pid, tier, name }, log),
     staticAnalysis: async () => {
       log('working');

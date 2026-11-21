@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { readCruise } from './architecture.ts';
+import { impureUnits, readCruise } from './architecture.ts';
 import { avoidedTerms, findAvoided } from './avoided-terms.ts';
 import { matchSecrets, parseTolerance, readGitleaks, type SecretFinding } from './secrets.ts';
 import { changedSet, gitIn } from './changes.ts';
@@ -265,11 +265,15 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         );
         try {
           const { violations, graph } = readCruise(step.output ?? '');
-          const findings = violations.map(item => ({ rule: item.rule, location: `${item.from} → ${item.to}` }));
+          const findings = [
+            ...violations.map(item => ({ rule: item.rule, location: `${item.from} → ${item.to}` })),
+            // The Unit tests level: a declared unit test reaches no runtime I/O (test/levels.json).
+            ...impureUnits(step.output ?? '', (await readLevels(root)).unit),
+          ];
           return [
             {
               ...step,
-              ok: step.ok && !violations.length,
+              ok: step.ok && !findings.length,
               check: 'boundaries',
               findings,
               graph,
@@ -283,6 +287,34 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       const compiled = async (): Promise<StepResult[]> =>
         (await compile(tier, signal)).map(step => (step.name.startsWith('tsc') ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step));
       return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')), compile: compiled, lint, depcruise, quick });
+    },
+    loadLevels: async () => {
+      const unit = new Set((await readLevels(root)).unit);
+      return file => (unit.has(file) ? 'unit' : 'integration');
+    },
+    audit: async signal => {
+      const step = await execute('npm', ['audit', '--audit-level=high', '--json'], root, childEnv, signal).catch(error => ({
+        code: null,
+        output: String(error),
+        ms: 0,
+      }));
+      const findings = auditFindings(step.output);
+      if (findings === undefined)
+        return {
+          name: 'npm audit',
+          ms: step.ms,
+          ok: false,
+          check: 'vulnerabilities',
+          findings: [{ rule: 'audit-unavailable', location: step.output.slice(0, 160) }],
+        };
+      return {
+        name: 'npm audit',
+        ms: step.ms,
+        ok: !findings.length,
+        check: 'vulnerabilities',
+        findings,
+        output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+      };
     },
     loadPolicy: async () => {
       const text = await readFile(join(root, 'scripts/test-runner/policy.json'), 'utf8');
@@ -418,4 +450,28 @@ export async function scanAvoidedTerms(root: string): Promise<{ rule: string; lo
   const found: { rule: string; location: string }[] = [];
   for (const file of files) found.push(...findAvoided(file, await readFile(join(root, file), 'utf8'), terms));
   return found;
+}
+
+/** test/levels.json: the test files declared unit level; every other test file is integration level. */
+export async function readLevels(root: string): Promise<{ unit: string[] }> {
+  const value = JSON.parse(await readFile(join(root, 'test/levels.json'), 'utf8')) as { schemaVersion?: number; unit?: unknown };
+  if (value.schemaVersion !== 1 || !Array.isArray(value.unit) || !value.unit.every(file => typeof file === 'string' && /^test\/.+\.test\.ts$/.test(file)))
+    throw new Error('LEVELS_INVALID: test/levels.json needs schemaVersion 1 and a unit list of test/**/*.test.ts files');
+  return { unit: value.unit as string[] };
+}
+
+/** npm audit's JSON: one finding per vulnerable package at high or critical severity, or undefined when it is not an audit report. */
+export function auditFindings(output: string): { rule: string; location: string }[] | undefined {
+  try {
+    const report = JSON.parse(output) as { vulnerabilities?: Record<string, { severity: string; via: (string | { url?: string; title?: string })[] }> };
+    if (!report.vulnerabilities) return undefined;
+    return Object.entries(report.vulnerabilities)
+      .filter(([, item]) => item.severity === 'high' || item.severity === 'critical')
+      .map(([name, item]) => ({
+        rule: `${item.severity}`,
+        location: `${name} (${item.via.map(via => (typeof via === 'string' ? via : (via.url ?? via.title ?? '?'))).join(', ')})`,
+      }));
+  } catch {
+    return undefined;
+  }
 }

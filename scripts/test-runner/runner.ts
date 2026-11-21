@@ -49,6 +49,10 @@ export interface Steps {
   saveIntegral(record: IntegralRecord): Promise<void>;
   headCommit(): Promise<string>;
   listTests(): Promise<string[]>;
+  /** test/levels.json: the level of each test file (unit when declared, integration otherwise). */
+  loadLevels(): Promise<(file: string) => 'unit' | 'integration'>;
+  /** The Dependency vulnerabilities check (npm audit over the lockfile). */
+  audit(signal: AbortSignal): Promise<StepResult>;
   loadTimings(): Promise<Record<string, number>>;
   saveTimings(timings: Record<string, number>): Promise<void>;
   sandboxRoot(): Promise<{ path: string; cleanup(): Promise<void> }>;
@@ -152,15 +156,24 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
       summary.failures.push(...staticFailures(summary.static, policy));
       for (const step of summary.static) if (step.check) outcomes[step.check] = outcomes[step.check] === 'failed' || !step.ok ? 'failed' : 'passed';
       const listed = await steps.listTests();
+      const levelOf = await steps.loadLevels();
       if (mode !== undefined) {
         const graph = summary.static.find(step => step.graph)?.graph;
-        plan = planValidation(mode, policy, change, graph, listed, mode === 'change' ? await steps.loadIntegral() : undefined);
+        plan = planValidation(mode, policy, change, graph, listed, mode === 'change' ? await steps.loadIntegral() : undefined, levelOf);
         summary.validation = {
           plan,
           base: 'base' in change ? `${change.base}${change.compared ? ` (compared ${change.compared.slice(0, 12)})` : ''}` : undefined,
-          estimatedSeconds: estimatedSeconds(plan, listed.length),
+          estimatedSeconds: estimatedSeconds(plan, listed, levelOf),
           outcomes,
         };
+        // Dependency vulnerabilities runs before the tests when the plan selects it; its failure stops validation by change like a static one.
+        if (plan.entries.some(entry => entry.check.id === 'vulnerabilities' && entry.decision === 'run') && !controller.signal.aborted) {
+          const audited = await steps.audit(controller.signal);
+          summary.static.push(audited);
+          if (!audited.ok && audited.output) steps.log(audited.output.trimEnd());
+          summary.failures.push(...staticFailures([audited], policy));
+          outcomes.vulnerabilities = audited.ok ? 'passed' : 'failed';
+        }
         for (const entry of plan.entries)
           if (entry.decision === 'periodic' && entry.blocking)
             summary.failures.push(
@@ -177,8 +190,8 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
       const proceed = !controller.signal.aborted && summary.validation?.inconclusive === undefined && (mode === 'integral' || !summary.failures.length);
       if (proceed) {
         const timings = await steps.loadTimings();
-        const testsEntry = plan?.entries.find(entry => entry.check.id === 'tests');
-        const selected = mode === 'change' ? (testsEntry?.decision === 'run' ? testsEntry.files : []) : listed;
+        const testEntries = (plan?.entries ?? []).filter(entry => entry.check.scope === 'affected-tests');
+        const selected = mode === 'change' ? [...new Set(testEntries.flatMap(entry => (entry.decision === 'run' ? entry.files : [])))].sort() : listed;
         const files = options.filters.length ? selected.filter(file => options.filters.some(filter => file.includes(filter))) : selected;
         const lanePlan = planLanes(tier, files, manifest, steps.cpus, timings);
         summary.quarantined = lanePlan.quarantined;
@@ -196,7 +209,10 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
         ];
         summary.lanes.push(...first);
         const firstOk = first.every(item => item.files.every(file => file.ok));
-        if (mode === 'change' && testsEntry?.decision === 'run') outcomes.tests = firstOk ? 'passed' : 'failed';
+        const failedFirst = new Set(first.flatMap(item => item.files.filter(file => !file.ok).map(file => file.file)));
+        if (mode === 'change')
+          for (const entry of testEntries)
+            if (entry.decision === 'run') outcomes[entry.check.id] = entry.files.some(file => failedFirst.has(file)) ? 'failed' : 'passed';
         if (mode === 'integral') outcomes['integral-pass'] = firstOk ? 'passed' : 'failed';
         if (tier === 'full') {
           const seed = options.seed ?? Math.floor(Math.random() * 2 ** 31);
@@ -209,10 +225,15 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
           summary.lanes.push(...second);
           outcomes['random-order'] = second.every(item => item.files.every(file => file.ok)) ? 'passed' : 'failed';
         }
-        for (const result of summary.lanes.flatMap(item => item.files)) {
-          timings[result.file] = result.ms;
-          if (!result.ok) summary.failures.push(`${result.file} failed`);
-        }
+        // Each failing file is reported under the quality gate of its level (the random-order pass under its own periodic check).
+        const levelCheck = (file: string) => policy.checks.find(check => check.scope === 'affected-tests' && check.level === levelOf(file));
+        for (const item of summary.lanes)
+          for (const result of item.files) {
+            timings[result.file] = result.ms;
+            if (result.ok) continue;
+            const check = item.name.startsWith('random') ? policy.checks.find(entry => entry.id === 'random-order') : levelCheck(result.file);
+            summary.failures.push(check ? `quality gate ${check.gate} (${check.id}): ${result.file} failed` : `${result.file} failed`);
+          }
         if (!summary.filtered && !controller.signal.aborted) await steps.saveTimings(timings);
       }
     } finally {
