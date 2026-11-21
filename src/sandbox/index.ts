@@ -26,6 +26,9 @@ export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 import { defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, startLambdaBoot, stopLambdaBoot,
   type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation } from './lambda/boot.js';
 import { createSshTransport } from './lambda/ssh-transport.js';
+// v2 ticket 05: the MVP role tools over a Lambda boot (`lambda/tools.ts`): the host binds each invocation to a role on the boot.
+import { serveLambdaTools } from './lambda/tools.js';
+export { guestUserOfRole, lambdaToolOrigin, type LambdaToolBinding, type LambdaTools } from './lambda/tools.js';
 import type { GuestTransport } from './lambda/transport.js';
 export type { BootBeginReason, BootEndReason, LambdaBootClock, LambdaBootRecord, LambdaCheckout, LambdaObservation } from './lambda/boot.js';
 export { createSshTransport, type SshRunner } from './lambda/ssh-transport.js';
@@ -117,6 +120,12 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async bootRecord({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return readLambdaBoot(root, environment, boot); },
     /** v2 ticket 04: the channel to an active Lambda boot, for trusted host composition only (tool calls bind a role on top of it, ticket 05). */
     async openChannel({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return openLambdaBootChannel(lambdaBoots(), { environment, boot }); },
+    /**
+     * v2 ticket 05 (V2-02 Executar ferramenta): the tool owner of an active Lambda boot, for the trusted host process that launches its
+     * workers. `tools.bind` binds one invocation to its role on the boot and serves the unchanged worker tool endpoint; reviewers get
+     * `read` only and run in the guest as the read-only `reviewer` user.
+     */
+    async serveTools({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return serveLambdaTools(lambdaBoots(), { environment, boot }); },
     async executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       const key = JSON.stringify(context);
       const previous = bindings.get(context.invocationId);

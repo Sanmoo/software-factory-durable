@@ -7,7 +7,8 @@ import type { GuestExecRequest } from './transport.js';
  * written to no file (V2-24). None of these programs ran in a real guest yet.
  */
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-export const guestRepositoryDirectory = '/workspace/repo';
+/** The MVP guest path contract (spec §7.3): tools and worker prompts name the checkout as `/workspace/checkout`. */
+export const guestRepositoryDirectory = '/workspace/checkout';
 const commitPattern = /^[0-9a-f]{40,64}$/;
 const branchPattern = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 

@@ -27,6 +27,11 @@ export const readResultSchema = z.union([
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
 export type ReadResult = z.infer<typeof readResultSchema>;
+/** Adapter origins whose exec boundary is accepted for Builder output copies and the Builder Read: the Gondolin development profile and
+ * the Lambda SSH channel (v2 ticket 05; the latter was never exercised against a real guest). */
+export const qualifiedProfileOrigins = ['factory-development-gondolin-0.14.0-stdin-capacity-v1', 'factory-lambda-ssh-channel-v1'] as const;
+export type QualifiedProfileOrigin = typeof qualifiedProfileOrigins[number];
+export const profileQualified = (origin: string | undefined): boolean => origin !== undefined && (qualifiedProfileOrigins as readonly string[]).includes(origin);
 // Structural external VM boundary; production supplier is adapter.ts's SAME instance.
 export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore' | 'pipe'; signal: AbortSignal;
   windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }): {
@@ -38,7 +43,12 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
   /** Host-only technical whole-source bound; absent disables edit-source. Not a product reservation. */
   editSourceMaxBytes?: number;
   /** Private same-VM adapter qualification, never accepted from tool JSON. */
-  profileOrigin?: 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
+  profileOrigin?: QualifiedProfileOrigin;
+  /** Host-only guest conventions of the adapter, never accepted from tool JSON (v2 ticket 05). Absent: the Gondolin guest. `ssh-channel`
+   * (Lambda): commands run as distinct Unix users over a channel with no ambient environment contract, so the Builder credential is the
+   * command's explicit process environment (V2-24), Bash merges stderr inside the guest, and files the Builder tools create stay
+   * readable by the reviewer's own read-only user (V2-23). */
+  guestConventions?: 'ssh-channel';
   /** Trusted host precondition: selected native truncated Bash output. Default deny. */
   copyOutput?: boolean;
   /** Exact Host-selected reviewer copies; absent is empty, never Builder authority. */

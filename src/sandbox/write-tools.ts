@@ -5,7 +5,7 @@ import { commandLifetime, type GuestOwner } from './tool-binding.js';
 
 type Context = { workId: string; executionId: string; invocationId: string; role: 'builder' | 'standards' | 'spec'; environmentRef: string; bootRef: string; phaseId: string };
 type Options = { context: Context; signal: AbortSignal; records: Awaited<ReturnType<typeof createRecords>>;
-  vm: GuestOwner };
+  vm: GuestOwner; guestConventions?: 'ssh-channel' };
 type Result = { status: 'failure'; code: string } | { status: 'success'; format: 'text'; reference: { workId: string; id: string }; bytes: number; encoding: 'base64'; data: string; nextOffset: number };
 
 const path = z.string().min(1).max(4096);
@@ -161,7 +161,7 @@ export function boundStreamCopyTools(options: Options, valid: () => boolean, rev
         source: capture.reference, semantics: 'exclusive-stream-create-non-atomic' });
       if (!valid() || signal.aborted) throw new Error('stale');
       attempted = true;
-      const process = options.vm.exec(['/usr/bin/env', '-i', '/usr/bin/python3', '-I', '-S', '-c', guestStreamProgram, 'stream', path], {
+      const process = options.vm.exec(['/usr/bin/env', '-i', '/usr/bin/python3', '-I', '-S', '-c', guestProgram(guestStreamProgram, options), 'stream', path], {
         stdout: 'pipe', stderr: 'pipe', signal, windowBytes: 65536, env: {}, cwd: '/', stdin: stdin(), stdinCapacity: { maxChunkBytes: 65536 },
       });
       void process.result.catch(fail);
@@ -248,6 +248,14 @@ const guestConditionalProgram = guestWriteProgram.replace('import os, stat, sys'
         os.ftruncate(fd, 0)`)
   .replace('except BaseException:', 'except SourceMismatch:\n    sys.exit(42)\nexcept BaseException:');
 
+/**
+ * v2 ticket 05 (V2-23): on a guest whose reviewers read as their OWN Unix user (`ssh-channel` conventions), what the Builder's tools
+ * create must stay readable by that user: same programs, with the creation modes `0o644`/`0o755` instead of owner-only. An existing
+ * file keeps its mode, as before. Never run on the host.
+ */
+const sharedRead = (program: string) => program.replaceAll('0o600, dir_fd=parent', '0o644, dir_fd=parent').replaceAll('mode=0o700, dir_fd=parent', 'mode=0o755, dir_fd=parent');
+const guestProgram = (program: string, options: Options) => options.guestConventions === 'ssh-channel' ? sharedRead(program) : program;
+
 export function boundWriteTools(options: Options, valid: () => boolean, revoke: () => void) {
   const execute = boundMutation(options, valid, revoke);
   return (context: Context, call: WriteCall) => execute(context, call);
@@ -282,7 +290,7 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
         semantics: conditional ? 'same-fd-source-compare-direct-write-non-atomic' : 'regular-file-write-non-atomic', contentBytes: Buffer.byteLength(content) });
       if (!valid()) return failure('STALE_TOOL_CONTEXT');
       attempted = true;
-      const argv = ['/usr/bin/python3', '-I', '-S', '-c', conditional ? guestConditionalProgram : guestWriteProgram, call.operation, call.path];
+      const argv = ['/usr/bin/python3', '-I', '-S', '-c', guestProgram(conditional ? guestConditionalProgram : guestWriteProgram, options), call.operation, call.path];
       if (conditional) argv.push(String(call.expectedBytes), call.expectedDigest);
       const process = options.vm.exec(argv, {
         // Native output() merges two required pipes. Drain/discard both below;

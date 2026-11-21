@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { sessionPublicKey, type GuestExecRequest, type GuestExecResult, type GuestRefusal, type GuestTarget, type GuestTransport } from '../../src/sandbox/index.js';
 import { generateSessionKey } from '../../src/sandbox/lambda/transport.js';
@@ -11,33 +12,125 @@ import type { lambdaAccountFake } from './lambda-service-fake.js';
  * It models a GUEST, not call scripts. Each MicroVM gets its own guest when it runs: a fresh host key, the session key authorized by the
  * run hook payload, an EMPTY disk (no repository, no caches, no Docker data) and the Docker images its MicroVM image declares, pulled by
  * digest at that boot. Tests change the world (`origins`, `pullFailures`, `sshReadySeconds`, a guest's `hostKey`/`files`) and add
- * programs with `programs`; tickets 05 and 11 add the role tools and orphan processes on the same guest.
+ * programs with `programs`; ticket 11 adds orphan processes on the same guest.
+ *
+ * Ticket 05: the guest has the Unix users its IMAGE creates (read from the Dockerfile and `sshd_config` of the build artifact): who may
+ * log in, who is in the `docker` group, who owns the workspace. The `tool` program is what the tool backends send (a quoted argument
+ * vector): the fake recognises the fixed guest programs (read, write, edit, stream copy, Bash) and applies them to `files` AS THE USER of
+ * the connection. Shell commands are handlers by exact command text (`commands`); `docker ps` is built in.
  */
 export type FakeGuest = { microvmId: string;
   /** Generated in this boot; a test replaces it to play a guest that is not the one the host pinned. */ hostKey: string;
   /** Session public keys the run hook wrote, per user. */ authorized: Record<string, string>;
   /** The guest disk, empty at boot. */ files: Map<string, string>;
+  /** Permission bits of files the tools created (absent: 0o644, what `git` and a shell leave). */ modes: Map<string, number>;
+  /** Directories created explicitly (a file's parents exist implicitly). */ directories: Set<string>;
+  /** Unix users of the image: `login` (sshd admits it), `docker` (member of the group that owns the Docker socket). */
+  users: Record<string, { login: boolean; docker: boolean }>;
+  /** The user that owns `/workspace` and `/artifacts`: the only one that writes there. */ owner: string;
   /** What `docker pull` fetched in THIS boot. */ dockerImages: string[]; pullFailed: boolean;
-  /** `/workspace/repo` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
+  /** `/workspace/checkout` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
   logs: Record<string, string>;
   /** Every program that ran here, with the NAMES of its environment (values are checked by the handlers, never kept). */
-  executions: { program: string; script: string; environmentNames: string[] }[] };
-export type FakeProgramResult = { exitCode: number; stdout?: string; stderr?: string };
-export type FakeProgram = (guest: FakeGuest, request: GuestExecRequest) => FakeProgramResult | Promise<FakeProgramResult>;
+  executions: { program: string; user: string; script: string; environmentNames: string[] }[] };
+export type FakeProgramResult = { exitCode: number; stdout?: string | Buffer; stderr?: string };
+/** A running program: its Unix user, output it writes before it ends, and whether its connection is still open. */
+export type FakeRun = { user: string; emit(data: string | Buffer): void; readonly connected: boolean; /** Resolves when the connection closes under the program. */ disconnected: Promise<void> };
+export type FakeProgram = (guest: FakeGuest, request: GuestExecRequest, run: FakeRun) => FakeProgramResult | Promise<FakeProgramResult>;
+/** A shell command of the Builder's Bash, by exact text: its environment is what the command sees, its return the exit status. */
+export type FakeCommand = (guest: FakeGuest, run: FakeRun & { environment: Record<string, string>; stdin: string }) => number | Promise<number>;
 export type FakeConnection = { microvmId: string; token: string; keepaliveSeconds: number; user: string; program: string; open: boolean };
 
-/** The `declared-images` file of a stored (uncompressed) build artifact. */
-function declaredImages(zip: Uint8Array | undefined): string[] {
-  if (!zip) return [];
+/** One file of a stored (uncompressed) build artifact. */
+function artifactFile(zip: Uint8Array | undefined, wanted: string): string {
+  if (!zip) return '';
   const bytes = Buffer.from(zip);
   for (let offset = 0; offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50;) {
     const size = bytes.readUInt32LE(offset + 18), nameLength = bytes.readUInt16LE(offset + 26), extraLength = bytes.readUInt16LE(offset + 28);
     const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
     const data = offset + 30 + nameLength + extraLength;
-    if (name === 'declared-images') return bytes.subarray(data, data + size).toString('utf8').split('\n').filter(Boolean);
+    if (name === wanted) return bytes.subarray(data, data + size).toString('utf8');
     offset = data + size;
   }
-  return [];
+  return '';
+}
+
+/** The words of a script the host wrote as single-quoted words (`'it'\''s'`); anything else is not a tool program. */
+function quotedWords(text: string): string[] | null {
+  const words: string[] = [];
+  let word = '', open = false;
+  for (let index = 0; index < text.length;) {
+    const character = text[index]!;
+    if (character === "'") {
+      const end = text.indexOf("'", index + 1);
+      if (end < 0) return null;
+      word += text.slice(index + 1, end); index = end + 1; open = true;
+    } else if (character === '\\' && text[index + 1] === "'") { word += "'"; index += 2; open = true;
+    } else if (character === ' ' && open) { words.push(word); word = ''; open = false; index += 1;
+    } else return null;
+  }
+  if (open) words.push(word);
+  return words;
+}
+const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+const roots = ['/workspace', '/artifacts'];
+
+/** The fixed guest programs of the tool backends, applied to the fake disk as `run.user`. Exit statuses are the programs' own. */
+async function toolProgram(guest: FakeGuest, request: GuestExecRequest, run: FakeRun, commands: Record<string, FakeCommand>): Promise<FakeProgramResult> {
+  const script = /^cd '([^']*)' && exec (.*)$/s.exec(request.script);
+  const argv = script ? quotedWords(script[2]!) : null;
+  if (!argv) return { exitCode: 2, stderr: 'not a tool program\n' };
+  const stdin = Buffer.from(request.stdin ?? []).toString('utf8');
+  const inside = (path: string) => roots.some(root => path.startsWith(`${root}/`)) && !path.split('/').includes('..');
+  const isDirectory = (path: string) => roots.includes(path) || guest.directories.has(path) || [...guest.files.keys()].some(file => file.startsWith(`${path}/`));
+  const mayRead = (path: string) => run.user === guest.owner || ((guest.modes.get(path) ?? 0o644) & 0o004) !== 0;
+  const mayWrite = () => run.user === guest.owner;
+  const python = argv.indexOf('/usr/bin/python3');
+  if (python >= 0 && argv[python + 3] === '-c') {
+    const program = argv[python + 4]!, parameters = argv.slice(python + 5);
+    const writes = program.includes('os.O_WRONLY') || program.includes('os.O_RDWR');
+    if (!writes) {
+      const path = parameters[0]!;
+      const missingStatus = program.includes('missing = True') ? 4 : 1;
+      if (!inside(path)) return { exitCode: 1 };
+      if (isDirectory(path)) return { exitCode: 3 };
+      const content = guest.files.get(path);
+      if (content === undefined) return { exitCode: missingStatus };
+      if (!mayRead(path)) return { exitCode: 1 };
+      return { exitCode: 0, stdout: Buffer.from(content, 'utf8') };
+    }
+    const [operation, path] = parameters as [string, string];
+    if (!inside(path) || !mayWrite()) return { exitCode: 1 };
+    // The permission bits the program asks for at creation: the reviewer's own user reads only what is left world-readable.
+    const fileMode = /os\.O_EXCL[^\n]*0o644/.test(program) ? 0o644 : 0o600;
+    if (operation === 'mkdir') {
+      if (guest.files.has(path)) return { exitCode: 1 };
+      for (let parent = path; !roots.includes(parent) && parent !== ''; parent = parent.slice(0, parent.lastIndexOf('/'))) guest.directories.add(parent);
+      return { exitCode: 0 };
+    }
+    if (isDirectory(path)) return { exitCode: 1 };
+    const existing = guest.files.get(path);
+    if (operation === 'commit') {
+      if (existing === undefined) return { exitCode: 1 };
+      if (Buffer.byteLength(existing) !== Number(parameters[2]) || sha256(existing) !== parameters[3]) return { exitCode: 42 };
+    } else if (operation === 'stream') {
+      if (existing !== undefined) return { exitCode: 1 };
+    } else if (operation !== 'create') return { exitCode: 1 };
+    guest.files.set(path, stdin);
+    if (existing === undefined) guest.modes.set(path, fileMode);
+    return { exitCode: 0, ...(operation === 'stream' ? { stdout: JSON.stringify({ bytes: Buffer.byteLength(stdin), sha256: sha256(stdin) }) } : {}) };
+  }
+  // Bash of the channel conventions: `/bin/bash -c <prelude> <name> <command> NAME=value...`; the prelude leaves the command exactly the
+  // given entries plus the credential of its own process environment (modelled here, exercised with a real bash in the tools test).
+  if (argv[0] === '/bin/bash' && argv[1] === '-c' && argv.length >= 5) {
+    const command = argv[4]!;
+    const environment = Object.fromEntries(argv.slice(5).map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]));
+    if (request.environment?.GH_TOKEN !== undefined) environment.GH_TOKEN = request.environment.GH_TOKEN;
+    const handler = commands[command];
+    if (!handler) { run.emit(`bash: line 1: ${command.split(' ')[0]}: command not found\n`); return { exitCode: 127 }; }
+    return { exitCode: await handler(guest, { ...run, get connected() { return run.connected; }, environment, stdin }) };
+  }
+  return { exitCode: 127, stderr: `${argv[0]}: not found\n` };
 }
 
 export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
@@ -50,6 +143,15 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     pullFailures: [] as string[],
     /** Programs beyond the adapter's fixed ones, by `program` name; they also override a built-in. */
     programs: {} as Record<string, FakeProgram>,
+    /** Shell commands of the Builder's Bash, by exact command text. */
+    commands: {
+      // The Docker socket belongs to root and the `docker` group.
+      'docker ps': (guest, run) => {
+        if (guest.users[run.user]?.docker) { run.emit('CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES\n'); return 0; }
+        run.emit('permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock\n');
+        return 1;
+      },
+    } as Record<string, FakeCommand>,
   };
   const guests = new Map<string, FakeGuest>();
   const connections: FakeConnection[] = [];
@@ -68,6 +170,7 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       return { exitCode: 0, stdout: `HEAD ${checkout[2]}\n` };
     },
     evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
+    tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
   };
 
   /** The guest of a running MicroVM, born on first contact from what the service handed to its run hook. */
@@ -79,11 +182,18 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     const payload = JSON.parse(microvm.request.runHookPayload) as { builder?: string };
     const image = fake.account.images.find(candidate => candidate.imageArn === microvm.imageArn);
     const [, bucket, key] = /^s3:\/\/([^/]+)\/(.+)$/.exec(image?.request?.artifactUri ?? '') ?? [];
-    const declared = declaredImages(bucket && key ? fake.account.objects[bucket]?.[key]?.body : undefined);
+    const artifact = bucket && key ? fake.account.objects[bucket]?.[key]?.body : undefined;
+    const declared = artifactFile(artifact, 'declared-images').split('\n').filter(Boolean);
+    // The users are the image's: created by its Dockerfile, admitted by its sshd_config; the hook agent authorizes the session key for them.
+    const dockerfile = artifactFile(artifact, 'Dockerfile'), sshd = artifactFile(artifact, 'sshd_config');
+    const admitted = (/^AllowUsers (.+)$/m.exec(sshd)?.[1] ?? '').split(/\s+/);
+    const users = Object.fromEntries([...dockerfile.matchAll(/adduser -D -s \/bin\/bash ([a-z]+)/g)].map(([, name]) =>
+      [name!, { login: admitted.includes(name!), docker: new RegExp(`addgroup ${name} docker\\b`).test(dockerfile) }]));
+    const owner = /chown ([a-z]+):[a-z]+ \/workspace/.exec(dockerfile)?.[1] ?? 'root';
     const dockerImages = declared.filter(reference => !world.pullFailures.includes(reference));
     const pullFailed = dockerImages.length !== declared.length;
-    const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? { builder: payload.builder } : {},
-      files: new Map(), dockerImages, pullFailed, repository: null, executions: [],
+    const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? Object.fromEntries(Object.entries(users).filter(([, user]) => user.login).map(([name]) => [name, payload.builder!])) : {},
+      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, executions: [],
       logs: { '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`, '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n') } };
     guests.set(microvm.microvmId, guest);
     return guest;
@@ -116,19 +226,40 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       if (guest.hostKey !== target.hostKey) return { status: 'refused', code: 'HOST_KEY_MISMATCH', detail: 'Host key verification failed.' };
       const connection: FakeConnection = { microvmId: guest.microvmId, token: target.token, keepaliveSeconds: target.keepaliveSeconds, user: target.user, program: request.program, open: true };
       connections.push(connection);
-      guest.executions.push({ program: request.program, script: request.script, environmentNames: Object.keys(request.environment ?? {}) });
+      guest.executions.push({ program: request.program, user: target.user, script: request.script, environmentNames: Object.keys(request.environment ?? {}) });
       const program = world.programs[request.program] ?? builtIn[request.program];
+      const alive = () => fake.account.microvms.find(candidate => candidate.microvmId === guest.microvmId)?.state === 'RUNNING';
+      let stdout = '';
+      const deliver = (data: string | Buffer) => {
+        // Output reaches the client only while its connection is open and the MicroVM lives.
+        if (!connection.open || !alive()) return;
+        stdout += data.toString('utf8');
+        options.onData?.(Buffer.from(data));
+      };
       try {
-        const aborted = new Promise<'aborted'>(resolve => { options.signal?.addEventListener('abort', () => resolve('aborted'), { once: true }); });
-        const outcome = await Promise.race([Promise.resolve(program ? program(guest, request) : { exitCode: 127, stderr: `${request.program}: not found\n` }), aborted]);
+        const aborted = new Promise<'aborted'>(resolve => {
+          if (options.signal?.aborted) resolve('aborted'); else options.signal?.addEventListener('abort', () => resolve('aborted'), { once: true });
+        });
+        const run: FakeRun = { user: target.user, emit: deliver, get connected() { return connection.open; },
+          disconnected: aborted.then(() => { connection.open = false; }) };
+        const outcome = await Promise.race([Promise.resolve(program ? program(guest, request, run) : { exitCode: 127, stderr: `${request.program}: not found\n` }), aborted]);
         // A closed connection or a dead MicroVM gives the client no exit status; the token's expiry alone ends nothing.
         if (outcome === 'aborted') return { status: 'lost' };
         fake.settle();
-        if (fake.account.microvms.find(candidate => candidate.microvmId === guest.microvmId)?.state !== 'RUNNING') return { status: 'lost' };
-        if (outcome.stdout) options.onData?.(Buffer.from(outcome.stdout));
-        return { status: 'exited', exitCode: outcome.exitCode, stdout: outcome.stdout ?? '', stderr: outcome.stderr ?? '' };
+        if (!alive()) return { status: 'lost' };
+        if (outcome.stdout) deliver(outcome.stdout);
+        return { status: 'exited', exitCode: outcome.exitCode, stdout, stderr: outcome.stderr ?? '' };
       } finally { connection.open = false; }
     },
   };
-  return { world, guests, connections, transport, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
+  /**
+   * What a process of `user` INSIDE the guest gets when it runs `request` itself, without the host: the guest's own permissions are the
+   * only thing between that user and the effect (the second layer of V2-23).
+   */
+  const inside = async (microvmId: string, user: string, request: GuestExecRequest) => {
+    let output = '';
+    const result = await builtIn.tool!(guests.get(microvmId)!, request, { user, emit: data => { output += data.toString('utf8'); }, connected: true, disconnected: new Promise(() => {}) });
+    return { exitCode: result.exitCode, output: output + (result.stdout?.toString('utf8') ?? '') };
+  };
+  return { world, guests, connections, transport, inside, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
 }

@@ -27,6 +27,8 @@ export const lambdaGuestPin = Object.freeze({
   /** `ready` is mandatory whenever a lifecycle hook is enabled (first Lambda proof, finding 3). */
   hooks: Object.freeze({ port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 }),
   user: 'builder',
+  /** v2 ticket 05 (V2-23): the read-only user the reviewers' reads run as. No group, no ownership, never in `docker`. */
+  reviewer: 'reviewer',
   directory: '/opt/factory',
 });
 export type LambdaGuestPin = typeof lambdaGuestPin;
@@ -54,12 +56,13 @@ export function renderGuestImage(declaration: unknown, pin: LambdaGuestPin = lam
   const repository = `${pin.alpine.mirror}/${pin.alpine.branch}`;
   const add = `RUN apk add --no-cache --repositories-file /dev/null --repository ${repository}/main --repository ${repository}/community`;
   const pairs = (packages: readonly { name: string; version: string }[]) => packages.map(entry => `'${entry.name}=${entry.version}'`).join(' ');
-  const user = pin.user;
+  const user = pin.user, reviewer = pin.reviewer;
   const dockerfile = [
     `FROM ${pin.alpine.image}`,
     `${add} ${pairs(pin.packages)}`,
     ...(checked.declaration.apk.length > 0 ? [`${add} ${pairs(checked.declaration.apk)}`] : []),
-    `RUN adduser -D -s /bin/bash ${user} && sed -i 's/^${user}:!/${user}:*/' /etc/shadow && addgroup ${user} docker && mkdir -p /workspace /etc/ssh/authorized && chown ${user}:${user} /workspace`,
+    `RUN adduser -D -s /bin/bash ${user} && sed -i 's/^${user}:!/${user}:*/' /etc/shadow && addgroup ${user} docker && mkdir -p /workspace /artifacts /etc/ssh/authorized && chown ${user}:${user} /workspace /artifacts`,
+    `RUN adduser -D -s /bin/bash ${reviewer} && sed -i 's/^${reviewer}:!/${reviewer}:*/' /etc/shadow`,
     `COPY hook-agent.py start.sh sshd_config declared-images ${pin.directory}/`,
     `CMD ["python3", "-u", "${pin.directory}/hook-agent.py"]`,
     ''].join('\n');

@@ -18,7 +18,8 @@ test('the Dockerfile starts from the pinned Alpine, installs the template and th
     'FROM public.ecr.aws/docker/library/alpine@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2',
     `RUN ${apk} 'docker=29.5.2-r0' 'docker-cli-compose=2.40.3-r6' 'docker-cli-buildx=0.30.1-r6' 'openssh=10.2_p1-r1' 'git=2.52.1-r0' 'python3=3.12.16-r0' 'bash=5.3.3-r1' 'websocat=1.14.0-r1' 'iptables=1.8.11-r1' 'curl=8.23.0-r0'`,
     `RUN ${apk} 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r0'`,
-    "RUN adduser -D -s /bin/bash builder && sed -i 's/^builder:!/builder:*/' /etc/shadow && addgroup builder docker && mkdir -p /workspace /etc/ssh/authorized && chown builder:builder /workspace",
+    "RUN adduser -D -s /bin/bash builder && sed -i 's/^builder:!/builder:*/' /etc/shadow && addgroup builder docker && mkdir -p /workspace /artifacts /etc/ssh/authorized && chown builder:builder /workspace /artifacts",
+    "RUN adduser -D -s /bin/bash reviewer && sed -i 's/^reviewer:!/reviewer:*/' /etc/shadow",
     'COPY hook-agent.py start.sh sshd_config declared-images /opt/factory/',
     'CMD ["python3", "-u", "/opt/factory/hook-agent.py"]',
     '']);
@@ -61,7 +62,7 @@ test('the start hook brings up sshd and dockerd; none of them is started at buil
   assert.match(start, /\/usr\/sbin\/sshd -f \/opt\/factory\/sshd_config/);
   assert.match(start, /dockerd/);
   assert.doesNotMatch(file(rendered, 'Dockerfile'), /dockerd|sshd -|ssh-keygen/);
-  assert.match(file(rendered, 'sshd_config'), /^AllowUsers builder$/m);
+  assert.match(file(rendered, 'sshd_config'), /^AllowUsers builder reviewer$/m);
   assert.match(file(rendered, 'sshd_config'), /^PasswordAuthentication no$/m);
 });
 
@@ -119,4 +120,15 @@ test('the build artifact is a zip with the Dockerfile at its root, byte-identica
   // CRC-32 of 'FROM scratch\n' computed with `python3 -c "import zlib;print(hex(zlib.crc32(b'FROM scratch\n')))"`.
   assert.deepEqual(read.map(entry => [entry.name, entry.content]), [['Dockerfile', 'FROM scratch\n'], ['start.sh', '#!/bin/bash\n']]);
   assert.equal(read[0]!.crc, 0xf75d57c2);
+});
+
+test('the guest listens only for the lifecycle hooks, sshd on loopback and the WebSocket carrying it: there is no diagnostics port', () => {
+  const rendered = renderGuestImage(declaration);
+  const everything = ['hook-agent.py', 'start.sh', 'sshd_config', 'Dockerfile'].map(name => file(rendered, name)).join('\n');
+  // Every listener of the guest files, by the forms they use to open one.
+  const listeners = [...everything.matchAll(/ws-l:([0-9.]+:[0-9]+)|ThreadingHTTPServer\(\("([0-9.]+)", ([0-9]+)\)|^ListenAddress ([0-9.]+)\n|^Port ([0-9]+)$/gm)]
+    .map(match => match[1] ?? (match[2] ? `${match[2]}:${match[3]}` : match[4] ?? `port ${match[5]}`)).sort();
+  assert.deepEqual(listeners, ['0.0.0.0:8022', '0.0.0.0:9000', '127.0.0.1', 'port 22']);
+  // Nothing publishes the Docker daemon over TCP either.
+  assert.doesNotMatch(everything, /EXPOSE|-H tcp:|tcp:\/\/0\.0\.0\.0/);
 });

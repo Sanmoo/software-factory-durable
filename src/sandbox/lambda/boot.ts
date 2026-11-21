@@ -11,7 +11,7 @@ import { readWorkImage } from './image.js';
 import { installationTagKey, workTagKey } from './installation.js';
 import { lambdaBootSize, type LambdaProfile } from './profile.js';
 import type { LambdaMicrovm, LambdaService, LambdaServiceFactory, LambdaServiceFailure } from './service.js';
-import { generateSessionKey, guestKeepaliveSeconds, guestSshPort, openChannel, type GuestTransport, type LambdaChannel } from './transport.js';
+import { generateSessionKey, guestKeepaliveSeconds, guestSshPort, openChannel, type GuestTransport, type GuestUser, type LambdaChannel } from './transport.js';
 
 /**
  * v2 ticket 04 (V2-02 Iniciar/Observar/Parar, V2-09, V2-10, V2-22, V2-24, V2-28, V2-34): the life of ONE boot under the Lambda adapter.
@@ -333,14 +333,15 @@ export async function stopLambdaBoot(dependencies: LambdaBootDependencies, { env
  * The channel to an ACTIVE boot, opened by any host process from the boot's record (pinned host key, session key file): what tool calls
  * (ticket 05) and observation programs run over. Closing it, or stopping the boot, withdraws the access.
  */
-export async function openLambdaBootChannel(dependencies: LambdaBootDependencies, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }): Promise<{ status: 'open'; channel: LambdaChannel } | { status: 'unavailable'; code: string }> {
+export async function openLambdaBootChannel(dependencies: LambdaBootDependencies, { environment, boot, user = 'builder' }: { environment: EnvironmentRef; boot: BootRef;
+  /** The guest Unix user every program of this channel runs as (ticket 05: chosen by the host from the bound role). */ user?: GuestUser }): Promise<{ status: 'open'; channel: LambdaChannel } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
   if (record.phase !== 'active' || !record.microvmId || !record.endpoint || !record.hostKey) return { status: 'unavailable', code: 'BOOT_NOT_ACTIVE' };
   const identityFile = join(await bootDirectory(dependencies.root, environment, boot), identityName);
   if (!await stat(identityFile).then(() => true, () => false)) return { status: 'unavailable', code: 'BOOT_ACCESS_WITHDRAWN' };
   return { status: 'open', channel: openChannel({ service: serviceOf(dependencies, record), transport: dependencies.transport, microvmId: record.microvmId, endpoint: record.endpoint,
-    identityFile, hostKey: record.hostKey, now: dependencies.clock.now }) };
+    identityFile, hostKey: record.hostKey, now: dependencies.clock.now, user }) };
 }
 
 /** Whether `environment` belongs to the Lambda adapter in this installation (it has a recorded image or boots). */

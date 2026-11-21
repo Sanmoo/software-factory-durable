@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { referenceSchema, type ReadBinding, type GuestOwner, type ToolContext, type ReadResult } from './tool-binding.js';
+import { profileQualified, referenceSchema, type ReadBinding, type GuestOwner, type ToolContext, type ReadResult } from './tool-binding.js';
 import { boundStreamCopyTools } from './write-tools.js';
 
 // Match the native local backend's timer range; no invented global deadline.
@@ -21,6 +21,24 @@ export const credentialPrelude = 'IFS= read -r GH_TOKEN || exit 97; export GH_TO
   'GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.https://github.com.helper "GIT_CONFIG_VALUE_0=!/usr/bin/gh auth git-credential" ' +
   'GH_CONFIG_DIR="${GH_CONFIG_DIR:-/tmp/factory-gh-config}"; exec /bin/bash -c "$1"';
 
+/**
+ * v2 ticket 05 (V2-24): the fixed prelude of a Builder command on a guest reached over a channel (`guestConventions: 'ssh-channel'`,
+ * the Lambda adapter). Guest-only, never run on the host. The reduced token is the command's explicit PROCESS ENVIRONMENT (`GH_TOKEN`,
+ * delivered by the channel for this one program): it is in no argument, no stdin and no guest file. The prelude merges stderr into
+ * stdout in the guest (the channel streams one ordered output), drops every inherited variable except the credential (the session's
+ * ambient environment is not part of the contract), exports the given `NAME=value` arguments (commit identity, PATH) and, when there is
+ * a credential, the Git credential helper that answers from that variable in memory. The guest pin has no `gh`: the helper is the
+ * shell function the clone uses. NOT PROVEN in a real guest.
+ */
+export const channelPrelude = ['exec 2>&1',
+  'for name in $(compgen -e); do [ "$name" = GH_TOKEN ] || unset "$name" 2>/dev/null; done',
+  'command=$1; shift',
+  'for entry in "$@"; do export "$entry"; done',
+  'if [ -n "${GH_TOKEN:-}" ]; then export GH_TOKEN GH_HOST=github.com GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 ' +
+    'GIT_CONFIG_KEY_0=credential.https://github.com.helper \'GIT_CONFIG_VALUE_0=!f() { test "$1" = get && printf "username=x-access-token\\npassword=%s\\n" "$GH_TOKEN"; }; f\' ' +
+    'GH_CONFIG_DIR=/tmp/factory-gh-config; else unset GH_TOKEN; fi',
+  'exec /bin/bash -c "$command"'].join('\n');
+
 /** Fixed guest PATH exported to every Builder/guest command (Alpine guest profile directories). */
 export const guestPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 /** Fixed Factory commit identity of every Builder command (never a human's, never chosen by the model); only Host configuration may replace it. */
@@ -39,7 +57,7 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
   const bound = Object.freeze({ ...options.context });
   // Trusted host snapshot precedes any await. JSON cannot qualify a VM or
   // select policy. Host must select native-truncated output; no second truncator.
-  const copyAllowed = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
+  const copyAllowed = options.copyOutput === true && profileQualified(options.profileOrigin);
   const copy = boundStreamCopyTools(options, valid, revoke, publishedCopies);
   // Builder-only, host-delivered holder; its CURRENT value is snapshotted per command (renewal reaches new commands only).
   const holder = bound.role === 'builder' ? options.credential : undefined;
@@ -93,10 +111,13 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       // Both guest executables are profile prerequisites, never host fallbacks.
       // A fixed, EXPORTED guest PATH (ticket 14 real run): with `env -i` bash only has an unexported default PATH, so child programs that
       // resolve executables from their environment (gh resolving git) found none. Never the host's PATH.
-      const argv = credential === undefined ? ['/usr/bin/env', '-i', ...identity, `PATH=${guestPath}`, '/bin/bash', '-c', call.command]
+      const channel = options.guestConventions === 'ssh-channel';
+      const argv = channel ? ['/bin/bash', '-c', channelPrelude, 'factory-builder', call.command, ...identity, `PATH=${guestPath}`]
+        : credential === undefined ? ['/usr/bin/env', '-i', ...identity, `PATH=${guestPath}`, '/bin/bash', '-c', call.command]
         : ['/usr/bin/env', '-i', ...identity, `PATH=${guestPath}`, '/bin/bash', '-c', credentialPrelude, 'factory-builder-credential', call.command];
       const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
-        signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: credential === undefined ? '' : `${credential}\n` });
+        signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: channel && credential !== undefined ? { GH_TOKEN: credential } : {}, cwd: '/workspace',
+        stdin: channel || credential === undefined ? '' : `${credential}\n` });
       void process.result.catch(() => {});
       // SDK's ordered output stream preserves stdout/stderr arrival order. Every
       // release awaits protected Records.write BEFORE awaited native capture admission.

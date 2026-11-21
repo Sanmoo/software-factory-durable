@@ -5,6 +5,12 @@
  *
  * The hook protocol (what `runHookPayload` carries) belongs to the boot (ticket 04); this is the shape the Alpine proof exercised: the
  * session PUBLIC key of the `builder` user. The agent serves the lifecycle hooks only (no diagnostics port) and honours `run` once.
+ *
+ * v2 ticket 05 (V2-23): the one session key authenticates the HOST, so the hook authorizes it for both guest users; which user a call
+ * runs as is the host's choice from the bound role. `reviewer` is the second layer under the reviewers' `read`-only tools: it owns
+ * nothing, is in no group (so not `docker`) and gets no forwarding and no terminal from `sshd`. Residual risk, accepted and documented:
+ * that user reaches the guest's loopback ports (hooks on 9000, `sshd`, the WebSocket listener, published container ports) but has no
+ * tool that opens a connection. Nothing in the guest is hidden from the Builder, which reads any guest file through Docker (V2-24).
  */
 const hookAgent = `"""Software Factory guest hook agent: Lambda MicroVM lifecycle hooks on :9000. No diagnostics, no arbitrary execution."""
 import json, os, subprocess, threading
@@ -22,9 +28,10 @@ def on_run(raw):
         payload = json.loads(json.loads(raw).get("runHookPayload") or "{}")
         key = payload.get("builder")
         if isinstance(key, str) and key.startswith("ssh-ed25519 ") and "\\n" not in key and len(key) < 1024:
-            with open("/etc/ssh/authorized/builder", "w") as out:
-                out.write(key + "\\n")
-            os.chmod("/etc/ssh/authorized/builder", 0o644)
+            for user in ("builder", "reviewer"):
+                with open("/etc/ssh/authorized/" + user, "w") as out:
+                    out.write(key + "\\n")
+                os.chmod("/etc/ssh/authorized/" + user, 0o644)
     except Exception as error:
         print(json.dumps({"hook": "run", "error": type(error).__name__}), flush=True)
     subprocess.Popen(["bash", "/opt/factory/start.sh"], start_new_session=True)
@@ -83,11 +90,14 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 PermitRootLogin no
-AllowUsers builder
+AllowUsers builder reviewer
 AuthorizedKeysFile /etc/ssh/authorized/%u
 Subsystem sftp internal-sftp
 ClientAliveInterval 20
 ClientAliveCountMax 6
+Match User reviewer
+    DisableForwarding yes
+    PermitTTY no
 `;
 
 export const guestFiles: Readonly<Record<'hook-agent.py' | 'start.sh' | 'sshd_config', string>> = Object.freeze({ 'hook-agent.py': hookAgent, 'start.sh': start, sshd_config: sshdConfig });

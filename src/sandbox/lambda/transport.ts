@@ -12,7 +12,12 @@ import type { LambdaService } from './service.js';
 export const guestSshPort = 8022;
 /** SSH-level keepalive the adapter asks of every connection (the proofs ran `ServerAliveInterval 15` against the guest's `ClientAliveInterval 20`). */
 export const guestKeepaliveSeconds = 15;
-export type GuestUser = 'builder';
+/**
+ * The Unix users of the guest a connection may open as (v2 ticket 05, V2-23). `builder` owns the workspace and is in the `docker` group;
+ * `reviewer` only reads: it owns nothing, is in no group and has no forwarding. The session key authenticates the HOST for both; which
+ * user a call runs as is the host's choice from the role it bound, never something the tunnel or the guest decides.
+ */
+export type GuestUser = 'builder' | 'reviewer';
 
 /** One connection to one MicroVM: where, the token that opens the WebSocket and the session identity (a private key FILE of the boot). */
 export type GuestTarget = { endpoint: string; port: number; token: string; user: GuestUser; identityFile: string; keepaliveSeconds: number };
@@ -101,8 +106,8 @@ const tokenMinutes = 60;
 const tokenRenewalMarginMs = 5 * 60_000;
 
 export type LambdaChannel = {
-  /** Runs one fixed program in the guest as the bound user. */
-  exec(request: GuestExecRequest, options?: { onData?: (data: Buffer) => void }): Promise<GuestExecResult>;
+  /** Runs one fixed program in the guest as the bound user. `signal` closes the connection of THIS program only (its end is then `lost`). */
+  exec(request: GuestExecRequest, options?: { onData?: (data: Buffer) => void; signal?: AbortSignal }): Promise<GuestExecResult>;
   /** Withdraws access NOW: closes every open connection and refuses new ones. Never waits for a token to expire. */
   close(): void;
 };
@@ -128,7 +133,10 @@ export function openChannel({ service, transport, microvmId, endpoint, identityF
       if (closed) return { status: 'closed' };
       const abort = new AbortController();
       open.add(abort);
+      const interrupt = () => abort.abort();
+      if (options.signal?.aborted) abort.abort(); else options.signal?.addEventListener('abort', interrupt, { once: true });
       try {
+        if (abort.signal.aborted) return { status: 'lost', detail: 'The call was interrupted before its connection opened' };
         // A refused token ran nothing, so one retry with a fresh token is safe.
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const current = token && now() < token.renewAt ? token : await issue();
@@ -141,7 +149,7 @@ export function openChannel({ service, transport, microvmId, endpoint, identityF
           token = null;
         }
         return { status: 'refused', code: 'TOKEN_REFUSED' };
-      } finally { open.delete(abort); }
+      } finally { open.delete(abort); options.signal?.removeEventListener('abort', interrupt); }
     },
     close() {
       closed = true;

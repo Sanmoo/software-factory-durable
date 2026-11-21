@@ -4,7 +4,7 @@ import { boundConditionalEditTools, boundWriteTools, writeCallSchema, type Write
 import { boundBashTools, bashCallSchema, bashProgressSchema, type BashCall, type BashProgress } from './bash-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
 import type { TextOutput, RawOutput } from '../records/index.js';
-import { contextSchema, referenceSchema, readResultSchema, type ToolContext, type ReadResult, type GuestOwner, type ReadBinding } from './tool-binding.js';
+import { contextSchema, profileQualified, referenceSchema, readResultSchema, type ToolContext, type ReadResult, type GuestOwner, type ReadBinding } from './tool-binding.js';
 export { contextSchema } from './tool-binding.js';
 export type { ToolContext, ReadResult, GuestOwner, ReadBinding } from './tool-binding.js';
 
@@ -149,7 +149,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   // Created ONLY here: no caller set/callback, Records receipt or persisted path
   // can grant Builder access in this or a subsequent invocation.
   const publishedCopies = new Set<string>();
-  const builderRead = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
+  const builderRead = options.copyOutput === true && profileQualified(options.profileOrigin);
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
   let mutationRevoked = false;
