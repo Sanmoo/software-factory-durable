@@ -167,6 +167,10 @@ Remover é exercitado chamando a porta de cleanup da composição depois da publ
   Vermelhos reais que os testes pegaram: `findPublication` recusa `issueNumbers` vazio (só a jornada composta mostrou) e o cenário de
   `origin` ilegível.
 
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com o ticket 11): 1987 testes, 1965
+passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
+`test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
 ### O que os tickets seguintes precisam saber
 
 - **07 (gate de preservação):** o grant já é de escrita (`publishInBoot`); falta a política de push de WIP no Host do Builder (hoje todo
