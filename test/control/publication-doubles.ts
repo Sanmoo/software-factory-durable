@@ -38,7 +38,9 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
    * Host's `boot-swap` directive (`directive`), only once the sandbox interrupted its call (`interrupt`), or never (`never`: it runs until
    * its activation is interrupted).
    */
-  { kind: 'work'; head: string; dirty?: number; yields: 'directive' | 'interrupt' | 'never' };
+  { kind: 'work'; head: string; dirty?: number; yields: 'directive' | 'interrupt' | 'never' } |
+  /** v2 ticket 12: the Builder works (leaving `head` checked out in the guest) and never returns; only its interruption ends it. */
+  { kind: 'hang'; head: string };
 /** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
 export type GuestWorkspace = { head: string | null; modified: number; untracked: number; stashes: number; remoteDown: boolean;
   /** v2 ticket 08 (decision 3D): what the sandbox reports it re-sent into `/artifacts` of every boot after the first one. */
@@ -145,6 +147,12 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           pushPolicy: invocation.pushPolicy ?? null };
         calls.push({ kind: 'activate', detail: activation });
         const session = sessionRef(++sessions);
+        if (script.kind === 'hang') {
+          guest.head = script.head;
+          const completed = new Promise<never>((_resolve, reject) => { invocation.signal.addEventListener('abort', () => reject(new Error('WORKER_EXECUTION_UNCERTAIN')), { once: true }); });
+          void completed.catch(() => {});
+          return { worker: invocation.context.invocationId, started: Promise.resolve(receipt(invocation)), completed, ...(invocation.handoff ? { handoffs: { next: () => completed } } : {}), close() {} };
+        }
         if (script.kind === 'ask') {
           guest.head = script.head;
           const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: createHash('sha256').update(JSON.stringify({ question: script.question, context: '' })).digest('hex'),

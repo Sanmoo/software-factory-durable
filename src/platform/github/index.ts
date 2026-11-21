@@ -6,6 +6,7 @@ import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
 import { z } from 'zod';
 import type { AccessDiagnostic, BuilderCredentials, GitHubScope, RepositoryFetchCredentials, RevocationResult } from '../../contracts/index.js';
+import { lostMarkerPattern } from '../../contracts/index.js';
 
 const version = '2026-03-10';
 const permissions = {
@@ -138,7 +139,9 @@ export interface GitHubAccess {
  * `unavailable`: the token/schema offers no such mutation (nothing changed): the caller keeps the branch, never falls back to a plain DELETE.
  */
 export interface GitHubCleanupSession extends GitHubSession {
-  deleteRefIfAt(input: { repositoryNodeId: string; branch: string; beforeOid: string }): Promise<{ kind: 'deleted' } | { kind: 'rejected' | 'unavailable'; code: string }>;
+  deleteRefIfAt(input: { repositoryNodeId: string; branch: string; beforeOid: string } |
+    /** v2 ticket 12: the same closed deletion for ONE loss marker ref (`refs/factory/lost/<work>/<boot>`), never any other ref outside `refs/heads/`. */
+    { repositoryNodeId: string; lostMarker: string; beforeOid: string }): Promise<{ kind: 'deleted' } | { kind: 'rejected' | 'unavailable'; code: string }>;
 }
 export type GitHubCleanup<T> = { ok: true; observedAt: string; repositoryId: number; value: T; sent: boolean; revocation: TokenRevocation } |
   { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; sent: boolean; revocation: TokenRevocation };
@@ -582,15 +585,18 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       const reads = session(scope, directory, grant);
       await verifyRepository(scope, reads);
       const own = directory;
-      const value = await operate({ ...reads, async deleteRefIfAt({ repositoryNodeId, branch, beforeOid }) {
-        // Closed operation: one ref of THIS repository (its node id as GitHub reported it), a branch name the Factory validates, an exact
-        // expected tip; no other mutation, ref, path or force.
-        if (sent || !/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch) || !/^[0-9a-f]{40}$/.test(beforeOid) ||
+      const value = await operate({ ...reads, async deleteRefIfAt(input) {
+        const { repositoryNodeId, beforeOid } = input;
+        // Closed operation: one ref of THIS repository (its node id as GitHub reported it), a branch name the Factory validates (or one
+        // loss marker ref of the Factory's own namespace), an exact expected tip; no other mutation, ref, path or force.
+        const name = 'lostMarker' in input ? (lostMarkerPattern.test(input.lostMarker) ? input.lostMarker : null)
+          : /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(input.branch) ? `refs/heads/${input.branch}` : null;
+        if (sent || name === null || !/^[0-9a-f]{40}$/.test(beforeOid) ||
           !/^[A-Za-z0-9_=-]{1,128}$/.test(repositoryNodeId)) throw new AccessFailure('CLEANUP_OPERATION_REFUSED');
         sent = true;
         const query = 'mutation($repositoryId: ID!, $refUpdates: [RefUpdate!]!) { updateRefs(input: { repositoryId: $repositoryId, refUpdates: $refUpdates }) { clientMutationId } }';
         const output = await ghExec(own, grant.token, 'POST', '/graphql', JSON.stringify({ query,
-          variables: { repositoryId: repositoryNodeId, refUpdates: [{ name: `refs/heads/${branch}`, beforeOid, afterOid: '0'.repeat(40), force: false }] } }));
+          variables: { repositoryId: repositoryNodeId, refUpdates: [{ name, beforeOid, afterOid: '0'.repeat(40), force: false }] } }));
         const match = /^HTTP\/[\d.]+ (\d{3})[^\r\n]*\r?\n[\s\S]*?\r?\n\r?\n([\s\S]*)$/.exec(output.stdout);
         if (!match) throw new AccessFailure('INVALID_GITHUB_RESPONSE');
         const status = Number(match[1]);

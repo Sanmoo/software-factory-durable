@@ -39,6 +39,11 @@ export type OwnerBinding = Omit<ReadBinding, 'profileOrigin' | 'guestConventions
 export type BootOwnerParts = { directory: string;
   /** Whether a Builder may be launched with the output copy policy under this owner (the adapter's qualified profile). */ copyOutput: boolean;
   add(binding: OwnerBinding): Promise<void>; close(): Promise<void>;
+  /**
+   * v2 ticket 12: told, in order, what the Builder credential of this boot is NOW: the value at each delivery and renewal, `undefined`
+   * at its withdrawal and when its channel closes. For an adapter that keeps something in step with the grant's life; never awaited.
+   */
+  credential?(token: string | undefined): void;
   launch(request: Parameters<typeof launchWorker>[1], endpoint: string, signal: AbortSignal, secrets: Parameters<typeof launchWorker>[5],
     relay?: Parameters<typeof launchWorker>[6], onHandoff?: Parameters<typeof launchWorker>[7]): ReturnType<typeof launchWorker> };
 
@@ -93,6 +98,7 @@ export async function serveBootOwner(root: string, identity: { workId: string; e
         }
         if (withdrawal) {
           holder!.token = undefined; holder!.withdrawn = true;
+          try { parts.credential?.(undefined); } catch { /* The adapter's own business never changes the withdrawal. */ }
           await channel.send(frame(request.message_id, 'credential-result', { status: 'withdrawn' }, request.message_id));
           return;
         }
@@ -105,6 +111,7 @@ export async function serveBootOwner(root: string, identity: { workId: string; e
         records.registerSecret(value);
         if (holder) holder.token = value;
         else credentials.set(channel, { token: value, invocationId: context.invocationId, withdrawn: false });
+        try { parts.credential?.(value); } catch { /* The adapter's own business never changes the delivery. */ }
         await channel.send(frame(request.message_id, 'credential-result', { status: 'delivered' }, request.message_id));
         return;
       }
@@ -197,6 +204,8 @@ export async function serveBootOwner(root: string, identity: { workId: string; e
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
     closed(_error, _peer, channel) {
+      const held = credentials.get(channel);
+      if (held && !held.withdrawn) try { parts.credential?.(undefined); } catch { /* As above. */ }
       lifetimes.get(channel)?.abort(); credentials.delete(channel); launched.delete(channel);
       for (const [id, pending] of questionAcks) if (pending.channel === channel) { questionAcks.delete(id); pending.reject(new Error('QUESTION_RELAY_CLOSED')); }
     },
