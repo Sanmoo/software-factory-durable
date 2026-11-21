@@ -136,3 +136,8 @@ Pergunta pelo relay → resposta → boot novo no commit publicado), `test/contr
   `gateLoss`; quem chama decide o fim. Para o caminho de perda de V2-13, chamar `endAsLoss(gateRefusedCode)`.
 - **16 (aceite):** conferir com modelo real os dois critérios não marcados, o marcador empurrado num Parar com motivo `loss`, e os dois
   ramos da decisão 8 num repositório real (force-push e exclusão da branch durante uma espera).
+
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com a correção de autonomia, decisões 5 e
+6): 2098 testes, 2076 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base:
+`test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1). No merge, o ramo de falha por canal
+irrecuperável (decisão 6) ficou com o registro de perda da correção de autonomia; a checagem única da substituta não roda nesse caso.
