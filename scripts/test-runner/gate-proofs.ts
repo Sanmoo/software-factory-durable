@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { disposableCopy, type Copy } from './disposable.ts';
-import { attribute, type Verdict } from './proof-attribution.ts';
+import { analyzedExactly, attribute, type Verdict } from './proof-attribution.ts';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -20,6 +20,8 @@ export interface Proof {
   apply(copy: Copy): void;
   /** Where the gate must report it. */
   location: string;
+  /** A changed-set gate's declared input: the step that analyzes it and the files, which must be exactly what it analyzed. */
+  declared?: { step: string; files: string[] };
 }
 
 const append = (line: string) => (text: string) => `${text}${line}\n`;
@@ -62,6 +64,7 @@ export const proofs: Proof[] = [
     gate: 'Format',
     tier: 'fast',
     location: 'src/control/rules/budget.ts',
+    declared: { step: 'prettier', files: ['src/control/rules/budget.ts'] },
     violation: 'misindent one line of src/control/rules/budget.ts',
     apply: copy => copy.edit('src/control/rules/budget.ts', text => text.replace('\nexport function timeoutReached(', '\n   export function timeoutReached(')),
   },
@@ -70,6 +73,7 @@ export const proofs: Proof[] = [
     gate: 'Lint',
     tier: 'fast',
     location: 'src/control/rules/budget.ts',
+    declared: { step: 'eslint', files: ['src/control/rules/budget.ts'] },
     violation: 'add an unused variable to src/control/rules/budget.ts',
     apply: copy => copy.edit('src/control/rules/budget.ts', append('function proofLint() {\n  const unused = 1;\n}\nexport const proofLintUsed = proofLint;')),
   },
@@ -104,6 +108,8 @@ export interface Evidence {
   exitCode: number | null;
   verdict: Verdict;
   failures: string[];
+  /** The report's static line: the steps that ran and, for a changed-set step, the files it analyzed. */
+  analyzed: string;
   commit: string;
 }
 
@@ -118,7 +124,17 @@ function run(proof: Proof): Evidence {
       env: { ...process.env, FACTORY_INTEGRAL_RECORD: join(copy.dir, '.integral-result.json'), VALIDATION_BASE: 'main' },
     });
     const report = `${result.stdout}${result.stderr}`;
-    const verdict = attribute({ exitCode: result.status, report }, proof.gate, proof.location);
+    let verdict = attribute({ exitCode: result.status, report }, proof.gate, proof.location);
+    const staticLine = report.split('\n').find(line => line.startsWith('static: ')) ?? '';
+    if (proof.declared && verdict.proved) {
+      const scope = analyzedExactly(staticLine, proof.declared.step, proof.declared.files);
+      if (!scope.ok)
+        verdict = {
+          ...verdict,
+          proved: false,
+          reason: `${proof.gate} analyzed ${JSON.stringify(scope.analyzed)}, not the declared ${JSON.stringify(proof.declared.files)}`,
+        };
+    }
     const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: project, encoding: 'utf8' }).stdout.trim();
     return {
       id: proof.id,
@@ -130,6 +146,7 @@ function run(proof: Proof): Evidence {
       verdict,
       commit,
       failures: report.split('\n').filter(line => line.startsWith('FAILURE: ')),
+      analyzed: staticLine || 'unavailable',
     };
   } finally {
     copy.remove();

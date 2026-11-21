@@ -38,3 +38,14 @@ export function attribute(run: ProofRun, gate: string, location: string): Verdic
   if (!located) return verdict(false, `${gate} failed, but not at the violation's location ${location}`);
   return verdict(true, `${gate} failed at ${location}, and nothing else failed`);
 }
+
+/**
+ * For a changed-set quality gate: whether its step analyzed exactly the declared files. `step` is the tool name in the
+ * report's static line (`prettier`, `eslint`); a scope that cannot be read from the report is unavailable, never empty.
+ */
+export function analyzedExactly(staticLine: string, step: string, declared: readonly string[]): { ok: boolean; analyzed: string[] | 'unavailable' } {
+  const match = new RegExp(`(?:^static: |, )${step} \\(changed: ([^)]*)\\)`).exec(staticLine);
+  if (!match) return { ok: false, analyzed: 'unavailable' };
+  const analyzed = match[1]!.split(', ').filter(Boolean).sort();
+  return { ok: analyzed.length === declared.length && [...declared].sort().every((file, index) => analyzed[index] === file), analyzed };
+}

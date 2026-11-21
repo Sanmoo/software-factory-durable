@@ -111,6 +111,9 @@ export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
 /** The files the Format quality gate checks; .prettierignore holds its traversal exclusions. */
 const sourceGlob = '**/*.{ts,mts,cts,js,mjs,cjs}';
 
+/** The files a changed-set step analyzed, named in its report line so a Gate Proof can record them. */
+export const analyzedNames = (files: readonly string[]) => (files.length <= 10 ? files.join(', ') : `${files.length} files`);
+
 const distFile = (source: string) => join('dist', source.replace(/\.ts$/, '.js'));
 
 /** `file(line,col): error TSnnnn` lines of tsc. */
@@ -200,7 +203,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         const files = tier === 'fast' ? await changedLintable(signal) : 'all';
         if (files !== 'all' && !files.length) return { name: 'prettier (no changed files)', ms: 0, ok: true, check: 'format', findings: [] };
         const step = await tool(
-          files === 'all' ? 'prettier' : `prettier (${files.length} changed)`,
+          files === 'all' ? 'prettier' : `prettier (changed: ${analyzedNames(files)})`,
           [...prettier, ...(files === 'all' ? [sourceGlob] : files)],
           signal,
         );
@@ -252,7 +255,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         if (tier !== 'fast') return linted('eslint', [...eslint, '.']);
         const files = await changedLintable(signal);
         if (files !== 'all' && !files.length) return { name: 'eslint (no changed files)', ms: 0, ok: true, check: 'lint' };
-        return linted(files === 'all' ? 'eslint' : `eslint (${files.length} changed)`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
+        return linted(files === 'all' ? 'eslint' : `eslint (changed: ${analyzedNames(files)})`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
       };
       const depcruise = async (): Promise<StepResult[]> => {
         const step = await tool(

@@ -19,3 +19,8 @@ test('only identifiers count: comments and strings may say the word; a word mere
     { rule: 'avoided:seat', location: 'src/a.ts:5 #seatCount' },
   ]);
 });
+
+test('template literals and regular expressions do not hide identifiers after them, nor turn string text into identifiers', () => {
+  const text = 'const a = `x ${1} seat ${2}`;\nconst re = /seat/g;\nexport const seatLimit = a.length + re.source.length;\n';
+  assert.deepEqual(findAvoided('src/b.ts', text, ['seat']), [{ rule: 'avoided:seat', location: 'src/b.ts:3 seatLimit' }]);
+});
