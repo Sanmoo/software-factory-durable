@@ -68,7 +68,10 @@ function scenario(name: string, body: (expect: (condition: boolean, what: string
       );
       expect(status === 1, `exit 1, got ${status}`);
       expect(/^selection: \d+ affected files/m.test(output), 'the selection did not widen');
-      expect(/FAILURE: test\/control\/budget-rules\.test\.ts failed/.test(output), 'the dependent test caught the violation');
+      expect(
+        /FAILURE: quality gate Unit tests \(unit-tests\): test\/control\/budget-rules\.test\.ts failed/.test(output),
+        'the dependent test caught the violation',
+      );
       expect(!/test\/protocol\/protocol\.test\.ts/.test(output), 'an independent test was not selected');
     },
     copy,
@@ -118,7 +121,7 @@ function scenario(name: string, body: (expect: (condition: boolean, what: string
 }
 {
   const copy = repository('integral', () => {});
-  copy.edit('test/protocol/protocol.test.ts', text => `${text}\n`);
+  copy.edit('test/protocol/protocol.test.ts', text => `${text}// rehearsal: a change in a test file\n`);
   scenario(
     'integral validation runs the periodic checks that validation by change only reports',
     expect => {

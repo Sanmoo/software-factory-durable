@@ -164,3 +164,22 @@ At the end of this run Static metrics is pending by approval, so the engineering
 ### Correction of the S1 and S2 records (recorded during S3, 2026-11-21)
 
 The S1 and S2 records reported Context boundaries and Dependency rule as adopted. They were not: `.dependency-cruiser.cjs` excluded `(^|/)dist/` and `.scratch/` from the cruise, which also hid every package whose entry point lives in a `dist/` directory (`yaml`, `@earendil-works/pi-durable`, `@earendil-works/chord`). A domain module importing such a package passed (Dependency rule passed vacuously for package imports), and the `sdk:*-owner` rules could never see their targets. Both were **pending** through S1 and S2; the earlier Gate Proofs used source-path violations and could not show it. S3 fixes the exclusion (root-anchored; third-party code not followed but visible) and re-proves both.
+
+### S3 — completed 2026-11-21
+
+- **Changed**: `test/levels.json` declares the unit level (34 files after the cruise fix; the boundaries cruise fails a declared unit test that reaches runtime I/O); the policy splits the suite into `unit-tests` (fast) and `integration-tests` (full), and each failing file is reported under its level's quality gate; `npm audit --audit-level=high` runs before the tests when the plan selects it (lockfile or manifest change, widening, integral); the dependency-cruiser exclusion fix and SDK-ownership scope above; the fast Entry Point runs the unit level; the testing-strategy Guide states the levels.
+- **Adopted**: Unit tests, Integration tests, Dependency vulnerabilities; Context boundaries and Dependency rule adopted now (see the correction above); every adopted quality gate re-proved at `35ec2b8` — [GATE-PROOFS.md](GATE-PROOFS.md).
+- **Rehearsal of the modes** on the final runner: 4/4 scenarios passed.
+- **Remains pending**: E2E tests (S4), Mutation (S5), Static metrics (S6).
+
+### S4 — blocked (2026-11-21)
+
+E2E tests is **blocked**. Its Contract needs scenarios that drive the built release through the `factory` CLI and together reach every bounded context. The release fixture carries synthetic, non-bootable guest assets, and a Builder or reviewer run needs real model sessions under the operator's per-run authorization (`docs/agents/experiment-proofs.md`): workers, the sandbox runtime and code-repository publication cannot be reached. The maintainer decided not to build a partial Gherkin suite. **To unblock**: a release built with the real, bootable guest assets; model credentials; and per-run authorization for the E2E run.
+
+### S5 — pending (2026-11-21)
+
+Mutation is **pending**: the approved criterion (the nightly whole-codebase run fits in 2 h) cannot be met. Stryker 10.1.1 instruments `src/` into 58,473 mutants (147 files, measured on a disposable clone). Its tap runner, the one that runs node:test, has no per-test coverage, so every mutant re-runs the whole selected test set: at about 3 s for the 34 unit-level files and concurrency 4, that is about 12 h; with the integration level (about 250 s), days. Nothing was wired. **Decision needed**: a runner with per-test coverage (which means a test-runner change), a longer periodic cadence and budget for the whole-codebase run, or an approved amendment of the scope.
+
+### S6 — pending (2026-11-21)
+
+Static metrics is **pending** by the plan's approval: the 620 complexity findings and the 9.35% duplication over `src/` and `test/` are to be resolved by refactoring in the real adoption on `main`, not on this disposable branch. Not wired into either Entry Point.
