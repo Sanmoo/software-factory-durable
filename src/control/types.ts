@@ -443,13 +443,29 @@ export type OriginObservation = BranchObservation | { state: 'unknown'; code: st
 export type BootLedgerEntry = { boot: string; executionId: string; begin: 'start' | 'planned-swap'; end: 'planned-swap' | 'loss' | 'end';
   startTip: OriginObservation; endTip: OriginObservation; at: string };
 /** `commits`: how many commits the notice named as new since `confirmed` (the gate-confirmed commit; null = none was ever confirmed). */
-export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean };
+export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean;
+  /** v2 ticket 13 (Operator decision 8): the notice said the history of the Work branch changed (`rewritten`) or that the Work restarts from the base (`restarted`). */
+  origin?: 'rewritten' | 'restarted' };
+/**
+ * v2 ticket 13 (Operator decision 8 of 2026-11-21, amending V2-11 where the sandbox keeps no disk): what Control found on `origin` at a
+ * resume when the Work branch no longer continues the commit a preservation gate confirmed, and what was decided. `history-rewritten`:
+ * the remote is followed by a substitute session on one operational recovery, without a Question. `branch-absent`: an ordinary Question
+ * (restart from the base, or end the Work); its answer decides.
+ */
+export type OriginDivergenceView = { kind: 'history-rewritten'; at: string; branch: string; confirmed: string; current: string; executionId: string } |
+  { kind: 'branch-absent'; at: string; branch: string; confirmed: string; questionId: string; executionId: string;
+    state: 'awaiting-answer' | 'restart-authorized' | 'end-authorized' | 'not-authorized'; resolvedAt: string | null };
 /**
  * v2 ticket 12 (V2-17): one environment of this Work that died before its work was published, as Control recorded it when the sandbox
  * confirmed the end. Whatever the guest held that was not on the Work branch of `origin` is gone; nothing here says it was recovered.
  * A substitute session (ticket 13) reads this; the old session is evidence and is never continued.
  */
 export type LossRecord = { at: string; executionId: string; boot: string; environment: string | null;
+  /**
+   * v2 ticket 13 (Operator decision 7 of 2026-11-21, amending V2-07): absent = the environment died on its own. `preservation-gate-refused`:
+   * Control ended the boot itself because the preservation gate did not accept what the guest held (`reason` carries the last diagnostic).
+   */
+  cause?: 'preservation-gate-refused';
   /** What the sandbox reported about the end, as given. */ reason: string | null; terminatedAt: string | null;
   /**
    * The last commit of the Work known to be on `origin` at the loss: the Work branch tip by Control's own read made then (`origin-read`),
@@ -901,13 +917,16 @@ export type WorkView = {
   bootLedger?: BootLedgerEntry[];
   /** v2 ticket 12 (V2-17): environments of this Work lost before publication, oldest first (bounded). Absent: none was recorded. */
   losses?: LossRecord[];
+  /** v2 ticket 13 (Operator decision 8): the latest divergence of the Work branch found at a resume, and its decision. */
+  originDivergence?: OriginDivergenceView;
   pendingRecovery: { reason: string; requestedAt: string;
   /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
   notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
   /** Ticket 48: a continuation after a budget end with progress (charged to `continuations`, no wait); absent = operational recovery. */
   kind?: 'budget-continuation' } | null;
   /** Ticket 50: persisted capacity wait after a boot/preparation refused for lack of host memory/storage (nothing started, nothing charged). */
-  bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number } | null;
+  bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number;
+    /** v2 (Operator decision 5): the cause the sandbox gave for the refusal, when it gave one (the reason shown for the wait). */ detail?: string | null } | null;
   /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (recreate the divergent artifact seeds) or, ticket 47, the
    * next boot (repair/replace a preserved disk that fails its check). */
   startRemedy?: { remedy: StartRetryRemedy; request_id: string; executionId: string; at: string; seeds: string[] } | null;
@@ -939,7 +958,8 @@ export type WorkView = {
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
       /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' |
-      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded';
+      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded' |
+      /* v2 ticket 13 */ 'origin-rewrite-followed' | 'origin-branch-absent-asked' | 'origin-branch-absent-resolved';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
@@ -983,8 +1003,7 @@ export type WorkView = {
 /** Ticket 50: a boot/preparation refusal that blocks recovery (cessation from the reconciliation) and the operator's explicit, audited retry. */
 export type BlockedStartView = { code: string; detail: string | null; at: string; cessation: 'confirmed' | 'unconfirmed';
   retry: { request_id: string; operator: { kind: 'local-administrator' }; at: string; code: string; remedy: StartRetryRemedy | null;
-    /** `not-required` (v2 ticket 14): the retry of a start the service refused for quota or capacity returns to the queue without a recovery unit. */
-    recoveryRequest: 'requested' | 'already-open' | 'not-required' } | null };
+    recoveryRequest: 'requested' | 'already-open' } | null };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };

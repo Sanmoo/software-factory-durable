@@ -153,6 +153,26 @@ test('V2-13: when the gate has not accepted by the end of the boot the loss path
   assert.ok(work.pendingRecovery, 'the loss opened an operational recovery');
 });
 
+test('V2-13 with Operator decision 7: a gate that refuses three times during the swap ends the boot as a loss at once; no new boot of this Execution starts', async t => {
+  const nothing = { kind: 'publish' as const, publish: () => {}, end: 'success' as const };
+  const h = await harness(t, () => [{ kind: 'work', head: main, dirty: 1, yields: 'directive' }, nothing, nothing, nothing]);
+  await h.working(1);
+  const first = (await h.work())!.execution!;
+  h.mono.advance(margin);
+  await h.settle('lost', value => value?.execution?.end?.cessation === 'confirmed');
+  const work = (await h.work())!;
+  const execution = work.execution!;
+  assert.deepEqual([execution.end?.outcome, execution.end?.code, execution.slot.held], ['failure', 'PRESERVATION_GATE_REFUSED', false]);
+  assert.deepEqual([execution.swaps![0]!.notice?.status, execution.swaps![0]!.outcome?.status, execution.swaps![0]!.outcome?.code], ['completed', 'lost', 'PRESERVATION_GATE_REFUSED']);
+  // The notice went to the working session; the two corrections of the gate went to the preservation session (ticket 07).
+  assert.deepEqual(h.activations().map(item => item.phaseId), ['builder-initial', 'builder-swap-notice', 'builder-preservation', 'builder-preservation']);
+  assert.deepEqual([h.of('start').length, h.of('stop')], [1, ['loss']]);
+  // The loss is on the Work's record (ticket 12) and in the ledger of boots (V2-14); a substitute comes back through the queue.
+  assert.deepEqual(work.losses?.map(item => [item.boot, item.executionId]), [[first.dispatch.boot, first.executionId]]);
+  assert.deepEqual(work.bootLedger!.map(item => [item.boot, item.end]), [[first.dispatch.boot, 'loss']]);
+  assert.ok(work.pendingRecovery);
+});
+
 test('V2-14: two boots in a row that publish no new commit block the Work with "sem progresso entre boots" instead of a third boot without progress', async t => {
   const h = await harness(t, guest => [{ kind: 'work', head: main, dirty: 1, yields: 'directive' }, { kind: 'publish', publish: pushWip(guest, wip), end: 'success' },
     { kind: 'work', head: wip, yields: 'directive' }, { kind: 'publish', publish: () => {}, end: 'success' },

@@ -8,7 +8,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { isServiceCapacityRefusal, newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
+import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -204,10 +204,7 @@ async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInp
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
     work!.history.push({ at, event: 'blocked-start-retried', origin: 'local-cli', executionId: execution!.executionId,
       detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}${remedy === 'recreate-artifact-seed' ? `:${seeds.join(',')}` : ''}` : ''}`.slice(0, 512) });
-    // v2 ticket 14 (V2-30): a start the service refused for quota or capacity consumed nothing and its retry consumes nothing either: the
-    // Work is still pending in the queue with its own motive, so lifting the impediment is all that is needed.
-    const opened = isServiceCapacityRefusal(decision.code) ? 'not-required' as const
-      : applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
+    const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
     work!.startRemedy = remedy ? { remedy, request_id: input.request_id, executionId: execution!.executionId, at, seeds } : null;
     // Ticket 44: retrying a failed/interrupted environment base preparation lets the NEXT preparation set it aside and prepare it again.
     work!.environmentRetry = retriesEnvironmentBase(decision.code) ? { request_id: input.request_id, executionId: execution!.executionId, at } : null;

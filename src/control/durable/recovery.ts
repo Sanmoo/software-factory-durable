@@ -191,7 +191,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
         return record({ kind: 'not-started', detail: start.basis }, 'blocked', classified.code);
       }
       // Ticket 50: lack of host memory/storage passes on its own: same queue position behind a persisted capacity wait, nothing charged.
-      if (isBootCapacityRefusal(code)) applyBootDeferral(work, { executionId: execution.executionId, code: code!, at: now });
+      // v2 (Operator decision 5): a refusal of the sandbox's service waits the same way, and its cause is the visible reason of the wait.
+      if (isBootCapacityRefusal(code)) applyBootDeferral(work, { executionId: execution.executionId, code: code!, detail: execution.held?.detail ?? null, at: now });
       return record({ kind: 'not-started', detail: start.basis }, 'requeued', code);
     }
     if (start.kind === 'uncertain') {

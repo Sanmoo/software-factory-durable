@@ -21,7 +21,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const execution = executionDoubles(remote, queue, options);
   queue.push(...scripts(execution.guest));
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
+  let calendar = 0;
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...execution.ports, calendar: { now: () => Date.now() + calendar } },
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'], factoryApp: async () => app },
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
@@ -30,14 +31,21 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
   const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => untilHolds(label, async () => {
     if (predicate(await work())) return true;
-    if (time.isSleeping()) time.advance();
+    // The persisted recovery wait runs on the calendar: jumped, never slept.
+    if (time.isSleeping()) { calendar += 60000; time.advance(); }
     return false;
   }, 5);
   const kinds = () => execution.calls.map(call => call.kind).filter(kind => ['prepare', 'start', 'activate', 'gate', 'stop', 'issue'].includes(kind));
   const activations = () => execution.calls.filter(call => call.kind === 'activate').map(call => call.detail as Activation);
-  return { execution, work, settle, kinds, activations, guest: execution.guest };
+  return { execution, control, work, settle, kinds, activations, guest: execution.guest };
 }
 const ask = (questionId = '11111111-2222-4333-8444-000000000001'): Script => ({ kind: 'ask', head: main, question: 'Which storage should the note use?', questionId });
+/** The substitute's own push: its activation is the first one of its Execution, which names the branch in its package. */
+const pushWipTo = (guest: GuestWorkspace, remote: Remote, activation: Activation, sha: string) => {
+  const branch = /branch=(\S+)/.exec(activation.prompt)![1]!;
+  Object.assign(guest, { head: sha, modified: 0, untracked: 0 });
+  (remote.refs ??= {})[branch] = sha;
+};
 const released = (value: WorkView | undefined) => value?.execution?.end?.cessation === 'confirmed' && !value.execution.slot.held;
 
 test('a Question on a sandbox without a persistent disk: the dirty workspace is refused, the refusal returns to the Builder, it publishes WIP without a PR, and only then the boot is stopped and the Slot released', async t => {
@@ -86,31 +94,56 @@ test('after the Execution completed (CI and readiness waits follow) the gate als
   assert.deepEqual(work.impediments, []);
 });
 
-test('three refusals in a row in the same return of control block the Work with the diagnostic of the last one; the environment is not stopped', async t => {
+test('three refusals in a row in the same return of control end the boot at once as a LOSS with the diagnostic of the last one; a substitute resumes through the queue on one operational recovery (Operator decision 7 of 2026-11-21)', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
   const noop: Script = { kind: 'publish', publish: () => {}, end: 'success' };
-  const h = await harness(t, remote, guest => [ask(), { kind: 'publish', publish: () => { guest.untracked = 0; guest.stashes = 2; }, end: 'success' }, noop, noop], { diskless: true });
+  const h = await harness(t, remote, guest => [ask(), { kind: 'publish', publish: () => { guest.untracked = 0; guest.stashes = 2; }, end: 'success' }, noop,
+    // The substitute, after the answer: it publishes what it concludes.
+    { kind: 'publish', publish: (world, activation) => { guest.stashes = 0; pushWipTo(guest, world, activation, wip); }, end: 'success' }], { diskless: true });
   h.guest.untracked = 1;
-  await h.settle('held', value => value?.execution?.state === 'held');
-  const work = (await h.work())!;
-  const execution = work.execution!;
+  await h.settle('loss recorded', value => value?.losses?.length === 1 && !value.execution?.slot.held);
+  const lost = (await h.work())!;
+  const execution = lost.execution!;
   assert.deepEqual(execution.preservationGate?.attempts.map(item => [item.outcome, item.code]), [['refused', 'WORKSPACE_UNTRACKED'], ['refused', 'STASH_PRESENT'], ['refused', 'STASH_PRESENT']]);
-  // Two corrections were requested; the third refusal blocks instead of asking again.
-  assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'gate', 'activate', 'gate', 'activate', 'gate']);
-  assert.deepEqual([execution.held?.code, execution.held?.detail, execution.slot.held, execution.end], ['PRESERVATION_GATE_REFUSED', 'STASH_PRESENT: 2 stash entr(ies)', true, null]);
-  assert.match(execution.held!.nextStep, /3 times in a row/);
-  assert.equal(work.preservation, undefined, 'nothing was confirmed');
-  assert.equal(execution.credentialLifecycle?.state, 'withdrawn');
+  // Two corrections were requested; the third refusal ends the boot instead of asking again or waiting for the Operator.
+  assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'gate', 'activate', 'gate', 'activate', 'gate', 'stop']);
+  assert.deepEqual([execution.end?.outcome, execution.end?.code, execution.held, execution.slot.held, execution.credentialLifecycle?.state], ['failure', 'PRESERVATION_GATE_REFUSED', null, false, 'withdrawn']);
+  const [loss] = lost.losses!;
+  assert.deepEqual([loss!.cause, loss!.executionId, loss!.boot, loss!.reason], ['preservation-gate-refused', execution.executionId, execution.dispatch.boot,
+    'Ended by the Factory: the preservation gate refused 3 time(s) in a row before question (last: STASH_PRESENT: 2 stash entr(ies)).']);
+  // The stop was asked as a loss. Nothing waits for the Operator about the gate: the only impediment is the Builder's own Question.
+  assert.deepEqual(h.execution.calls.filter(call => call.kind === 'stop').map(call => call.detail), ['loss']);
+  assert.deepEqual(lost.impediments.map(item => item.code), ['QUESTION_PENDING']);
+  assert.equal(lost.preservation, undefined, 'the gate confirmed nothing');
+  assert.equal(lost.pendingRecovery?.reason, 'interrupted:PRESERVATION_GATE_REFUSED');
+  const receipt = await h.control.accept({ request_id: 'answer-7', operation: 'answer', question_id: '11111111-2222-4333-8444-000000000001', text: 'Use docs/note.md', origin: 'local-cli' });
+  assert.equal('outcome' in receipt && receipt.outcome, 'accepted', JSON.stringify(receipt));
+  await h.settle('substitute ended', value => value?.execution?.executionId !== execution.executionId && value?.execution?.end?.outcome === 'completed' && !value.execution.slot.held);
+  const work = (await h.work())!;
+  const substitute = work.execution!;
+  assert.deepEqual([substitute.interruption?.reason, substitute.interruption?.code, substitute.charge?.kind, substitute.charge?.state], ['OPERATIONAL_RECOVERY', 'PRESERVATION_GATE_REFUSED', 'recovery', 'consumed']);
+  const package_ = h.activations().find(item => item.executionId === substitute.executionId)!;
+  assert.equal(package_.continuation, null);
+  assert.ok(package_.prompt.includes('was ended by the Factory because its work was not published (Ended by the Factory: the preservation gate refused 3 time(s) in a row before question'), package_.prompt);
+  // The answer already given travels with the package: it is never asked again.
+  assert.ok(package_.prompt.includes('Use docs/note.md'));
+  assert.deepEqual([substitute.preservationGate?.occasion, substitute.preservationGate?.attempts.map(item => item.outcome), work.preservation?.commit], ['substitute-end', ['accepted'], wip]);
 });
 
-test('an unreachable remote is refused under its own reason, returned to the Builder like any refusal, and blocks after three in a row', async t => {
+test('an unreachable remote is refused under its own reason, returned to the Builder like any refusal, and after three in a row the boot ends as a loss while the Question stays pending', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
   const h = await harness(t, remote, () => [ask()], { diskless: true });
   h.guest.remoteDown = true;
-  await h.settle('held', value => value?.execution?.state === 'held');
-  const execution = (await h.work())!.execution!;
+  await h.settle('loss recorded', value => value?.losses?.length === 1 && !value.execution?.slot.held);
+  const work = (await h.work())!;
+  const execution = work.execution!;
   assert.deepEqual(execution.preservationGate?.attempts.map(item => item.code), ['REMOTE_UNAVAILABLE', 'REMOTE_UNAVAILABLE', 'REMOTE_UNAVAILABLE']);
   assert.equal(h.kinds().filter(kind => kind === 'activate').length, 3, 'the Builder is asked to retry the publication: a remote that answers again passes');
+  assert.deepEqual([execution.end?.outcome, execution.end?.code, execution.credentialLifecycle?.state], ['failure', 'PRESERVATION_GATE_REFUSED', 'withdrawn']);
+  // The Question is recorded and still the only thing the Work waits for; the substitute starts after its answer.
+  assert.deepEqual(work.impediments.map(item => item.code), ['QUESTION_PENDING']);
+  assert.equal(work.pendingRecovery?.reason, 'interrupted:PRESERVATION_GATE_REFUSED');
+  assert.equal(h.kinds().filter(kind => kind === 'start').length, 1);
 });
 
 test('with a sandbox that declares a persistent disk no gate is asked and a Question ends as in the MVP', async t => {

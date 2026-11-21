@@ -20,7 +20,7 @@ Testes automáticos usam um fake do serviço Lambda MicroVMs: o CI não tem cont
 - [x] A primeira ativação num boot diferente do último que a sessão viu começa com o aviso fixo: ambiente recriado, commit de partida, e que arquivos ignorados, caches e dados do Docker não existem mais.
 - [x] A mesma sessão continua quando a ponta da branch no `origin` é o commit confirmado pelo gate ou descende dele; o aviso lista os commits novos.
 - [x] Retomada com commits de terceiros sobre o commit confirmado: mesma sessão, commits listados no aviso (gate de validação da spec, não provado no protótipo).
-- [ ] Histórico reescrito ou branch ausente segue a regra de divergência do MVP, sem regra nova.
+- [x] Histórico reescrito: o Controle segue o remoto com uma sessão substituta que recebe o aviso de que o histórico mudou, consumindo uma retomada operacional, sem Pergunta. Branch ausente: Pergunta comum, recomeçar da base ou encerrar o Trabalho. (Decisão do Operador em 2026-11-21, V2-11 emendado; antes: "segue a regra de divergência do MVP, sem regra nova". Implementado no ticket 13, que substitui o bloqueio descrito abaixo.)
 - [x] Ativações seguintes no mesmo boot não repetem o aviso.
 - [x] A retomada após espera não consome retomada operacional.
 
@@ -102,3 +102,11 @@ muda o contrato (o que se propõe quando não há resultado local): precisa de d
 `npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 12, 14 e 15): 2068 testes,
 2046 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
 `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+### Emenda de 2026-11-21 (decisão do Operador, implementada no ticket 13)
+
+A seção "Critério não marcado: divergência" e o bloqueio `RECOVERY_CONTEXT_INSUFFICIENT` com `ORIGIN_HISTORY_REWRITTEN` / `ORIGIN_BRANCH_ABSENT`
+deixaram de valer neste perfil. Decisão 8 do Operador: histórico reescrito segue o remoto com sessão substituta, aviso de histórico alterado
+e uma retomada operacional, sem Pergunta; branch ausente abre uma Pergunta comum (`restart` ou `end`). `PRESERVED_BRANCH_CHANGED` continua
+bloqueando. Os dois cenários de bloqueio de `test/control/boot-resume-flow.test.ts` foram substituídos por três cenários da decisão. Seams e
+limites no Answer do ticket 13.

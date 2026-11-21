@@ -55,25 +55,20 @@ test('V2-21: Control records the indeterminate effects the sandbox reports for t
   assert.deepEqual(work.impediments.filter(item => item.code === 'SANDBOX_CHANNEL_UNRECOVERABLE'), []);
 });
 
-test('V2-21: reconnection that reached its limit ends the Execution as a visible impediment of the Work; nothing is retried automatically', async t => {
-  const report: ChannelReport = { indeterminateEffects: [effect('call-9', 'channel-unrecoverable')], unrecoverable: { at: '2026-11-21T10:01:00.000Z', attempts: 5 } };
-  const h = await harness(t, [{ kind: 'fail', code: 'WORKER_INTERRUPTED' }, { kind: 'complete' }], { ...base, channelRecovery: true }, () => report);
-  await h.until(async () => (await h.work())?.execution?.dispatch.phase === 'stopped', 'execution ended and its boot stopped');
+test('V2-21 + Operator decision 6: reconnection that reached its limit ends the Execution and its boot, and the Work retries by itself through ONE operational recovery, with no impediment', async t => {
+  const boots: string[] = [];
+  const report = (boot: string): ChannelReport => { if (!boots.includes(boot)) boots.push(boot); return boot === boots[0]
+    ? { indeterminateEffects: [effect('call-9', 'channel-unrecoverable')], unrecoverable: { at: '2026-11-21T10:01:00.000Z', attempts: 5 } } : { indeterminateEffects: [], unrecoverable: null }; };
+  const h = await harness(t, [{ kind: 'fail', code: 'WORKER_INTERRUPTED' }, { kind: 'complete' }], { ...base, channelRecovery: true }, () => report(h.asked.at(-1)!.boot));
+  await h.until(async () => (await h.work())?.execution?.end?.outcome === 'completed', 'second execution completed');
   const work = await h.work();
-  assert.deepEqual([work.execution!.end?.outcome, work.execution!.end?.code], ['failure', 'SANDBOX_CHANNEL_UNRECOVERABLE']);
-  const impediment = work.impediments.find(item => item.code === 'SANDBOX_CHANNEL_UNRECOVERABLE');
-  assert.ok(impediment, JSON.stringify(work.impediments));
-  assert.equal(impediment.scope, 'work');
-  assert.match(impediment.nextStep, /5 attempts/);
-  assert.match(impediment.nextStep, /may still be running|may have happened/);
-  assert.deepEqual(work.execution!.indeterminateEffects?.map(item => [item.callId, item.outcome]), [['call-9', 'channel-unrecoverable']]);
-  // No loop: no operational recovery is opened for it and no second Execution starts.
-  assert.equal(work.pendingRecovery ?? null, null);
-  for (let round = 0; round < 3; round += 1) { h.time.advance(); await h.time.sleeping(); }
-  const later = await h.work();
-  assert.equal(h.doubles.calls('start').length, 1);
-  assert.equal(later.execution!.executionId, work.execution!.executionId);
-  assert.ok(later.impediments.some(item => item.code === 'SANDBOX_CHANNEL_UNRECOVERABLE'));
+  const first = work.previousExecutions!.at(-1)!;
+  assert.deepEqual([first.end?.outcome, first.end?.code], ['failure', 'SANDBOX_CHANNEL_UNRECOVERABLE']);
+  assert.deepEqual(first.indeterminateEffects?.map(item => [item.callId, item.outcome]), [['call-9', 'channel-unrecoverable']], 'the uncertain effects stay on the Execution they happened in');
+  assert.deepEqual(work.impediments, [], 'no impediment: nothing waits for the Operator');
+  assert.deepEqual([h.doubles.calls('start').length, work.budget!.recoveries.consumed, work.pendingRecovery ?? null], [2, 1, null], 'one new boot, one operational recovery');
+  // This sandbox declares a persistent disk: the workspace survives the boot, so ending it loses nothing and no loss is recorded.
+  assert.equal(work.losses, undefined);
 });
 
 test('a sandbox that does not declare channel recovery is never asked for a report (the MVP behaviour is unchanged)', async t => {

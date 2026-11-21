@@ -32,7 +32,8 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
     failure?: string } |
   { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' } |
   /** v2 ticket 07: the Builder asks the human (no handoff happened) leaving `head` checked out in the guest. */
-  { kind: 'ask'; head: string; question: string; questionId: string } |
+  { kind: 'ask'; head: string; question: string; questionId: string;
+    /** v2 ticket 13: what the Builder does before it asks (for example a push of what it concluded). */ during?: (remote: Remote, activation: Activation) => void } |
   /**
    * v2 ticket 09: the Builder works (leaving `head` checked out and `dirty` uncommitted paths) until it yields for a boot swap: at the
    * Host's `boot-swap` directive (`directive`), only once the sandbox interrupted its call (`interrupt`), or never (`never`: it runs until
@@ -156,6 +157,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         }
         if (script.kind === 'ask') {
           guest.head = script.head;
+          script.during?.(remote, activation);
           const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: createHash('sha256').update(JSON.stringify({ question: script.question, context: '' })).digest('hex'),
             reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
           const completed = Promise.resolve().then(async () => {

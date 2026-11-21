@@ -114,8 +114,10 @@ mudar de identidade, e dois boots seguidos sem commit novo publicado bloqueiam o
 - **V2-14 entre Execuções** (duas perdas seguidas, cada uma numa Execução): coberto pela regra pura e pelo registro por Trabalho; o cenário
   de fluxo só tem a primeira perda (a segunda exigiria a espera de retomada no calendário).
 - Boot cuja morte ninguém registrou em vida (crash do controlador, reconciliação de boot do ticket 15) não entra em `work.bootLedger`.
-- Três recusas do gate na troca seguem o ticket 07 como está (hold `PRESERVATION_GATE_REFUSED`, boot vivo, `swaps[].outcome = 'held'`); a
-  decisão 7 do Operador (três recusas viram perda) não foi implementada aqui. Nesse hold o relógio de boot do Controle para com a Execução.
+- **Três recusas do gate na troca (decisão 7, depois do merge do ticket 13):** `preservationGate('planned-swap')` devolve `lost` e a troca
+  chama `endAsLoss(gateRefusedCode)`: boot encerrado como perda, `work.losses[]`, `swaps[].outcome = 'lost'`, boot no registro do V2-14 e
+  substituta pela fila. `endAsLoss` e o fim por canal irrecuperável passaram a chamar `noteBootEnd('loss')`, então TODA perda entra no
+  registro do V2-14. O fim do boot pelo relógio usa o ramo de ambiente encerrado, cujo registro de perda é o do ticket 12.
 - Builder suspenso em revisão quando a margem é cruzada: a rodada segue; se os resultados chegarem a tempo ele cede em seguida, senão o
   boot acaba e vale a perda. Na metade da margem só a chamada do Builder é interrompida, nunca a de um revisor. As fases depois da
   ativação de trabalho (publicação no boot, gate do fim) não são trocadas: se passarem da duração, é perda.
@@ -125,8 +127,8 @@ mudar de identidade, e dois boots seguidos sem commit novo publicado bloqueiam o
 
 ### O que os tickets seguintes precisam saber
 
-- **13 (substituta) / decisão 7:** ao transformar três recusas do gate em perda, chamar `noteBootEnd('loss')` (em `execute`) para o boot
-  entrar no registro do V2-14; ele também fecha a troca aberta como `lost`. `preservationGate('substitute-end')` não mudou.
+- **Quem criar outro caminho de perda:** chamar `noteBootEnd('loss', código)` (em `execute`) antes do `recordEnd`, para o boot entrar no
+  registro do V2-14 e uma troca aberta fechar como `lost`.
 - **13:** `execution.swaps[]` diz em que boot a sessão estava e se uma chamada foi interrompida; `execution.invocationId` é a ÚLTIMA
   ativação de trabalho da Execução, as anteriores estão em `swaps[].yieldedInvocationId`.
 - **14:** nada a fazer; o boot da troca é iniciado com `reason: 'planned-swap'` e parado com `planned-swap`.

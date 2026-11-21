@@ -42,12 +42,15 @@ const canonical = (policies: Facts['policies']) => Object.fromEntries(Object.ent
  * intact and compatible by the Host, with the same pack identity and Host policies; every other case replaces it with its reason.
  */
 export function sessionDecision(input: { previous: Facts & { session: SessionRef | null;
-  /** v2 ticket 12 (V2-17): the environment of the previous Execution was lost. Its session is evidence: it is never continued. */ environmentLost?: boolean };
+  /** v2 ticket 12 (V2-17): the environment of the previous Execution was lost. Its session is evidence: it is never continued. */ environmentLost?: boolean;
+  /** v2 ticket 13 (Operator decision 8): the Work branch on `origin` no longer continues what the session knew: it is replaced, never continued. */
+  originChanged?: 'ORIGIN_HISTORY_REWRITTEN' | 'ORIGIN_BRANCH_ABSENT' | null };
   next: Facts; observation: SessionObservation | null }):
   { mode: 'continue'; reason: 'SESSION_COMPATIBLE' } | { mode: 'replace'; reason: 'SESSION_NOT_RECORDED' | 'SESSION_OBSERVATION_NOT_COMPOSED' | 'SESSION_LOST' | 'SESSION_ALTERED' |
-    'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' | 'SESSION_CONTINUATION_UNSUPPORTED' | 'ENVIRONMENT_LOST' } {
+    'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' | 'SESSION_CONTINUATION_UNSUPPORTED' | 'ENVIRONMENT_LOST' | 'ORIGIN_HISTORY_REWRITTEN' | 'ORIGIN_BRANCH_ABSENT' } {
   // Before anything else: a session that worked on an environment that no longer exists describes a workspace that is gone.
   if (input.previous.environmentLost) return { mode: 'replace', reason: 'ENVIRONMENT_LOST' };
+  if (input.previous.originChanged) return { mode: 'replace', reason: input.previous.originChanged };
   if (!input.previous.session) return { mode: 'replace', reason: 'SESSION_NOT_RECORDED' };
   if (!input.observation) return { mode: 'replace', reason: 'SESSION_OBSERVATION_NOT_COMPOSED' };
   const observed = input.observation;
@@ -76,13 +79,15 @@ export function recoveryContext(input: { previous: Git; prepared: Git & { reused
    * Control read on `origin` (the caller blocks a divergence before any boot); `unconfirmed` (no gate-confirmed commit) is sufficient
    * only after an interruption, which never had a gate.
    */
-  recreated?: { continuity: 'continuous' | 'unconfirmed'; interruption?: boolean } }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean;
+  recreated?: { continuity: 'continuous' | 'unconfirmed' | /* v2 ticket 13, decision 8: the remote is followed, or the Work restarts from the base */ 'rewritten' | 'restarted'; interruption?: boolean } }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean;
   /** Ticket 22: an open correction with effective impediments of the own PR. */ repair?: boolean } }):
   { sufficient: true } | { sufficient: false; reasons: string[] } {
   const reasons: string[] = [];
   if (!input.previous.baseCommit || !input.previous.branch || !input.previous.checkout) reasons.push('PREVIOUS_GIT_CONTEXT_MISSING');
-  else if (input.previous.baseCommit !== input.prepared.baseCommit || input.previous.branch !== input.prepared.branch || input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
-  else if (input.prepared.recreated) { if (input.prepared.recreated.continuity !== 'continuous' && !input.prepared.recreated.interruption) reasons.push('PRESERVED_COMMIT_NOT_RECORDED'); }
+  // (A Work restarted from the base by the Operator's answer, decision 8, has a new base commit by definition.)
+  else if ((input.previous.baseCommit !== input.prepared.baseCommit && input.prepared.recreated?.continuity !== 'restarted') || input.previous.branch !== input.prepared.branch ||
+    input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
+  else if (input.prepared.recreated) { if (input.prepared.recreated.continuity === 'unconfirmed' && !input.prepared.recreated.interruption) reasons.push('PRESERVED_COMMIT_NOT_RECORDED'); }
   else if (!input.prepared.reused) reasons.push('PREVIOUS_ENVIRONMENT_NOT_REUSED');
   if (!input.trigger.answer && input.trigger.scopeUpdates === 0 && !input.trigger.publication && !input.trigger.repair) reasons.push('RESUME_TRIGGER_MISSING');
   return reasons.length ? { sufficient: false, reasons } : { sufficient: true };

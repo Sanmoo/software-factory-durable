@@ -283,13 +283,19 @@ entram no filtro: confira também o total do serviço na conta dedicada.
 
 ### Recusa por quota ao iniciar
 
-Quando o serviço recusa o `RunMicrovm` por quota ou capacidade, nada inicia e nada é consumido. O
-Trabalho mostra o impedimento com a causa devolvida pelo serviço e não tenta de novo sozinho.
-Confira o que está ocupando a quota (boots de outros Trabalhos, MicroVMs deixadas para trás) e o
-que o `factory doctor` diz sobre concorrência contra a quota; depois peça o retry indicado no
-impedimento (`factory resume <trabalho> --retry-blocked-start START_SERVICE_CAPACITY_REFUSED
---request-id <id>`), que **não consome retomada operacional**, ou cancele o Trabalho. O nome do erro
-de quota do serviço nunca foi observado: a classificação fica num único ponto do adapter.
+Quando o serviço recusa o `RunMicrovm` por quota ou capacidade, nada inicia e nada é consumido, e a
+Factory espera e tenta de novo sozinha: não há impedimento, não há comando a executar e nenhuma
+retomada operacional é consumida. O Trabalho mantém a posição na fila atrás de uma espera persistida
+de 15 s, depois 60 s, depois 300 s repetidos enquanto a recusa continuar (a mesma espera de falta de
+memória ou disco do host); a espera volta ao início quando um boot inicia. A causa fica visível em
+`factory show <trabalho>`: motivo de despacho `BOOT_CAPACITY_WAIT`, o campo `bootDeferral` (código
+`START_SERVICE_CAPACITY_REFUSED`, a causa devolvida pelo serviço em `detail`, `notBefore`, tentativa)
+e o evento `boot-deferred` no histórico.
+
+Se a espera não termina, confira o que está ocupando a quota (boots de outros Trabalhos, MicroVMs
+deixadas para trás) e o que o `factory doctor` diz sobre concorrência contra a quota; liberar a quota
+basta, a próxima tentativa acontece sozinha. `factory cancel <trabalho>` continua disponível. O nome
+do erro de quota do serviço nunca foi observado: a classificação fica num único ponto do adapter.
 
 ## 10. Perda e ref de marcador
 
@@ -299,6 +305,14 @@ o serviço confirma o fim de um ambiente em uso, a Factory registra uma **perda*
 boot, o motivo informado pelo serviço, o último commit confirmado (a ponta da branch do Trabalho lida
 pela própria Factory no `origin` naquele momento), o tempo da Execução e a sessão antiga, que fica
 guardada como evidência e nunca é continuada.
+
+O mesmo registro é feito quando o canal de ferramentas cai com a MicroVM viva e não volta dentro do
+limite de reconexão (5 tentativas): a Execução termina como `SANDBOX_CHANNEL_UNRECOVERABLE`, a
+Factory encerra o boot inalcançável e o Trabalho volta sozinho pela fila num boot novo, com sessão
+substituta, consumindo uma retomada operacional. Não há impedimento. Como o ambiente estava vivo mas
+inalcançável, o que ele tinha e não estava no `origin` é perdido quando o boot é encerrado: a perda
+traz esse motivo e `terminatedAt` nulo (foi a Factory que encerrou, não o serviço). O limite contra
+repetição é o orçamento de retomadas operacionais do Trabalho.
 
 Como melhor esforço, o hook de término do guest empurra o `HEAD` commitado para
 `refs/factory/lost/<trabalho>/<boot>`. O hook não aceita nenhum parâmetro de quem o chama: só aciona

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
-import type { ControlReceipt, ExecutionView, ListView, WorkView } from '../../src/control/types.js';
+import type { ControlReceipt, ExecutionView, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { app, executionDoubles, publishOwn, pushWip, sessionRef, type Activation, type GuestWorkspace, type Script } from './publication-doubles.js';
 import { untilHolds } from '../runner/budget.js';
@@ -25,7 +25,8 @@ async function waiting(t: { after(fn: () => Promise<void>): void }, after: (gues
   execution.guest.untracked = 1;
   execution.guest.restored = { restored: ['spec/v1', 'instructions/v1'], from: 'boot-of-the-question', lost: [] };
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
+  let calendar = 0;
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...execution.ports, calendar: { now: () => Date.now() + calendar } },
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'], factoryApp: async () => app },
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
@@ -34,7 +35,7 @@ async function waiting(t: { after(fn: () => Promise<void>): void }, after: (gues
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
   const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => untilHolds(label, async () => {
     if (predicate(await work())) return true;
-    if (time.isSleeping()) time.advance();
+    if (time.isSleeping()) { calendar += 60000; time.advance(); }
     return false;
   }, 5);
   await settle('question ended with the gate accepted', value => value?.execution?.end?.outcome === 'question' && value.execution.end.cessation === 'confirmed' && !value.execution.slot.held);
@@ -46,7 +47,10 @@ async function waiting(t: { after(fn: () => Promise<void>): void }, after: (gues
   const activations = () => execution.calls.filter(call => call.kind === 'activate').map(call => call.detail as Activation);
   const kinds = () => execution.calls.map(call => call.kind).filter(kind => ['prepare', 'start', 'activate', 'gate', 'stop'].includes(kind));
   const recoveries = async () => { const shown = await control.inspect({ kind: 'show', work_id: asked.work_id }); return 'work' in shown ? shown.work.budget?.recoveries.consumed : undefined; };
-  return { remote, asked, work, settle, answer, starts, activations, kinds, recoveries, guest: execution.guest, branch: asked.branch! };
+  const reply = async (question_id: string, text: string, request_id: string) => { const receipt = (await control.accept({ request_id, operation: 'answer', question_id, text, origin: 'local-cli' })) as ControlReceipt;
+    assert.equal('outcome' in receipt && receipt.outcome, 'accepted', JSON.stringify(receipt)); };
+  const question = async (questionId: string) => { const shown = await control.inspect({ kind: 'show', work_id: asked.work_id }); return (shown as Extract<ShowView, { kind: 'work' }>).questions.find(item => item.questionId === questionId)!; };
+  return { remote, asked, work, settle, answer, reply, question, starts, activations, kinds, recoveries, guest: execution.guest, branch: asked.branch! };
 }
 const resumed = (asked: WorkView) => (value: WorkView | undefined) => Boolean(value?.execution && value.execution.executionId !== asked.execution!.executionId && value.execution.start);
 
@@ -101,27 +105,87 @@ test('commits of someone else on top of the confirmed commit keep the same sessi
   assert.equal(await h.recoveries(), 0);
 });
 
-for (const [name, change, reason] of [
-  ['rewritten history', (h: Awaited<ReturnType<typeof waiting>>) => { h.remote.refs![h.branch] = other;
-    h.remote.comparisons = { [`${wip}...${other}`]: { state: 'complete', from: wip, to: other, status: 'diverged', aheadBy: 1, behindBy: 1, commits: [], files: [], truncated: false } }; }, 'ORIGIN_HISTORY_REWRITTEN'],
-  ['a missing branch', (h: Awaited<ReturnType<typeof waiting>>) => { delete h.remote.refs![h.branch]; }, 'ORIGIN_BRANCH_ABSENT'],
-] as const) {
-  test(`${name} is a divergence: no boot is started from another commit, no Builder is activated and the Work is blocked for an explicit decision`, async t => {
-    const h = await waiting(t);
-    change(h);
-    await h.answer();
-    await h.settle('blocked', value => value?.impediments.some(item => item.code === 'RECOVERY_CONTEXT_INSUFFICIENT'));
-    const work = (await h.work())!;
-    assert.equal(h.starts().length, 1, 'only the boot of the Question ever started');
-    assert.equal(h.activations().length, 2);
-    const impediment = work.impediments.find(item => item.code === 'RECOVERY_CONTEXT_INSUFFICIENT')!;
-    assert.ok(impediment.nextStep.includes(reason), impediment.nextStep);
-    assert.ok(impediment.nextStep.includes(wip));
-    assert.deepEqual([work.execution?.state, work.execution?.slot.held, work.execution?.held?.code], ['released', false, 'RECOVERY_CONTEXT_INSUFFICIENT']);
-    assert.equal(work.preservation?.commit, wip, 'the confirmed commit stays on the record');
-    assert.equal(await h.recoveries(), 0);
-  });
-}
+// Operator decision 8 of 2026-11-21 (amends V2-11 where the sandbox keeps no disk; replaces ticket 08's block).
+const rewrite = (h: Awaited<ReturnType<typeof waiting>>) => { h.remote.refs![h.branch] = other;
+  h.remote.comparisons = { [`${wip}...${other}`]: { state: 'complete', from: wip, to: other, status: 'diverged', aheadBy: 1, behindBy: 1, commits: [], files: [], truncated: false } }; };
+
+test('decision 8: rewritten history is followed: a SUBSTITUTE session starts at the new tip with the notice that the history changed, on one operational recovery, without a Question', async t => {
+  const h = await waiting(t, () => [{ kind: 'implement', head }, { kind: 'publish', publish: publishOwn(), end: 'success' }]);
+  rewrite(h);
+  await h.answer();
+  // To the end: the substitute's verified commit is published on top of the followed tip, which is not taken for an unknown change.
+  await h.settle('published on the followed history', value => Boolean(value?.execution?.bootNotice) && value?.publication?.state === 'published');
+  assert.equal(h.remote.refs![h.branch], head);
+  const work = (await h.work())!;
+  const execution = work.execution!;
+  // The Execution that found the rewrite never started anything: released, and the Work came back as ONE operational recovery.
+  const found = work.previousExecutions.at(-1)!;
+  assert.deepEqual([found.state, found.held?.code, found.start, found.dispatch.boot], ['released', 'ORIGIN_HISTORY_REWRITTEN', null, null]);
+  assert.deepEqual([execution.charge?.kind, execution.charge?.state, await h.recoveries()], ['recovery', 'consumed', 1]);
+  assert.deepEqual(work.originDivergence && [work.originDivergence.kind, work.originDivergence.confirmed, 'current' in work.originDivergence && work.originDivergence.current], ['history-rewritten', wip, other]);
+  // The boot follows the remote: it starts at the rewritten tip.
+  assert.deepEqual(h.starts().map(item => item?.commit), [main, other]);
+  // A substitute session, never the old one; its first prompt starts with the notice naming both refs.
+  const substitute = h.activations()[2]!;
+  assert.deepEqual([substitute.phaseId, substitute.continuation, execution.request.session?.mode, execution.request.session?.reason], ['builder-recovery', null, 'replace', 'ORIGIN_HISTORY_REWRITTEN']);
+  assert.ok(substitute.prompt.startsWith('Factory notice (new boot): this environment was RECREATED'), substitute.prompt.slice(0, 200));
+  assert.ok(substitute.prompt.includes(`HISTORY CHANGED: the history of ${h.branch} on origin was rewritten while no environment existed. The commit the Factory confirmed before the previous boot ended (${wip}) is NOT an ancestor of the current tip (${other}).`));
+  assert.ok(substitute.prompt.includes(`Starting commit: ${other}`));
+  assert.ok(substitute.prompt.includes('Use docs/note.md'), 'the accepted answer still reaches the new session');
+  assert.deepEqual([execution.bootNotice?.origin, execution.bootNotice?.confirmed, execution.bootNotice?.startCommit], ['rewritten', wip, other]);
+  // No Question was asked about it and nothing blocks.
+  assert.equal(work.questions?.length, 1);
+  assert.deepEqual(work.impediments, []);
+});
+
+test('decision 8: a missing branch asks an ordinary Question; "restart" restarts the Work from the base with a substitute session and no operational recovery', async t => {
+  const h = await waiting(t, () => [{ kind: 'implement', head }, { kind: 'publish', publish: publishOwn(), end: 'success' }]);
+  delete h.remote.refs![h.branch];
+  await h.answer();
+  await h.settle('asked', value => value?.originDivergence?.kind === 'branch-absent' && value.impediments.some(item => item.code === 'QUESTION_PENDING'));
+  const asked = (await h.work())!;
+  assert.equal(h.starts().length, 1, 'only the boot of the first Question ever started');
+  assert.equal(h.activations().length, 2);
+  assert.deepEqual([asked.execution?.state, asked.execution?.slot.held, asked.execution?.held?.code], ['released', false, 'ORIGIN_BRANCH_ABSENT']);
+  const divergence = asked.originDivergence as Extract<NonNullable<WorkView['originDivergence']>, { kind: 'branch-absent' }>;
+  assert.deepEqual([divergence.state, divergence.confirmed, divergence.branch], ['awaiting-answer', wip, h.branch]);
+  assert.deepEqual(asked.impediments.map(item => item.code), ['QUESTION_PENDING']);
+  const shown = await h.question(divergence.questionId);
+  assert.match(shown.content.question, /no longer exists on origin/);
+  assert.match(shown.content.question, /Reply exactly "restart" to restart the Work from the tip of the base main .* or exactly "end" to end the Work/);
+  assert.ok(shown.content.question.includes(wip));
+  // An answer that is neither keyword decides nothing: asked again.
+  await h.reply(divergence.questionId, 'maybe later', 'r1');
+  await h.settle('asked again', value => { const current = value?.originDivergence; return current?.kind === 'branch-absent' && current.questionId !== divergence.questionId && current.state === 'awaiting-answer'; });
+  const again = (await h.work())!.originDivergence as typeof divergence;
+  assert.equal(h.starts().length, 1);
+  await h.reply(again.questionId, 'restart', 'r2');
+  await h.settle('restarted', value => Boolean(value?.execution?.start && value.execution.bootNotice));
+  const work = (await h.work())!;
+  const execution = work.execution!;
+  assert.deepEqual(h.starts().at(-1), { repository: 'acme/project', installationId: scope.installationId, commit: main, branch: h.branch });
+  const substitute = h.activations()[2]!;
+  assert.deepEqual([substitute.phaseId, substitute.continuation, execution.request.session?.reason, execution.bootNotice?.origin], ['builder-recovery', null, 'ORIGIN_BRANCH_ABSENT', 'restarted']);
+  assert.ok(substitute.prompt.includes(`BRANCH GONE: ${h.branch} no longer exists on origin`));
+  assert.ok(substitute.prompt.includes('The Operator answered to RESTART the Work from the base'));
+  assert.ok(substitute.prompt.includes(`Starting commit: ${main} (the tip of the base main on origin`));
+  assert.equal((work.originDivergence as typeof divergence).state, 'restart-authorized');
+  assert.equal(await h.recoveries(), 0);
+});
+
+test('decision 8: a missing branch answered "end" ends the Work: cancelled, nothing started', async t => {
+  const h = await waiting(t);
+  delete h.remote.refs![h.branch];
+  await h.answer();
+  await h.settle('asked', value => value?.originDivergence?.kind === 'branch-absent' && value.impediments.some(item => item.code === 'QUESTION_PENDING'));
+  const divergence = (await h.work())!.originDivergence as Extract<NonNullable<WorkView['originDivergence']>, { kind: 'branch-absent' }>;
+  await h.reply(divergence.questionId, 'end', 'r1');
+  await h.settle('cancelled', value => value?.result === 'cancelled');
+  const work = (await h.work())!;
+  assert.equal(h.starts().length, 1);
+  assert.equal(h.activations().length, 2);
+  assert.deepEqual([(work.originDivergence as typeof divergence).state, work.cancellation?.state, work.execution?.slot.held], ['end-authorized', 'ceased', false]);
+});
 
 test('an ancestry that could not be read decides nothing: no boot starts, and the resume happens once it is readable', async t => {
   const h = await waiting(t, () => [{ kind: 'implement', head }, { kind: 'publish', publish: publishOwn(), end: 'success' }]);

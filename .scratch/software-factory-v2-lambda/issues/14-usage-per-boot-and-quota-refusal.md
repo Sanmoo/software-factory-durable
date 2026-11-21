@@ -93,3 +93,25 @@ O que os tickets seguintes precisam saber:
 - **15 (reconciliação):** ao encerrar uma órfã por tag, gravar o fim pelo caminho de `observeLambdaBoot`/`stopLambdaBoot` preenche
   `end.seconds`; `image-builds.jsonl` não deve ser apagado pelo cleanup de imagens (é o histórico de builds por chave).
 - **16 (aceite):** o código de recusa do Iniciar é `SERVICE_CAPACITY_REFUSED`.
+
+## Comments
+
+**2026-11-21 — Decisão 5 do Operador substitui a recusa por quota bloqueante (branch `implement/v2-lambda-fix-autonomy`).**
+A recusa do serviço por quota ou capacidade ao iniciar deixou de ser impedimento: `START_SERVICE_CAPACITY_REFUSED` entrou em
+`bootCapacityCodes` (`src/control/rules/recovery.ts`) e segue a espera de capacidade do ticket 50. Nada inicia, Slot e reserva são
+liberados, nenhuma retomada operacional é aberta ou consumida e a Factory tenta de novo sozinha.
+
+- **Espera, não laço.** `applyBootDeferral` grava `work.bootDeferral` com `notBefore`; o despacho recusa o Trabalho com
+  `BOOT_CAPACITY_WAIT` até lá (`durable/execution.ts`). 15 s, 60 s, depois 300 s repetidos enquanto a recusa continuar; zera quando
+  um boot inicia. O teste de fluxo confere que não há tentativa dentro da espera e que a segunda recusa espera 60 s.
+- **Causa visível.** `bootDeferral.detail` (campo novo) e o evento `boot-deferred` trazem a causa devolvida pelo serviço, junto do código.
+- **Removido.** `serviceCapacityCodes` / `isServiceCapacityRefusal`, o texto próprio em `blockedStartImpediment` e o valor
+  `'not-required'` de `blockedStart.retry.recoveryRequest`. `factory resume --retry-blocked-start START_SERVICE_CAPACITY_REFUSED`
+  responde `not-applied` / `RECOVERY_NOT_BLOCKED` (não há bloqueio); o comando genérico do ticket 50 continua para os outros códigos.
+- **Não há teto de tentativas:** a espera repete a cada 300 s enquanto a quota faltar; a saída manual é `factory cancel`.
+- Critério "impedimento visível do início" deste ticket e o texto da V2-30 passam a ser lidos como espera visível (nota na spec).
+  `docs/lambda-installation.md` (seção da recusa por quota) atualizado.
+- Testes: `test/control/usage14-flow.test.ts` (reescrito, vermelho antes da troca), `test/control/retry50-rules.test.ts`.
+
+`npm run test:ci` (2026-11-21, branch `implement/v2-lambda-fix-autonomy`): 2089 testes, 2067 passam, 17 pulados, 5 falham, resultado FAIL. As 5
+falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).

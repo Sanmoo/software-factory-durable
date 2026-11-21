@@ -14,7 +14,8 @@ const facts = (change: Partial<StartRetryFacts> = {}, execution: Partial<NonNull
 const outcome = (value: StartRetryFacts) => { const decided = retryBlockedStartDecision(value); return decided.kind === 'accept' ? 'accept' : decided.code; };
 
 test('AC1: lack of memory/disk at boot or preparation is transient (no block), with a growing persisted capacity wait', () => {
-  for (const item of ['START_INSUFFICIENT_MEMORY_FOR_BOOT', 'START_INSUFFICIENT_STORAGE_FOR_BOOT', 'PREPARE_INSUFFICIENT_STORAGE_FOR_PREPARATION']) {
+  // v2 (Operator decision 5): the sandbox service's quota/capacity refusal waits the same way.
+  for (const item of ['START_INSUFFICIENT_MEMORY_FOR_BOOT', 'START_INSUFFICIENT_STORAGE_FOR_BOOT', 'PREPARE_INSUFFICIENT_STORAGE_FOR_PREPARATION', 'START_SERVICE_CAPACITY_REFUSED']) {
     assert.ok(isBootCapacityRefusal(item), item);
     assert.deepEqual(classifyInterruption(item), { kind: 'recoverable' }, item);
     assert.equal(blockingStartRefusal(item), false, `${item} never needs an operator retry`);
