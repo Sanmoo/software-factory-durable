@@ -1,6 +1,9 @@
+import { fileURLToPath } from 'node:url';
+
 // TEST ONLY fixed source-as-DATA pins from parent-approved Task140 audit.
 export const auditedVfsManifest = {
-  "root": "/home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/software-factory-mvp-05/node_modules/@earendil-works/gondolin",
+  // Resolve from dist/test/sandbox/fixtures in this checkout, not from the fixture process's cwd.
+  "root": fileURLToPath(new URL('../../../../node_modules/@earendil-works/gondolin', import.meta.url)),
   "version": "0.14.0",
   "aggregate": "3d2afe41db74a1b9db24305d69b160003b6e95cab6c790601156cea89b1bc54a",
   "files": [
