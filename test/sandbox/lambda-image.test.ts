@@ -203,13 +203,6 @@ test('an account that cannot be reached or refuses a permission leaves Prepare i
   await assert.rejects(readdir(join(root, 'lambda')), { code: 'ENOENT' });
 });
 
-test('start stays refused under the Lambda adapter', async t => {
-  const { sandbox, prepare } = await installation(t);
-  const prepared = await prepare(works.first);
-  assert.ok(prepared.status === 'success');
-  assert.deepEqual(await sandbox.start({ environment: prepared.environment, configuration }), { status: 'failure', code: 'SANDBOX_ADAPTER_UNAVAILABLE' });
-});
-
 test('the cause of a build failure is the failing step of the BuildKit log, bounded to one line', () => {
   assert.equal(buildFailureCause(failedBuildLog),
     "[3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99': ERROR: unable to select packages: maven-3.9.11-r0: breaks: world[maven=3.9.11-r99]");

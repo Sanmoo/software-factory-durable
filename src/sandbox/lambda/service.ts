@@ -19,6 +19,8 @@ export type LambdaServiceFailure = {
     | 'conflict'
     /** The service has no endpoint in the profile's region. */
     | 'region-unavailable'
+    /** Ticket 04: the service refused to run a MicroVM for lack of quota or capacity (shape not observed; classified in one place). */
+    | 'capacity'
     | 'unknown';
   /** `access-denied`: the IAM action that was refused, when the service named it. */
   action?: string;
@@ -39,6 +41,20 @@ export type LambdaImageRequest = { name: string; description: string; baseImageA
   architecture: LambdaArchitecture; minimumMemoryMiB: number; additionalOsCapabilities: readonly string[];
   hooks: { port: number; runTimeoutSeconds: number; terminateTimeoutSeconds: number; readyTimeoutSeconds: number };
   tags: Readonly<Record<string, string>> };
+
+/**
+ * Ticket 04: one RunMicrovm request. There is deliberately no execution role and no idle policy here: the guest runs without AWS
+ * credentials (V2-24) and automatic suspension stays off (V2-09), so neither can be requested through the port. Ingress is always
+ * `HTTP_INGRESS` and egress `INTERNET_EGRESS` (V2-20, V2-25). The image's latest active version is the one run.
+ */
+export type LambdaMicrovmRequest = { imageArn: string; maximumDurationSeconds: number;
+  /** The string handed to the guest's `run` hook: public material only (the session public key). */ runHookPayload: string;
+  tags: Readonly<Record<string, string>> };
+/** GetMicrovm. States the adapter decides on: `PENDING`, `RUNNING`, `TERMINATING`, `TERMINATED`; any other value is passed through. */
+export type LambdaMicrovm = { microvmId: string; state: string; endpoint?: string; imageArn?: string; imageVersion?: string; stateReason?: string;
+  /** ISO instants as the service gave them (with any offset); `terminatedAt` only once terminated. */ startedAt?: string; terminatedAt?: string };
+export const microvmIngress = 'HTTP_INGRESS';
+export const microvmEgress = 'INTERNET_EGRESS';
 
 export interface LambdaService {
   /** STS GetCallerIdentity: the account and principal ARN behind the named profile. */
@@ -66,6 +82,14 @@ export interface LambdaService {
   deleteImageVersion(input: { imageArn: string; version: string }): Promise<LambdaServiceResult<null>>;
   /** Lambda MicroVMs DeleteMicrovmImage (its versions first). Changes the account. */
   deleteImage(imageArn: string): Promise<LambdaServiceResult<null>>;
+  /** Lambda MicroVMs RunMicrovm: a NEW MicroVM of the image, with HTTP ingress and internet egress, no execution role, no idle suspension. Changes the account. */
+  runMicrovm(input: LambdaMicrovmRequest): Promise<LambdaServiceResult<{ microvmId: string; endpoint: string }>>;
+  /** Lambda MicroVMs GetMicrovm: the service's own view of one MicroVM, readable by any process holding the id. Eventually consistent. */
+  microvm(microvmId: string): Promise<LambdaServiceResult<LambdaMicrovm>>;
+  /** Lambda MicroVMs TerminateMicrovm: only REQUESTS the end (empty answer, idempotent); cessation is what a later `microvm` read says. Changes the account. */
+  terminateMicrovm(microvmId: string): Promise<LambdaServiceResult<null>>;
+  /** Lambda MicroVMs CreateMicrovmAuthToken: the ingress token of ONE port of one MicroVM. A secret; needed only to OPEN a connection. */
+  createAuthToken(input: { microvmId: string; port: number; expirationMinutes: number }): Promise<LambdaServiceResult<{ token: string }>>;
   /** The account's allocated-memory quota for MicroVMs of one architecture, in MiB. */
   allocatedMemoryQuota(architecture: LambdaArchitecture): Promise<LambdaServiceResult<{ mebibytes: number }>>;
 }

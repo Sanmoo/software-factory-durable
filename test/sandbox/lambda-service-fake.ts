@@ -1,4 +1,4 @@
-import { installationResources, type LambdaArchitecture, type LambdaImageRequest, type LambdaService, type LambdaServiceFactory, type LambdaServiceFailure,
+import { installationResources, type LambdaArchitecture, type LambdaImageRequest, type LambdaMicrovmRequest, type LambdaService, type LambdaServiceFactory, type LambdaServiceFailure,
   type LambdaServiceResult } from '../../src/sandbox/index.js';
 
 /**
@@ -36,7 +36,26 @@ export type FakeLambdaAccount = {
   objects: Record<string, Record<string, { body: Uint8Array; tags: Record<string, string> }>>;
   /** CloudWatch log groups written by the build role: lines per group. */
   logs: Record<string, string[]>;
+  /**
+   * Ticket 04: MicroVMs, including terminated ones (the service keeps listing them). A requested end becomes `TERMINATED` only
+   * `terminateSeconds` later (observed 4 to 8 s); `null`: the service never confirms within any wait. A MicroVM that outlives its maximum
+   * duration is ended by the service itself. `kill(id)` ends one at once, as a loss.
+   */
+  microvms: FakeLambdaMicrovm[];
+  terminateSeconds: number | null;
+  /** Seconds a new MicroVM stays `PENDING`. */
+  pendingSeconds: number;
+  /** When set, the `run` hook of every MicroVM started from now on fails: it goes to `TERMINATING` without ever being `RUNNING`. */
+  runHookFails: boolean;
+  /** When set, RunMicrovm is refused with this failure (quota, capacity). */
+  runRefusal: LambdaServiceFailure | null;
+  /** Ingress tokens issued: one MicroVM, one port, an expiry in account time. */
+  tokens: { token: string; microvmId: string; port: number; expiresAt: number }[];
 };
+export type FakeLambdaMicrovm = { microvmId: string; endpoint: string; imageArn: string; imageVersion: string; state: string; stateReason?: string;
+  request: LambdaMicrovmRequest; startedAt: number; runningAt: number; terminatedAt?: number; terminatesAt?: number;
+  /** The proofs never saw these on a Factory MicroVM; the fake has them so a test can assert they stay absent. */ executionRole: null; idlePolicy: null;
+  ingress: string[]; egress: string[] };
 export type FakeLambdaImage = { name: string; state: string; imageArn: string; tags?: Record<string, string>; version?: string; request?: LambdaImageRequest;
   readyAt?: number; failure?: string[] | null;
   /** One CreateMicrovmImage request gives two build records (Graviton 3 and 4), as observed. */
@@ -53,6 +72,7 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
     regions: [region], roles: [resources.operationRole, resources.buildRole], buckets: { [resources.artifactBucket]: region },
     denied: [], memoryQuotaMiB: { arm64: 8192, x86_64: 8192 }, images: [],
     clock: { now: Date.UTC(2026, 10, 21) }, buildSeconds: 130, failedBuildSeconds: 53, buildFailure: null, objects: {}, logs: {},
+    microvms: [], terminateSeconds: 5, pendingSeconds: 1, runHookFails: false, runRefusal: null, tokens: [],
   };
   const calls: FakeLambdaCall[] = [];
   const mutations: FakeLambdaCall[] = [];
@@ -67,7 +87,30 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
       image.builds = (image.builds ?? []).map(build => ({ ...build, state: failed ? 'FAILED' : 'SUCCESSFUL', ...(failed ? { stateReason: genericFailure } : {}) }));
       world.logs[`/aws/lambda-microvms/${image.name}`] = image.failure ?? ['#1 [internal] load build definition from Dockerfile\n', '#1 DONE 0.0s\n'];
     }
+    for (const microvm of world.microvms) {
+      if (microvm.state === 'TERMINATED') continue;
+      const lifetimeEnd = microvm.startedAt + microvm.request.maximumDurationSeconds * 1000;
+      if (microvm.terminatesAt !== undefined && world.clock.now >= microvm.terminatesAt) {
+        Object.assign(microvm, { state: 'TERMINATED', terminatedAt: microvm.terminatesAt, stateReason: microvm.stateReason ?? 'Success.' });
+      } else if (microvm.terminatesAt === undefined && world.clock.now >= lifetimeEnd) {
+        Object.assign(microvm, { state: 'TERMINATED', terminatedAt: lifetimeEnd, stateReason: 'MicroVM exceeded maximum lifetime.' });
+      } else if (microvm.state === 'PENDING' && world.clock.now >= microvm.runningAt) microvm.state = 'RUNNING';
+    }
   };
+  /** The MicroVM dies now without anyone asking (a loss): the service reports it terminated on the next read. */
+  const kill = (microvmId: string, stateReason = 'MicroVM exceeded maximum lifetime.') => {
+    const microvm = world.microvms.find(candidate => candidate.microvmId === microvmId);
+    if (microvm && microvm.state !== 'TERMINATED') Object.assign(microvm, { state: 'TERMINATED', terminatedAt: world.clock.now, stateReason });
+  };
+  /** What the service's ingress proxy decides for a NEW connection: the MicroVM must be running and the token valid for that port. */
+  const admits = (input: { endpoint: string; port: number; token: string }): 'admitted' | 'forbidden' | 'gone' => {
+    settle();
+    const microvm = world.microvms.find(candidate => candidate.endpoint === input.endpoint);
+    if (!microvm || microvm.state !== 'RUNNING') return 'gone';
+    return world.tokens.some(token => token.token === input.token && token.microvmId === microvm.microvmId && token.port === input.port && world.clock.now < token.expiresAt)
+      ? 'admitted' : 'forbidden';
+  };
+  const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
   const service: LambdaServiceFactory = ({ awsProfile, region: target }) => {
     const arnOf = (name: string) => `arn:aws:lambda:${target}:${world.account}:microvm-image:${name}`;
     const find = (imageArn: string) => { settle(); return world.images.find(image => image.imageArn === imageArn); };
@@ -138,8 +181,55 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
         return { ok: true, value: null };
       }),
     };
+    const findMicrovm = (microvmId: string) => { settle(); return world.microvms.find(microvm => microvm.microvmId === microvmId); };
+    const microvms: Pick<LambdaService, 'runMicrovm' | 'microvm' | 'terminateMicrovm' | 'createAuthToken'> = {
+      runMicrovm: input => change('runMicrovm', 'lambda:RunMicrovm', input, () => {
+        if (world.runRefusal) return { ok: false, failure: world.runRefusal };
+        const image = find(input.imageArn);
+        if (!image || image.state !== 'CREATED') return fail('not-found', { detail: 'The image has no active version' });
+        if (Object.keys(input.tags).length > 0 && world.denied.includes('lambda:TagResource')) return fail('access-denied', { action: 'lambda:TagResource' });
+        const serial = String(world.microvms.length + 1).padStart(12, '0');
+        const microvmId = `microvm-00000000-0000-4000-8000-${serial}`;
+        const failed = world.runHookFails;
+        world.microvms.push({ microvmId, endpoint: `${microvmId}.lambda-microvm.${target}.on.aws`, imageArn: input.imageArn, imageVersion: image.version ?? '1.0',
+          state: failed ? 'TERMINATING' : 'PENDING', request: { ...input, tags: { ...input.tags } }, startedAt: world.clock.now,
+          runningAt: world.clock.now + world.pendingSeconds * 1000, executionRole: null, idlePolicy: null,
+          ...(failed ? { terminatesAt: world.clock.now + 2000, stateReason: 'The run hook failed.' } : {}),
+          ingress: [`arn:aws:lambda:${target}:aws:network-connector:aws-network-connector:HTTP_INGRESS`],
+          egress: [`arn:aws:lambda:${target}:aws:network-connector:aws-network-connector:INTERNET_EGRESS`] });
+        return { ok: true, value: { microvmId, endpoint: `${microvmId}.lambda-microvm.${target}.on.aws` } };
+      }),
+      microvm: microvmId => reach('microvm', 'lambda:GetMicrovm', microvmId, () => {
+        const microvm = findMicrovm(microvmId);
+        if (!microvm) return fail('not-found');
+        return { ok: true, value: { microvmId, state: microvm.state, endpoint: microvm.endpoint, imageArn: microvm.imageArn, imageVersion: microvm.imageVersion,
+          startedAt: iso(microvm.startedAt), ...(microvm.stateReason ? { stateReason: microvm.stateReason } : {}),
+          ...(microvm.terminatedAt !== undefined ? { terminatedAt: iso(microvm.terminatedAt) } : {}) } };
+      }),
+      terminateMicrovm: microvmId => change('terminateMicrovm', 'lambda:TerminateMicrovm', microvmId, () => {
+        const microvm = findMicrovm(microvmId);
+        if (!microvm) return fail('not-found');
+        // Idempotent and empty: the answer says nothing about the state.
+        if (microvm.state !== 'TERMINATED' && microvm.state !== 'TERMINATING') {
+          microvm.state = 'TERMINATING';
+          if (world.terminateSeconds !== null) microvm.terminatesAt = world.clock.now + world.terminateSeconds * 1000;
+          else microvm.terminatesAt = Number.POSITIVE_INFINITY;
+        }
+        return { ok: true, value: null };
+      }),
+      createAuthToken: input => reach('createAuthToken', 'lambda:CreateMicrovmAuthToken', { microvmId: input.microvmId, port: input.port, expirationMinutes: input.expirationMinutes }, () => {
+        const microvm = findMicrovm(input.microvmId);
+        if (!microvm) return fail('not-found');
+        // Assumed (not observed): no token is issued for a MicroVM that ended.
+        if (microvm.state === 'TERMINATED') return fail('conflict', { detail: 'The MicroVM is terminated' });
+        if (input.expirationMinutes < 1 || input.expirationMinutes > 60) return fail('unknown', { detail: 'expirationInMinutes must be between 1 and 60' });
+        const token = `fake-proxy-token-${world.tokens.length + 1}`;
+        world.tokens.push({ token, microvmId: input.microvmId, port: input.port, expiresAt: world.clock.now + input.expirationMinutes * 60_000 });
+        return { ok: true, value: { token } };
+      }),
+    };
     return {
-      ...images,
+      ...images, ...microvms,
       callerIdentity: () => reach('callerIdentity', null, undefined, () => ({ ok: true, value: { account: world.account, arn: (world.profiles[awsProfile] as { arn: string }).arn } })),
       simulatePermissions: input => reach('simulatePermissions', 'iam:SimulatePrincipalPolicy', input, () => ({ ok: true,
         value: input.actions.map(action => ({ action, allowed: !world.denied.includes(action) })) })),
@@ -153,5 +243,5 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
         ? { ok: true, value: { mebibytes: world.memoryQuotaMiB[architecture] } } : fail('unknown', { detail: 'No MicroVM memory quota was listed' })),
     };
   };
-  return { account: world, resources, calls, mutations, service };
+  return { account: world, resources, calls, mutations, service, kill, admits, settle };
 }

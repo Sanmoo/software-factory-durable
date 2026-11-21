@@ -17,8 +17,10 @@ export type SandboxCapabilities = {
   bootDuration: { maxSeconds: number; rotationMarginSeconds: number } | null;
   /** Network egress of the guest. `mediation: 'http'`: only HTTP(S) through the adapter's mediation; `'none'`: unmediated, unfiltered. */
   egress: { mediation: 'http' | 'none';
-    /** Any public TCP destination is reachable directly from the guest. */
-    publicTcp: boolean };
+    /** Any public IPv4 TCP destination is reachable directly from the guest. */
+    publicTcp: boolean;
+    /** v2 ticket 04 (V2-25): outbound UDP and outbound IPv6 exist; the guest reaches a private network of the Operator (a VPC). */
+    udp: boolean; ipv6: boolean; privateNetwork: boolean };
 };
 
 /** The capabilities a repository can REQUIRE (V2-04). Names are shown to the operator in diagnostics. */

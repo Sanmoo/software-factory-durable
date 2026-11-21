@@ -141,3 +141,32 @@ arquivo e pin da release (o perfil da imagem, arquitetura e memória baseline, e
   declaração) deixa de construir quando o Alpine publica outra revisão. A causa aparece no
   impedimento; para o molde, o remédio é uma release com pin novo.
 - Imagens não são apagadas pelo Preparar; a remoção é do cleanup explícito.
+
+## 6. Boots (Iniciar, Observar, Parar)
+
+Nesta release o adapter inicia, observa e para um boot, mas o controlador ainda não executa
+Trabalhos sob ele (o `doctor` mostra `sandbox-adapter` bloqueado).
+
+- **Pré-requisitos do host:** `ssh` (cliente OpenSSH) e `websocat` no `PATH`, além do `aws`. O
+  canal é SSH transportado em WebSocket pelo `HTTP_INGRESS` da MicroVM. O `doctor` ainda não
+  confere esses dois executáveis.
+- **Iniciar** é sempre uma MicroVM nova da imagem do Trabalho, com `INTERNET_EGRESS`, sem execution
+  role e sem suspensão por ociosidade, com as tags `software-factory-installation` e
+  `software-factory-work`. Só há sucesso com o canal estabelecido e o commit de partida clonado do
+  `origin` dentro do guest. Cada boot começa vazio: sem caches, sem dados do Docker; as imagens
+  Docker declaradas são baixadas por digest de novo.
+- **Rede do guest:** qualquer destino público IPv4 por TCP, sem mediação nem filtro; sem UDP e sem
+  IPv6 de saída; sem acesso à rede privada do Operador (sem VPC).
+- **Credenciais:** a chave SSH de sessão é gerada no host a cada boot (só a pública vai ao guest,
+  no payload do hook de início) e a host key do guest, gerada no boot, é fixada pelo host no
+  primeiro contato; conexão com outra host key é recusada. O token do serviço vale para uma porta e
+  só é necessário para abrir conexão. Retirar acesso é fechar a conexão ou encerrar a MicroVM. O
+  token Git do clone vai por ambiente de processo pelo canal e não é gravado no guest. Credenciais
+  AWS nunca saem do host.
+- **Observar** lê a condição no serviço (`GetMicrovm`), de qualquer processo.
+- **Parar** pede `TerminateMicrovm` e só confirma quando o serviço informa `TERMINATED`; sem essa
+  confirmação o resultado é indeterminado. Nada do disco é preservado.
+- **Registros:** `<raiz>/lambda/works/<ambiente>/boots/<boot>/boot.json` guarda identidade, motivo
+  de início (início ou troca planejada) e de fim (troca planejada, perda ou fim), tamanho, início e
+  fim. A evidência do guest é a que o host leu pelo canal (`evidence/`); o que não foi lido antes
+  de uma morte consta como perdido.

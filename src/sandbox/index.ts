@@ -18,9 +18,19 @@ export { createLambdaCliService, type AwsCliRunner } from './lambda/cli-service.
 // v2 ticket 03: Prepare under the Lambda adapter guarantees the MicroVM image of the environment key (`lambda/image.ts`).
 import { prepareLambdaImage, type LambdaImageWait } from './lambda/image.js';
 export type { LambdaImageWait } from './lambda/image.js';
-export type { LambdaImage, LambdaImageRequest } from './lambda/service.js';
+export type { LambdaImage, LambdaImageRequest, LambdaMicrovm, LambdaMicrovmRequest } from './lambda/service.js';
 export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaServiceFailure, LambdaServiceResult } from './lambda/service.js';
 export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
+// v2 ticket 04: a boot under the Lambda adapter (RunMicrovm, channel, clone in the guest; observe and stop by the service) and the seam
+// to the guest: SSH over WebSocket in production (`createSshTransport`), an in-process guest in tests (`lambdaTransport`).
+import { defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, startLambdaBoot, stopLambdaBoot,
+  type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation } from './lambda/boot.js';
+import { createSshTransport } from './lambda/ssh-transport.js';
+import type { GuestTransport } from './lambda/transport.js';
+export type { BootBeginReason, BootEndReason, LambdaBootClock, LambdaBootRecord, LambdaCheckout, LambdaObservation } from './lambda/boot.js';
+export { createSshTransport, type SshRunner } from './lambda/ssh-transport.js';
+export { guestKeepaliveSeconds, guestSshPort, sessionPublicKey, type GuestExecRequest, type GuestExecResult, type GuestRefusal, type GuestTarget, type GuestTransport,
+  type GuestUser, type LambdaChannel } from './lambda/transport.js';
 export { installationResources, installationTagKey, operationPolicy, workTagKey, type PolicyStatement } from './lambda/installation.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
 export type { EnvironmentRef, PrepareResult } from './prepare.js';
@@ -59,11 +69,12 @@ export type { BootRef, StartupFailure } from './lifecycle.js';
 import type { Observation as LifecycleObservation } from './lifecycle.js';
 import { observeStorage, type StorageObservation } from './storage-observation.js';
 export type { StorageObservation } from './storage-observation.js';
-export type Observation = LifecycleObservation & { storage?: StorageObservation };
+export type Observation = LifecycleObservation & { storage?: StorageObservation;
+  /** v2 ticket 04: what the adapter's service said about the boot, when the condition comes from a service (the Lambda adapter). */ lifecycle?: LambdaObservation['lifecycle'] };
 import { startEnvironment, type DiskRemedy, type StartResult } from './start.js';
 export type { DiskRemedy, StartRemedyOutcome, StartResult } from './start.js';
 export type { GuestStop, GuestStopReason } from './guest-shutdown.js';
-import { stopEnvironment } from './stop.js';
+import { stopEnvironment, type StopResult } from './stop.js';
 export type { StopResult } from './stop.js';
 import { removeEnvironment } from './remove.js';
 import { exportEvidence } from './evidence-export.js';
@@ -87,15 +98,25 @@ export type { WriteCall } from './write-tools.js';
 /** `preparationVm`/`alpine` (ticket 44): the port that runs environment preparation VMs (absent: a declared environment is refused, never
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
-export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait,
+  lambdaTransport, lambdaBootClock = defaultLambdaBootClock }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
   preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory;
-  /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait }) {
+  /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait;
+  /** v2 ticket 04: the transport to the guest (SSH over WebSocket with the host's `ssh` and `websocat` by default) and the clock of the boot waits. */
+  lambdaTransport?: GuestTransport; lambdaBootClock?: LambdaBootClock }) {
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
   const bootLedger = createBootLedger(async () => (await inspectMemory())?.availableBytes);
+  let sshTransport: GuestTransport | undefined;
+  const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock });
   return {
+    /** v2 ticket 04: the boots recorded for a Lambda environment (identity, reasons, size, start and end) and one of them; read-only. */
+    async boots({ environment }: { environment: EnvironmentRef }) { return listLambdaBoots(root, environment); },
+    async bootRecord({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return readLambdaBoot(root, environment, boot); },
+    /** v2 ticket 04: the channel to an active Lambda boot, for trusted host composition only (tool calls bind a role on top of it, ticket 05). */
+    async openChannel({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return openLambdaBootChannel(lambdaBoots(), { environment, boot }); },
     async executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       const key = JSON.stringify(context);
       const previous = bindings.get(context.invocationId);
@@ -159,13 +180,29 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);
     },
-    async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }) {
+    async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult> {
+      // v2 ticket 04 (V2-02 Parar): a Lambda boot is ended by the service and confirmed by it; no disk is kept.
+      if (await isLambdaEnvironment(root, environment)) {
+        try { return await stopLambdaBoot(lambdaBoots(), { environment, boot, reason }); }
+        catch { return { status: 'indeterminate', code: 'STOP_UNAVAILABLE', cessationConfirmed: false }; }
+      }
       return stopEnvironment(root, environment, boot, reason);
     },
     /** `pass`: the dispatch pass that reserved this boot (ticket 24; correlation only). The memory precondition counts every other own
      * boot still launching, whatever its pass; this boot leaves that set when its start returns. */
     /** `diskRemedy` (ticket 47): the operator's explicit decision for a preserved disk that fails its check, applied by this start only. */
-    async start({ environment, configuration, diskRemedy }: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: DiskRemedy }): Promise<StartResult> {
+    /** `checkout`/`reason` (v2 ticket 04): under the Lambda adapter the starting commit is cloned from `origin` INSIDE the guest with the
+     * given in-memory credential, and the boot is recorded as a first start or a planned swap. The Gondolin adapter ignores both. */
+    async start({ environment, configuration, diskRemedy, checkout, reason }: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: DiskRemedy;
+      checkout?: LambdaCheckout; reason?: BootBeginReason }): Promise<StartResult> {
+      const selection = selectSandboxAdapter(configuration);
+      if (selection.adapter === 'lambda') {
+        if (selection.status !== 'selected') return { status: 'failure', code: selection.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
+        try {
+          return await startLambdaBoot(lambdaBoots(), { environment, profile: selection.configuration, ...(checkout ? { checkout } : {}), ...(reason ? { reason } : {}),
+            remoteUrl: remoteUrl ?? (scope => `https://github.com/${scope.repository}.git`) });
+        } catch { return { status: 'indeterminate', code: 'START_UNAVAILABLE' }; }
+      }
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: parsed.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
       let release: (() => void) | null = null;
@@ -175,6 +212,11 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       } finally { (release as (() => void) | null)?.(); }
     },
     async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<Observation> {
+      // v2 ticket 04 (V2-02 Observar): the condition of a Lambda boot is the service's own answer, read by any process from the boot's record.
+      if (await isLambdaEnvironment(root, environment)) {
+        try { return await observeLambdaBoot(lambdaBoots(), { environment, ...(boot === undefined ? {} : { boot }) }); }
+        catch { return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' }; }
+      }
       // Ticket 26: without an explicit boot, the environment's published current boot is the one observed (and returned for a stop); an
       // owned, prepared environment that never published one is `not-booted` (no unit can exist for it).
       const current = boot === undefined ? await currentBoot(root, environment) : undefined;
@@ -220,7 +262,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       // invalid profile names no account, so nothing is contacted. Nothing is created or started.
       if (selection.adapter === 'lambda') {
         const lifecycle: Diagnostic = { id: 'sandbox-adapter', status: 'blocked',
-          message: 'The lambda adapter can only be validated and prepared in this release: starting Works under it is not available yet.',
+          message: 'The lambda adapter is not composed into the controller in this release: its installation is validated, its images are prepared and its boots start and stop, but Works cannot run under it yet.',
           nextStep: 'Use this diagnosis to prepare the account; operate with an adapter this release can run. There is no fallback to another sandbox.' };
         if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [lifecycle], versions: {} as Record<string, string | null> };
         const profile = selection.configuration;

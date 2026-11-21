@@ -8,7 +8,7 @@ import { capabilityImpediment, missingCapabilities, requiredCapabilities, sandbo
 const digest = `sha256:${'a'.repeat(64)}`;
 const withImages = { schemaVersion: 1 as const, apk: [], images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }] };
 const withoutImages = { schemaVersion: 1 as const, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] };
-const full: SandboxCapabilities = { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false } };
+const full: SandboxCapabilities = { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false } };
 const noDocker: SandboxCapabilities = { ...full, docker: false };
 
 test('a declaration with container images requires Docker; without images it requires nothing', () => {

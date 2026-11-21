@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { LambdaArchitecture, LambdaService, LambdaServiceFailure, LambdaServiceResult } from './service.js';
+import { microvmEgress, microvmIngress, type LambdaArchitecture, type LambdaMicrovmRequest, type LambdaService, type LambdaServiceFailure, type LambdaServiceResult } from './service.js';
 
 /** One `aws` invocation: its exit and output, or `unavailable` when the executable could not be run at all. */
 export type AwsCliRunner = (argv: readonly string[]) => Promise<{ status: 'exited'; exitCode: number; stdout: string; stderr: string } | { status: 'unavailable' }>;
@@ -42,6 +42,8 @@ function classify(stderr: string): LambdaServiceFailure {
   }
   // Not observed: the proofs never created an image whose name existed. The names are the service's documented exception names.
   if (/ConflictException|ResourceConflict|AlreadyExists|ResourceInUse/.test(stderr)) return failure('conflict');
+  // Not observed (ticket 04): the proofs never hit the quota. `InsufficientCapacityException` is documented; the quota refusal's name is not.
+  if (/InsufficientCapacity|ServiceQuotaExceeded|LimitExceeded|QuotaExceeded/i.test(stderr)) return failure('capacity');
   if (/NoSuchEntity|NoSuchBucket|ResourceNotFound|NotFoundException|\(404\)/.test(stderr)) return failure('not-found');
   if (/Could not connect to the endpoint URL|UnknownEndpoint|Invalid endpoint|Could not resolve host/i.test(stderr)) return failure('region-unavailable');
   return failure('unknown');
@@ -130,8 +132,45 @@ export function createLambdaCliService({ awsProfile, region }: { awsProfile: str
     // Proven shapes (`bin/cleanup`).
     deleteImageVersion: ({ imageArn, version }) => call(['lambda-microvms', 'delete-microvm-image-version', '--image-identifier', imageArn, '--image-version', version], () => null),
     deleteImage: imageArn => call(['lambda-microvms', 'delete-microvm-image', '--image-identifier', imageArn], () => null),
+    runMicrovm: input => call(runMicrovmCommand(input, region), output => {
+      const microvmId = text(output.microvmId), endpoint = text(output.endpoint);
+      return microvmId && endpoint ? { microvmId, endpoint } : undefined;
+    }),
+    // Proven shape (`bin/down`, evidence `l1-final.json`).
+    microvm: microvmId => call(['lambda-microvms', 'get-microvm', '--microvm-identifier', microvmId], output => {
+      const state = text(output.state);
+      if (!state) return undefined;
+      const optional = Object.fromEntries((['endpoint', 'imageArn', 'imageVersion', 'stateReason', 'startedAt', 'terminatedAt'] as const)
+        .flatMap(key => text(output[key]) ? [[key, text(output[key])!]] : []));
+      return { microvmId: text(output.microvmId) ?? microvmId, state, ...optional };
+    }),
+    // Proven shape: an empty answer that says nothing about the state.
+    terminateMicrovm: microvmId => call(['lambda-microvms', 'terminate-microvm', '--microvm-identifier', microvmId], () => null),
+    // Proven shape (`bin/tok`): one token per port, at response path `authToken."X-aws-proxy-auth"`.
+    createAuthToken: ({ microvmId, port, expirationMinutes }) => call(['lambda-microvms', 'create-microvm-auth-token', '--microvm-identifier', microvmId,
+      '--expiration-in-minutes', String(expirationMinutes), '--allowed-ports', JSON.stringify([{ port }])], output => {
+      const token = text((output.authToken as Record<string, unknown> | undefined)?.['X-aws-proxy-auth']);
+      return token ? { token } : undefined;
+    }),
     allocatedMemoryQuota: architecture => call(['service-quotas', 'list-service-quotas', '--service-code', 'lambda'], output => memoryQuota(output, architecture)),
   };
+}
+
+/**
+ * RunMicrovm as the proofs called it (`bin/up`): image by ARN, the two AWS-managed network connectors, the maximum duration and the run
+ * hook payload. No `--execution-role-arn` (the guest has no AWS credentials) and no `--idle-policy`: omitting it is what kept automatic
+ * suspension off in the proofs (inferred from the documentation, V2-09).
+ *
+ * NOT PROVEN, isolated here: `--tags`. RunMicrovm has no documented tags field and no proof ever tagged a MicroVM (V2-33 asks for
+ * installation and Work tags on every resource). If the service refuses the flag, this is the one place to change, and the inventory of
+ * ticket 15 falls back to the image tags plus the host's boot records.
+ */
+export function runMicrovmCommand(input: LambdaMicrovmRequest, region: string): string[] {
+  const connector = (name: string) => `arn:aws:lambda:${region}:aws:network-connector:aws-network-connector:${name}`;
+  return ['lambda-microvms', 'run-microvm', '--image-identifier', input.imageArn,
+    '--ingress-network-connectors', connector(microvmIngress), '--egress-network-connectors', connector(microvmEgress),
+    '--maximum-duration-in-seconds', String(input.maximumDurationSeconds), '--run-hook-payload', input.runHookPayload,
+    ...(Object.keys(input.tags).length > 0 ? ['--tags', JSON.stringify(input.tags)] : [])];
 }
 
 /**

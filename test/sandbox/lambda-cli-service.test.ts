@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLambdaCliService, type AwsCliRunner } from '../../src/sandbox/index.js';
-import { awsCliEnvironment, buildLogCommand, buildLogLines, createAwsCliRunner, imageBuildsCommand, memoryQuota } from '../../src/sandbox/lambda/cli-service.js';
+import { awsCliEnvironment, buildLogCommand, buildLogLines, createAwsCliRunner, imageBuildsCommand, memoryQuota, runMicrovmCommand } from '../../src/sandbox/lambda/cli-service.js';
 
 // v2 ticket 02: the CLI-backed LambdaService against a scripted runner. The real `aws` is never executed by any test.
 function scripted(answers: Record<string, { exitCode?: number; stdout?: unknown; stderr?: string } | 'unavailable'>) {
@@ -169,4 +169,44 @@ test('the build records and the build log (unproven command shapes, isolated in 
     { buildId: '90ab745b', imageVersion: '1.0', state: 'FAILED', stateReason: 'The container image build failed.' }] });
   assert.deepEqual(await service.buildLog('/aws/lambda-microvms/factory-acme-0123'), { ok: true, value: ['error: failed to solve\n'] });
   assert.deepEqual(invocations.map(argv => argv.slice(7)), [imageBuildsCommand(imageArn), buildLogCommand('/aws/lambda-microvms/factory-acme-0123')]);
+});
+
+// v2 ticket 04: the MicroVM operations.
+test('RunMicrovm names the image, both managed connectors, the maximum duration, the hook payload and the tags, and never a role or an idle policy', async () => {
+  const input = { imageArn, maximumDurationSeconds: 3600, runHookPayload: '{"builder":"ssh-ed25519 AAAA"}', tags: { 'software-factory-installation': 'acme', 'software-factory-work': 'w1' } };
+  // Proven shape (`bin/up`), plus `--tags` (NOT proven, isolated in `runMicrovmCommand`).
+  assert.deepEqual(runMicrovmCommand(input, 'us-east-1'), ['lambda-microvms', 'run-microvm', '--image-identifier', imageArn,
+    '--ingress-network-connectors', 'arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:HTTP_INGRESS',
+    '--egress-network-connectors', 'arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:INTERNET_EGRESS',
+    '--maximum-duration-in-seconds', '3600', '--run-hook-payload', '{"builder":"ssh-ed25519 AAAA"}',
+    '--tags', '{"software-factory-installation":"acme","software-factory-work":"w1"}']);
+  assert.doesNotMatch(runMicrovmCommand(input, 'us-east-1').join(' '), /execution-role|idle-policy|SHELL_INGRESS|vpc/i);
+  const { service, invocations } = scripted({ 'lambda-microvms run-microvm': { stdout: { microvmId: 'microvm-1', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws', state: 'PENDING' } } });
+  assert.deepEqual(await service.runMicrovm(input), { ok: true, value: { microvmId: 'microvm-1', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws' } });
+  assert.deepEqual(invocations[0]!.slice(7), runMicrovmCommand(input, 'us-east-1'));
+  const refused = scripted({ 'lambda-microvms run-microvm': { exitCode: 254, stderr: 'An error occurred (InsufficientCapacityException) when calling the RunMicrovm operation: no capacity' } });
+  assert.equal((await refused.service.runMicrovm(input) as { failure: { kind: string } }).failure.kind, 'capacity');
+});
+
+test('GetMicrovm, TerminateMicrovm and CreateMicrovmAuthToken are read as the proofs observed them', async () => {
+  const { service, invocations } = scripted({
+    // Evidence `l1-final.json`: the CLI prints instants with the local offset.
+    'lambda-microvms get-microvm': { stdout: { microvmId: 'microvm-1', state: 'TERMINATED', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws', imageArn, imageVersion: '1.0',
+      maximumDurationInSeconds: 3600, startedAt: '2026-11-20T16:13:52.716000-03:00', terminatedAt: '2026-11-20T16:15:24.100000-03:00', stateReason: 'Success.',
+      ingressNetworkConnectors: [], egressNetworkConnectors: [] } },
+    'lambda-microvms terminate-microvm': { stdout: undefined },
+    'lambda-microvms create-microvm-auth-token': { stdout: { authToken: { 'X-aws-proxy-auth': 'eyJsecret' } } },
+  });
+  assert.deepEqual(await service.microvm('microvm-1'), { ok: true, value: { microvmId: 'microvm-1', state: 'TERMINATED', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws', imageArn,
+    imageVersion: '1.0', stateReason: 'Success.', startedAt: '2026-11-20T16:13:52.716000-03:00', terminatedAt: '2026-11-20T16:15:24.100000-03:00' } });
+  // The terminate answer is empty: it says nothing about cessation.
+  assert.deepEqual(await service.terminateMicrovm('microvm-1'), { ok: true, value: null });
+  assert.deepEqual(await service.createAuthToken({ microvmId: 'microvm-1', port: 8022, expirationMinutes: 60 }), { ok: true, value: { token: 'eyJsecret' } });
+  assert.deepEqual(invocations.map(argv => argv.slice(7)), [['lambda-microvms', 'get-microvm', '--microvm-identifier', 'microvm-1'],
+    ['lambda-microvms', 'terminate-microvm', '--microvm-identifier', 'microvm-1'],
+    ['lambda-microvms', 'create-microvm-auth-token', '--microvm-identifier', 'microvm-1', '--expiration-in-minutes', '60', '--allowed-ports', '[{"port":8022}]']]);
+  const gone = scripted({ 'lambda-microvms get-microvm': { exitCode: 254, stderr: 'An error occurred (ResourceNotFoundException) when calling the GetMicrovm operation' },
+    'lambda-microvms create-microvm-auth-token': { stdout: { authToken: {} } } });
+  assert.equal((await gone.service.microvm('microvm-9') as { failure: { kind: string } }).failure.kind, 'not-found');
+  assert.equal((await gone.service.createAuthToken({ microvmId: 'microvm-9', port: 8022, expirationMinutes: 60 })).ok, false);
 });

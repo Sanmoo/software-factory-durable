@@ -31,7 +31,7 @@ test('Gondolin declares Docker, a disk that survives the boot, no maximum boot d
   const selection = selectSandboxAdapter(existing);
   assert.equal(selection.status, 'selected');
   if (selection.status !== 'selected') return;
-  assert.deepEqual(selection.capabilities, { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false } });
+  assert.deepEqual(selection.capabilities, { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false } });
 });
 
 test('an unknown adapter or a list of adapters is invalid; each adapter refuses a profile that is not its own', () => {
@@ -52,7 +52,7 @@ test('the Gondolin lifecycle refuses a Lambda selection and never falls back to 
   const root = await mkdtemp(join(tmpdir(), 'factory-adapter-selection-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sandbox = createSandbox({ root });
-  // An invalid Lambda profile names no account: validate contacts nothing and says the adapter has no lifecycle in this release.
+  // An invalid Lambda profile names no account: validate contacts nothing and says Works cannot run under the adapter in this release.
   const report = await sandbox.validate({ adapter: 'lambda', schemaVersion: 1 });
   assert.equal(report.configuration.valid, false);
   const check = report.checks.find(item => item.id === 'sandbox-adapter');
@@ -60,11 +60,11 @@ test('the Gondolin lifecycle refuses a Lambda selection and never falls back to 
   assert.match(check!.message, /lambda/);
   assert.match(check!.nextStep, /no fallback/i);
   // A VALID Lambda selection is never prepared or started under another adapter: Prepare is the Lambda adapter's own (v2 ticket 03; a Work
-  // without a pinned declaration is refused before the account is contacted) and start is not available yet.
+  // without a pinned declaration is refused before the account is contacted) and so is Start (v2 ticket 04: no MicroVM without a prepared image).
   const lambda = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
   const prepared = await sandbox.prepare({ workId: 'work-1', configuration: lambda });
   assert.deepEqual([prepared.status, 'code' in prepared && prepared.code], ['failure', 'ENVIRONMENT_NOT_PINNED']);
-  assert.deepEqual(await sandbox.start({ environment: `env-${'0'.repeat(64)}` as never, configuration: lambda }), { status: 'failure', code: 'SANDBOX_ADAPTER_UNAVAILABLE' });
+  assert.deepEqual(await sandbox.start({ environment: `env-${'0'.repeat(64)}` as never, configuration: lambda }), { status: 'failure', code: 'ENVIRONMENT_NOT_PREPARED' });
   assert.deepEqual(await sandbox.prepare({ workId: 'work-1', configuration: { adapter: 'lambda', schemaVersion: 1 } }), { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' });
   const accepted = await sandbox.validate({ adapter: 'gondolin', ...existing });
   assert.deepEqual(accepted.configuration, { valid: true, effective });

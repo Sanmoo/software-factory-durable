@@ -15,7 +15,7 @@ import { recoveryDoubles } from './recovery-doubles.js';
 // any real sandbox.
 const digest = `sha256:${'a'.repeat(64)}`;
 const withImages = { schemaVersion: 1 as const, apk: [], images: [{ reference: `docker.io/testcontainers/ryuk@${digest}` }] };
-const full: SandboxCapabilities = { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false } };
+const full: SandboxCapabilities = { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false } };
 
 async function harness(t: { after(fn: () => Promise<void>): void }, capabilities: SandboxCapabilities, declaration: NonNullable<Remote['environment']>) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-capability-flow-'));

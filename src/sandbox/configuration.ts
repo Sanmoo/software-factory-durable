@@ -26,7 +26,7 @@ export type SandboxAdapter = typeof sandboxAdapters[number];
 /** V2-03: what the Gondolin adapter declares. Docker in the guest, a root disk and workspace that survive the boot (so `stop` preserves
  * them), no maximum boot duration (no rotation) and the MVP egress: public HTTP(S) through the adapter's mediation only. */
 export const gondolinCapabilities: SandboxCapabilities = Object.freeze({ docker: true, persistentDisk: true, bootDuration: null,
-  egress: Object.freeze({ mediation: 'http', publicTcp: false }) });
+  egress: Object.freeze({ mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false }) });
 
 export type SandboxAdapterSelection =
   { status: 'selected'; adapter: 'gondolin'; capabilities: SandboxCapabilities; configuration: SandboxConfiguration } |
@@ -64,9 +64,8 @@ function invalid(issues: readonly { path: PropertyKey[] }[]) {
 
 /**
  * The GONDOLIN lifecycle's view of the configuration (prepare/start and the host diagnostics). A valid Lambda selection is
- * `SANDBOX_ADAPTER_UNAVAILABLE` here: this release validates a Lambda installation (ticket 02) and prepares its MicroVM images (ticket
- * 03, dispatched before this function is reached) but cannot start a Lambda boot yet, and a Lambda Work is never prepared or started
- * under Gondolin.
+ * `SANDBOX_ADAPTER_UNAVAILABLE` here: the Lambda adapter's own validate, prepare and start (tickets 02 to 04) are dispatched before this
+ * function is reached, and a Lambda Work is never prepared or started under Gondolin.
  */
 export function validateConfiguration(configuration: unknown) {
   const selection = selectSandboxAdapter(configuration);

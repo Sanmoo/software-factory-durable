@@ -36,7 +36,8 @@ export const acceptanceProfile = Object.freeze({ region: 'us-east-1', architectu
 export function lambdaCapabilities(profile: LambdaProfile): SandboxCapabilities {
   return Object.freeze({ docker: true, persistentDisk: false,
     bootDuration: Object.freeze({ maxSeconds: profile.maxBootSeconds, rotationMarginSeconds: profile.rotationMarginSeconds }),
-    egress: Object.freeze({ mediation: 'none', publicTcp: true }) });
+    // V2-25, `INTERNET_EGRESS`: any public IPv4 destination by TCP, unmediated and unfiltered; no outbound UDP or IPv6; no VPC.
+    egress: Object.freeze({ mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }) });
 }
 
 /**
