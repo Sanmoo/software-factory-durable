@@ -28,6 +28,8 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 
 - [Definir quem pode conduzir o Trabalho pelo Ticket Jira](issues/05-conversa.md): quem pode comentar no Card pode conduzir seu Trabalho; `/factory` endereça a fábrica e `q17:` distingue a pergunta quando necessário.
 
+- [Definir o vínculo durável entre Ticket Jira, Trabalho e pull request](issues/06-correlacao.md): o merge do PR próprio confirma a entrega; um link por Trabalho e um comentário comunicam o resultado no Card, mesmo que o aviso precise esperar o Jira voltar.
+
 ## Not yet specified
 
 - O desenho de persistência e reconciliação mostrará se algum estado legado exige um procedimento específico de atualização ou recuperação; não pressupor migração destrutiva nem ferramenta nova.
