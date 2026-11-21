@@ -98,3 +98,7 @@ muda o contrato (o que se propõe quando não há resultado local): precisa de d
   vazio. Falta a conduta: numerar a nova versão do pedido depois da última registrada e o pacote da substituta.
 - **12 (perda visível):** `boot.json.restored.lost` e `execution.bootNotice.lost` dizem quais boots perderam versões.
 - Retomada sem commit confirmado (fim `question`/`completed` sem `work.preservation`) bloqueia com `PRESERVED_COMMIT_NOT_RECORDED`, depois do boot.
+
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 12, 14 e 15): 2068 testes,
+2046 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
+`test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
