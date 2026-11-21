@@ -1,0 +1,22 @@
+{
+  "rubric": "alpine-guest-on-lambda-proof v1",
+  "rubricSha256": "791bd2fd914df814adb7a0c76184925a461f5907dc02e07ced227179f76b42f1",
+  "reviewedBy": "Pendente: aguarda o aceite do Operador",
+  "evidenceSnapshotSha256": "d7a729e4645eb47d06ca4609183d98b06f9594cb5d017ae56294bae2b262c05f",
+  "notes": [
+    "O helper de finalização registrou C2-cleanup como inconclusive porque avalia antes de remover. A remoção terminou com status completed e o inventário lido depois dela veio vazio; por isso o resultado final de C2 aqui é approved.",
+    "Uma campanha, uma imagem, duas MicroVMs. Cada critério foi observado uma vez, salvo A3, observado nos dois boots."
+  ],
+  "criteria": {
+    "A1-build": "approved",
+    "A2-apk-exato": "approved",
+    "A3-boot": "approved",
+    "A4-ssh": "approved",
+    "A5-digest": "approved",
+    "A6-compose": "approved",
+    "A7-testcontainers": "approved",
+    "P1-perfil": "approved",
+    "C1-custo": "approved",
+    "C2-cleanup": "approved"
+  }
+}
