@@ -3,8 +3,11 @@
 Data: 2026-11-21. Ticket: [Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](../issues/10-alpine-guest-on-lambda-proof.md).
 Requisito em jogo: V2-27 da [spec da v2](../spec.md). Rubrica proposta: [rubrica v1](alpine-guest-rubric.json).
 
-**Estado: proposta. Nada foi executado, nenhuma credencial foi usada e nenhum recurso foi criado.**
-A autorização das provas anteriores não vale aqui; os recursos delas já foram removidos.
+**Estado: autorizado pelo Operador em 2026-11-21**, como proposto na tabela "Autorização pedida":
+conta da AWS CLI local, `us-east-1`, ARM64, roles e bucket da prova, sem repositório no GitHub; tetos de
+US$ 10 (parada em US$ 7), 6 builds, 5 MicroVM-horas, 2 MicroVMs simultâneas, 1800 s por MicroVM, prazo
+até 2026-11-24 e cleanup completo. [Rubrica v1](alpine-guest-rubric.json) aprovada
+([registro](alpine-guest-rubric-approval.json)). A autorização das provas anteriores não vale aqui.
 
 ## O que já se sabe e o que falta
 
