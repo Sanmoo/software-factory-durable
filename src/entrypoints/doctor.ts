@@ -3,20 +3,25 @@ import { join, resolve } from 'node:path';
 import type { Diagnostic } from '../contracts/index.js';
 import { readConfiguration } from './configuration.js';
 import { inspectRelease, productionModelChecks, productionProfile } from './release.js';
-import { capacityDiagnostic, environmentIdentityDiagnostic, observeHostCapacity } from '../sandbox/index.js';
+import { capacityDiagnostic, environmentIdentityDiagnostic, observeHostCapacity, selectSandboxAdapter, type LambdaServiceFactory } from '../sandbox/index.js';
 
-export async function doctor(root: string) {
+/** `lambdaService` (v2 ticket 02): composition input for a Lambda installation's account diagnosis (the `aws` CLI by default). */
+export async function doctor(root: string, options: { lambdaService?: LambdaServiceFactory } = {}) {
   const canonicalRoot = await realpath(root).catch(() => resolve(root));
   // Release first: only a verified release contributes its guest asset pin and production worker profile (ticket 32).
   const release = await inspectRelease(canonicalRoot);
-  const { configuration, checks: configurationChecks, versions } = await readConfiguration(canonicalRoot, release.guestAssets);
+  const { configuration, checks: configurationChecks, versions } = await readConfiguration(canonicalRoot, release.guestAssets, options);
   const checks: Diagnostic[] = [...release.checks, ...configurationChecks];
   if (release.release && configuration.valid) checks.push(...productionModelChecks(configuration.effective.models));
   // Ticket 24: configured Slots x guest limits against what the host shows NOW (virtual limits are not reservations or proven capacity).
-  if (configuration.valid) checks.push(capacityDiagnostic({ concurrency: configuration.effective.concurrency, configuration: configuration.effective.sandbox,
+  // v2 ticket 02: host memory and prepared environments are the Gondolin adapter's; a Lambda installation's capacity is its account quota,
+  // diagnosed by its own validate above.
+  const selected = configuration.valid ? selectSandboxAdapter(configuration.effective.sandbox) : undefined;
+  const gondolin = selected?.status === 'selected' && selected.adapter === 'gondolin' ? selected.configuration : undefined;
+  if (configuration.valid && gondolin) checks.push(capacityDiagnostic({ concurrency: configuration.effective.concurrency, configuration: gondolin,
     host: await observeHostCapacity(canonicalRoot) }));
   // Ticket 50: before a restart, which retained prepared environments this configuration would invalidate (memory/vCPU never do).
-  if (configuration.valid) checks.push(await environmentIdentityDiagnostic(canonicalRoot, configuration.effective.sandbox, release.guestAssets).catch(() => ({
+  if (gondolin) checks.push(await environmentIdentityDiagnostic(canonicalRoot, gondolin, release.guestAssets).catch(() => ({
     id: 'environment-identity', status: 'unverified' as const, message: 'Prepared environments could not be listed; their identity was not evaluated.',
     nextStep: 'Inspect `<root>/environments` permissions; doctor never repairs them.' })));
   const paths = { root: canonicalRoot, config: join(canonicalRoot, 'config.yaml'),

@@ -169,14 +169,16 @@ test('ticket 48: a repository adjusts the Builder budget up to 2x of 150 request
   }
 });
 
-test('v2 ticket 01: sandbox.adapter selects the installation adapter; Gondolin named explicitly is the existing profile, Lambda is refused with a diagnostic', async () => {
+test('v2 ticket 01: sandbox.adapter selects the installation adapter; Gondolin named explicitly is the existing profile, a Lambda selection without its profile is invalid', async () => {
   const explicit = await diagnose(configuration.replace('sandbox: {', 'sandbox: {adapter: gondolin, '));
   assert.equal(explicit.report.configuration.valid, true);
   assert.deepEqual(explicit.report.configuration.effective.sandbox, { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048,
     vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 }, 'identical to an installation that never named an adapter');
   const lambda = await diagnose(configuration.replace('sandbox: {schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1}', 'sandbox: {adapter: lambda, schemaVersion: 1}'));
   assert.equal(lambda.status, 2);
-  assert.deepEqual(lambda.report.configuration, { valid: false, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] });
+  // v2 ticket 02: the Lambda adapter has its own profile; without the AWS profile name and the installation name no account is contacted.
+  assert.deepEqual(lambda.report.configuration, { valid: false, errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.awsProfile' },
+    { code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.installation' }] });
   const check = lambda.report.checks.find((item: { id: string }) => item.id === 'sandbox-adapter');
   assert.equal(check.status, 'blocked');
   assert.match(check.message, /lambda/);

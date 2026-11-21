@@ -21,6 +21,8 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   assert.ok(listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')), 'only launcher, release and assets');
   assert.ok(listing.includes(`releases/${id}/node/bin/node`) && listing.includes(`releases/${id}/dist/src/entrypoints/cli.js`));
   for (const pack of factorySkillPackIds) assert.ok(listing.includes(`releases/${id}/assets/skill-pack/${pack}/manifest.json`), pack);
+  // v2 ticket 02 (V2-31): the release carries the Lambda account template and the Operator's instructions for it.
+  assert.ok(listing.includes(`releases/${id}/assets/lambda/account-template.yaml`) && listing.includes(`releases/${id}/docs/lambda-installation.md`));
   assert.ok(listing.includes(`assets/guest/${manifestSha256}/rootfs.ext4`));
   const release = listing.filter(path => path.startsWith(`releases/${id}/`)).map(path => path.slice(`releases/${id}/`.length));
   // Development instruments are absent; type-only packages stay only where an upstream runtime package declares them (lockfile closure).

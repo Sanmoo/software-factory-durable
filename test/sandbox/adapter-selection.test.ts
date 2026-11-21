@@ -34,9 +34,10 @@ test('Gondolin declares Docker, a disk that survives the boot, no maximum boot d
   assert.deepEqual(selection.capabilities, { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false } });
 });
 
-test('selecting the Lambda adapter is refused with a diagnostic until it exists; an unknown adapter or a list of adapters is invalid', () => {
-  assert.deepEqual(selectSandboxAdapter({ adapter: 'lambda', schemaVersion: 1 }), { status: 'refused', adapter: 'lambda',
-    errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] });
+test('an unknown adapter or a list of adapters is invalid; each adapter refuses a profile that is not its own', () => {
+  // v2 ticket 02: the Lambda adapter has its own profile (test/sandbox/lambda-profile.test.ts); a bare selection lacks its required names.
+  assert.deepEqual(selectSandboxAdapter({ adapter: 'lambda', schemaVersion: 1 }), { status: 'refused', adapter: 'lambda', errors: [
+    { code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.awsProfile' }, { code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.installation' }] });
   for (const adapter of ['firecracker', '', 7, null, ['gondolin', 'lambda'], { default: 'gondolin' }]) {
     assert.deepEqual(selectSandboxAdapter({ ...existing, adapter }), { status: 'refused', adapter: null,
       errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.adapter' }] }, JSON.stringify(adapter));
@@ -47,18 +48,20 @@ test('selecting the Lambda adapter is refused with a diagnostic until it exists;
   assert.deepEqual(selectSandboxAdapter(undefined), { status: 'refused', adapter: 'gondolin', errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox' }] });
 });
 
-test('Sandbox.validate refuses the Lambda selection with a visible check and never falls back to another adapter', async t => {
+test('the Gondolin lifecycle refuses a Lambda selection and never falls back to another adapter', async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-adapter-selection-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sandbox = createSandbox({ root });
+  // An invalid Lambda profile names no account: validate contacts nothing and says the adapter has no lifecycle in this release.
   const report = await sandbox.validate({ adapter: 'lambda', schemaVersion: 1 });
-  assert.deepEqual(report.configuration, { valid: false, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] });
+  assert.equal(report.configuration.valid, false);
   const check = report.checks.find(item => item.id === 'sandbox-adapter');
   assert.equal(check?.status, 'blocked');
   assert.match(check!.message, /lambda/);
   assert.match(check!.nextStep, /no fallback/i);
-  // The lifecycle refuses it too: nothing is prepared or started under another adapter.
-  assert.deepEqual(await sandbox.prepare({ workId: 'work-1', configuration: { adapter: 'lambda', schemaVersion: 1 } }), { status: 'failure', code: 'SANDBOX_ADAPTER_UNAVAILABLE' });
+  // The lifecycle refuses a VALID Lambda selection too: nothing is prepared or started under another adapter.
+  const lambda = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
+  assert.deepEqual(await sandbox.prepare({ workId: 'work-1', configuration: lambda }), { status: 'failure', code: 'SANDBOX_ADAPTER_UNAVAILABLE' });
   const accepted = await sandbox.validate({ adapter: 'gondolin', ...existing });
   assert.deepEqual(accepted.configuration, { valid: true, effective });
   assert.equal(accepted.checks.some(item => item.id === 'sandbox-adapter'), false, 'the Gondolin diagnostics are the MVP ones');

@@ -121,6 +121,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   // Control receives the capabilities only; the lifecycle below is that adapter's.
   const adapter = selectSandboxAdapter(input.effective.sandbox);
   if (adapter.status !== 'selected') return { status: 'refused', code: adapter.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID', roles: [] };
+  // v2 ticket 02: a Lambda installation can be validated, but this release composes no Lambda lifecycle yet; never Gondolin in its place.
+  if (adapter.adapter !== 'gondolin') return { status: 'refused', code: 'SANDBOX_ADAPTER_UNAVAILABLE', roles: [] };
   const profile = (role: Role) => ({ id: productionProfile.sdkProfileId, systemPrompt: productionProfile.prompts[role],
     auth: productionProfile.model.auth, providerId: productionProfile.model.providerId, modelId: productionProfile.model.modelId, api: productionProfile.model.api });
   const profiles = { builder: profile('builder'), standards: profile('standards'), spec: profile('spec') };

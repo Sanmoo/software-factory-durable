@@ -9,6 +9,15 @@ import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { selectSandboxAdapter, validateConfiguration } from './configuration.js';
 // v2 ticket 01: the installation's single adapter selection and the capabilities it declares (pure; composition and diagnostics).
 export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type SandboxAdapterSelection } from './configuration.js';
+// v2 ticket 02: the Lambda adapter's profile, the installation's account resources and the narrow port to the AWS account (CLI-backed in
+// production; tests compose the in-memory account of `test/sandbox/lambda-service-fake.ts` through `lambdaService`).
+import { validateLambdaInstallation } from './lambda/validate.js';
+import { createLambdaCliService } from './lambda/cli-service.js';
+import type { LambdaServiceFactory } from './lambda/service.js';
+export { createLambdaCliService, type AwsCliRunner } from './lambda/cli-service.js';
+export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaServiceFailure, LambdaServiceResult } from './lambda/service.js';
+export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
+export { installationResources, installationTagKey, operationPolicy, workTagKey, type PolicyStatement } from './lambda/installation.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
 export type { EnvironmentRef, PrepareResult } from './prepare.js';
 import type { RepositoryFetchCredentials } from '../contracts/index.js';
@@ -73,9 +82,10 @@ export type { WriteCall } from './write-tools.js';
  */
 /** `preparationVm`/`alpine` (ticket 44): the port that runs environment preparation VMs (absent: a declared environment is refused, never
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
-export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+/** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
-  preparationVm?: PreparationVm; alpine?: AlpineRepositories }) {
+  preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory }) {
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
@@ -188,14 +198,22 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       if (seeds.status !== 'success') return seeds;
       return { status: 'success', environment: prepared.environment, checkout: result.checkout, seeds: seeds.seeds, ...(prepared.base ? { base: prepared.base } : {}) };
     },
-    async validate(configuration: unknown) {
-      const validated = validateConfiguration(configuration);
+    /** `concurrency` (V2-30): the installation's Builder concurrency, for the adapter's own capacity diagnostic. */
+    async validate(configuration: unknown, { concurrency }: { concurrency?: number } = {}) {
       const selection = selectSandboxAdapter(configuration);
+      // v2 ticket 02 (V2-02 Validar): a Lambda installation is diagnosed against its AWS account, never against this host's QEMU/KVM. An
+      // invalid profile names no account, so nothing is contacted. Nothing is created or started.
+      if (selection.adapter === 'lambda') {
+        const lifecycle: Diagnostic = { id: 'sandbox-adapter', status: 'blocked',
+          message: 'The lambda adapter can only be validated in this release: preparing and starting Works under it are not available yet.',
+          nextStep: 'Use this diagnosis to prepare the account; operate with an adapter this release can run. There is no fallback to another sandbox.' };
+        if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [lifecycle], versions: {} as Record<string, string | null> };
+        const profile = selection.configuration;
+        return { configuration: { valid: true as const, effective: profile }, versions: {} as Record<string, string | null>, checks: [
+          ...await validateLambdaInstallation({ profile, concurrency, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }) }), lifecycle] };
+      }
+      const validated = validateConfiguration(configuration);
       const checks: Diagnostic[] = [
-        // V2-01/V2-04: a named adapter that this release cannot run is a visible refusal; the diagnostics below stay the Gondolin ones.
-        ...(selection.status === 'refused' && selection.errors.some(error => error.code === 'SANDBOX_ADAPTER_UNAVAILABLE') ? [{ id: 'sandbox-adapter', status: 'blocked' as const,
-          message: `The configured sandbox adapter (${selection.adapter}) is not available in this release.`,
-          nextStep: 'Select an adapter this release provides in sandbox.adapter (one adapter for the whole installation). There is no fallback to another sandbox.' }] : []),
         ...await inspectGuestAssets(guestAssets),
         { id: 'sandbox-release', status: 'unverified',
           message: 'Development profile only; no distributed release or real sandbox qualification is available.',

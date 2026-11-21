@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Software Factory, Lambda sandbox adapter: the account resources of ONE installation (operation role with the minimal policy, build
+  role, build artifact bucket). Applied by the Operator; the Factory never creates IAM. Apply it in the region named in sandbox.region,
+  with the installation name of sandbox.installation. See docs/lambda-installation.md.
+Parameters:
+  Installation:
+    Type: String
+    Description: The installation name (sandbox.installation in config.yaml). Names every resource and is the installation tag value.
+    AllowedPattern: '^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$'
+  OperatorPrincipalArn:
+    Type: String
+    Default: ''
+    Description: >-
+      The IAM principal allowed to assume the operation role (the identity behind the Operator's AWS profile). Empty: any principal of
+      this account that its own policies allow to assume the role.
+Conditions:
+  AccountTrust:
+    Fn::Equals: [{Ref: OperatorPrincipalArn}, '']
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: {'Fn::Sub': 'factory-${Installation}-build-${AWS::AccountId}-${AWS::Region}'}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      Tags:
+        - {Key: software-factory-installation, Value: {Ref: Installation}}
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: {'Fn::Sub': 'factory-${Installation}-build'}
+      Description: Assumed by the Lambda MicroVMs image build only. Reads the build artifact and writes the build log.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: 'sts:AssumeRole'
+            Condition: {StringEquals: {'aws:SourceAccount': {Ref: 'AWS::AccountId'}}}
+      Policies:
+        - PolicyName: build
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadBuildArtifacts
+                Effect: Allow
+                Action: ['s3:GetObject']
+                Resource: [{'Fn::Sub': 'arn:aws:s3:::factory-${Installation}-build-${AWS::AccountId}-${AWS::Region}/*'}]
+              - Sid: WriteBuildLogs
+                Effect: Allow
+                Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents']
+                Resource:
+                  - {'Fn::Sub': 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-microvms/factory-${Installation}-*'}
+                  - {'Fn::Sub': 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-microvms/factory-${Installation}-*:*'}
+      Tags:
+        - {Key: software-factory-installation, Value: {Ref: Installation}}
+  OperationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: {'Fn::Sub': 'factory-${Installation}-operation'}
+      Description: Assumed by the Factory through the Operator's named AWS profile. Minimal policy; creates no IAM.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                Fn::If: [AccountTrust, {'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:root'}, {Ref: OperatorPrincipalArn}]
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: operation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListMicrovmResources
+                Effect: Allow
+                Action: ['lambda:ListMicrovmImages', 'lambda:ListMicrovms']
+                Resource: ['*']
+              # Known limit: CreateMicrovmImage accepts no resource restriction.
+              - Sid: CreateMicrovmImage
+                Effect: Allow
+                Action: ['lambda:CreateMicrovmImage']
+                Resource: ['*']
+              # Known limit: TagResource accepts no resource restriction; it is allowed only when the request carries the installation tag.
+              - Sid: TagInstallationResources
+                Effect: Allow
+                Action: ['lambda:TagResource']
+                Resource: ['*']
+                Condition:
+                  StringEquals:
+                    'aws:RequestTag/software-factory-installation': {Ref: Installation}
+              - Sid: InstallationImagesAndMicrovms
+                Effect: Allow
+                Action:
+                  - 'lambda:GetMicrovmImage'
+                  - 'lambda:GetMicrovmImageVersion'
+                  - 'lambda:ListMicrovmImageVersions'
+                  - 'lambda:ListMicrovmImageBuilds'
+                  - 'lambda:DeleteMicrovmImage'
+                  - 'lambda:DeleteMicrovmImageVersion'
+                  - 'lambda:RunMicrovm'
+                  - 'lambda:GetMicrovm'
+                  - 'lambda:TerminateMicrovm'
+                  - 'lambda:CreateMicrovmAuthToken'
+                  - 'lambda:ListTags'
+                Resource: [{'Fn::Sub': 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:microvm-image:factory-${Installation}-*'}]
+              - Sid: NetworkConnectors
+                Effect: Allow
+                Action: ['lambda:PassNetworkConnector']
+                Resource: [{'Fn::Sub': 'arn:aws:lambda:${AWS::Region}:aws:network-connector:aws-network-connector*'}]
+              - Sid: PassBuildRole
+                Effect: Allow
+                Action: ['iam:PassRole', 'iam:GetRole']
+                Resource: [{'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/factory-${Installation}-build'}]
+              - Sid: SimulateOwnPolicy
+                Effect: Allow
+                Action: ['iam:SimulatePrincipalPolicy']
+                Resource: [{'Fn::Sub': 'arn:aws:iam::${AWS::AccountId}:role/factory-${Installation}-operation'}]
+              - Sid: BuildArtifactBucket
+                Effect: Allow
+                Action: ['s3:ListBucket', 's3:GetBucketLocation']
+                Resource: [{'Fn::Sub': 'arn:aws:s3:::factory-${Installation}-build-${AWS::AccountId}-${AWS::Region}'}]
+              - Sid: BuildArtifacts
+                Effect: Allow
+                Action: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject']
+                Resource: [{'Fn::Sub': 'arn:aws:s3:::factory-${Installation}-build-${AWS::AccountId}-${AWS::Region}/*'}]
+              - Sid: BuildLogs
+                Effect: Allow
+                Action: ['logs:DescribeLogStreams', 'logs:GetLogEvents', 'logs:FilterLogEvents', 'logs:DeleteLogGroup']
+                Resource:
+                  - {'Fn::Sub': 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-microvms/factory-${Installation}-*'}
+                  - {'Fn::Sub': 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-microvms/factory-${Installation}-*:*'}
+              - Sid: ReadQuotas
+                Effect: Allow
+                Action: ['servicequotas:ListServiceQuotas']
+                Resource: ['*']
+      Tags:
+        - {Key: software-factory-installation, Value: {Ref: Installation}}
+Outputs:
+  OperationRoleArn:
+    Description: role_arn of the AWS profile named in sandbox.awsProfile.
+    Value: {'Fn::GetAtt': [OperationRole, Arn]}
+  BuildRoleArn:
+    Value: {'Fn::GetAtt': [BuildRole, Arn]}
+  ArtifactBucketName:
+    Value: {Ref: ArtifactBucket}

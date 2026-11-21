@@ -260,6 +260,8 @@ export async function buildRelease(input: BuildInput) {
   };
   await verifySkillPackRegistry(join(project, 'assets/skill-pack'), factorySkillPackIds, async id => { await packManifest(id); });
   await copyTree(join(project, 'assets/skill-pack'), join(releaseDirectory, 'assets/skill-pack'));
+  // v2 ticket 02 (V2-31): the account template the Operator applies for a Lambda installation. Distributed, never applied by the Factory.
+  await copyTree(join(project, 'assets/lambda'), join(releaseDirectory, 'assets/lambda'));
   const builderSkillPack = await latestContinuationPack(factorySkillPackIds, async id => (await packManifest(id)).capabilities?.continuation === true);
   await mkdir(join(releaseDirectory, '.scratch'), { mode: 0o755 });
   await copyTree(join(project, privateSdk), join(releaseDirectory, privateSdk));
@@ -268,7 +270,7 @@ export async function buildRelease(input: BuildInput) {
   for (const file of ['05-sdk-read-operations-candidate.patch', '05-sdk-async-bash-v2.patch', '05-sdk-lexical-queue-v3.patch']) {
     await copyTree(join(project, 'docs/evidence', file), join(releaseDirectory, 'docs/evidence', file));
   }
-  for (const file of ['local-installation.md', 'first-human-login.md']) await copyTree(join(project, 'docs', file), join(releaseDirectory, 'docs', file));
+  for (const file of ['local-installation.md', 'first-human-login.md', 'lambda-installation.md']) await copyTree(join(project, 'docs', file), join(releaseDirectory, 'docs', file));
   await copyTree(join(project, 'src/sandbox/guest-profile'), join(releaseDirectory, 'provenance/guest-profile'));
   await mkdir(join(releaseDirectory, 'node_modules'), { mode: 0o755 });
   const runtimePackages = [];

@@ -90,6 +90,6 @@ test('production composition refuses any role whose configured provider/model is
 });
 
 test('v2 ticket 01: a sandbox adapter this release cannot run refuses the whole composition (no fallback to another sandbox)', async () => {
-  const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: { adapter: 'lambda', schemaVersion: 1 } }, guestAssets, github });
+  const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' } }, guestAssets, github });
   assert.deepEqual(refused, { status: 'refused', code: 'SANDBOX_ADAPTER_UNAVAILABLE', roles: [] });
 });

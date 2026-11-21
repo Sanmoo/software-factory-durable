@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SandboxCapabilities } from '../contracts/index.js';
+import { lambdaCapabilities, lambdaProfileSchema, type LambdaProfile } from './lambda/profile.js';
 
 // Development profile identity only: no distributed assets or qualified release yet.
 export const configurationSchema = z.strictObject({
@@ -29,6 +30,8 @@ export const gondolinCapabilities: SandboxCapabilities = Object.freeze({ docker:
 
 export type SandboxAdapterSelection =
   { status: 'selected'; adapter: 'gondolin'; capabilities: SandboxCapabilities; configuration: SandboxConfiguration } |
+  /** v2 ticket 02: the effective Lambda profile keeps `adapter: 'lambda'` (it is what tells the two effective configurations apart). */
+  { status: 'selected'; adapter: 'lambda'; capabilities: SandboxCapabilities; configuration: LambdaProfile } |
   { status: 'refused'; /** The adapter the configuration names (`null`: it names none that exists). */ adapter: SandboxAdapter | null;
     errors: { code: 'SANDBOX_CONFIGURATION_INVALID' | 'SANDBOX_ADAPTER_UNAVAILABLE'; path: string }[] };
 
@@ -36,7 +39,7 @@ export type SandboxAdapterSelection =
  * V2-01 (pure): the ONE adapter the installation configuration selects, statically, for every repository, with its declared capabilities
  * and its own effective profile. `sandbox.adapter` is the only selector (no per-repository or per-Work choice, no automatic selection, no
  * list); it is never part of an adapter's profile, so a Gondolin configuration written before v2 keeps its effective configuration and the
- * identity of the environments prepared from it. An adapter that is named but not available is refused; there is never a fallback.
+ * identity of the environments prepared from it. There is never a fallback from one adapter to another.
  */
 export function selectSandboxAdapter(configuration: unknown): SandboxAdapterSelection {
   let adapter: unknown = 'gondolin';
@@ -45,19 +48,29 @@ export function selectSandboxAdapter(configuration: unknown): SandboxAdapterSele
     const { adapter: named, ...rest } = configuration as Record<string, unknown>;
     adapter = named; profile = rest;
   }
-  if (adapter === 'lambda') return { status: 'refused', adapter, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] };
+  if (adapter === 'lambda') {
+    const parsed = lambdaProfileSchema.safeParse(configuration);
+    if (!parsed.success) return { status: 'refused', adapter, errors: invalid(parsed.error.issues) };
+    return { status: 'selected', adapter, capabilities: lambdaCapabilities(parsed.data), configuration: parsed.data };
+  }
   if (adapter !== 'gondolin') return { status: 'refused', adapter: null, errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.adapter' }] };
   const parsed = configurationSchema.safeParse(profile);
-  if (!parsed.success) {
-    return { status: 'refused', adapter, errors: parsed.error.issues.map(issue => ({
-      code: 'SANDBOX_CONFIGURATION_INVALID' as const, path: ['sandbox', ...issue.path].join('.') })) };
-  }
+  if (!parsed.success) return { status: 'refused', adapter, errors: invalid(parsed.error.issues) };
   return { status: 'selected', adapter, capabilities: gondolinCapabilities, configuration: parsed.data };
 }
+function invalid(issues: readonly { path: PropertyKey[] }[]) {
+  return issues.map(issue => ({ code: 'SANDBOX_CONFIGURATION_INVALID' as const, path: ['sandbox', ...issue.path.map(String)].join('.') }));
+}
 
+/**
+ * The GONDOLIN lifecycle's view of the configuration (prepare/start and the host diagnostics). A valid Lambda selection is
+ * `SANDBOX_ADAPTER_UNAVAILABLE` here: this release validates a Lambda installation (ticket 02) but has no Lambda lifecycle yet, and a
+ * Lambda Work is never prepared or started under Gondolin.
+ */
 export function validateConfiguration(configuration: unknown) {
   const selection = selectSandboxAdapter(configuration);
   if (selection.status !== 'selected') return { valid: false as const, errors: selection.errors };
+  if (selection.adapter !== 'gondolin') return { valid: false as const, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE' as const, path: 'sandbox.adapter' }] };
   return { valid: true as const, effective: selection.configuration };
 }
 
