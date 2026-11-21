@@ -234,7 +234,6 @@ export type KnownContext = {
 /** Identifiers the Factory itself produced may be quoted; anything else is omitted rather than rendered as prompt text. */
 const versionId = /^v[1-9][0-9]{0,3}$/;
 const commitId = /^[0-9a-f]{40}$/;
-const fencedIdentifiers = (values: readonly string[]) => (values.length ? fenced(values.join('\n')) : '');
 /**
  * Explicit replacement instruction for a resumed activation whose session is NOT continued (new boot, new session; spec §5.5/§6.1): the
  * reason of the replacement and the recoverable context — Work, preserved request/instructions, Git, artifacts, known effects — plus what

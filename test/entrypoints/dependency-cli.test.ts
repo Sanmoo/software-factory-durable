@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { ControlStatus, ListView, ShowView, WorkView } from '../../src/control/index.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld, issue } from './github-world-fixture.js';
 import { remainingMs, untilHolds } from '../runner/budget.js';
@@ -34,7 +35,6 @@ function invoke(root: string, args: string[]) {
     }),
   };
 }
-type Json = Record<string, any>;
 const remote = (repository: string, id: number, number: number, overrides: Parameters<typeof issue>[1] = {}) =>
   issue(number, { repository, id, node_id: `I_${id}`, labels: [], ...overrides });
 
@@ -71,9 +71,9 @@ test(
             'dependencyRepositories: [{repository: acme/deps, installationId: 2}]\npollingSeconds: 30',
         ),
     );
-    const cli = async (...args: string[]) => {
+    const cli = async <T = unknown>(...args: string[]) => {
       const result = await invoke(root, args).result;
-      return { ...result, json: result.stdout ? (JSON.parse(result.stdout) as Json) : undefined };
+      return { ...result, json: result.stdout ? (JSON.parse(result.stdout) as T) : undefined };
     };
     const owner = invoke(root, ['run']);
     let stopped = false;
@@ -83,24 +83,24 @@ test(
         await owner.result;
       }
     });
-    let status: Json | undefined;
+    let status: ControlStatus | undefined;
     await untilHolds(
       'controller completed a polling round',
       async () => {
-        const reply = await cli('status');
+        const reply = await cli<ControlStatus>('status');
         if (reply.code === 0) status = reply.json;
         return Boolean(status && status.polling.cycles >= 1);
       },
       50,
     );
     assert.ok(status && status.polling.cycles >= 1, 'controller completed a polling round (the next one is 30 s later)');
-    const view = (await cli('list')).json!;
-    const works = Object.fromEntries(view.works.map((work: Json) => [work.ticket.number, work])) as Record<number, Json>;
+    const view = (await cli<ListView>('list')).json!;
+    const works = Object.fromEntries(view.works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
     assert.deepEqual(Object.keys(works), ['1', '2', '3', '4']);
     // #1: own blocker #2 (a Factory Work, not delivered) plus a satisfied dependency-only blocker acme/deps#5 with equal-looking identity.
-    assert.equal(works[1]!.dependencies.latest.conclusion, 'pending');
+    assert.equal(works[1]!.dependencies.latest!.conclusion, 'pending');
     assert.deepEqual(
-      works[1]!.dependencies.latest.blockers.map((b: Json) => [b.repository, b.number, b.repositoryRole, b.classification, b.satisfied, b.reason]),
+      works[1]!.dependencies.latest!.blockers.map(b => [b.repository, b.number, b.repositoryRole, b.classification, b.satisfied, b.reason]),
       [
         ['acme/project', 2, 'executable', 'own', false, 'OWN_CYCLE_NOT_DELIVERED'],
         ['acme/deps', 5, 'dependency-only', 'external', true, null],
@@ -108,7 +108,7 @@ test(
     );
     // #3: the blocker lives in a repository that is not configured: inconclusive, never released, never read with another identity.
     assert.deepEqual(
-      [works[3]!.dependencies.latest.conclusion, works[3]!.dependencies.latest.reasons.map((r: Json) => r.code)],
+      [works[3]!.dependencies.latest!.conclusion, works[3]!.dependencies.latest!.reasons.map(r => r.code)],
       ['inconclusive', ['DEPENDENCY_REPOSITORY_NOT_CONFIGURED']],
     );
     assert.deepEqual(works[1]!.dispatch.reasons, ['DEPENDENCY_PENDING', 'EXECUTION_NOT_ENABLED']);
@@ -116,15 +116,15 @@ test(
     assert.deepEqual(works[2]!.dispatch.reasons, ['EXECUTION_NOT_ENABLED']);
     assert.equal(view.selection.next, works[2]!.work_id, 'impeded #1 does not block independent #2');
     assert.deepEqual(
-      works[1]!.dependencies.latest.principals.map((p: Json) => [p.installationId, p.repository, p.repositoryId, p.role, p.purpose, p.permissions]),
+      works[1]!.dependencies.latest!.principals.map(p => [p.installationId, p.repository, p.repositoryId, p.role, p.purpose, p.permissions]),
       [
         [2, 'acme/project', 3, 'executable', 'dependency-read', { metadata: 'read', issues: 'read' }],
         [2, 'acme/deps', 4, 'dependency-only', 'dependency-read', { metadata: 'read', issues: 'read' }],
       ],
     );
-    const shown = (await cli('show', works[3]!.work_id)).json!;
-    assert.match(shown.work.impediments[0].nextStep, /dependencyRepositories/);
-    const current = (await cli('status')).json!;
+    const shown = (await cli<Extract<ShowView, { kind: 'work' }>>('show', works[3]!.work_id)).json!;
+    assert.match(shown.work.impediments[0]!.nextStep, /dependencyRepositories/);
+    const current = (await cli<ControlStatus>('status')).json!;
     assert.deepEqual(current.dependencies, { satisfied: 2, pending: 1, inconclusive: 1, notEvaluated: 0 });
     assert.equal(current.selection.next, works[2]!.work_id);
     stopped = true;

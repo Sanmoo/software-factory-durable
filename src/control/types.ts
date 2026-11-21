@@ -33,7 +33,7 @@ import type {
 } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
-import type { BranchCleanupResult, CodeRepository, OwnPullRequestFacts } from '../code-repository/index.js';
+import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';

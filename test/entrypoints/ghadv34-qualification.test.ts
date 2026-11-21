@@ -489,8 +489,9 @@ test('human scripts: exact, fail-fast, operator-only; merges only with the rules
 
 const H = sha('h'),
   B2 = sha('b');
-type Json = Record<string, any>;
-function passing(): Json {
+type Saved = ReturnType<typeof passing>;
+type Entry = Record<string, unknown>;
+function passing() {
   return {
     foreign: { status: 'success', hold: { pullRequests: [{ number: 7 }] }, events: [] },
     strangers: { status: 'success', events: [] },
@@ -563,7 +564,7 @@ function passing(): Json {
     },
   };
 }
-const failing = (saved: Json) =>
+const failing = (saved: Saved) =>
   recipe
     .verdictOf(saved as never)
     .checks.filter(item => !item.met)
@@ -585,20 +586,20 @@ test('verdict: every obligation met by a consistent saved run; merge-first is an
 });
 
 test('verdict sensitivity: each obligation fails when its observation is altered', () => {
-  const cases: [string, (saved: Json) => void][] = [
+  const cases: [string, (saved: Saved) => void][] = [
     ['foreign-reported-not-adopted', saved => saved.inspect.works.push({ ticket: { number: 101 }, history: [], previousExecutions: [], execution: null })],
-    ['close-withdraws-reopen-does-not-redispatch', saved => saved.withdraw.events.push({ call: 'activate' })],
+    ['close-withdraws-reopen-does-not-redispatch', saved => (saved.withdraw.events as Entry[]).push({ call: 'activate' })],
     [
       'only-explicit-resume-continues',
       saved => {
-        saved.inspect.works[0].history = saved.inspect.works[0].history.filter((item: Json) => item.event !== 'resume-confirmed');
+        saved.inspect.works[0]!.history = saved.inspect.works[0]!.history.filter(item => item.event !== 'resume-confirmed');
       },
     ],
-    ['closed-during-activity-not-ceased-not-delivered-not-cancelled', saved => saved.close.events.push({ call: 'activity-aborted' })],
+    ['closed-during-activity-not-ceased-not-delivered-not-cancelled', saved => (saved.close.events as Entry[]).push({ call: 'activity-aborted' })],
     [
       'closed-during-activity-not-ceased-not-delivered-not-cancelled',
       saved => {
-        saved.inspect.works[1].history[0].detail = '#5';
+        saved.inspect.works[1]!.history[0]!.detail = '#5';
       },
     ],
     [
@@ -623,13 +624,13 @@ test('verdict sensitivity: each obligation fails when its observation is altered
     [
       'bot-and-non-operator-ignored',
       saved => {
-        saved.inspect.questionsB[0].ignored = [{ code: 'AUTHOR_IS_BOT' }, { code: 'QUESTION_ALREADY_ANSWERED' }];
+        saved.inspect.questionsB[0]!.ignored = [{ code: 'AUTHOR_IS_BOT' }, { code: 'QUESTION_ALREADY_ANSWERED' }];
       },
     ],
     [
       'prose-insufficient-repeated-grant-nothing',
       saved => {
-        saved.inspect.questionsB[0].answer.text = 'beta';
+        saved.inspect.questionsB[0]!.answer.text = 'beta';
       },
     ],
     [
@@ -653,7 +654,7 @@ test('verdict sensitivity: each obligation fails when its observation is altered
     [
       'leased-pushes-only',
       saved => {
-        saved.inspect.pushViolations = ['UNEXPECTED_PUSH:git push --force'];
+        (saved.inspect as { pushViolations: string[] }).pushViolations = ['UNEXPECTED_PUSH:git push --force'];
       },
     ],
   ];
@@ -859,10 +860,10 @@ test('v5: every held end names its reason (holdReason)', () => {
 
 test('q34-ghadv-s-v2 (D-12): V-04.e ignores aborts recorded after the closed repair ended (the recipe owner shutdown)', () => {
   const saved = passing();
-  saved.inspect.works[1].previousExecutions[0].end = { outcome: 'completed', at: '2026-11-18T09:00:20.996Z' };
-  saved.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
+  (saved.inspect.works[1]!.previousExecutions[0] as Entry).end = { outcome: 'completed', at: '2026-11-18T09:00:20.996Z' };
+  (saved.close.events as Entry[]).push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
   assert.ok(!failing(saved).includes('closed-during-activity-not-ceased-not-delivered-not-cancelled'));
-  saved.close.events.push({ at: '2026-11-18T09:00:00.000Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
+  (saved.close.events as Entry[]).push({ at: '2026-11-18T09:00:00.000Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
   assert.ok(failing(saved).includes('closed-during-activity-not-ceased-not-delivered-not-cancelled'));
 });
 

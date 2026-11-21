@@ -227,11 +227,12 @@ test('human scripts: exact, fail-fast, operator-only; the ONE merge relaxes the 
   assert.match(recipe.cleanupScript(), /--remove-label ready-for-agent/);
 });
 
-type Json = Record<string, any>;
 const T0 = '2026-11-18T10:00:00.000Z',
   T1 = '2026-11-18T10:01:00.000Z',
   T2 = '2026-11-18T10:02:00.000Z';
-function passing(): Json {
+type Saved = ReturnType<typeof passing>;
+type Entry = Record<string, unknown>;
+function passing() {
   return {
     close: {
       status: 'success',
@@ -266,7 +267,7 @@ function passing(): Json {
     },
   };
 }
-const failing = (saved: Json) =>
+const failing = (saved: Saved) =>
   recipe
     .verdictOf(saved as never)
     .checks.filter(item => !item.met)
@@ -283,15 +284,15 @@ test('verdict: V-04.e, V-10.g and V-13.g met by a consistent saved run; merge-fi
 
 test('q34-ghadv-s-v2 (D-12): the owner-shutdown aborts AFTER the repair completed are not an interruption; an abort before its end still fails', () => {
   const v2 = passing();
-  const repair = v2.inspect.works[0].previousExecutions[0];
+  const repair = v2.inspect.works[0]!.previousExecutions[0] as Entry;
   repair.executionId = '0b523339-f7ef-40b2-9163-e6c144f6626e';
   repair.end = { at: '2026-11-18T09:00:20.996Z', outcome: 'completed', cessation: 'confirmed' };
-  v2.inspect.works[0].history[0].detail = '#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e';
+  v2.inspect.works[0]!.history[0]!.detail = '#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e';
   for (const role of ['builder', 'standards', 'spec'])
-    v2.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role, executionId: repair.executionId });
+    (v2.close.events as Entry[]).push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role, executionId: repair.executionId });
   assert.ok(!failing(v2).includes('closed-during-repair-not-ceased-not-delivered-not-cancelled'), 'the v2 run meets V-04.e');
   assert.equal(abortsBeforeEnd(v2.close.events, repair), 0);
-  v2.close.events.push({ at: '2026-11-18T09:00:10.000Z', call: 'activity-aborted', role: 'builder', executionId: repair.executionId });
+  (v2.close.events as Entry[]).push({ at: '2026-11-18T09:00:10.000Z', call: 'activity-aborted', role: 'builder', executionId: repair.executionId });
   assert.equal(abortsBeforeEnd(v2.close.events, repair), 1);
   assert.ok(failing(v2).includes('closed-during-repair-not-ceased-not-delivered-not-cancelled'), 'an abort before the end is an interruption');
   assert.equal(abortsBeforeEnd([{ call: 'activity-aborted' }], repair), 1, 'an abort without a time counts');
@@ -299,12 +300,12 @@ test('q34-ghadv-s-v2 (D-12): the owner-shutdown aborts AFTER the repair complete
 });
 
 test('verdict sensitivity: each obligation fails when its observation is altered', () => {
-  const cases: [string, (saved: Json) => void][] = [
-    ['closed-during-repair-not-ceased-not-delivered-not-cancelled', saved => saved.close.events.push({ call: 'activity-aborted' })],
+  const cases: [string, (saved: Saved) => void][] = [
+    ['closed-during-repair-not-ceased-not-delivered-not-cancelled', saved => (saved.close.events as Entry[]).push({ call: 'activity-aborted' })],
     [
       'closed-during-repair-not-ceased-not-delivered-not-cancelled',
       saved => {
-        saved.inspect.works[0].history[0].detail = '#9';
+        saved.inspect.works[0]!.history[0]!.detail = '#9';
       },
     ],
     [
@@ -313,7 +314,10 @@ test('verdict sensitivity: each obligation fails when its observation is altered
         saved['cancel-merge'].work.delivery.merge.mergedAt = '2026-11-18T10:05:00.000Z';
       },
     ],
-    ['pull-request-ended-during-repair', saved => saved['cancel-merge'].events.push({ call: 'activate', at: T2, context: { phaseId: 'builder-publication' } })],
+    [
+      'pull-request-ended-during-repair',
+      saved => (saved['cancel-merge'].events as Entry[]).push({ call: 'activate', at: T2, context: { phaseId: 'builder-publication' } }),
+    ],
     [
       'cancel-concurrent-with-merge',
       saved => {
@@ -341,7 +345,7 @@ test('verdict sensitivity: each obligation fails when its observation is altered
     [
       'leased-pushes-only',
       saved => {
-        saved.inspect.pushViolations = ['UNEXPECTED_PUSH:x'];
+        (saved.inspect as { pushViolations: string[] }).pushViolations = ['UNEXPECTED_PUSH:x'];
       },
     ],
   ];

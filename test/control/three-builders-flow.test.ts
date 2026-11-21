@@ -37,7 +37,6 @@ async function harness(
   const remote: Remote = { pulls: {}, issues: options.issues.map(number => remoteIssue(number)) };
   const github = githubDoubles(remote);
   options.wrap?.(github);
-  let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   const doubles = recoveryDoubles(dir, [], {
     capacity: options.capacity,
     ...(options.reviews ? { reviews: true } : {}),
@@ -53,7 +52,12 @@ async function harness(
     polling: { intervalSeconds: 60, clock: time.clock },
   });
   const stop = new AbortController();
-  current = { control, stop, running: control.run(stop.signal), time };
+  const current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined = {
+    control,
+    stop,
+    running: control.run(stop.signal),
+    time,
+  };
   t.after(async () => {
     if (!current!.stop.signal.aborted) {
       current!.stop.abort();

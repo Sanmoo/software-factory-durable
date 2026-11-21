@@ -560,9 +560,8 @@ async function runControl(
   const grants = grantGuard(phase);
   let prepared = 0;
   let activations = 0;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${observations}/control.sqlite`,
     runtimeInventory: 'empty',
     access: {

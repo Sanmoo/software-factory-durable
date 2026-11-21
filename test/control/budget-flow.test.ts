@@ -103,8 +103,7 @@ const budgetEvents = (work: WorkView) =>
 
 test('AC1: configured limits are snapshotted at admission; the initial implementation charges nothing; a correction reserves in the admission commit and is consumed once at the confirmed start', async t => {
   let atPrepare: WorkView | undefined;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], {
+  const h: Awaited<ReturnType<typeof harness>> = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], {
     onPrepare: async () => {
       atPrepare = await h.work();
     },
@@ -160,8 +159,7 @@ test('AC1: configured limits are snapshotted at admission; the initial implement
 
 test('AC2: proven non-start releases the reservation without consumption; an uncertain start keeps it (and it counts against the limit)', async t => {
   let pauseOnce = true;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }, { kind: 'launch-uncertain' }], {
+  const h: Awaited<ReturnType<typeof harness>> = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }, { kind: 'launch-uncertain' }], {
     onPrepare: async () => {
       // The pause committed during the correction's preparation refuses its activation before any worker request (own boot ceased).
       if (pauseOnce && (await h.work()).correction) {
@@ -383,8 +381,7 @@ test('AC3: touching an already-open correction records the added reason, never a
 test('AC2 (ticket 26): an owner stop after preparation but before any start request is a proven non-start: reservation and Slot released, nothing retried', async t => {
   let abortOnPrepare = false,
     aborted = false;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], {
+  const h: Awaited<ReturnType<typeof harness>> = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], {
     onPrepare: async () => {
       if (abortOnPrepare && !aborted) {
         aborted = true;

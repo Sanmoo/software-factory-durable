@@ -558,7 +558,6 @@ async function runControl(phase: ControlPhase, save: Save, operator: { login: st
       return rawTracker.postComment(ticketRef, comment, effect);
     },
   };
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const listView = async () => (await control.inspect({ kind: 'list' })) as ListView; // in-process: the WHOLE list (no page argument)
   const workIn = (view: ListView | null) => view?.works.find(item => item.ticket.number === number);
   let currentWork: string | null = null;
@@ -577,7 +576,7 @@ async function runControl(phase: ControlPhase, save: Save, operator: { login: st
   };
   delete (repositoryPort as { cleanupBranch?: unknown }).cleanupBranch;
   delete (repositoryPort as { reopenPullRequest?: unknown }).reopenPullRequest;
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${observations}/control.sqlite`,
     runtimeInventory: 'empty',
     access: {

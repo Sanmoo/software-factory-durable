@@ -361,7 +361,6 @@ export function createPullRequestReader(options: { github: GitHubAccess }) {
   async function requirements(repo: GitHubScope, base: string): Promise<Requirements> {
     const branch = await read(repo, async session => parse(branchSchema, await session.get(`/repos/${repo.repository}/branches/${path(base)}`)));
     const baseTip: Known<string> = branch.ok ? { state: 'complete', value: branch.value.commit.sha } : known(branch);
-    let classic: Known<ClassicChecks>;
     const protection = branch.ok ? branch.value.protection : undefined;
     // V-09.f: classic protection exists unless the branch read proves otherwise; then its merge-blocking settings are read in full.
     const settings = async (): Promise<Known<ClassicSettings | null>> => {
@@ -404,7 +403,7 @@ export function createPullRequestReader(options: { github: GitHubAccess }) {
       );
     }
     const merge = checks.state === 'complete' ? await settings() : null;
-    classic =
+    const classic: Known<ClassicChecks> =
       checks.state !== 'complete' ? checks : merge!.state !== 'complete' ? merge! : { state: 'complete', value: { ...checks.value, settings: merge!.value } };
     // Active rules of the base, including those inherited from organization/enterprise rulesets (GitHub lists only active rules).
     const rules = known(

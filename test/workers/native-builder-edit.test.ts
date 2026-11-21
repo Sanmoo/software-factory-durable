@@ -193,8 +193,7 @@ test('cancelled queued commit is not spent and releases its unused capture', asy
   });
   const cancelled = new AbortController();
   let blocker: Promise<void> | undefined;
-  let tool: ToolDefinition;
-  tool = builderEdit(context, {
+  const tool: ToolDefinition = builderEdit(context, {
     async executeTool(ctx, call, onData, signal) {
       const result = await f.sandbox.executeTool(ctx, call, onData, signal);
       if (call.name === 'edit-source' && call.operation === 'page' && call.path.endsWith('/first')) {

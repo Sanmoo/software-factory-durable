@@ -188,6 +188,10 @@ test('Protocol rejects a dequeue when its refill discovers an invalid frame behi
   const observeUnread = () => {
     if (consumed === fullWireBytes && receiver?.readableLength === 3) malformedUnread.resolve();
   };
+  const identifyReceiver = (socket: Socket) => {
+    receiver = socket;
+    receiver.on('readable', observeUnread);
+  };
   try {
     await new Promise<void>(resolve => {
       server.listen(join(root, 's'), resolve);
@@ -198,8 +202,7 @@ test('Protocol rejects a dequeue when its refill discovers an invalid frame behi
     Socket.prototype.read = function (size?: number) {
       const chunk = originalRead.call(this, size) as Buffer | null;
       if (!receiver && this !== producer && Buffer.isBuffer(chunk) && chunk.subarray(0, 32).equals(frame.subarray(0, 32))) {
-        receiver = this;
-        receiver.on('readable', observeUnread);
+        identifyReceiver(this);
       }
       if (this === receiver && chunk) {
         consumed += chunk.length;

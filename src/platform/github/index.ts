@@ -449,7 +449,6 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       try {
         const output = await new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
           let settled = false;
-          let timer: ReturnType<typeof setTimeout>;
           const fail = () => {
             if (!settled) {
               settled = true;
@@ -525,7 +524,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
             },
           );
           req.on('error', fail);
-          timer = setTimeout(() => {
+          const timer = setTimeout(() => {
             fail();
             req.destroy();
           }, 15000);

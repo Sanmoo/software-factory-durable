@@ -14,6 +14,13 @@ import { remainingMs } from '../runner/budget.js';
 
 // I-local: new Node24 worker entrypoint + real Pi SDK session + real Records/Protocol owner transport; the provider HTTP boundary
 // (offline fixture), the VM (double) and the Control (this test answering the IPC notification) are substituted.
+/** A worker IPC message as this test reads it (which fields are present depends on `kind`). */
+type WorkerMessage = {
+  kind: string;
+  status: string;
+  sessionFile: string;
+  question: { questionId: string; question: string; context: string; sha256: string; reference: { id: string }; acknowledged?: boolean };
+};
 for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as const)
   test(`AC1/AC3: Builder ask_user preserves, notifies and ENDS the activation: ${mode}`, { timeout: remainingMs() }, async t => {
     const context: ToolContext = {
@@ -77,7 +84,7 @@ for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as co
     t.after(() => {
       if (child.exitCode === null) child.kill();
     });
-    const messages: Record<string, any>[] = [];
+    const messages: WorkerMessage[] = [];
     let output = '';
     child.stdout!.on('data', chunk => {
       output += String(chunk);
@@ -86,7 +93,8 @@ for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as co
       output += String(chunk);
     });
     let preservedAtNotification = false;
-    child.on('message', (message: Record<string, any>) => {
+    child.on('message', received => {
+      const message = received as WorkerMessage;
       messages.push(message);
       if (message.kind !== 'worker-question') return;
       // The complete request is already preserved as protected evidence when the notification arrives.

@@ -57,6 +57,42 @@ export const proofs: Proof[] = [
     violation: 'point a link in docs/guides/architecture.md at a file that does not exist',
     apply: copy => copy.edit('docs/guides/architecture.md', append('- [Removido](../../src/control/removed.ts).')),
   },
+  {
+    id: 'format',
+    gate: 'Format',
+    tier: 'fast',
+    location: 'src/control/rules/budget.ts',
+    violation: 'misindent one line of src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', text => text.replace('\nexport function timeoutReached(', '\n   export function timeoutReached(')),
+  },
+  {
+    id: 'lint',
+    gate: 'Lint',
+    tier: 'fast',
+    location: 'src/control/rules/budget.ts',
+    violation: 'add an unused variable to src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', append('function proofLint() {\n  const unused = 1;\n}\nexport const proofLintUsed = proofLint;')),
+  },
+  {
+    id: 'secrets',
+    gate: 'Secrets',
+    tier: 'fast',
+    location: 'docs/proof-credentials.txt',
+    violation: 'add a file holding a well-formed fake AWS access key id and secret',
+    apply: copy =>
+      copy.write(
+        'docs/proof-credentials.txt',
+        `aws_access_key_id = ${'AKIA' + 'Z7QX4L2M3N5P6R7S'}\naws_secret_access_key = ${'q8Vt2LmX9pR4sN7w' + 'K1zB6yH3cJ0dF5gA2eU8iO4t'}\n`,
+      ),
+  },
+  {
+    id: 'avoided-terms',
+    gate: 'Avoided terms',
+    tier: 'fast',
+    location: 'src/control/rules/budget.ts',
+    violation: 'name a Slot identifier with the avoided synonym seat in src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', append('export const seatLimit = 1;')),
+  },
 ];
 
 export interface Evidence {

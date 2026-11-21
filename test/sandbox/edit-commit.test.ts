@@ -21,8 +21,8 @@ const context: ToolContext = {
 };
 async function fixture(t: { after(fn: () => Promise<void>): void }, original = 'original') {
   const root = await mkdtemp(join(tmpdir(), 'q5c-')); // mkdtemp creates our private 0700 root.
-  let cleanupOwner: Awaited<ReturnType<typeof serveReadTools>> | undefined;
-  let cleanupTools: Awaited<ReturnType<typeof connectReadTools>> | undefined;
+  let cleanupOwner: Awaited<ReturnType<typeof serveReadTools>> | undefined = undefined;
+  let cleanupTools: Awaited<ReturnType<typeof connectReadTools>> | undefined = undefined;
   t.after(async () => {
     try {
       cleanupTools?.close();

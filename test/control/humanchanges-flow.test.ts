@@ -27,7 +27,6 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const execution = executionDoubles(remote, scripts);
   // Calendar of the persisted recovery waits (ticket 26): advanced by the test, never slept.
   execution.ports.calendar = { now: () => Date.now() + skew.ms };
-  let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   const time = manualClock();
   const control = await openControl({
     storagePath: join(dir, 'control.sqlite'),
@@ -37,7 +36,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
     polling: { intervalSeconds: 60, clock: time.clock },
   });
   const stop = new AbortController();
-  current = { control, stop, running: control.run(stop.signal), time };
+  const current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined = {
+    control,
+    stop,
+    running: control.run(stop.signal),
+    time,
+  };
   await time.sleeping();
   t.after(async () => {
     if (!current!.stop.signal.aborted) {

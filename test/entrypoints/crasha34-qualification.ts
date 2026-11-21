@@ -602,7 +602,6 @@ async function child(step: Step) {
     prepared = 0,
     firstBuilder = true,
     opinionCut = false;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }), line);
   // Every method bound explicitly to the real tracker; each line's owner sees ONLY its own Ticket in the label listing.
   const guardedTracker: IssueTracker = {
@@ -639,7 +638,7 @@ async function child(step: Step) {
       return result;
     },
   };
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${directory}/control.sqlite`,
     runtimeInventory: { kind: 'listed', observedAt: new Date().toISOString(), ...listed },
     access: {

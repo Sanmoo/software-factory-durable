@@ -361,7 +361,7 @@ async function mountFacts(candidate: string): Promise<MountFacts> {
     () => null,
   );
   const info = await fs.stat(real).catch(() => null);
-  const imageInfo = await fs.stat(image).catch(() => null);
+  await fs.stat(image).catch(() => null);
   return {
     candidate: real,
     entry,

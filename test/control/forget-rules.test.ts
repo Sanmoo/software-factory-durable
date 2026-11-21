@@ -11,7 +11,7 @@ import {
   type ForgetFacts,
 } from '../../src/control/rules/forget.js';
 import { ownCycleFor, evaluateDependencies } from '../../src/control/rules/dependencies.js';
-import type { ExecutionView, ForgetTree, WorkView } from '../../src/control/types.js';
+import type { ExecutionView, ForgetTree } from '../../src/control/types.js';
 
 // Ticket 31 pure rules (spec §12.4 `forget`, §4.2): eligibility, plan of losses, minimal memory and its use by own-dependency classification.
 type Work = Parameters<typeof forgetRefusals>[0];

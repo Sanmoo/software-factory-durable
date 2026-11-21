@@ -296,7 +296,6 @@ async function child(step: Step) {
   let issued = 0,
     prepared = 0,
     activated = 0;
-  let control: Awaited<ReturnType<typeof openControl>>;
   const allowed = async (workId: string) => {
     const shown = await control.inspect({ kind: 'show', work_id: workId });
     return 'work' in shown && shown.work.ticket.number === expectedTicket.number && shown.work.ticket.repositoryId === expectedTicket.repositoryId;
@@ -379,7 +378,7 @@ async function child(step: Step) {
       },
     },
   };
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${observations}/control.sqlite`,
     runtimeInventory: inventory,
     access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [] },

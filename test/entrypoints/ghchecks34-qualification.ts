@@ -1155,11 +1155,10 @@ async function runControl(
   const grants = grantGuard(phase);
   const conversions = conversionGuard(phase);
   const counts = { activations: 0, prepared: 0, conversions: 0, refusedConversions: 0 };
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const all = () => listAll(cursor => control.inspect({ kind: 'list', cursor, limit: 50 }));
   const shown = async () => workOf(await all(), number);
   const numberOf = async (workId: string) => (await all()).works.find(item => item.work_id === workId)?.ticket.number ?? 0;
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${observations}/control.sqlite`,
     runtimeInventory: 'empty',
     access: {

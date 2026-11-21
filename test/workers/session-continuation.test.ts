@@ -66,6 +66,15 @@ async function installation(t: { after(fn: () => Promise<void>): void }) {
   return { root, worker };
 }
 
+/** A worker IPC message as this test reads it (which fields are present depends on `kind`). */
+type WorkerMessage = {
+  kind: string;
+  question: { questionId: string };
+  status: string;
+  sessionFile: string;
+  sessionTools: string[];
+  receipt: { id: string };
+};
 async function runWorker(
   t: { after(fn: () => Promise<void>): void },
   paths: { directory: string; profile: string },
@@ -101,8 +110,9 @@ async function runWorker(
   t.after(async () => {
     if (child.exitCode === null) child.kill();
   });
-  const messages: Record<string, any>[] = [];
-  child.on('message', (message: Record<string, any>) => {
+  const messages: WorkerMessage[] = [];
+  child.on('message', received => {
+    const message = received as WorkerMessage;
     messages.push(message);
     if (message.kind === 'worker-question')
       child.send({ kind: 'worker-question-ack', version: 1, context, questionId: message.question.questionId, status: 'recorded' });

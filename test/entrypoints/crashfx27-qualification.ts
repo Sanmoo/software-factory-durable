@@ -444,7 +444,6 @@ async function child(step: Step) {
   let posted = 0,
     prepared = 0,
     publishGrants = 0;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
   // Every method bound explicitly to the real tracker (never an object spread that could drop prototype methods or `this`).
   const guardedTracker: IssueTracker = {
@@ -486,7 +485,7 @@ async function child(step: Step) {
     },
   };
   const plannedBuilders = builderSequence[step].length;
-  control = await openControl({
+  const control: Awaited<ReturnType<typeof openControl>> = await openControl({
     storagePath: `${observations}/control.sqlite`,
     runtimeInventory: inventory,
     access: {

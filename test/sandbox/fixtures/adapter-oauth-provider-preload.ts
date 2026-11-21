@@ -60,9 +60,12 @@ ModelRuntime.prototype.getAuth = function (this: typeof ModelRuntime.prototype, 
 const nativeStream = ModelRuntime.prototype.streamSimple;
 let activeRuntime: typeof ModelRuntime.prototype;
 let activeRequest: Parameters<typeof nativeStream>;
+const captureActive = (runtime: typeof ModelRuntime.prototype, request: Parameters<typeof nativeStream>) => {
+  activeRuntime = runtime;
+  activeRequest = request;
+};
 ModelRuntime.prototype.streamSimple = function (...args: Parameters<typeof nativeStream>) {
-  activeRuntime = this;
-  activeRequest = args;
+  captureActive(this, args);
   return Reflect.apply(nativeStream, this, args);
 };
 globalThis.fetch = async (input, init) => {

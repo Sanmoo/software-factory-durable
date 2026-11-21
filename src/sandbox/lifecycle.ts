@@ -1,10 +1,8 @@
 import { unitState } from '../platform/host/index.js';
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readFile, readlink, readdir, realpath, statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 import { z } from 'zod';
 import { configurationSchema } from './configuration.js';
 import { environmentBaseRecordSchema } from './environment-base.js';
@@ -88,7 +86,6 @@ const operationalSchema = z.strictObject({
   vmmPid: z.number().int().positive().max(2147483647),
   vmmStartTicks: z.string().regex(/^[0-9]{1,20}$/),
 });
-const run = promisify(execFile);
 const metadataLimit = 65536;
 
 export async function privateDirectory(path: string) {

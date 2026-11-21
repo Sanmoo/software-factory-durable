@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { createWorkerSession } from '../../src/workers/worker-session.js';

@@ -84,7 +84,6 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
   ];
   const allCaptures = activations.flatMap(item => item.captures);
   let delivered: ((directive: BuilderDirective) => void) | undefined;
-  let control: Control | undefined;
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 },
     capacity: 1,
@@ -247,7 +246,7 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
     },
   };
   const time = manualClock();
-  control = await openControl({
+  const control: Control = await openControl({
     storagePath: join(dir, 'control.sqlite'),
     runtimeInventory: 'empty',
     execution: ports,

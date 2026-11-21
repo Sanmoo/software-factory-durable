@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ConcreteAuthorization, FindingTreatment, GateEvidence, HandoffDeclarations } from '../contracts/index.js';
+import type { ConcreteAuthorization, FindingTreatment, HandoffDeclarations } from '../contracts/index.js';
 
 const text = (max: number) => z.string().min(1).max(max);
 const authorization = z.union([

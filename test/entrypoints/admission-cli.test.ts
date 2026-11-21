@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { ControlStatus, ListView, ShowView } from '../../src/control/index.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld, issue, pull } from './github-world-fixture.js';
 import { ended, killTree, until } from '../runner/budget.js';
@@ -30,7 +31,6 @@ function invoke(root: string, args: string[], fixturePath: string) {
   });
   return { child, result: ended(child, () => `factory ${args[0]} (stderr: ${stderr.slice(-300)})`).then(({ code }) => ({ code, stdout, stderr })) };
 }
-type Json = Record<string, any>;
 
 test('CLI list/show expose one durable Work per eligible Ticket across repeated polling and controller restart', async t => {
   const world = await githubWorld(t, { issues: [issue(1), issue(2), issue(3, { labels: [] })], pulls: [pull(20, { body: 'Fixes #2' })] });
@@ -42,9 +42,9 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
       .replace('credentials/unused.pem', 'credentials/app.pem')
       .replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]\npollingSeconds: 1'),
   );
-  const cli = async (...args: string[]) => {
+  const cli = async <T = unknown>(...args: string[]) => {
     const result = await invoke(root, args, root).result;
-    return { ...result, json: result.stdout ? (JSON.parse(result.stdout) as Json) : undefined };
+    return { ...result, json: result.stdout ? (JSON.parse(result.stdout) as T) : undefined };
   };
   const unavailable = await cli('list');
   assert.equal(unavailable.code, 3);
@@ -63,7 +63,7 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
     await until(
       `${minimumCycles} polling cycles`,
       async () => {
-        const status = await cli('status');
+        const status = await cli<ControlStatus>('status');
         return status.code === 0 && status.json!.polling.cycles >= minimumCycles ? true : undefined;
       },
       50,
@@ -85,7 +85,7 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
     until(
       'a list between two polling rounds',
       async () => {
-        const listed = await cli('list');
+        const listed = await cli<ListView>('list');
         assert.equal(listed.code, 0, listed.stderr);
         return listed.json!.polling.state === 'sleeping' ? listed : undefined;
       },
@@ -98,29 +98,29 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   assert.equal(view.kind, 'list');
   assert.equal(view.dispatch, 'closed');
   assert.deepEqual(
-    view.works.map((work: Json) => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
+    view.works.map(work => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
     [[1, 7001, 'I_node1', 3, 1]],
   );
-  const work = view.works[0];
+  const work = view.works[0]!;
   assert.deepEqual(work.dispatch.reasons, ['EXECUTION_NOT_ENABLED'], 'no native blocker: only the execution barrier holds');
-  assert.equal(work.dependencies.latest.conclusion, 'satisfied');
-  const candidates = view.polling.repositories[0].candidates as Json[];
+  assert.equal(work.dependencies.latest!.conclusion, 'satisfied');
+  const candidates = view.polling.repositories[0]!.candidates!;
   const foreign = candidates.find(candidate => candidate.ticket.number === 2)!;
   assert.equal(foreign.outcome, 'held');
-  assert.equal(foreign.holds[0].code, 'FOREIGN_PULL_REQUEST');
+  assert.equal(foreign.holds[0]!.code, 'FOREIGN_PULL_REQUEST');
   assert.deepEqual(
-    foreign.holds[0].pullRequests.map((pr: Json) => [pr.number, pr.pullRequestId]),
+    foreign.holds[0]!.pullRequests!.map(pr => [pr.number, pr.pullRequestId]),
     [[20, 9020]],
   );
   assert.equal(
     candidates.some(candidate => candidate.ticket.number === 3),
     false,
   );
-  const shown = await cli('show', work.work_id);
+  const shown = await cli<Extract<ShowView, { kind: 'work' }>>('show', work.work_id);
   assert.equal(shown.code, 0, shown.stderr);
   assert.equal(shown.json!.kind, 'work');
   assert.equal(shown.json!.work.authorization.basis.label.name, 'ready-for-agent');
-  const missing = await cli('show', '00000000-0000-4000-8000-000000000000');
+  const missing = await cli<ShowView>('show', '00000000-0000-4000-8000-000000000000');
   assert.equal(missing.json!.kind, 'work-not-found');
   assert.equal(missing.code, 2);
   assert.equal((await cli('show', 'not-a-work-id')).code, 2);
@@ -131,15 +131,15 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
     state.pulls = [];
   });
   running = await owner(3);
-  const after = (await cli('list')).json!;
+  const after = (await cli<ListView>('list')).json!;
   assert.deepEqual(
-    after.works.map((item: Json) => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]),
+    after.works.map(item => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]),
     [
       [true, 1, 1],
       [false, 2, 2],
     ],
   );
-  const status = (await cli('status')).json!;
+  const status = (await cli<ControlStatus>('status')).json!;
   assert.deepEqual([status.works.total, status.queues.normal, status.historyLength, status.polling.intervalSeconds], [2, 2, 0, 1]);
   await running.stop();
 
