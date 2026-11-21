@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, ChannelReport, IndeterminateEffect, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, PreservationObservation, ChannelReport, IndeterminateEffect, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -169,6 +169,10 @@ export type ExecutionPorts = {
     /** Ticket 48: Host fingerprint of the Work's checkout (confined reads of Git metadata + a bounded walk of the tree; no host git, no guest
      * command). Absent = progress after a budget end is never established (it goes to recovery). */
     observeCheckout?(input: { environment: EnvironmentRef }): Promise<CheckoutFingerprint>;
+    /** v2 ticket 07 (V2-06): the preservation gate's observation, made IN the guest of the environment's current boot by a fixed program
+     * the host runs (workspace state, stash, HEAD and `ls-remote` of the Work branch). Required of a sandbox that declares no persistent
+     * disk; absent there, nothing is ever treated as preserved. */
+    preservationGate?(input: { environment: EnvironmentRef; boot: BootRef; repository: string; installationId: number; branch: string }): Promise<PreservationObservation>;
     /** v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot. Read only when the sandbox declares
      * `channelRecovery`, before the Execution's end is recorded and again before its boot is stopped; the result is recorded durably. */
     channelReport?(input: { environment: EnvironmentRef; boot: BootRef }): Promise<ChannelReport>;
@@ -358,11 +362,27 @@ export type ExecutionView = {
    */
   inBootPublication?: { invocationId: string; head: string; branch: string; expectedRemote: BranchObservation; pullRequest: number | null; requestedAt: string;
     outcome?: { at: string; status: 'completed' | 'failure' | 'not-started'; code: string | null } };
+  /**
+   * v2 ticket 07 (V2-05..V2-07): the preservation gate of THIS Execution before it returned control: every check Control made, in order,
+   * and the Builder activation each refusal was returned to. Three refusals in a row hold the Execution with the last diagnostic.
+   */
+  preservationGate?: { occasion: PreservationOccasion; attempts: { at: string; outcome: 'accepted' | 'refused'; code: string | null; detail?: string; commit?: string;
+    /** The Builder activation (own invocation, same boot) the refusal was returned to, and how it ended. */
+    correction?: { invocationId: string; status?: 'completed' | 'failure' | 'question' | 'not-started'; code?: string | null } }[] };
   /** v2 ticket 11 (V2-21): tool calls of this Execution that started and whose result never arrived (the channel dropped), as the sandbox
    * reported them. Their effects may have happened; a substitute session is told of them and never repeats one by assumption (V2-19). */
   indeterminateEffects?: IndeterminateEffectRecord[];
 };
 /** v2 ticket 06: the Work branch tip on `origin` from Control's own read, or why it is not known. */
+/** v2 ticket 07 (V2-05): where the gate applies. `question`: a Question to the human; `ci-wait`: the Execution completed and the waits on
+ * GitHub follow (CI, readiness); `planned-swap` (ticket 09) and `substitute-end` (ticket 13) call the same gate. */
+export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'substitute-end';
+/**
+ * v2 ticket 07 (V2-06/V2-08): the last commit the gate confirmed on `origin` for this Work (the guest's `ls-remote` AND Control's own
+ * read agreed with the guest's HEAD on a clean workspace). The next boot resumes from it. `heads`: every commit confirmed so far (bounded),
+ * the Factory's own history on the Work branch besides its publication attempts.
+ */
+export type PreservationView = { commit: string; branch: string; confirmedAt: string; executionId: string; boot: string; occasion: PreservationOccasion; heads: string[] };
 export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
 /** One indeterminate effect as Control keeps it: the sandbox's report plus the boot it ran in and when Control recorded it. */
 export type IndeterminateEffectRecord = IndeterminateEffect & { boot: string; recordedAt: string };
@@ -792,6 +812,8 @@ export type WorkView = {
   /** Ticket 23 (absent on earlier records): human feedback of the own PR/Ticket recorded for the next safe activation of a correction. */
   feedback?: FeedbackView | null;
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
+  /** v2 ticket 07: absent until a preservation gate accepted (only on a sandbox without a persistent disk). */
+  preservation?: PreservationView;
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
@@ -828,7 +850,8 @@ export type WorkView = {
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
-      /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried';
+      /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
+      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';

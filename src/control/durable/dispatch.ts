@@ -3,13 +3,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BuilderGrant } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
-import type { ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
+import type { PreservationObservation, ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, inheritedRounds, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
-import type { AccessDependencies, BranchObservation, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PublicationView } from '../types.js';
+import type { AccessDependencies, BranchObservation, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PreservationOccasion, PublicationView } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
@@ -24,6 +24,8 @@ import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
+import { recordGateCheck, recordGateCorrection } from './preservation.js';
+import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateRefusalLimit, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
@@ -246,6 +248,24 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return { attemptId, evaluation };
   }
 
+  /**
+   * v2 ticket 07 (V2-05/V2-06): ONE check of the preservation gate for the boot of a Work, the seam every caller uses (the return of
+   * control before an external wait here; the planned swap and the substitute session in tickets 09 and 13). The guest's state is observed by
+   * the sandbox's fixed program; when the guest claims a clean, published workspace, Control confirms the Work branch tip with its OWN read
+   * of `origin` before anything counts as preserved. It records nothing and never throws.
+   */
+  async function checkPreservation(work: WorkRecord, at: { environment: EnvironmentRef; boot: BootRef; branch: string }): Promise<{ observation: PreservationObservation; decision: GateDecision }> {
+    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+    const observation: PreservationObservation = !configured ? { status: 'unavailable', code: 'REPOSITORY_NOT_CONFIGURED' }
+      : !ports.sandbox.preservationGate ? { status: 'unavailable', code: 'PRESERVATION_GATE_NOT_COMPOSED' }
+        : await ports.sandbox.preservationGate({ environment: at.environment, boot: at.boot, repository: work.repository.repository, installationId: configured.installationId, branch: at.branch })
+          .catch(() => ({ status: 'unavailable' as const, code: 'PRESERVATION_OBSERVATION_FAILED' }));
+    const unread = gateDecision({ observation, origin: { state: 'unknown', code: 'ORIGIN_NOT_READ' } });
+    // Everything the guest itself reports as not preserved is refused without spending a read of `origin`.
+    if (unread.outcome === 'accepted' || unread.code !== 'REMOTE_UNCONFIRMED') return { observation, decision: unread };
+    const origin = await readOrigin(work, at.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
+    return { observation, decision: gateDecision({ observation, origin }) };
+  }
   /**
    * v2 ticket 06: Control's own read of `origin` (never the guest's word): the tip of the base and of the Work branch. It names the commit
    * a boot without a persistent disk clones, and it is the measure of progress after a budget end (decision 2a).
@@ -733,7 +753,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Ticket 21: the Factory's own remote history and the authorization in force (its basis must be the reconciliation Execution).
     const authorization = authorizationInForce(publication);
     const basis = [...(work.previousExecutions ?? []), ...(work.execution ? [work.execution] : [])].find(item => item.executionId === publication.basisExecutionId);
-    const known = knownRemote(publication, attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId));
+    // v2 ticket 07: commits a preservation gate confirmed on `origin` are the Factory's own history on the Work branch (never a human change).
+    const preserved = preservedHeads(work);
+    const known = knownRemote(publication, attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId), preserved);
     const compareFrom = comparisonBase(known);
     let observation: DiscoveryObservation;
     let observedAt: string | null = null;
@@ -758,7 +780,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
     }
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
-      repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: publication.linkedHeads ?? [],
+      repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: [...(publication.linkedHeads ?? []), ...preserved],
       prOnlyRecovery: prOnlyRecovery(publication), known,
       refsBefore: publication.refsBefore ?? null, observation,
       // Ticket 61: the other Works' own publication expectations (Control state): their own branch at a recorded head is not unexpected.
@@ -956,6 +978,60 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         observe(work.work_id, 'in-boot-publication-ended', [result.status]);
       } finally { publisher.close(); }
     };
+    /**
+     * v2 ticket 07 (V2-05..V2-07): the preservation gate before this Execution returns control with its boot about to end. Imposed by Control,
+     * not left to the prompt: a refusal is returned to the Builder with its reason, in an activation of THIS Execution and boot (own invocation,
+     * no handoff, the one fast-forward push of HEAD to the Work branch), and the gate is checked again. An acceptance records the confirmed
+     * commit on the Work. Three refusals in a row hold the Execution with the last diagnostic: its boot is NOT stopped (what is not on
+     * `origin` would be lost) and stays subject to rotation. The same function serves the planned swap (ticket 09) and the substitute
+     * session (ticket 13).
+     */
+    const preservationGate = async (occasion: PreservationOccasion): Promise<'accepted' | 'held' | 'stale'> => {
+      if (!environment || !boot) return 'stale';
+      const branch = execution.request.branch;
+      const remote = publicationRemote(work.repository.repository);
+      let refusal: GateRefusal | null = null;
+      for (let attempt = 1; attempt <= gateRefusalLimit; attempt += 1) {
+        checkStop();
+        const { observation, decision } = await wait(checkPreservation(work, { environment, boot, branch }));
+        if (await recordGateCheck(session, work.work_id, executionId, { occasion, boot, branch, decision }) === 'stale') return 'stale';
+        await activity(decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused');
+        observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
+        if (decision.outcome === 'accepted') return 'accepted';
+        refusal = { code: decision.code, detail: decision.detail };
+        // The third refusal blocks; a workspace that could not even be observed is nothing the Builder can correct (it is only asked again).
+        if (attempt === gateRefusalLimit || observation.status !== 'observed') continue;
+        const invocationId = randomUUID();
+        const grant = lifecycle?.current;
+        if (!grant) { await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: 'not-started', code: 'CREDENTIALS_WITHDRAWN' }); continue; }
+        const fresh = await readWork(session, work.work_id);
+        const prompt = gateCorrectionPrompt({ occasion, refusal, attempt, branch, push: gateCorrectionPush(branch, remote),
+          pullRequest: Boolean(fresh?.pullRequest || fresh?.publication?.pullRequest || fresh?.execution?.inBootPublication) });
+        // The invocation is recorded BEFORE the launch: an activation of this Execution is never unknown to the authority.
+        if (await recordGateCorrection(session, work.work_id, executionId, { invocationId }) === 'stale') return 'stale';
+        let corrector: Handle;
+        try {
+          corrector = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: environment, bootRef: boot, phaseId: 'builder-preservation' },
+            prompt, signal: activitySignal, ...ports.builder,
+            ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
+            pushPolicy: { branch, head: observation.head, expected: null, remote, wip: true } }, { credential: grant.delivery });
+        } catch (error) {
+          if (interrupted() || stopping.signal.aborted) throw error;
+          await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: 'not-started', code: codeOf(error, 'PRESERVATION_ACTIVATION_FAILED') });
+          continue;
+        }
+        await lifecycle!.attach(corrector.worker);
+        try {
+          await wait(corrector.started);
+          await activity('preservation-correction-started');
+          const result = await wait(lifecycle!.renewWhile(corrector.completed));
+          await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status, code: result.status === 'failure' ? result.code : null });
+        } finally { corrector.close(); }
+      }
+      const blocked = gateHold({ occasion, refusal: refusal! });
+      await hold(blocked.code, blocked.nextStep, false, blocked.detail);
+      return 'held';
+    };
     // v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on this boot, recorded durably before the end and before the stop
     // (idempotent). Only a sandbox that declares channel recovery is asked; a report that cannot be read is retried at the stop.
     const channelReport = async () => {
@@ -1136,7 +1212,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await activity('question-recorded');
         deps.questionRecorded?.();
         // The activity now waits for an external answer: its credentials are withdrawn (no renewal) and revoked, independently of the ACK.
-        void lifecycle!.withdraw('external-wait', { notifyWorker: true }).catch(() => {});
+        // v2 ticket 07: without a persistent disk the grant stays until the preservation gate accepted (a refusal returns to the Builder, which
+        // publishes with it); it is withdrawn when the Execution ends or is held.
+        if (!diskless) void lifecycle!.withdraw('external-wait', { notifyWorker: true }).catch(() => {});
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
@@ -1203,7 +1281,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         const completed = await wait(lifecycle.renewWhile(handle.completed));
         // The activity ended: its clock stops (also before an external wait). v2 ticket 06: an Execution that publishes in this boot keeps its
         // clock until the publication activation ended too (stopped by the `finally` below).
-        if (!execution.request.publishInBoot || completed.status !== 'success') timerStop.abort();
+        // v2 ticket 07: so does one that returns control on a sandbox without a persistent disk, until its preservation gate ended.
+        if (completed.status === 'failure' || !(diskless || execution.request.publishInBoot)) timerStop.abort();
         if (completed.status === 'question') {
           // Lost ACK/notification: the completion repeats the SAME identity and content; a missing record is registered once from it.
           // Content not intact and no record: explicit impediment, nothing invented or published.
@@ -1224,6 +1303,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             code = 'QUESTION_CONTENT_LOST';
             await recordContentLost(session, work.work_id, executionId, request.questionId);
           }
+          // v2 ticket 07 (V2-05): the Question is recorded; before the boot ends for the wait, the workspace must be on `origin`.
+          if (diskless && await preservationGate('question') !== 'accepted') return;
+          timerStop.abort();
           const bound = own(await readQuestion(session, request.questionId));
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
         } else {
@@ -1256,6 +1338,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
               phase = 'completed';
             }
           }
+          // v2 ticket 07 (V2-05): a completed Execution returns control to the waits on GitHub (CI, readiness) and its boot ends: gate first.
+          if (diskless && completed.status === 'success' && await preservationGate('ci-wait') !== 'accepted') return;
           timerStop.abort();
           // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (not transient: no automatic retry).
           const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, await channelReport());

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { ExecutionView, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
-import { app, executionDoubles, publishOwn, type Activation, type Script } from './publication-doubles.js';
+import { app, executionDoubles, publishOwn, pushWip, type Activation, type Script } from './publication-doubles.js';
 import { untilHolds } from '../runner/budget.js';
 
 // v2 ticket 06 (Operator decision 1A/2a; V2-05, V2-08), flow level: real Control + Pi Durable + temporary SQLite with the real review rounds
@@ -71,6 +71,11 @@ test('without a persistent disk a Work goes from the Ticket to its own draft PR 
   assert.deepEqual([work.publication!.verified!.head, work.publication!.pullRequest?.headSha, work.pullRequest?.number], [head, head, 4]);
   assert.deepEqual(work.publication!.discoveries.map(item => [item.trigger, item.outcome]), [['verified', 'absent'], ['after-publication', 'linked']]);
   assert.deepEqual(work.impediments, []);
+  // v2 ticket 07: the published workspace passes the preservation gate at once, before the stop; the confirmed commit is on the Work.
+  assert.deepEqual(execution.preservationGate?.attempts.map(item => [item.outcome, item.commit]), [['accepted', head]]);
+  assert.deepEqual([work.preservation?.commit, work.preservation?.occasion], [head, 'ci-wait']);
+  const order = h.execution.calls.map(call => call.kind).filter(kind => kind === 'gate' || kind === 'stop');
+  assert.deepEqual(order, ['gate', 'stop']);
 });
 
 test('the same scenario on a sandbox WITH a persistent disk keeps the MVP flow: a second, publish-only Execution on the preserved workspace', async t => {
@@ -83,6 +88,8 @@ test('the same scenario on a sandbox WITH a persistent disk keeps the MVP flow: 
     [[null, null, 'builder-start', null, null], ['PUBLICATION_REQUESTED', null, 'builder-publish', null, null]]);
   assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'stop', 'prepare', 'start', 'issue', 'activate', 'stop']);
   assert.deepEqual(h.execution.calls.filter(call => call.kind === 'start').map(call => call.detail), [null, null], 'the host checkout is prepared; nothing is cloned in the guest');
+  // v2 ticket 07: a sandbox that keeps its disk has no preservation gate.
+  assert.deepEqual([h.execution.calls.filter(call => call.kind === 'gate').length, work.preservation ?? null, executions.map(item => item.preservationGate ?? null)], [0, null, [null, null]]);
 });
 
 test('without a persistent disk nothing boots while `origin` cannot be read: the Slot is released and the Work starts once it is readable', async t => {
@@ -99,14 +106,19 @@ test('without a persistent disk nothing boots while `origin` cannot be read: the
 
 test('without a persistent disk an undecided discovery in the boot blocks the publication explicitly instead of queuing one that could not find the commit', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main }, refsUnknown: true };
-  const h = await harness(t, remote, [{ kind: 'implement', head }], { diskless: true });
+  // v2 ticket 07: the unpublished verified commit is then refused by the preservation gate and the Builder publishes it as work in progress.
+  const scripts: Script[] = [{ kind: 'implement', head }];
+  const h = await harness(t, remote, scripts, { diskless: true });
+  scripts.push({ kind: 'publish', publish: pushWip(h.execution.guest, head), end: 'success' });
   await h.settle('ended', value => value?.execution?.end?.cessation === 'confirmed' && !value.execution.slot.held);
   const work = (await h.work())!;
   assert.deepEqual([work.publication!.state, work.publication!.reasons], ['blocked', ['VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP', 'REFS_UNKNOWN:GITHUB_QUERY_FAILED']]);
   assert.deepEqual(work.impediments.map(item => item.code), ['PUBLICATION_BLOCKED']);
   assert.equal(work.execution!.inBootPublication, undefined, 'no publication activation was launched');
-  assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'stop']);
-  // Nothing is queued afterwards: the commit died with the boot.
+  assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'activate', 'stop']);
+  assert.deepEqual(work.execution!.preservationGate?.attempts.map(item => item.code), ['HEAD_NOT_PUBLISHED', null]);
+  assert.deepEqual([work.preservation?.commit, remote.refs![work.branch!]], [head, head], 'the commit outlives the boot on the Work branch, without a PR');
+  // Nothing is queued afterwards: the publication stays blocked for the operator.
   remote.refsUnknown = false;
   for (let cycle = 0; cycle < 3; cycle += 1) await h.settle('cycle', () => true);
   assert.equal(executionsOf((await h.work())!).length, 1);

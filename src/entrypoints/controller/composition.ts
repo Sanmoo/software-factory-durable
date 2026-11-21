@@ -161,6 +161,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
       // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.
       observe: input => sandbox.observe(input),
+      // v2 ticket 07 (V2-06): the preservation gate's observation in the guest; Control asks it only of a sandbox without a persistent disk.
+      preservationGate: input => sandbox.preservationGate(input),
       // v2 ticket 11 (V2-21): asked only of a sandbox that declares channel recovery; the boot's own host record answers.
       channelReport: input => sandbox.channelReport(input) },
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),

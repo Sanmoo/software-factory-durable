@@ -3,7 +3,9 @@
 import type { ExecutionPorts } from '../../src/control/types.js';
 import type { GateEvidence, ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { PullRequestCandidate } from '../../src/code-repository/index.js';
-import type { BuilderDirective, HandoffEvent, Invocation, WorkerSessionRef } from '../../src/workers/index.js';
+import { createHash } from 'node:crypto';
+import type { BuilderDirective, HandoffEvent, Invocation, WorkerQuestion, WorkerSessionRef } from '../../src/workers/index.js';
+import type { PreservationObservation } from '../../src/contracts/index.js';
 import type { Remote } from './doubles.js';
 
 export const app = { login: 'factory-app[bot]', id: 41898282 };
@@ -28,7 +30,17 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
     preserves?: boolean; during?: (remote: Remote, activation: Activation) => void;
     /** Real run q21-human-v4: the worker fails at once with this code (e.g. WORKER_INTERRUPTED after WORKER_PROVIDER_UNAVAILABLE). */
     failure?: string } |
-  { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' };
+  { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' } |
+  /** v2 ticket 07: the Builder asks the human (no handoff happened) leaving `head` checked out in the guest. */
+  { kind: 'ask'; head: string; question: string; questionId: string };
+/** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
+export type GuestWorkspace = { head: string | null; modified: number; untracked: number; stashes: number; remoteDown: boolean };
+/** v2 ticket 07: the Builder commits what is pending as WIP `head` and pushes it to its branch with the one push its activation names. */
+export const pushWip = (guest: GuestWorkspace, head: string) => (remote: Remote, activation: Activation) => {
+  const branch = /HEAD:refs\/heads\/(\S+)/.exec(activation.prompt)![1]!;
+  Object.assign(guest, { head, modified: 0, untracked: 0, stashes: 0 });
+  (remote.refs ??= {})[branch] = head;
+};
 
 export const facts = (prompt: string) => ({ workId: /Work ([0-9a-f-]{36})/.exec(prompt)![1]!, branch: /your branch (\S+);/.exec(prompt)![1]!, head: /verified commit ([0-9a-f]{40})/.exec(prompt)![1]! });
 export const ownPull = (workId: string, branch: string, head: string, overrides: Partial<PullRequestCandidate> = {}): PullRequestCandidate => ({ pullRequestId: 9004, nodeId: 'PR_node4', number: 4,
@@ -50,6 +62,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
   let sessions = 0;
   let delivered: ((directive: BuilderDirective) => void) | undefined;
   const captures = new Map<number, HandoffEvent>();
+  const guest: GuestWorkspace = { head: null, modified: 0, untracked: 0, stashes: 0, remoteDown: false };
   const receipt = (invocation: Invocation) => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
     invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
   const ports: ExecutionPorts = {
@@ -59,7 +72,14 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
     sandbox: {
       ...(options.diskless ? { capabilities: { docker: true, persistentDisk: false, bootDuration: { maxSeconds: 3600, rotationMarginSeconds: 600 },
         egress: { mediation: 'none' as const, publicTcp: true, udp: false, ipv6: false, privateNetwork: false } },
-      async observeCheckout() { calls.push({ kind: 'observe-checkout' }); return { status: 'unavailable' as const, code: 'CHECKOUT_NOT_ON_HOST' }; } } : {}),
+      async observeCheckout() { calls.push({ kind: 'observe-checkout' }); return { status: 'unavailable' as const, code: 'CHECKOUT_NOT_ON_HOST' }; },
+      async preservationGate(input): Promise<PreservationObservation> {
+        calls.push({ kind: 'gate', detail: input });
+        if (!guest.head) return { status: 'unavailable', code: 'PRESERVATION_OBSERVATION_FAILED' };
+        const tip = remote.refs?.[input.branch];
+        return { status: 'observed', head: guest.head, modified: guest.modified, untracked: guest.untracked, stashes: guest.stashes,
+          remote: guest.remoteDown || tip === 'unknown' ? { state: 'unavailable' } : tip ? { state: 'present', sha: tip } : { state: 'absent' } };
+      } } : {}),
       async prepare(input) {
         calls.push({ kind: 'prepare' });
         if (options.diskless) return { status: 'success', environment: `env-${'c'.repeat(64)}` as never };
@@ -91,7 +111,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       async revoke() { calls.push({ kind: 'revoke' }); return { kind: 'revoked', nextStep: 'synthetic' }; },
     },
     workers: {
-      async activate(invocation, delivery) {
+      async activate(invocation, delivery, events) {
         const role = invocation.context.role;
         if (role !== 'builder') {
           calls.push({ kind: `activate-${role}`, detail: { prompt: invocation.prompt, round: invocation.review?.round ?? null } });
@@ -111,6 +131,16 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           pushPolicy: invocation.pushPolicy ?? null };
         calls.push({ kind: 'activate', detail: activation });
         const session = sessionRef(++sessions);
+        if (script.kind === 'ask') {
+          guest.head = script.head;
+          const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: createHash('sha256').update(JSON.stringify({ question: script.question, context: '' })).digest('hex'),
+            reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
+          const completed = Promise.resolve().then(async () => {
+            const ack = await events!.question!(question);
+            return { status: 'question' as const, receipt: receipt(invocation).receipt, question: { ...question, acknowledged: ack.status === 'recorded' }, session };
+          });
+          return { worker: invocation.context.invocationId, started: Promise.resolve(receipt(invocation)), completed, ...(invocation.handoff ? { handoffs: { async next() { await completed; return null; } } } : {}), close() {} };
+        }
         if (script.kind === 'publish') {
           const started = script.end === 'receipt-lost' ? new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('WORKER_START_RECEIPT_LOST')), 5))
             : Promise.resolve(receipt(invocation));
@@ -125,6 +155,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         // Implementation with ticket 13's handoff: round 1 (gate declared) reviewed by both reviewers, then the Host's closing capture.
         const branch = /branch=(\S+)/.exec(invocation.prompt)![1]!;
         const committed = script.committed ?? true;
+        guest.head = script.head;
         script.during?.(remote, activation);
         if (script.failure) {
           const code = script.failure;
@@ -160,7 +191,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       async observe(input) { calls.push({ kind: 'observe' }); return { session: { state: 'compatible' as const, session: input.session }, limitations: [] }; },
     },
   };
-  return { ports, calls };
+  return { ports, calls, guest };
 }
 
 

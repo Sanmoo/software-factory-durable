@@ -33,6 +33,8 @@ import { serveLambdaTools } from './lambda/tools.js';
 // workspace, the evidence collection before a stop and Remove.
 import { lambdaOwnerEndpoint, removeLambdaEnvironment, serveLambdaOwner, type LambdaWorkerLauncher } from './lambda/owner.js';
 import { observeLambdaProposal, verifyLambdaPreservedSource } from './lambda/artifacts.js';
+// v2 ticket 07: the preservation gate's observation (workspace, stash, HEAD, `ls-remote`), one fixed program over the boot's channel.
+import { observeLambdaPreservation } from './lambda/preservation.js';
 import { workerOwnerEndpoint, type WorkerLaunch } from '../platform/host/index.js';
 export type { LambdaWorkerLauncher } from './lambda/owner.js';
 export type { BootOwnerParts } from './owner-registration.js';
@@ -62,7 +64,7 @@ export { environmentIdentityDiagnostic } from './environment-identity.js';
 export { reconcileInterruptedCaches, type CacheReconciliation } from './checkout.js';
 import { observeProposal } from './proposal-identity.js';
 import { fingerprintCheckout } from './checkout-fingerprint.js';
-import type { CheckoutFingerprint, ProposalIdentity } from '../contracts/index.js';
+import type { CheckoutFingerprint, PreservationObservation, ProposalIdentity } from '../contracts/index.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView;
   seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[];
   /** Ticket 44: the environment base the root disk was copied from (declaration hash + resolved manifest). */
@@ -196,6 +198,28 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       if (await isLambdaEnvironment(root, environment)) return onCurrentBoot<ProposalIdentity>(environment, { status: 'unavailable', code: 'PROPOSAL_IDENTITY_UNAVAILABLE' },
         opened => observeLambdaProposal(opened.channel, round));
       return observeProposal(join(await realpath(root), 'environments', environment), round);
+    },
+    /**
+     * v2 ticket 07 (V2-06): what the preservation gate observes IN the guest of a Lambda boot, by a fixed host-run program: tracked
+     * changes, untracked files that are not ignored, stash, HEAD, and the Work branch tip `ls-remote` returns for the repository URL the
+     * HOST names. `ls-remote` uses the host's one-fetch reduced credential (Contents:read), delivered as process environment of that
+     * one `git` and revoked right after. Guest-attested: the caller confirms the tip with its own read of `origin`. An environment of
+     * another adapter keeps its disk and has no gate.
+     */
+    async preservationGate({ environment, boot, repository, installationId, branch }: { environment: EnvironmentRef; boot: BootRef; repository: string; installationId: number; branch: string }): Promise<PreservationObservation> {
+      if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'unavailable', code: 'ENVIRONMENT_REF_INVALID' };
+      if (!await isLambdaEnvironment(root, environment)) return { status: 'unavailable', code: 'PRESERVATION_GATE_NOT_APPLICABLE' };
+      if (!repositoryFetch) return { status: 'unavailable', code: 'CHECKOUT_NOT_COMPOSED' };
+      let credential: { readonly token: string };
+      try { credential = await repositoryFetch.fetch({ repository, installationId, workflows: false }); }
+      catch { return { status: 'unavailable', code: 'CHECKOUT_CREDENTIAL_UNAVAILABLE' }; }
+      try {
+        const opened = await openLambdaBootChannel(lambdaBoots(), { environment, boot });
+        if (opened.status !== 'open') return { status: 'unavailable', code: 'PRESERVATION_CHANNEL_UNAVAILABLE' };
+        try { return await observeLambdaPreservation(opened.channel, { remote: (remoteUrl ?? ((scope: { repository: string }) => `https://github.com/${scope.repository}.git`))({ repository }), branch, token: credential.token }); }
+        finally { opened.channel.close(); }
+      } catch { return { status: 'unavailable', code: 'PRESERVATION_OBSERVATION_FAILED' }; }
+      finally { await repositoryFetch.revoke(credential).catch(() => {}); }
     },
     /** Ticket 48: Host fingerprint of the Work's checkout (confined Git metadata reads + bounded no-follow tree walk; no host git, no guest command). */
     async observeCheckout({ environment }: { environment: EnvironmentRef }): Promise<CheckoutFingerprint> {

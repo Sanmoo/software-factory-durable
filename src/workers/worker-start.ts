@@ -36,7 +36,7 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
     /** Ticket 21: the authorized remote tip every capture checks as an ancestor of HEAD (reconciliation Execution only). */
     preserve?: string | undefined };
   /** Builder only (ticket 21 review): the exact push Control allows in a publication activation; absent = no push. */
-  pushPolicy?: { branch: string; expected: string | null; head: string; remote?: string | undefined };
+  pushPolicy?: { branch: string; expected: string | null; head: string; remote?: string | undefined; wip?: true | undefined };
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
   review?: ReviewInput;
   /** Builder only (ticket 11): continue THIS preserved compatible session (Host-copied before the worker exists); the prompt is `continue ...`. */
