@@ -78,7 +78,9 @@ const bootRecordSchema = z.strictObject({
   startedAt: instant.optional(),
   stop: z.strictObject({ reason: z.enum(['planned-swap', 'loss', 'end']), requestedAt: instant, detail: z.string().max(256).optional() }).optional(),
   end: z.strictObject({ reason: z.enum(['planned-swap', 'loss', 'end']), at: instant, terminatedAt: instant.optional(), stateReason: z.string().optional(),
-    /** The failure code of a start that did not complete. */ code: z.string().optional() }).optional(),
+    /** The failure code of a start that did not complete. */ code: z.string().optional(),
+    /** v2 ticket 14 (V2-32): the service's end minus the service's start. Absent: the service did not give both instants (unknown, never zero). */
+    seconds: z.number().nonnegative().optional() }).optional(),
   /** Guest evidence the host read over the channel (files under the boot's `evidence/`); `lost` says what never was (V2-34). */
   evidence: z.strictObject({ collected: z.array(z.strictObject({ label: z.string(), at: instant, bytes: z.number().int() })), lost: z.string().nullable() }),
   /**
@@ -129,7 +131,21 @@ export async function listLambdaBoots(root: string, environment: EnvironmentRef)
   return records.filter((record): record is LambdaBootRecord => record !== null).sort((left, right) => left.begin.requestedAt.localeCompare(right.begin.requestedAt));
 }
 
+/** Ticket 15: every environment the Lambda adapter has host records for in this installation (an image record or boots). */
+export async function listLambdaEnvironments(root: string): Promise<EnvironmentRef[]> {
+  let names: string[];
+  try { names = await readdir(join(await realpath(root), 'lambda', 'works')); } catch (error) { if (missing(error)) return []; throw error; }
+  return names.filter(name => /^env-[a-f0-9]{64}$/.test(name)).sort() as EnvironmentRef[];
+}
+
 const iso = (clock: LambdaBootClock) => new Date(clock.now()).toISOString();
+
+/** Seconds between two instants of the SERVICE; `null` when either is missing or they do not form an interval (never a guess, never zero). */
+export function serviceSeconds(startedAt: string | undefined, terminatedAt: string | undefined): number | null {
+  if (!startedAt || !terminatedAt) return null;
+  const milliseconds = Date.parse(terminatedAt) - Date.parse(startedAt);
+  return Number.isFinite(milliseconds) && milliseconds >= 0 ? milliseconds / 1000 : null;
+}
 const failureDetail = (failure: LambdaServiceFailure) => [failure.kind, failure.action, failure.detail].filter(Boolean).join(': ').slice(0, 400);
 const serviceOf = (dependencies: LambdaBootDependencies, record: Pick<LambdaBootRecord, 'awsProfile' | 'region'>): LambdaService =>
   dependencies.service({ awsProfile: record.awsProfile, region: record.region });
@@ -139,16 +155,18 @@ function ended(record: LambdaBootRecord, reason: BootEndReason, clock: LambdaBoo
   // What the host did not read before a death no longer exists anywhere: there are no runtime logs without an execution role (V2-34).
   const lost = reason === 'loss' && record.evidence.lost === null
     ? `The boot ended before a final collection: guest evidence after ${last ? `the collection of ${last.at}` : 'its start'} is lost.` : record.evidence.lost;
+  const startedAt = record.startedAt ?? microvm?.startedAt;
+  const seconds = serviceSeconds(startedAt, microvm?.terminatedAt);
   return { ...record, phase: 'ended', evidence: { ...record.evidence, lost },
     // Decision 2c: what was not collected before a death is declared lost, never reconstructed.
     ...(record.artifacts ? {} : { artifacts: { status: 'lost' as const, at: iso(clock), code: reason === 'loss' ? 'BOOT_LOST_BEFORE_COLLECTION' : 'NOT_COLLECTED' } }),
-    ...(microvm?.startedAt && !record.startedAt ? { startedAt: microvm.startedAt } : {}),
+    ...(startedAt ? { startedAt } : {}),
     end: { reason, at: iso(clock), ...(microvm?.terminatedAt ? { terminatedAt: microvm.terminatedAt } : {}),
-      ...(microvm?.stateReason ? { stateReason: microvm.stateReason } : {}), ...(code ? { code } : {}) } };
+      ...(microvm?.stateReason ? { stateReason: microvm.stateReason } : {}), ...(code ? { code } : {}), ...(seconds === null ? {} : { seconds }) } };
 }
 
 /** TerminateMicrovm only asks; cessation is a later GetMicrovm saying `TERMINATED`. Not seen within the wait: NOT confirmed. */
-async function terminateAndConfirm(service: LambdaService, microvmId: string, clock: LambdaBootClock): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
+export async function terminateAndConfirm(service: LambdaService, microvmId: string, clock: LambdaBootClock): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
   await service.terminateMicrovm(microvmId);
   const deadline = clock.now() + lambdaBootWaits.cessationSeconds * 1000;
   for (;;) {
@@ -237,7 +255,7 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
     await rm(identityFile, { force: true });
     // An unreadable answer does not prove that no MicroVM was created: the record stays open for the inventory by tag (ticket 15).
     if (run.failure.kind === 'unknown') return { status: 'indeterminate', code: 'MICROVM_START_UNCONFIRMED', boot, detail: failureDetail(run.failure) };
-    const code = run.failure.kind === 'capacity' ? 'MICROVM_CAPACITY_REFUSED' : 'MICROVM_START_REFUSED';
+    const code = run.failure.kind === 'capacity' ? 'SERVICE_CAPACITY_REFUSED' : 'MICROVM_START_REFUSED';
     await save(ended(record, 'end', clock, undefined, code));
     return { status: 'failure', code, boot, detail: failureDetail(run.failure) };
   }
@@ -338,6 +356,19 @@ export async function observeLambdaBoot(dependencies: LambdaBootDependencies, { 
   }
   if (state === 'RUNNING' || state === 'PENDING') return { condition: 'active', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
   return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
+}
+
+/**
+ * Ticket 15: ends the record of a start whose RunMicrovm was never answered (`requested`, no MicroVM id), once the inventory of the
+ * installation accounted for every MicroVM that start could have left. Nothing else may close such a record: the host alone cannot
+ * tell whether a MicroVM exists. A record that has an id, or already ended, is left as it is.
+ */
+export async function closeUnansweredLambdaStart(dependencies: Pick<LambdaBootDependencies, 'root' | 'clock'>, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }): Promise<boolean> {
+  const record = await readLambdaBoot(dependencies.root, environment, boot);
+  if (!record || record.phase !== 'requested' || record.microvmId) return false;
+  await rm(join(await bootDirectory(dependencies.root, environment, boot), identityName), { force: true });
+  await saveRecord(dependencies.root, ended(record, 'end', dependencies.clock, undefined, 'MICROVM_START_UNCONFIRMED'));
+  return true;
 }
 
 const stopReason = (reason: string): BootEndReason => reason === 'planned-swap' || reason === 'loss' ? reason : 'end';

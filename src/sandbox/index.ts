@@ -11,7 +11,8 @@ import { selectSandboxAdapter, validateConfiguration } from './configuration.js'
 export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type SandboxAdapterSelection } from './configuration.js';
 // v2 ticket 02: the Lambda adapter's profile, the installation's account resources and the narrow port to the AWS account (CLI-backed in
 // production; tests compose the in-memory account of `test/sandbox/lambda-service-fake.ts` through `lambdaService`).
-import type { ChannelReport } from '../contracts/index.js';
+import type { BootUsageReport, ChannelReport, EnvironmentBuildReport } from '../contracts/index.js';
+import { lambdaEnvironmentUsage, lambdaImageBuilds } from './lambda/usage.js';
 import { validateLambdaInstallation } from './lambda/validate.js';
 import { createLambdaCliService } from './lambda/cli-service.js';
 import type { LambdaServiceFactory } from './lambda/service.js';
@@ -19,7 +20,13 @@ export { createLambdaCliService, type AwsCliRunner } from './lambda/cli-service.
 // v2 ticket 03: Prepare under the Lambda adapter guarantees the MicroVM image of the environment key (`lambda/image.ts`).
 import { prepareLambdaImage, type LambdaImageWait } from './lambda/image.js';
 export type { LambdaImageWait } from './lambda/image.js';
-export type { LambdaImage, LambdaImageRequest, LambdaMicrovm, LambdaMicrovmRequest } from './lambda/service.js';
+export type { LambdaImage, LambdaImageRequest, LambdaListedMicrovm, LambdaMicrovm, LambdaMicrovmRequest } from './lambda/service.js';
+// v2 ticket 15: the inventory of the installation's MicroVMs at controller start (`lambda/reconciliation.ts`).
+import { reconcileLambdaInstallation, type LambdaRuntimeReconciliation } from './lambda/reconciliation.js';
+export { planLambdaReconciliation, type LambdaRuntimeReconciliation } from './lambda/reconciliation.js';
+// v2 ticket 15: the explicit cleanup of the installation's MicroVM images (`lambda/image-cleanup.ts`).
+import { cleanupInstallationImages, type ImageCleanupResult } from './lambda/image-cleanup.js';
+export { planImageCleanup, type ImageCleanupItem, type ImageCleanupResult } from './lambda/image-cleanup.js';
 export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaServiceFailure, LambdaServiceResult } from './lambda/service.js';
 export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 // v2 ticket 04: a boot under the Lambda adapter (RunMicrovm, channel, clone in the guest; observe and stop by the service) and the seam
@@ -115,6 +122,32 @@ export type { WriteCall } from './write-tools.js';
  */
 /** `preparationVm`/`alpine` (ticket 44): the port that runs environment preparation VMs (absent: a declared environment is refused, never
  * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
+/**
+ * v2 ticket 15 (V2-33): the Operator's explicit cleanup of MicroVM images. Without `confirm` it only plans (reads); an image in use is
+ * never deleted, and naming one is refused (`IMAGE_IN_USE`). `null`: the installation's adapter has no MicroVM images.
+ */
+export async function cleanupLambdaImages({ root, configuration, lambdaService = createLambdaCliService, image, confirm }: { root: string; configuration: unknown;
+  lambdaService?: LambdaServiceFactory; image?: string | undefined; confirm: boolean }): Promise<ImageCleanupResult | null> {
+  const selection = selectSandboxAdapter(configuration);
+  if (selection.status !== 'selected' || selection.adapter !== 'lambda') return null;
+  const profile = selection.configuration;
+  return cleanupInstallationImages({ root, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), profile, image, confirm });
+}
+
+/**
+ * v2 ticket 15 (V2-33): the adapter's part of the controller start, for the process that has just taken exclusive ownership of the
+ * installation and has started no boot yet. Under the Lambda adapter it inventories the account by the installation tag, ends the
+ * MicroVMs no boot record holds and lists the ones a record still holds for Control to settle. Another adapter has no account:
+ * `not-applicable`. `unavailable` means the inventory is UNKNOWN (never empty).
+ */
+export async function reconcileLambdaRuntime({ root, configuration, lambdaService = createLambdaCliService, lambdaBootClock = defaultLambdaBootClock }: { root: string; configuration: unknown;
+  lambdaService?: LambdaServiceFactory; lambdaBootClock?: LambdaBootClock }): Promise<LambdaRuntimeReconciliation | { status: 'not-applicable' }> {
+  const selection = selectSandboxAdapter(configuration);
+  if (selection.status !== 'selected' || selection.adapter !== 'lambda') return { status: 'not-applicable' };
+  try { return await reconcileLambdaInstallation({ root, service: lambdaService, clock: lambdaBootClock }, selection.configuration); }
+  catch { return { status: 'unavailable', code: 'MICROVM_INVENTORY_UNAVAILABLE', detail: 'the inventory could not be completed or recorded' }; }
+}
+
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
 export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait,
   lambdaTransport, lambdaBootClock = defaultLambdaBootClock, lambdaObservationTimer, lambdaBootOwner = false, lambdaWorkerLauncher }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
@@ -159,6 +192,13 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** v2 ticket 04: the boots recorded for a Lambda environment (identity, reasons, size, start and end) and one of them; read-only. */
     async boots({ environment }: { environment: EnvironmentRef }) { return listLambdaBoots(root, environment); },
     async bootRecord({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return readLambdaBoot(root, environment, boot); },
+    /**
+     * v2 ticket 14 (V2-32): what the boots of one environment consumed, in adapter-neutral terms (seconds, size label, reasons), read from
+     * the host records of every boot of the Work. An environment whose adapter does not measure boots is `unavailable`, never empty.
+     */
+    async usage({ environment }: { environment: EnvironmentRef }): Promise<BootUsageReport> { return lambdaEnvironmentUsage(root, environment); },
+    /** v2 ticket 14 (V2-32): builds of the environment base per environment key, as this installation recorded them. */
+    async environmentBuilds(): Promise<EnvironmentBuildReport> { return lambdaImageBuilds(root); },
     /** v2 ticket 04: the channel to an active Lambda boot, for trusted host composition only (tool calls bind a role on top of it, ticket 05). */
     async openChannel({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return openLambdaBootChannel(lambdaBoots(), { environment, boot }); },
     /**
@@ -374,7 +414,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         const profile = selection.configuration;
         try {
           return await prepareLambdaImage({ root, workId, profile, environment, retry: retryEnvironmentBase,
-            service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), wait: lambdaImageWait });
+            service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), wait: lambdaImageWait, now: lambdaBootClock.now });
         } catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
       }
       const parsed = validateConfiguration(configuration);

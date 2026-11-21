@@ -230,3 +230,4 @@ export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits,
 export { declaresCapability, sandboxCapabilityNames, type SandboxCapabilities, type SandboxCapabilityName } from './sandbox-capabilities.js';
 export { effectDescriptionLimit, type ChannelDropOutcome, type ChannelReport, type IndeterminateEffect } from './channel-report.js';
 export { lostMarkerPattern, lostMarkerPrefix, lostMarkerRef } from './loss-marker.js';
+export type { BootUsage, BootUsageReport, EnvironmentBuildReport, EnvironmentBuilds } from './boot-usage.js';

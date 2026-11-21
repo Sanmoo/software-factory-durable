@@ -111,9 +111,9 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
  * Remover (V2-02), the adapter's part: ends whatever of the Work's environment still runs, confirmed by the
  * service, removes the boots' private host runtime directories and records the removal. It never touches the Work branch nor the pull
  * request, and there is no disk, workspace or artifacts tree on the host to delete (`absent`). The boot records stay: they are the
- * consumption history (ticket 14); the image record stays for the image cleanup (ticket 15). The Work's loss marker refs on `origin`
- * (ticket 12) are deleted by Control's cleanup through the code repository (resource `lost-markers`), not here: the adapter holds no
- * GitHub credential.
+ * consumption history (ticket 14). The Work's image record is deleted (ticket 15): the image stops being held by this Work, and is itself
+ * deleted only by the explicit image cleanup. The Work's loss marker refs on `origin` (ticket 12) are deleted by Control's cleanup
+ * through the code repository (resource `lost-markers`), not here: the adapter holds no GitHub credential.
  */
 export async function removeLambdaEnvironment(dependencies: LambdaBootDependencies, { environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }): Promise<RemoveResult> {
   const none = (status: 'refused' | 'absent') => (['disk', 'workspace', 'artifacts', 'runtime'] as const).map(resource => ({ resource, status: resource === 'runtime' ? status : 'absent' as const }));
@@ -134,6 +134,8 @@ export async function removeLambdaEnvironment(dependencies: LambdaBootDependenci
       const runtime = workerRuntimeDirectory(root, record.boot);
       if (await rm(runtime, { recursive: true }).then(() => true, error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; })) removed = true;
     }
+    // v2 ticket 15: a removed environment no longer holds its MicroVM image; the image itself leaves only by the explicit image cleanup.
+    await rm(join(root, 'lambda', 'works', environment, 'image.json'), { force: true });
     await writeFile(join(root, 'lambda', 'works', environment, 'removal.json'), JSON.stringify({ version: 1, environment, workId: authorization.data.workId,
       workDisposition: authorization.data.workDisposition, at: new Date(dependencies.clock.now()).toISOString(), boots: boots.map(record => record.boot) }), { mode: 0o600 });
   } catch { return { status: 'partial', code: 'RUNTIME_REMOVAL_FAILED', resources: none('refused').map(item => item.resource === 'runtime' ? { ...item, status: 'failed' as const } : item) }; }

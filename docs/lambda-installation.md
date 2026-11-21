@@ -140,7 +140,8 @@ arquivo e pin da release (o perfil da imagem, arquitetura e memória baseline, e
 - O mirror do Alpine guarda só o build atual de cada pacote: uma versão fixada (do molde ou da
   declaração) deixa de construir quando o Alpine publica outra revisão. A causa aparece no
   impedimento; para o molde, o remédio é uma release com pin novo.
-- Imagens não são apagadas pelo Preparar; a remoção é do cleanup explícito.
+- Imagens não são apagadas pelo Preparar nem pela remoção do ambiente de um Trabalho; saem só pelo
+  cleanup explícito (seção 8).
 
 ## 6. Boots (Iniciar, Observar, Parar)
 
@@ -170,6 +171,7 @@ Trabalhos sob ele (o `doctor` mostra `sandbox-adapter` bloqueado).
   de início (início ou troca planejada) e de fim (troca planejada, perda ou fim), tamanho, início e
   fim. A evidência do guest é a que o host leu pelo canal (`evidence/`); o que não foi lido antes
   de uma morte consta como perdido.
+<<<<<<< HEAD
 
 ## 7. Perda e ref de marcador
 
@@ -197,3 +199,128 @@ credencial do Builder está entregue; ao ser retirada, ele é encerrado.
 - **Remover** (limpeza do Trabalho entregue, ou `factory cleanup <trabalho> --select environment` de
   um cancelado) apaga as refs `refs/factory/lost/<trabalho>/*` por exclusão condicional atômica e
   registra o resultado no recurso `lost-markers`; não toca a branch nem o PR.
+
+||||||| 39a9ecd
+
+=======
+
+## 7. Tags, evidência e reconciliação depois de crash
+
+Todo recurso que a Factory cria na conta leva `software-factory-installation=<instalação>` e
+`software-factory-work=<Trabalho>`: a imagem de MicroVM, o artefato de build e a MicroVM (a tag de
+Trabalho de uma imagem compartilhada nomeia o Trabalho cujo Preparar a criou).
+
+**Evidência de ciclo de vida.** `RunMicrovm` e `TerminateMicrovm` **não aparecem no CloudTrail por
+padrão**, e sem execution role não há logs de runtime do guest. A evidência de início e fim de uma
+MicroVM é a resposta do `GetMicrovm` (estado, `startedAt`, `terminatedAt`, motivo), gravada pelo
+host no registro do boot e no registro de cada inventário. A evidência do guest é a que o host leu
+pelo canal; o que não foi lido antes de uma morte consta como perdido. Quem precisar de trilha no
+CloudTrail deve habilitar os eventos de dados do serviço na própria conta; a Factory não depende
+disso.
+
+**Reconciliação.** O dono de um boot vive no processo do controlador: se o controlador morre, a
+MicroVM continua rodando sem dono (até a duração máxima do boot). Ao subir, depois do lock
+exclusivo e antes de abrir o armazenamento, o controlador inventaria a conta:
+
+- Lista as MicroVMs (`ListMicrovms`) e considera só as da instalação: as que levam a tag da
+  instalação ou, como a listagem observada não mostra tags de MicroVM, as que rodam de uma imagem
+  `factory-<instalação>-<32 hex>` que tem a tag da instalação (`GetMicrovmImage`). MicroVM de outra
+  instalação ou de terceiros não é lida por id, alterada nem registrada.
+- MicroVM que um registro de boot ainda detém é listada com o Trabalho. O Controle encerra o boot
+  de toda Execução que não está viva (nunca adota), com cessação confirmada por `GetMicrovm`, e
+  grava a reconciliação no histórico da Execução.
+- MicroVM da instalação que nenhum registro de boot detém (o `RunMicrovm` respondeu a um processo
+  que morreu antes de gravar o id) é encerrada pelo próprio inventário, com a mesma confirmação.
+- Um início cujo `RunMicrovm` nunca foi respondido só é dado por encerrado quando a listagem foi
+  lida e tudo o que ele poderia ter deixado foi confirmado como encerrado.
+- Cada inventário que achou algo da instalação fica em `<raiz>/lambda/reconciliations/`.
+
+Se a conta não puder ser listada, o inventário é **desconhecido**: nada é encerrado, o despacho
+fica fechado e o controlador escreve `RUNTIME_INVENTORY_UNKNOWN` com a causa. Restaure o acesso
+(`factory doctor`) e reinicie. Uma MicroVM cujo fim o serviço não confirmou, ou cuja imagem não
+pôde ser lida, aparece como recurso desconhecido e também mantém o despacho fechado.
+
+Não provado em conta real: se o `RunMicrovm` aceita tags e se a listagem as mostra; a paginação do
+`ListMicrovms` (50 por página); e a consistência da listagem logo depois de um `RunMicrovm` (uma
+MicroVM criada instantes antes do crash e ainda ausente da listagem só seria achada no inventário
+seguinte, ou encerrada pelo serviço na duração máxima). `tag:GetResources` não é usado nem está na
+política: o inventário usa só ações que a role já tinha.
+
+## 8. Cleanup explícito de imagens
+
+```sh
+factory cleanup-images                  # plano: lista as imagens da instalação e o que as detém
+factory cleanup-images --yes            # apaga toda imagem removível
+factory cleanup-images <nome> --yes     # apaga uma imagem; recusa se estiver em uso
+```
+
+Uma imagem está **em uso**, e nunca é apagada, enquanto: o ambiente de algum Trabalho a registra
+(o registro nasce no primeiro Preparar do Trabalho e some quando o ambiente do Trabalho é removido,
+o que só acontece com Trabalho encerrado); ou alguma MicroVM não encerrada roda dela; ou ela ainda
+está em build. Pedir pelo nome uma imagem em uso é recusado com `IMAGE_IN_USE` (saída 1) e nada
+muda. Sem `--yes` nada é alterado. O cleanup apaga a imagem (a versão antes), o artefato de build
+no bucket e o log group do build. Só imagens com o nome **e** a tag da instalação são consideradas;
+uma imagem cujas tags não puderam ser lidas é mostrada e deixada como está.
+
+O comando roda no próprio CLI, ao lado do controlador, sem lock: use-o para imagens de Trabalhos
+encerrados (uma mudança do arquivo de ambiente ou uma release nova deixam para trás a imagem da
+chave antiga).
+
+## 9. Consumo e custo
+
+A Factory mede **MicroVM-segundos** e não calcula valor em dinheiro: não há preço, estimativa nem
+teto em dólares em lugar nenhum. Os limites de um Trabalho continuam sendo as retomadas
+operacionais, o timeout por Execução e a duração máxima do boot.
+
+- **Por boot:** `boot.json` guarda também os segundos, que são o `terminatedAt` menos o `startedAt`
+  informados pelo serviço (`GetMicrovm`), nunca o relógio do host. Um boot cujo fim o serviço não
+  confirmou, ou cujo início ficou sem resposta legível, fica com consumo **desconhecido**, não
+  zero. Um início recusado antes de existir MicroVM consta como não executado.
+- **Por Trabalho:** `factory usage <trabalho>` mostra, em `boots`, cada boot (identidade, motivo de
+  início e de fim, tamanho, início, fim, segundos) e a soma dos segundos medidos por todos os boots
+  e Execuções do Trabalho, sem reinício. Com algum boot ainda rodando ou desconhecido, `lowerBound`
+  é verdadeiro: o total real é pelo menos a soma mostrada. A soma continua visível depois do
+  Remover.
+- **Builds de imagem:** `factory usage` (instalação) mostra, em `environmentBuilds`, os builds
+  pedidos por chave de ambiente, quantos Trabalhos usam cada chave e o resultado do último build.
+  O registro fica em `<raiz>/lambda/image-builds.jsonl`. O retry de um build falho conta como outro
+  build da mesma chave.
+
+### Conferir o custo pela tag da instalação
+
+O custo é o que a AWS cobra, e a conferência é do Operador, na própria conta:
+
+1. No console de Billing, em **Cost allocation tags**, ative a tag definida pelo usuário
+   `software-factory-installation` (e, se quiser o custo por Trabalho, `software-factory-work`).
+   A tag só aparece na lista depois de existir num recurso cobrado, e só vale para o uso posterior
+   à ativação; os dados costumam levar até 24 horas para aparecer.
+2. No **Cost Explorer**, filtre por `software-factory-installation = <instalação>` e agrupe por
+   serviço, ou por `software-factory-work` para ver por Trabalho. Pela CLI, com um perfil que tenha
+   `ce:GetCostAndUsage` (a role de operação da Factory não tem e não precisa ter):
+
+   ```sh
+   aws ce get-cost-and-usage --time-period Start=2026-11-01,End=2026-12-01 \
+     --granularity DAILY --metrics UnblendedCost \
+     --filter '{"Tags":{"Key":"software-factory-installation","Values":["<instalação>"]}}' \
+     --group-by Type=TAG,Key=software-factory-work
+   ```
+
+3. Compare com `factory usage`: os MicroVM-segundos por Trabalho e os builds por chave dizem o que
+   a Factory pediu; a cobrança diz o que a AWS mediu.
+
+Limites conhecidos, nenhum deles conferido numa conta real: se o serviço atribui o uso de uma
+MicroVM às tags passadas no `RunMicrovm` (o campo de tags do `RunMicrovm` não é documentado); o
+bucket de artefatos e as imagens levam a tag, o log group do build não. Recursos sem a tag não
+entram no filtro: confira também o total do serviço na conta dedicada.
+
+### Recusa por quota ao iniciar
+
+Quando o serviço recusa o `RunMicrovm` por quota ou capacidade, nada inicia e nada é consumido. O
+Trabalho mostra o impedimento com a causa devolvida pelo serviço e não tenta de novo sozinho.
+Confira o que está ocupando a quota (boots de outros Trabalhos, MicroVMs deixadas para trás) e o
+que o `factory doctor` diz sobre concorrência contra a quota; depois peça o retry indicado no
+impedimento (`factory resume <trabalho> --retry-blocked-start START_SERVICE_CAPACITY_REFUSED
+--request-id <id>`), que **não consome retomada operacional**, ou cancele o Trabalho. O nome do erro
+de quota do serviço nunca foi observado: a classificação fica num único ponto do adapter.
+
+>>>>>>> integration/software-factory-v2-lambda
