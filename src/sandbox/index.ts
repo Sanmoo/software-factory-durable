@@ -171,7 +171,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
   const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock,
     ...(lambdaObservationTimer ? { observationTimer: lambdaObservationTimer } : {}) });
   // v2 ticket 06: the boot owners THIS process serves (owner endpoint, tool bindings and workers of each active Lambda boot).
-  const lambdaOwners = new Map<string, { close(): Promise<void>; ended: Promise<LambdaEnvironmentEnd> }>();
+  const lambdaOwners = new Map<string, { close(): Promise<void>; ended: Promise<LambdaEnvironmentEnd>; interruptCalls(invocationId: string): number }>();
   /** One fixed observation program over the channel of the environment's CURRENT boot (decisions 1A and 2b-A): guest-attested. */
   const onCurrentBoot = async <T>(environment: EnvironmentRef, unavailable: T, read: (channel: Awaited<ReturnType<typeof openLambdaBootChannel>> & { status: 'open' }) => Promise<T>): Promise<T> => {
     try {
@@ -222,6 +222,15 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         signal.addEventListener('abort', () => resolve(null), { once: true });
         void owner?.ended.then(resolve);
       });
+    },
+    /**
+     * v2 ticket 09 (V2-13): half the rotation margin of this boot is left and the call of `invocationId` has not returned: the boot
+     * owner of this process interrupts it (connection closed, process group ended; the call answers "indeterminate" and the invocation
+     * goes on). `unavailable` for a boot without an owner here, which is every boot of an adapter that declares no boot duration.
+     */
+    async interruptCalls({ environment, boot, invocationId }: { environment: EnvironmentRef; boot: BootRef; invocationId: string }): Promise<{ status: 'interrupted'; calls: number } | { status: 'unavailable'; code: string }> {
+      const owner = lambdaOwners.get(`${environment}/${boot}`);
+      return owner ? { status: 'interrupted', calls: owner.interruptCalls(invocationId) } : { status: 'unavailable', code: 'BOOT_OWNER_NOT_HERE' };
     },
     /**
      * v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot, read from the boot's host record by any process:

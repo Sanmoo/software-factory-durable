@@ -143,3 +143,38 @@ test('V2-15: a service query that fails, or an in-between state, is "unknown" an
   assert.deepEqual(h.endings.map(item => (item as { reason: string }).reason), ['Host failure.']);
   assert.deepEqual(await builder.call({ name: 'bash', command: 'docker ps' }), ended);
 });
+
+// v2 ticket 09 (V2-13), same harness: with half the rotation margin of the boot left, the adapter interrupts the call of ONE invocation
+// that has not returned. The environment is alive: nothing ends but that call.
+test('V2-13: the adapter interrupts the call in flight of one invocation: its connection is closed, its process group ended, it answers "indeterminate" and the invocation goes on', async t => {
+  const h = await watchedBoot(t);
+  const builder = await h.invocation('builder', 'builder-1');
+  const other = await h.invocation('builder', 'builder-2');
+  const after: string[] = [];
+  let began!: () => void;
+  const running = new Promise<void>(resolve => { began = resolve; });
+  h.guests.world.commands['mvn verify'] = async (_guest, run) => { began(); await run.killed; after.push('killed'); return 0; };
+  const untouched = h.longCommand('sleep 600');
+  const call = builder.call({ name: 'bash', command: 'mvn verify' });
+  const bystander = other.call({ name: 'bash', command: 'sleep 600' });
+  await Promise.all([running, untouched.running]);
+  // An invocation with nothing in flight, or one the boot never bound, interrupts nothing.
+  assert.equal(h.tools.interruptCalls('builder-9'), 0);
+  assert.equal(h.tools.interruptCalls('builder-1'), 1);
+  // Never "not executed", never a result: the effect may have happened.
+  assert.deepEqual(await call, { status: 'failure', code: 'BASH_RESULT_INDETERMINATE' });
+  assert.deepEqual(after, ['killed'], 'closing the connection does not end the program: its process group was ended over a new connection');
+  assert.deepEqual(h.guest.executions.filter(execution => execution.program === 'end-call').length, 1);
+  const report = await h.sandbox.channelReport({ environment: h.environment, boot: h.boot });
+  assert.deepEqual(report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome]), [['bash', 'mvn verify', 'orphan-ended']]);
+  // The boot, the watch and the other invocation are untouched; the interrupted invocation runs its next command.
+  assert.deepEqual(h.endings, []);
+  assert.equal((await h.sandbox.observe({ environment: h.environment, boot: h.boot })).condition, 'active');
+  h.guests.world.commands['git status'] = async () => 0;
+  const next = await builder.call({ name: 'bash', command: 'git status' });
+  assert.equal(next.status === 'success' && 'exitCode' in next && next.exitCode, 0, JSON.stringify(next));
+  untouched.finish();
+  const done = await bystander;
+  assert.equal(done.status === 'success' && 'exitCode' in done && done.exitCode, 0, JSON.stringify(done));
+  assert.equal(h.tools.interruptCalls('builder-1'), 0);
+});

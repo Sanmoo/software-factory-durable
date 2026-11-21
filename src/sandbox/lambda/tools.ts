@@ -123,8 +123,11 @@ const settled = (outcome: GuestExecResult | Dropped): { exitCode: number | null;
  * With `recovery`, a connection that drops without the host having closed it is recovered (`recovered`); without it, as in ticket 05.
  * `gone` (v2 ticket 10, V2-15) aborts once the service confirmed the end of the environment: the call in flight has its connection closed
  * and answers `environment-ended`, and a later call is answered the same way without anything being sent.
+ * `interrupts` (v2 ticket 09, V2-13) registers each call in flight so the adapter can interrupt it when half the rotation margin of
+ * the boot is left: its connection is closed, its process group is ended over a new connection (a closed connection does not end the
+ * program) and the call answers as one whose result is not known (`orphan-ended`: "indeterminate", the invocation goes on).
  */
-export function lambdaGuestOwner(channel: LambdaChannel, recovery?: ChannelRecovery, gone?: AbortSignal): GuestOwner {
+export function lambdaGuestOwner(channel: LambdaChannel, recovery?: ChannelRecovery, gone?: AbortSignal, interrupts?: Set<() => void>): GuestOwner {
   return { exec(argv, options) {
     const pending: Buffer[] = [];
     let wake: (() => void) | null = null;
@@ -134,10 +137,20 @@ export function lambdaGuestOwner(channel: LambdaChannel, recovery?: ChannelRecov
       if (options.signal.aborted) return { status: 'lost' };
       if (gone?.aborted) return { status: 'dropped', outcome: 'environment-ended', started: false };
       const call = randomUUID();
-      const signal = gone ? AbortSignal.any([options.signal, gone]) : options.signal;
+      const cut = new AbortController();
+      const interrupt = () => cut.abort();
+      const signal = AbortSignal.any([options.signal, cut.signal, ...(gone ? [gone] : [])]);
       const run = () => channel.exec({ program: 'tool', script: toolScript(argv, options.cwd, call), environment: options.env ?? {}, ...(stdin.length > 0 ? { stdin } : {}) },
         { signal, onData: data => { pending.push(data); wake?.(); } });
-      const first = await run();
+      interrupts?.add(interrupt);
+      let first: GuestExecResult;
+      try { first = await run(); } finally { interrupts?.delete(interrupt); }
+      // v2 ticket 09: interrupted by the adapter (not by the host of the invocation, not by the end of the environment). Nothing is
+      // reconnected for it: its process group is ended and the call has no result. It may have started; it is never "not executed".
+      if (cut.signal.aborted && !options.signal.aborted && !gone?.aborted && first.status !== 'exited') {
+        const ended = await channel.exec(endCallProgram(call));
+        return { status: 'dropped', outcome: ended.status === 'exited' && ended.exitCode === 0 ? 'orphan-ended' : 'channel-unrecoverable', started: true };
+      }
       const outcome = recovery && !gone?.aborted ? await recovered(first, run, channel, call, options.signal, recovery) : first;
       // The environment ended under this call: whatever the connection reported, the program may have started and has no result.
       if (gone?.aborted && !options.signal.aborted && outcome.status !== 'exited' && outcome.status !== 'dropped') {
@@ -172,6 +185,12 @@ export type LambdaTools = {
     /** `CHANNEL_UNRECOVERABLE` (v2 ticket 11): reconnection reached its limit on this boot; it serves no more calls. */
     /** `ENVIRONMENT_ENDED` (v2 ticket 10): the service confirmed the end of this boot's environment; nothing is bound to it any more. */
     code: 'STALE_TOOL_CONTEXT' | 'TOOL_BINDING_INVALID' | 'CHANNEL_UNRECOVERABLE' | 'ENVIRONMENT_ENDED' }>;
+  /**
+   * v2 ticket 09 (V2-13): interrupts the calls in flight of one invocation (half the rotation margin of the boot is left and its call
+   * has not returned). Returns how many were interrupted. The binding stays: the invocation goes on and reads that the result of the
+   * call is not known.
+   */
+  interruptCalls(invocationId: string): number;
   /** Ends every binding and closes the boot's connections. It does not stop the boot. */
   close(): Promise<void>;
 };
@@ -204,6 +223,8 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
   const owners: { close(): Promise<void>; idle(): Promise<void> }[] = [];
   // Once-only claim of an invocation, never released: an uncertain binding must not invite a replacement under the same identity.
   const invocations = new Set<string>();
+  // v2 ticket 09: the calls in flight of each bound invocation.
+  const inFlight = new Map<string, Set<() => void>>();
   let closing: Promise<void> | undefined;
   // v2 ticket 11: the service's word on the environment, the wait between attempts on the boot's clock, and the latch of the limit.
   let exhausted = (await readLambdaChannelReport(dependencies.root, environment, boot)).unrecoverable !== null;
@@ -258,7 +279,9 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
           context.data.bootRef !== boot || invocations.has(context.data.invocationId)) return { status: 'refused', code: 'STALE_TOOL_CONTEXT' };
       invocations.add(context.data.invocationId);
       // The role the host bound picks the guest user; no call, tunnel or guest answer can change it afterwards.
-      const vm = lambdaGuestOwner(channels.get(guestUserOfRole(context.data.role))!, recovery, gone.signal);
+      const calls = new Set<() => void>();
+      inFlight.set(context.data.invocationId, calls);
+      const vm = lambdaGuestOwner(channels.get(guestUserOfRole(context.data.role))!, recovery, gone.signal, calls);
       const { executionId, invocationId, role } = context.data;
       // Written on the host before the call answers: the record does not depend on the session, the worker or this process surviving.
       const uncertainEffect: ReadBinding['uncertainEffect'] = effect => recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'effect',
@@ -269,6 +292,11 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
       if (closing) { await owner.close(); return { status: 'refused', code: 'STALE_TOOL_CONTEXT' }; }
       owners.push(owner);
       return { status: 'bound', endpoint: owner.endpoint, close: owner.close };
+    },
+    interruptCalls(invocationId) {
+      const calls = [...(inFlight.get(invocationId) ?? [])];
+      for (const interrupt of calls) interrupt();
+      return calls.length;
     },
     close() {
       watching.abort();

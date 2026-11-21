@@ -42,7 +42,8 @@ export async function lambdaOwnerEndpoint(root: string, context: Pick<WorkerLaun
  * worker process is told to abort its session, so it makes no further model request) and resolves `ended` for Control.
  */
 export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { launcher?: LambdaWorkerLauncher }, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }):
-  Promise<{ status: 'serving'; close(): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd> } | { status: 'unavailable'; code: string }> {
+  Promise<{ status: 'serving'; close(): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd>;
+    /** v2 ticket 09 (V2-13): interrupts the calls in flight of one invocation of this boot; how many there were. */ interruptCalls(invocationId: string): number } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
   const environmentGone = new AbortController();
@@ -75,7 +76,7 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         return dependencies.launcher ? dependencies.launcher(request, endpoint, signal, secrets, relay, onHandoff) : launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff);
       },
     });
-    return { status: 'serving', close: () => owner.close(), ended };
+    return { status: 'serving', close: () => owner.close(), ended, interruptCalls: invocationId => tools.interruptCalls(invocationId) };
   } catch {
     await tools.close();
     return { status: 'unavailable', code: 'BOOT_OWNER_UNAVAILABLE' };
