@@ -134,3 +134,8 @@ mudar de identidade, e dois boots seguidos sem commit novo publicado bloqueiam o
 - **14:** nada a fazer; o boot da troca é iniciado com `reason: 'planned-swap'` e parado com `planned-swap`.
 - **16 (aceite):** o código do bloqueio é `NO_PROGRESS_BETWEEN_BOOTS`; os eventos no histórico são `boot-swap-due`, `boot-swap-notice`,
   `boot-swapped`, `boot-swap-ended`, `boot-ended` e `boot-loop-blocked`.
+
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 12 e 13): 2119 testes,
+2097 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
+`test/sandbox/sandbox-adapter-diagnostics.test.ts` (1). Numa execução anterior, sob carga (595 s de 600 s), `test/entrypoints/journey-composed.test.ts`
+estourou o orçamento à espera de `merge-blocked`; sozinho passou em 10,6 s e não falhou nas outras duas execuções completas.
