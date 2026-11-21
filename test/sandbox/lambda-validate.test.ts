@@ -9,10 +9,12 @@ import { lambdaAccountFake } from './lambda-service-fake.js';
 // v2 ticket 02 (V2-02 Validar, V2-30, V2-31): `validate` of a Lambda installation against the in-memory account. No AWS, no MicroVM.
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 
-async function validate(t: { after(fn: () => unknown): void }, fake: ReturnType<typeof lambdaAccountFake>, extra: Record<string, unknown> = {}, concurrency = 1) {
+/** The host of the tests has every tool of the channel unless a test removes one: the real host is never probed. */
+async function validate(t: { after(fn: () => unknown): void }, fake: ReturnType<typeof lambdaAccountFake>, extra: Record<string, unknown> = {}, concurrency = 1,
+  hostTools: readonly string[] = ['ssh', 'websocat']) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-validate-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const report = await createSandbox({ root, lambdaService: fake.service }).validate({ ...configuration, ...extra }, { concurrency });
+  const report = await createSandbox({ root, lambdaService: fake.service, lambdaHostTool: async executable => hostTools.includes(executable) }).validate({ ...configuration, ...extra }, { concurrency });
   assert.deepEqual(await readdir(root), [], 'validate writes nothing under the installation (no credential, no cache)');
   const check = (id: string) => report.checks.find(item => item.id === id);
   return { report, check, blocked: report.checks.filter(item => item.status === 'blocked').map(item => item.id) };
@@ -22,7 +24,7 @@ test('a correctly installed account validates: identity, operation role, region,
   const fake = lambdaAccountFake();
   const { report, check, blocked } = await validate(t, fake);
   assert.equal(report.configuration.valid, true);
-  for (const id of ['lambda-aws-profile', 'lambda-identity', 'lambda-operation-role', 'lambda-region', 'lambda-permissions', 'lambda-build-role',
+  for (const id of ['lambda-ssh', 'lambda-websocat', 'lambda-aws-profile', 'lambda-identity', 'lambda-operation-role', 'lambda-region', 'lambda-permissions', 'lambda-build-role',
     'lambda-artifact-bucket', 'lambda-quota', 'lambda-boot-duration']) assert.equal(check(id)?.status, 'ok', id);
   assert.match(check('lambda-identity')!.message, /123456789012/);
   // v2 ticket 06: the adapter is composed into the controller; a correctly installed account has no blocked check.
@@ -54,6 +56,23 @@ test('a missing AWS profile, a profile without identity and a missing aws CLI ar
   const bare = lambdaAccountFake();
   bare.account.cli = false;
   assert.deepEqual((await validate(t, bare)).blocked, ['lambda-aws-cli']);
+});
+
+test('a host without the `ssh` or the `websocat` the channel runs is blocked, each with its own cause, whatever the account answers', async t => {
+  const bare = await validate(t, lambdaAccountFake(), {}, 1, []);
+  assert.deepEqual(bare.blocked, ['lambda-ssh', 'lambda-websocat']);
+  assert.match(bare.check('lambda-ssh')!.message, /`ssh`/);
+  assert.match(bare.check('lambda-websocat')!.message, /`websocat`/);
+  assert.match(bare.check('lambda-websocat')!.nextStep, /never installs/);
+
+  const half = await validate(t, lambdaAccountFake(), {}, 1, ['ssh']);
+  assert.deepEqual(half.blocked, ['lambda-websocat']);
+  assert.equal(half.check('lambda-ssh')?.status, 'ok');
+
+  // The host tools are checked even when there is no identity to check the account with.
+  const anonymous = lambdaAccountFake();
+  delete anonymous.account.profiles.factory;
+  assert.deepEqual((await validate(t, anonymous, {}, 1, ['websocat'])).blocked, ['lambda-ssh', 'lambda-aws-profile']);
 });
 
 test('a profile that is not the installation operation role is diagnosed and its permissions are not presumed', async t => {

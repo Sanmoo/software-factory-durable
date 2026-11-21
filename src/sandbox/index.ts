@@ -14,6 +14,8 @@ export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type Sandbo
 import type { BootUsageReport, ChannelReport, EnvironmentBuildReport } from '../contracts/index.js';
 import { lambdaEnvironmentUsage, lambdaImageBuilds } from './lambda/usage.js';
 import { validateLambdaInstallation } from './lambda/validate.js';
+import { createHostToolProbe, type HostToolProbe } from './lambda/host-tools.js';
+export type { HostToolProbe, LambdaHostTool } from './lambda/host-tools.js';
 import { createLambdaCliService } from './lambda/cli-service.js';
 import type { LambdaServiceFactory } from './lambda/service.js';
 export { createLambdaCliService, type AwsCliRunner } from './lambda/cli-service.js';
@@ -149,10 +151,11 @@ export async function reconcileLambdaRuntime({ root, configuration, lambdaServic
 }
 
 /** `lambdaService` (v2 ticket 02): how the Lambda adapter reaches the AWS account; the `aws` CLI with the configured profile name by default. */
-export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaImageWait,
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine, lambdaService = createLambdaCliService, lambdaHostTool = createHostToolProbe(), lambdaImageWait,
   lambdaTransport, lambdaBootClock = defaultLambdaBootClock, lambdaObservationTimer, lambdaBootOwner = false, lambdaWorkerLauncher }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
   repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
   preparationVm?: PreparationVm; alpine?: AlpineRepositories; lambdaService?: LambdaServiceFactory;
+  /** Whether a host tool of the Lambda channel (`ssh`, `websocat`) can be run, for `validate`; the real PATH of the process by default. */ lambdaHostTool?: HostToolProbe;
   /** v2 ticket 03: how Prepare waits for a MicroVM image build (tests inject a fake clock). */ lambdaImageWait?: LambdaImageWait;
   /** v2 ticket 04: the transport to the guest (SSH over WebSocket with the host's `ssh` and `websocat` by default) and the clock of the boot waits. */
   lambdaTransport?: GuestTransport; lambdaBootClock?: LambdaBootClock;
@@ -450,7 +453,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         if (selection.status !== 'selected') return { configuration: { valid: false as const, errors: selection.errors }, checks: [] as Diagnostic[], versions: {} as Record<string, string | null> };
         const profile = selection.configuration;
         return { configuration: { valid: true as const, effective: profile }, versions: {} as Record<string, string | null>, checks: [
-          ...await validateLambdaInstallation({ profile, concurrency, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }) })] };
+          ...await validateLambdaInstallation({ profile, concurrency, service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), hostTool: lambdaHostTool })] };
       }
       const validated = validateConfiguration(configuration);
       const checks: Diagnostic[] = [

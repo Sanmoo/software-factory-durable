@@ -111,6 +111,8 @@ tem o seu):
 
 | Check | Bloqueia quando |
 | --- | --- |
+| `lambda-ssh` | `ssh` (cliente OpenSSH) não pode ser executado a partir do `PATH` do processo. |
+| `lambda-websocat` | `websocat` não pode ser executado a partir do `PATH` do processo. |
 | `lambda-aws-cli` | `aws` ausente ou sem os comandos `lambda-microvms`. |
 | `lambda-aws-profile` | O perfil nomeado não existe. |
 | `lambda-identity` | O perfil não dá identidade (sem credenciais, sessão expirada). |
@@ -159,8 +161,8 @@ uma MicroVM nova, o commit de partida é clonado do `origin` dentro do guest e n
 sobrevive ao fim do boot.
 
 - **Pré-requisitos do host:** `ssh` (cliente OpenSSH) e `websocat` no `PATH`, além do `aws`. O
-  canal é SSH transportado em WebSocket pelo `HTTP_INGRESS` da MicroVM. O `doctor` ainda não
-  confere esses dois executáveis.
+  canal é SSH transportado em WebSocket pelo `HTTP_INGRESS` da MicroVM. O `doctor` confere se os
+  dois podem ser executados (`lambda-ssh`, `lambda-websocat`); o canal em si só é provado num boot real.
 - **Iniciar** é sempre uma MicroVM nova da imagem do Trabalho, com `INTERNET_EGRESS`, sem execution
   role e sem suspensão por ociosidade, com as tags `software-factory-installation` e
   `software-factory-work`. Só há sucesso com o canal estabelecido e o commit de partida clonado do

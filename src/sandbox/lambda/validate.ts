@@ -2,16 +2,39 @@ import type { Diagnostic } from '../../contracts/index.js';
 import { installationResources, operationPolicy } from './installation.js';
 import { acceptanceProfile, lambdaBootSize, provenMaxBootSeconds, type LambdaProfile } from './profile.js';
 import type { LambdaService, LambdaServiceFailure } from './service.js';
+import { lambdaHostTools, type HostToolProbe } from './host-tools.js';
 
 const template = 'the release account template (assets/lambda/account-template.yaml, docs/lambda-installation.md)';
 const describe = (failure: LambdaServiceFailure) => failure.detail ? ` (${failure.detail})` : '';
 
 /**
- * V2-02 "Validar" for a Lambda installation (V2-30, V2-31): identity, region, permissions, quota and installation resources, each with
+ * V2-02 "Validar" for a Lambda installation (V2-30, V2-31): the host tools of the channel, then identity, region, permissions, quota and installation resources, each with
  * its own cause. Read-only: it never creates, tags or starts anything, and what it could not read is `unverified`, never presumed.
  * `concurrency` is the installation's Builder concurrency (the existing `concurrency` setting); absent when it is not known.
  */
-export async function validateLambdaInstallation({ profile, concurrency, service }: { profile: LambdaProfile; concurrency?: number | undefined; service: LambdaService }): Promise<Diagnostic[]> {
+export async function validateLambdaInstallation({ profile, concurrency, service, hostTool }: { profile: LambdaProfile; concurrency?: number | undefined; service: LambdaService;
+  hostTool: HostToolProbe }): Promise<Diagnostic[]> {
+  return [...await hostToolChecks(hostTool), ...await accountChecks({ profile, concurrency, service })];
+}
+
+/**
+ * The host executables of the channel (`ssh-transport.ts`), each with its own cause: without them the first boot fails, whatever the account
+ * allows. Only "can it be run from the PATH of this process" is checked; the channel itself is proven by a real boot (`lambda-runtime`).
+ */
+async function hostToolChecks(hostTool: HostToolProbe): Promise<Diagnostic[]> {
+  const purpose = { ssh: 'the Lambda adapter reaches the guest over SSH with the system OpenSSH client',
+    websocat: 'the SSH connection to the guest is carried in a WebSocket by `websocat`' };
+  const checks: Diagnostic[] = [];
+  for (const executable of lambdaHostTools) {
+    checks.push(await hostTool(executable).catch(() => false)
+      ? { id: `lambda-${executable}`, status: 'ok', message: `The \`${executable}\` executable can be run from the PATH of this process.`, nextStep: 'None.' }
+      : { id: `lambda-${executable}`, status: 'blocked', message: `The \`${executable}\` executable cannot be run from the PATH of this process; ${purpose[executable]}.`,
+        nextStep: `Administrator must install \`${executable}\` on this host and put it in the PATH of the account that runs the Factory; validate never installs packages.` });
+  }
+  return checks;
+}
+
+async function accountChecks({ profile, concurrency, service }: { profile: LambdaProfile; concurrency?: number | undefined; service: LambdaService }): Promise<Diagnostic[]> {
   const checks: Diagnostic[] = [];
   const identity = await service.callerIdentity();
   if (!identity.ok) {

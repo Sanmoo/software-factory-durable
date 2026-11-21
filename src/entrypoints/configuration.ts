@@ -2,7 +2,7 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { z } from 'zod';
-import { createSandbox, type LambdaServiceFactory } from '../sandbox/index.js';
+import { createSandbox, type HostToolProbe, type LambdaServiceFactory } from '../sandbox/index.js';
 import { builderBudgetMaximumFactor, builderBudgetV1 } from '../contracts/index.js';
 
 const text = z.string().trim().min(1).max(256).refine(value =>
@@ -63,9 +63,11 @@ const schema = z.strictObject({
 { path: ['dependencyRepositories'], message: 'A repository is either executable or dependency-only, never both' });
 
 /** `guestAssets`: the pin of a verified release (trusted composition data), never read from the YAML. */
-/** `lambdaService` (v2 ticket 02): how a Lambda installation's AWS account is reached; the `aws` CLI by default, a double in tests. */
-export async function readConfiguration(root: string, guestAssets?: { directory: string; manifestSha256: string }, { lambdaService }: { lambdaService?: LambdaServiceFactory } = {}) {
-  const sandboxOf = () => createSandbox({ root, ...(guestAssets ? { guestAssets } : {}), ...(lambdaService ? { lambdaService } : {}) });
+/** `lambdaService` (v2 ticket 02): how a Lambda installation's AWS account is reached; the `aws` CLI by default, a double in tests.
+ * `lambdaHostTool`: whether a host tool of the Lambda channel can be run; the real PATH by default, a double in tests. */
+export async function readConfiguration(root: string, guestAssets?: { directory: string; manifestSha256: string },
+  { lambdaService, lambdaHostTool }: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe } = {}) {
+  const sandboxOf = () => createSandbox({ root, ...(guestAssets ? { guestAssets } : {}), ...(lambdaService ? { lambdaService } : {}), ...(lambdaHostTool ? { lambdaHostTool } : {}) });
   let input: unknown;
   try {
     const configPath = join(root, 'config.yaml');

@@ -3,10 +3,11 @@ import { join, resolve } from 'node:path';
 import type { Diagnostic } from '../contracts/index.js';
 import { readConfiguration } from './configuration.js';
 import { inspectRelease, productionModelChecks, productionProfile } from './release.js';
-import { capacityDiagnostic, environmentIdentityDiagnostic, observeHostCapacity, selectSandboxAdapter, type LambdaServiceFactory } from '../sandbox/index.js';
+import { capacityDiagnostic, environmentIdentityDiagnostic, observeHostCapacity, selectSandboxAdapter, type HostToolProbe, type LambdaServiceFactory } from '../sandbox/index.js';
 
-/** `lambdaService` (v2 ticket 02): composition input for a Lambda installation's account diagnosis (the `aws` CLI by default). */
-export async function doctor(root: string, options: { lambdaService?: LambdaServiceFactory } = {}) {
+/** `lambdaService` (v2 ticket 02): composition input for a Lambda installation's account diagnosis (the `aws` CLI by default).
+ * `lambdaHostTool`: composition input for its host tool diagnosis (`ssh`, `websocat`; the real PATH by default). */
+export async function doctor(root: string, options: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe } = {}) {
   const canonicalRoot = await realpath(root).catch(() => resolve(root));
   // Release first: only a verified release contributes its guest asset pin and production worker profile (ticket 32).
   const release = await inspectRelease(canonicalRoot);

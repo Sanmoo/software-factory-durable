@@ -22,11 +22,11 @@ repositories:
     installationId: 456
     workflows: false
 `;
-async function diagnose(t: { after(fn: () => unknown): void }, yaml: string, fake = lambdaAccountFake()) {
+async function diagnose(t: { after(fn: () => unknown): void }, yaml: string, fake = lambdaAccountFake(), hostTools: readonly string[] = ['ssh', 'websocat']) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-doctor-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'config.yaml'), yaml, { mode: 0o600 });
-  const report = await doctor(root, { lambdaService: fake.service });
+  const report = await doctor(root, { lambdaService: fake.service, lambdaHostTool: async executable => hostTools.includes(executable) });
   assert.deepEqual(await readdir(root), ['config.yaml'], 'doctor writes nothing: no AWS credential or cache enters the installation');
   return { report, fake, check: (id: string) => report.checks.find(item => item.id === id) };
 }
@@ -37,7 +37,7 @@ test('doctor accepts a Lambda installation, shows its effective profile and diag
   if (!report.configuration.valid) return;
   assert.deepEqual(report.configuration.effective.sandbox, { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme', region: 'us-east-1',
     architecture: 'arm64', baselineMemoryMiB: 1024, additionalOsCapabilities: ['ALL'], maxBootSeconds: 3600, rotationMarginSeconds: 600, observationIntervalSeconds: 30 });
-  for (const id of ['lambda-identity', 'lambda-region', 'lambda-permissions', 'lambda-build-role', 'lambda-artifact-bucket', 'lambda-quota']) assert.equal(check(id)?.status, 'ok', id);
+  for (const id of ['lambda-ssh', 'lambda-websocat', 'lambda-identity', 'lambda-region', 'lambda-permissions', 'lambda-build-role', 'lambda-artifact-bucket', 'lambda-quota']) assert.equal(check(id)?.status, 'ok', id);
   for (const id of ['kvm-access', 'qemu-system-x86_64', 'capacity', 'environment-identity']) assert.equal(check(id), undefined, id);
   assert.deepEqual(fake.mutations, []);
 });
@@ -52,4 +52,12 @@ test('doctor diagnoses the configured Builder concurrency against the account qu
   assert.equal(check('lambda-permission:lambda:CreateMicrovmAuthToken')?.status, 'blocked');
   assert.equal(check('lambda-artifact-bucket')?.status, 'blocked');
   assert.equal(report.configuration.valid && report.configuration.effective.concurrency, 3, 'concurrency is never adjusted');
+});
+
+test('doctor blocks a Lambda installation whose host lacks a tool of the channel, before any boot is tried', async t => {
+  const { report, check, fake } = await diagnose(t, configuration('{adapter: lambda, schemaVersion: 1, awsProfile: factory, installation: acme}'), lambdaAccountFake(), ['ssh']);
+  assert.equal(report.code, 'PREREQUISITES_MISSING');
+  assert.equal(check('lambda-ssh')?.status, 'ok');
+  assert.equal(check('lambda-websocat')?.status, 'blocked');
+  assert.deepEqual(fake.mutations, []);
 });
