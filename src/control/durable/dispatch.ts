@@ -9,7 +9,7 @@ import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, in
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
-import type { AccessDependencies, BranchObservation, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PreservationOccasion, PublicationView } from '../types.js';
+import type { AccessDependencies, CredentialWithdrawal, LossRecord, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PreservationOccasion, PublicationView } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
@@ -29,9 +29,9 @@ import { recordGateCheck, recordGateCorrection } from './preservation.js';
 import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice } from './boot-swap.js';
 import { bootSchedule, noProgressCode, swapContinuationPrompt, swapNoticePrompt } from '../rules/boot-rotation.js';
 import { inheritedFindings as findingsOf, inheritedRounds as roundsInherited } from '../rules/review.js';
-import { recordLoss } from './loss.js';
-import { confirmedAt, markerOf } from '../rules/loss.js';
-import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateLossReason, gateRefusalLimit, gateRefusedCode, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
+import { recordLossFrom } from './loss.js';
+import { readOriginOf } from './origin-read.js';
+import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateLossReason, gateRefusalLimit, gateRefusedCode, preservedHeads, unpublishedLossReason, type GateDecision, type GateRefusal } from '../rules/preservation.js';
 import { substituteEffects, substitutePackage, substituteVersions, type SubstituteBoot } from '../rules/substitute.js';
 import { bootConsumption } from '../rules/inspection.js';
 import { followRewrittenHistory, settleBranchAbsent } from './origin-divergence.js';
@@ -277,48 +277,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const origin = await readOrigin(work, at.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
     return { observation, decision: gateDecision({ observation, origin }) };
   }
-  /**
-   * v2 ticket 12 (V2-16/V2-17): records the loss of the environment of `execution`. Both facts about `origin` are Control's own reads:
-   * the Work branch tip (the last commit that survived) and the listing of the Work's loss marker refs. A marker ref is recorded for
-   * the substitute to reuse; it never becomes the confirmed commit and never satisfies the preservation gate.
-   */
-  async function recordLossOf(work: WorkRecord, execution: ExecutionView, { environment, boot }: { environment: string | null; boot: string }, observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null,
-    /** v2 ticket 13 (Operator decision 7): Control ended the boot itself after the gate refused. */ cause?: 'preservation-gate-refused') {
-    const branch = execution.request.branch;
-    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
-    const origin = await readOrigin(work, branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
-    const read = !configured ? { state: 'unknown' as const, code: 'REPOSITORY_NOT_CONFIGURED' }
-      : !deps.access.repository.readLostMarkers ? { state: 'unknown' as const, code: 'LOST_MARKER_READ_NOT_COMPOSED' }
-        : await deps.access.repository.readLostMarkers({ repo: configured, repositoryId: work.repository.repositoryId, workId: work.work_id })
-          .catch(() => ({ state: 'unknown' as const, code: 'LOST_MARKER_READ_FAILED' }));
-    const current = (await readWork(session, work.work_id)) ?? work;
-    const loss = { at: new Date().toISOString(), executionId: execution.executionId, boot, environment, ...(cause ? { cause } : {}),
-      reason: observed.reason?.slice(0, 512) ?? null, terminatedAt: observed.terminatedAt,
-      confirmed: confirmedAt({ branch, origin, preservation: current.preservation ?? null }), consumption: { executionMs },
-      session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' as const }, marker: markerOf({ workId: work.work_id, boot, read }) };
-    const recorded = await recordLoss(session, work.work_id, loss);
-    if (recorded === 'recorded') observe(work.work_id, 'loss-recorded', [boot, loss.marker.state]);
-    return recorded;
+  /** v2 ticket 12 (V2-16/V2-17): the loss of the environment of `execution`, recorded from Control's own reads of `origin` (`loss.ts`). */
+  async function recordLossOf(work: WorkRecord, execution: ExecutionView, at: { environment: string | null; boot: string }, observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null, cause?: LossRecord['cause']) {
+    const recorded = await recordLossFrom({ session, access: deps.access }, work, execution, at, observed, executionMs, cause);
+    if (recorded.outcome === 'recorded') observe(work.work_id, 'loss-recorded', [at.boot, recorded.marker]);
+    return recorded.outcome;
   }
-  /**
-   * v2 ticket 06: Control's own read of `origin` (never the guest's word): the tip of the base and of the Work branch. It names the commit
-   * a boot without a persistent disk clones, and it is the measure of progress after a budget end (decision 2a).
-   */
-  async function readOrigin(work: WorkRecord, branch: string,
-    /** v2 ticket 08: also compare this commit (the gate-confirmed one) with the branch tip when they differ (ancestry and the new commits). */
-    compareFrom?: string): Promise<{ kind: 'observed'; base: string; branch: BranchObservation; comparison: OriginComparison | null } | { kind: 'unavailable'; code: string }> {
-    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
-    if (!configured) return { kind: 'unavailable', code: 'REPOSITORY_NOT_CONFIGURED' };
-    try {
-      const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [branch, work.repository.base],
-        ...(compareFrom ? { compareFrom } : {}) });
-      if (read.kind !== 'observed') return { kind: 'unavailable', code: `ORIGIN_NOT_READ_${read.code}`.slice(0, 64) };
-      const base = read.branches[work.repository.base], tip = read.branches[branch];
-      if (!base || base.state !== 'present') return { kind: 'unavailable', code: base?.state === 'absent' ? 'ORIGIN_BASE_ABSENT' : 'ORIGIN_BASE_NOT_READ' };
-      if (!tip || tip.state === 'unknown') return { kind: 'unavailable', code: 'ORIGIN_BRANCH_NOT_READ' };
-      return { kind: 'observed', base: base.sha, branch: tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' }, comparison: read.comparison ?? null };
-    } catch { return { kind: 'unavailable', code: 'ORIGIN_NOT_READ' }; }
-  }
+  const readOrigin = (work: WorkRecord, branch: string, compareFrom?: string) => readOriginOf(deps.access, work, branch, compareFrom);
 
   type Handle = Awaited<ReturnType<ExecutionPorts['workers']['activate']>>;
   const unavailable = (code: string): ProposalIdentity => ({ status: 'unavailable', code });
@@ -1033,6 +998,30 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     /** Operator decision 6: set when this Execution failed because its tool channel could not be recovered with the environment alive. */
     let channelLost: { at: string; attempts: number } | null = null;
     /**
+     * Final review, must-fix 1 (V2-17): Control is about to end this boot ITSELF outside a return of control (a failure, a budget end, a
+     * timeout, a stop of the controller). Without a persistent disk that destroys whatever is not on `origin`, so the environment, still
+     * alive, is checked ONCE with the same non-correcting preservation check (nobody is left to correct a refusal). Published and clean is
+     * no loss: the commit is confirmed and the next boot continues from it. Anything else is a loss, declared under `why`; it is recorded
+     * by `settleUnpublished` once the Execution's end is on the record. Before any Builder ran, the boot holds nothing but its clone.
+     */
+    let unpublished: { reason: string } | null = null;
+    const checkBeforeStop = async (why: string) => {
+      if (!diskless || !environment || !boot || !activated || unpublished || gateLoss || channelLost) return;
+      const branch = execution.request.branch;
+      const { decision } = await checkPreservation(work, { environment, boot, branch });
+      await recordGateCheck(session, work.work_id, executionId, { occasion: 'boot-end', boot, branch, decision }).catch(() => 'stale' as const);
+      observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
+      if (decision.outcome === 'refused') unpublished = { reason: unpublishedLossReason({ why, refusal: decision }) };
+    };
+    /** The reason the sandbox is given for the stop: `loss` when the boot ends with work that is not on `origin` (its own record of the boot then agrees with Control's, and its loss marker holder stays armed). */
+    const stopReasonOf = (ordinary: string) => unpublished || channelLost ? 'loss' : ordinary;
+    /** After the end of the Execution was recorded and its boot stopped: the declared loss on the Work, and the boot in the ledger (V2-14). */
+    const settleUnpublished = async (stop: { cessationConfirmed: boolean } | undefined) => {
+      const lost = unpublished as { reason: string } | null;
+      if (lost && boot) await recordLossOf(work, execution, { environment: environment ?? null, boot }, { reason: lost.reason, terminatedAt: null }, elapsed(), 'ended-unpublished').catch(() => {});
+      if (stop?.cessationConfirmed) await noteBootEnd(lost ? 'loss' : 'end');
+    };
+    /**
    * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
    * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
    * THIS Execution (own invocation, the one leased push, `gh` for the draft pull request). Its effects are never assumed: the ordinary
@@ -1675,10 +1664,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
               const shown = await readWork(session, work.work_id);
               if (shown?.execution?.executionId === executionId && shown.execution.state === 'held' && shown.execution.held?.code === reviewerRetryLimitCode) {
                 timerStop.abort();
-                const stop = await stopOwnBoot('reviewer retry limit: waiting for the operator decision');
+                await checkBeforeStop('a reviewer failed beyond its retries and the Operator must decide');
+                const stop = await stopOwnBoot(stopReasonOf('reviewer retry limit: waiting for the operator decision'));
                 const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'review-retry-limit',
                   { result: stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', basis: stop?.cessationConfirmed ? 'sandbox-stop' : `sandbox-stop:${stop && 'code' in stop ? stop.code : 'UNCONFIRMED'}`,
                     environment, boot }).catch(() => ({ decision: 'stale' as const }));
+                await settleUnpublished(stop);
                 observe(work.work_id, 'review-retry-limit-settled', [String(decision)]);
               }
               return;
@@ -1785,7 +1776,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
               await questionUncertain();
               return;
             }
-          }
+          // Final review, must-fix 1: so is every other failed activation (a budget end included): its boot is about to be ended by Control.
+          } else if (completed.status === 'failure' && !interrupted()) await wait(checkBeforeStop(`the Builder activation failed: ${failureCode ?? 'UNEXPECTED_FAILURE'}`));
           timerStop.abort();
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', failureCode,
           null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
@@ -1793,19 +1785,24 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           if (completed.status === 'failure') await questionUncertain();
         }
       } finally { timerStop.abort(); startCommitted(false); handle.close(); }
-      await lifecycle.withdraw('ended', { notifyWorker: false });
+      // A boot ended as a loss keeps its credentials until the stop returned: the sandbox's terminate hook may still push the loss marker.
+      const lossStop = Boolean(unpublished || channelLost);
+      if (!lossStop) await lifecycle.withdraw('ended', { notifyWorker: false });
       phase = 'stop';
       // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
-      const stop = await stopOwnBoot('builder execution ended');
+      const stop = await stopOwnBoot(stopReasonOf('builder execution ended'));
+      if (lossStop) await lifecycle.withdraw('ended', { notifyWorker: false });
       // Operator decision 6: the environment was alive and unreachable, so without a persistent disk ending its boot loses what it held
       // and `origin` does not. Recorded as a loss (v2 ticket 12) before the Slot is released, so before the substitute can start.
       if (diskless && boot && channelLost) await recordLossOf(work, execution, { environment: environment ?? null, boot }, { reason: channelLossReason(channelLost), terminatedAt: null }, elapsed()).catch(() => {});
       // v2 ticket 09 (V2-14): every ended boot of the Work enters its ledger. An ordinary end breaks a sequence of boots without progress;
-      // a boot ended with its channel unrecoverable is a loss like any other.
-      if (stop?.cessationConfirmed) await noteBootEnd(channelLost ? 'loss' : 'end');
+      // a boot ended with its channel unrecoverable, or with unpublished work, is a loss like any other.
+      if (channelLost) { if (stop?.cessationConfirmed) await noteBootEnd('loss'); }
+      else await settleUnpublished(stop);
       // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
-      const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? diskless ? {
+      const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment && !unpublished ? diskless ? {
         // v2 ticket 06 (decision 2a): the boot left nothing on the host; progress is the Work branch tip on `origin` having advanced.
+        // (A budget end that left unpublished work is a loss: V2-10, one operational recovery and a substitute session.)
         atEnd: null, guestStop: null, origin: await readOrigin(work, execution.request.branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }) } : {
         atEnd: ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment }).catch(() => ({ status: 'unavailable' as const, code: 'CHECKOUT_OBSERVATION_FAILED' })) : null,
         guestStop: 'guestShutdown' in stop && stop.guestShutdown ? `${stop.guestShutdown.result}:${stop.guestShutdown.reason}` : null } : undefined;
@@ -1865,9 +1862,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         // Blocked by EXECUTION_TIMEOUT for intervention: no retry, no new clock for it.
         await timer?.catch(() => {});
         await reviewTask?.catch(() => {});
-        await lifecycle?.withdraw('timeout', { notifyWorker: false }).catch(() => {});
+        await checkBeforeStop('the Execution reached its timeout').catch(() => {});
+        if (!unpublished) await lifecycle?.withdraw('timeout', { notifyWorker: false }).catch(() => {});
         await recordEnd(session, work.work_id, executionId, 'timeout', 'EXECUTION_TIMEOUT', null, elapsed()).catch(() => {});
-        const stop = await stopOwnBoot('execution timeout');
+        const stop = await stopOwnBoot(stopReasonOf('execution timeout'));
+        await lifecycle?.withdraw('timeout', { notifyWorker: false }).catch(() => {});
+        await settleUnpublished(stop).catch(() => {});
         await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
         observe(work.work_id, stop?.cessationConfirmed ? 'timeout-slot-released' : 'timeout-cessation-unconfirmed', ['EXECUTION_TIMEOUT']);
         return;
@@ -1875,8 +1875,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await questionUncertain().catch(() => {});
       if (stopping.signal.aborted) {
         await reviewTask?.catch(() => {});
+        // Final review, must-fix 1: a graceful stop of the controller ends this boot too. Checked first, while the environment is alive.
+        if (activated || phase === 'activate') await checkBeforeStop('the controller was stopped').catch(() => {});
         // Owner stop: the host channel closes (worker revoked); the grants are still in memory, so their revocation is attempted.
-        await lifecycle?.withdraw('owner-stopped', { notifyWorker: false }).catch(() => {});
+        if (!unpublished) await lifecycle?.withdraw('owner-stopped', { notifyWorker: false }).catch(() => {});
         // Stopped before the activation phase: no worker request exists. Nothing is retried because nothing started. If nothing was
         // booted or the own boot cessation is proven, the Slot is released and the Work returns to its queue position; otherwise
         // the reservation is still released without consumption but the Slot is kept under hold. At the activation phase itself the
@@ -1884,9 +1886,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         if (activated || phase === 'activate') {
           // Ticket 26 (spec §11.4): administrative stop of a requested/started activity. Clean only after the host confirmed cessation and the
           // end was persisted; it then continues in a new Execution without a recovery charge. Otherwise it stays an interruption.
-          const stop = await stopOwnBoot('administrative stop');
+          const stop = await stopOwnBoot(stopReasonOf('administrative stop'));
+          await lifecycle?.withdraw('owner-stopped', { notifyWorker: false }).catch(() => {});
           const forced = stop?.status === 'success' && stop.termination === 'forced';
           const settled = stop?.cessationConfirmed ? await administrativeStop(work, executionId, environment!, boot!, forced).catch(() => false) : false;
+          // An end that could not be recorded here leaves the loss to the reconciliation of the next controller start.
+          await settleUnpublished(stop).catch(() => {});
           if (forced) {
             uncertainStops++;
             if ((await readWork(session, work.work_id))?.execution?.state !== 'ended') await hold('ADMINISTRATIVE_STOP_FORCED',

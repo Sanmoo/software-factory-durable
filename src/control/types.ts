@@ -427,7 +427,8 @@ export type BootSwapRecord = { fromBoot: string; dueAt: string;
 /** v2 ticket 06: the Work branch tip on `origin` from Control's own read, or why it is not known. */
 /** v2 ticket 07 (V2-05): where the gate applies. `question`: a Question to the human; `ci-wait`: the Execution completed and the waits on
  * GitHub follow (CI, readiness); `planned-swap` (ticket 09) and `substitute-end` (ticket 13) call the same gate. */
-export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'substitute-end';
+/** `boot-end`: the one non-correcting check before Control itself ends a boot outside a return of control (failure, timeout, stop). */
+export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'substitute-end' | 'boot-end';
 /**
  * v2 ticket 07 (V2-06/V2-08): the last commit the gate confirmed on `origin` for this Work (the guest's `ls-remote` AND Control's own
  * read agreed with the guest's HEAD on a clean workspace). The next boot resumes from it. `heads`: every commit confirmed so far (bounded),
@@ -464,8 +465,11 @@ export type LossRecord = { at: string; executionId: string; boot: string; enviro
   /**
    * v2 ticket 13 (Operator decision 7 of 2026-11-21, amending V2-07): absent = the environment died on its own. `preservation-gate-refused`:
    * Control ended the boot itself because the preservation gate did not accept what the guest held (`reason` carries the last diagnostic).
+   * `ended-unpublished`: Control ended the boot for another reason (a failure, a timeout, a stop of the controller; `reason` says which)
+   * and its one check before the stop did not find the work on `origin`. `not-inspected`: the boot ended while the controller was down;
+   * nobody could inspect it, so whatever it held beyond `confirmed` is taken as lost.
    */
-  cause?: 'preservation-gate-refused';
+  cause?: 'preservation-gate-refused' | 'ended-unpublished' | 'not-inspected';
   /** What the sandbox reported about the end, as given. */ reason: string | null; terminatedAt: string | null;
   /**
    * The last commit of the Work known to be on `origin` at the loss: the Work branch tip by Control's own read made then (`origin-read`),

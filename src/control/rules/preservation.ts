@@ -42,7 +42,8 @@ const occasionText: Record<PreservationOccasion, string> = {
   question: 'your Question is recorded and the environment is about to be shut down while the answer is awaited',
   'ci-wait': 'your activation ended and the environment is about to be shut down while GitHub (CI, readiness) is awaited',
   'planned-swap': 'this environment is about to be replaced by a new one',
-  'substitute-end': 'your activation ended and the environment is about to be shut down' };
+  'substitute-end': 'your activation ended and the environment is about to be shut down',
+  'boot-end': 'the environment is about to be shut down' };
 
 /**
  * V2-07: the refusal returned to the Builder, in the same return of control, for correction. It names the reason, the ONE push the Builder
@@ -72,6 +73,14 @@ export function gateCorrectionPrompt(input: { occasion: PreservationOccasion; re
  */
 export function gateLossReason(input: { occasion: PreservationOccasion; refusal: GateRefusal; refusals: number }): string {
   return `Ended by the Factory: the preservation gate refused ${input.refusals} time(s) in a row before ${input.occasion} (last: ${input.refusal.code}: ${input.refusal.detail}).`.slice(0, 512);
+}
+
+/**
+ * V2-17: the reason of a loss Control declares when it ends a boot itself, outside a return of control, and its single check (nobody is
+ * left to correct a refusal) did not find the work on `origin`. `why` is the neutral reason of the stop.
+ */
+export function unpublishedLossReason(input: { why: string; refusal: GateRefusal }): string {
+  return `Ended by the Factory (${input.why}) with work that was not on origin: ${input.refusal.code}: ${input.refusal.detail}`.slice(0, 512);
 }
 
 /** The commits the gate confirmed on `origin` for a Work: the Factory's own history on the Work branch (V2-08). */

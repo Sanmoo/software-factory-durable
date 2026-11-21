@@ -1,6 +1,9 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
-import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, RuntimeInventory, StartObservation } from '../types.js';
+import type { AccessDependencies, ExecutionPorts, ExecutionView, OriginObservation, RecoveryRecord, RecoveryView, RuntimeInventory, StartObservation } from '../types.js';
+import { recordLossFrom } from './loss.js';
+import { readOriginTip } from './origin-read.js';
+import { recordBootEnd } from './boot-swap.js';
 import type { QuestionObservation } from '../../workers/index.js';
 import { blockedRequestReference } from '../../contracts/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
@@ -21,7 +24,22 @@ type Inventory = 'empty' | 'unknown' | RuntimeInventory;
 /** Ticket 27: reads of the Records question facet per reconciliation while it is transiently unavailable. */
 const questionObservationAttempts = 3;
 type Cessation = RecoveryRecord['cessation'];
-export type RecoveryDeps = { session: Session; ports: ExecutionPorts; controllerRunId: string; inventory: Inventory; live(executionId: string): boolean };
+export type RecoveryDeps = { session: Session; ports: ExecutionPorts; controllerRunId: string; inventory: Inventory; live(executionId: string): boolean;
+  /** Final review, must-fix 1: Control's reads of `origin`, for the loss of a boot that ended while the controller was down. */
+  access?: Pick<AccessDependencies, 'repositories' | 'repository'> };
+
+/**
+ * Final review, must-fix 1 (V2-17): the boot of an interrupted Execution on a sandbox WITHOUT a persistent disk, when a Builder may have
+ * worked in it and no preservation gate confirmed that boot. The reconciliation ends such a boot without being able to inspect it, so
+ * whatever it held beyond `origin` is a loss. Null otherwise (a persistent disk; no activation was requested; the gate accepted there).
+ */
+export function unconfirmedBoot(ports: ExecutionPorts['sandbox'], work: Pick<WorkRecord, 'preservation' | 'losses'>, execution: ExecutionView): { boot: string; environment: string | null } | null {
+  const boot = execution.dispatch.boot;
+  if (ports.capabilities?.persistentDisk !== false || !boot || (['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase) && !execution.start)) return null;
+  const preserved = work.preservation?.boot === boot && work.preservation.executionId === execution.executionId && execution.preservationGate?.attempts.at(-1)?.outcome === 'accepted';
+  if (preserved || work.losses?.some(item => item.executionId === execution.executionId && item.boot === boot)) return null;
+  return { boot, environment: execution.dispatch.environment };
+}
 
 /** An Execution that still needs reconciliation: it may hold a Slot, a reservation or an activity whose cessation was never confirmed. */
 export function unsettled(execution: ExecutionView | null | undefined): execution is ExecutionView {
@@ -311,9 +329,10 @@ function settleInterruptedReviews(execution: ExecutionView, now: string) {
 }
 
 /** Cessation + receipt observation + settlement of ONE interrupted Execution (boot reconciliation or an administrative stop before its start). */
-export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, trigger: RecoveryRecord['trigger'], cessation?: Cessation) {
+export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, trigger: RecoveryRecord['trigger'], cessation?: Cessation,
+  /** The reason given to the sandbox when the own survivor is stopped (`loss`: its record of the boot then agrees with Control's). */ stopReason = 'controller recovery: own survivor stopped, not adopted') {
   const execution = work.execution!;
-  const ceased = cessation ?? await ceaseOwn(deps.ports.sandbox, execution, deps.inventory, work, 'controller recovery: own survivor stopped, not adopted');
+  const ceased = cessation ?? await ceaseOwn(deps.ports.sandbox, execution, deps.inventory, work, stopReason);
   const observation = ceased.result === 'confirmed' && needsReceipt(execution) ? await observeReceipt(deps.ports, work.work_id, execution) : null;
   // Ticket 28: the start receipt of each reviewer retry still holding a recoveries reservation (only after confirmed cessation).
   const reviewerReceipts: Record<string, StartObservation> = {};
@@ -338,6 +357,24 @@ export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work:
 }
 
 /**
+ * Final review, must-fix 1 (V2-10, V2-14, V2-17): the loss of a boot the reconciliation ended without inspecting it, recorded from what
+ * Control knows (the Work branch tip and the marker refs by its own reads of `origin`, the last gate-confirmed commit), and the boot in
+ * the Work's ledger. An Execution that proved never to have started has no end and records nothing.
+ */
+async function recordUninspectedLoss(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, execution: ExecutionView, lost: { boot: string; environment: string | null }) {
+  if (!deps.access) return;
+  const branch = execution.request.branch;
+  const recorded = await recordLossFrom({ session: deps.session, access: deps.access }, work, execution, lost,
+    { reason: 'The controller was not running when this boot ended; it was ended at the next controller start without inspection.', terminatedAt: null },
+    execution.timing?.lastActivity?.elapsedMs ?? null, 'not-inspected');
+  if (recorded.outcome !== 'recorded') return;
+  const swapped = execution.swaps?.findLast(item => item.outcome?.toBoot === lost.boot)?.outcome ?? null;
+  const startTip: OriginObservation = swapped?.commit ? { state: 'present', sha: swapped.commit } : execution.origin?.atStart ?? { state: 'unknown', code: 'ORIGIN_NOT_READ' };
+  await recordBootEnd(deps.session, work.work_id, { boot: lost.boot, executionId: execution.executionId, begin: swapped ? 'planned-swap' : 'start', end: 'loss', startTip,
+    endTip: await readOriginTip(deps.access, work, branch), at: new Date().toISOString() }, branch);
+}
+
+/**
  * Boot reconciliation (spec §5.2 steps 3-5) with the dispatch barrier still closed: every interrupted Execution of the authority, then a sweep of
  * the listed own environments (a survivor of a settled Work is stopped, never adopted), unknown resources and Slots without a current
  * Execution. Returns what keeps dispatch globally closed and the repositories whose host Git cache was being prepared.
@@ -352,7 +389,9 @@ export async function reconcileBoot(deps: RecoveryDeps): Promise<RecoveryView> {
     if (!work) continue;
     known.set(id, work);
     if (!unsettled(work.execution) || deps.live(work.execution.executionId)) continue;
-    const { cessation } = await reconcileExecution(deps, work, 'boot');
+    const lost = unconfirmedBoot(deps.ports.sandbox, work, work.execution);
+    const { cessation, decision } = await reconcileExecution(deps, work, 'boot', undefined, lost ? 'loss' : undefined);
+    if (lost && cessation.result === 'confirmed' && decision !== 'stale') await recordUninspectedLoss(deps, work, work.execution, lost).catch(() => {});
     reconciled++;
     if (cessation.result === 'confirmed') ceased++; else unconfirmed++;
   }

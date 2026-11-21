@@ -106,7 +106,8 @@ export function substitutePackage(input: SubstitutePackageInput): string {
     `Execution context (from the Factory, authoritative): repository=${input.repository} base=${input.base} branch=${input.branch} checkout=${input.checkout} artifacts=/artifacts ` +
       `work=${input.workId} execution=${input.executionId} lost-execution=${loss.executionId}${input.startCommit ? ` start-commit=${input.startCommit}` : ''}${input.reviews ? ' reviews=factory-handoff' : ''}`,
     `LOSS declared by the Factory: the environment of boot ${line(loss.boot, 80)} (Execution ${loss.executionId}) ` +
-      (loss.cause === 'preservation-gate-refused' ? `was ended by the Factory because its work was not published${loss.reason ? ` (${line(loss.reason, 400)})` : ''}`
+      (loss.cause === 'preservation-gate-refused' || loss.cause === 'ended-unpublished' ? `was ended by the Factory because its work was not published${loss.reason ? ` (${line(loss.reason, 400)})` : ''}`
+        : loss.cause === 'not-inspected' ? `ended while the Factory controller was not running and could not be inspected${loss.reason ? ` (${line(loss.reason, 300)})` : ''}`
         : `ended ${loss.terminatedAt ? `on its own at ${loss.terminatedAt}` : 'on its own'}${loss.reason ? ` (reported: ${line(loss.reason, 300)})` : ''}`) + `. Everything it held that was not on ${input.branch} on origin is gone: uncommitted files, unpushed commits, ` +
       'processes, caches. Do not presume any of it exists and do not try to find the old environment.',
     confirmed,

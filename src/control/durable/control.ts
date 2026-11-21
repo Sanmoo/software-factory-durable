@@ -455,7 +455,7 @@ export async function openControl(options: { storagePath: string;
         // Ticket 26 (spec §5.2 steps 3-5), barrier still closed: own survivors are stopped (not adopted), interrupted Executions settled from
         // durable evidence; only then the gate opens, unless unknown resources, tasks or orphan Slots keep the installation closed.
         if (!signal.aborted && dispatcher && options.execution && inventory !== 'unknown') {
-          recovery = await reconcileBoot({ session: state, ports: options.execution, controllerRunId: controller_run_id, inventory, live: isLiveExecution });
+          recovery = await reconcileBoot({ session: state, ports: options.execution, controllerRunId: controller_run_id, inventory, live: isLiveExecution, ...(options.access ? { access: options.access } : {}) });
         }
         await decide();
         const aborted = new Promise<'stop'>(resolve => {
