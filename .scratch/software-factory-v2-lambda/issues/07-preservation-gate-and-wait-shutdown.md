@@ -110,3 +110,7 @@ MicroVM `TERMINATED`, commit confirmado no Trabalho), `test/control/inboot-publi
   em bloqueio. A composição de produção sempre tem as rodadas.
 - `test/control/channel-report-flow.test.ts` (ticket 11) declarava `persistentDisk: false` num dublê que prepara checkout no host; passou a
   declarar `true`, porque um sandbox sem disco agora deve o gate ao Controle. O assunto do teste (`channelRecovery`) não mudou.
+
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com o ticket 10): 2015 testes, 1993
+passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
+`test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
