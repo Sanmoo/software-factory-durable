@@ -70,7 +70,7 @@ Nothing is blocked at approval time. Environment checked: Node 24.21.0 via mise,
 - **Adoption criteria**:
   - Format: prettier 3.9.10 pinned, check mode, over `*.{ts,mts,cts,js,mjs,cjs}`; one approved reformat commit, listed in `.git-blame-ignore-revs`; fast tier; changed set in change mode, whole tree in integral.
   - Lint: ESLint 10.14.0 retained with its rules, plus typescript-eslint 8.72.1 `recommended`, over `src`, `test`, `scripts`; `--max-warnings 0`; fast tier. Complexity is **not** part of Lint (it is S6).
-  - Secrets: gitleaks 8.30.1 over the working tree and all local refs' history; fast tier; a wrapper matches findings to the tolerance policy by identity (commit, file, rule, line, column) and fails unmatched, duplicated, grown, or stale entries.
+  - Secrets: gitleaks 8.30.1 over the working tree and the history reachable from HEAD (amended in S2: all local refs made the result depend on the machine's branches); fast tier; a wrapper matches findings to the tolerance policy by identity (commit, file, rule, line, column) and fails unmatched, duplicated, grown, or stale entries.
   - Avoided terms: a checker reading GLOSSARY.md's _Avoid_ lines, identifiers split on camelCase/snake_case/kebab-case, over `src`, `test`, `scripts`; fast tier.
 - **Code changes**: fix the 110 typescript-eslint findings (24 unused-vars + 3 prefer-const in src; 47 unused-vars, 25 prefer-const, 9 explicit-any, 2 this-alias in tests/scripts); rename the single `job` identifier; rewrite the 8 synthetic tokens that gitleaks matches in the tracked tree to strings it does not match, in the reformat commit. Behavior preserved; `test:ci` must stay green.
 - **Tolerated findings** (Secrets only; each with the maintainer's explicit decision "synthetic fixture or public SSH host-key fingerprint, no credential", recorded beside each entry in the Secrets tolerance policy):
@@ -104,6 +104,7 @@ Nothing is blocked at approval time. Environment checked: Node 24.21.0 via mise,
 | `e9455b443a62` | `test/entrypoints/long34-provider.ts` | generic-api-key | 11:15 |
 
   Full 40-character commits are recorded in the policy. These are the only tolerated findings this plan names.
+  Amended in S2 with the HEAD scope: only the 8 entries whose commits are in HEAD's history (`0d2e225ffdd4`, `f6b463c83399`, `dc080a446b6a`, `a719df2e0e60`, `807f6798d600`, `48eb6e96a546`, `6be181a31186`, `04f4878f0360`) stay in the policy; the 17 outside it were removed by the same approved amendment.
 - **Tightening rule**: an entry is removed in the same reviewed change that removes its finding; a stale entry fails. A new security finding after adoption began is tolerated only by a new explicit decision recorded beside it; any other new finding is fixed.
 - **Gate Proofs**: Format: misindent one line; Lint: add an unused variable; Secrets: add a file with a well-formed fake AWS access key; Avoided terms: rename a Work identifier to `job`.
 - **Guides**: `docs/guides/coding-standards.md` gains pointers to the prettier and ESLint config.

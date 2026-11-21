@@ -1,9 +1,11 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { readCruise } from './architecture.ts';
+import { avoidedTerms, findAvoided } from './avoided-terms.ts';
+import { matchSecrets, parseTolerance, readGitleaks, type SecretFinding } from './secrets.ts';
 import { changedSet, gitIn } from './changes.ts';
 import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
@@ -86,7 +88,8 @@ export interface StaticParts {
   compile(): Promise<StepResult[]>;
   lint(): Promise<StepResult>;
   depcruise(): Promise<StepResult[]>;
-  pointers(): Promise<StepResult>;
+  /** The quality gates that need no compiled output: Guide pointers, Format, Secrets, Avoided terms. */
+  quick(): Promise<StepResult[]>;
 }
 
 /**
@@ -96,14 +99,17 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed] = await Promise.all([
+  const [compiled, linted, cruised, quick] = await Promise.all([
     compiling,
     parts.lint(),
     parts.staged ? parts.depcruise() : compiling.then(() => parts.depcruise()),
-    parts.pointers(),
+    parts.quick(),
   ]);
-  return [...compiled, linted, ...cruised, pointed];
+  return [...compiled, linted, ...cruised, ...quick];
 }
+
+/** The files the Format quality gate checks; .prettierignore holds its traversal exclusions. */
+const sourceGlob = '**/*.{ts,mts,cts,js,mjs,cjs}';
 
 const distFile = (source: string) => join('dist', source.replace(/\.ts$/, '.js'));
 
@@ -184,12 +190,58 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
     checkDependencies: () => checkInstalledDependencies(root),
     loadManifest: async () => parseManifest(JSON.parse(await readFile(join(root, 'test/tiers.json'), 'utf8')), file => existsSync(join(root, file))),
     acquireLock: tier => acquireMachineLock(machineLockPath(env), { pid: process.pid, tier, root }, log),
-    staticAnalysis: async (tier, signal, part = 'all') => {
+    staticAnalysis: async (tier, signal, only) => {
       const pointers = async (): Promise<StepResult> => {
         const step = await tool('guide-pointers', ['scripts/agent-checks/check.mjs', '--docs-only'], signal);
         return { ...step, check: 'guide-pointers', findings: pointerFindings(step.output ?? '') ?? [] };
       };
-      if (part === 'documentation') return [await pointers()];
+      const format = async (): Promise<StepResult> => {
+        const prettier = ['node_modules/prettier/bin/prettier.cjs', '--list-different', '--no-error-on-unmatched-pattern'];
+        const files = tier === 'fast' ? await changedLintable(signal) : 'all';
+        if (files !== 'all' && !files.length) return { name: 'prettier (no changed files)', ms: 0, ok: true, check: 'format', findings: [] };
+        const step = await tool(
+          files === 'all' ? 'prettier' : `prettier (${files.length} changed)`,
+          [...prettier, ...(files === 'all' ? [sourceGlob] : files)],
+          signal,
+        );
+        const listed = (step.output ?? '')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.startsWith('['));
+        return { ...step, check: 'format', findings: listed.map(file => ({ rule: 'not-formatted', location: file })), ok: step.ok && !listed.length };
+      };
+      const secrets = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const result = await scanSecrets(root, childEnv, signal);
+        return {
+          name: 'gitleaks',
+          ms: Date.now() - started,
+          ok: !result.findings.length,
+          check: 'secrets',
+          findings: result.findings,
+          output: [result.summary, ...result.findings.map(f => `${f.rule}: ${f.location}`)].join('\n'),
+        };
+      };
+      const avoided = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const findings = await scanAvoidedTerms(root);
+        return {
+          name: 'avoided-terms',
+          ms: Date.now() - started,
+          ok: !findings.length,
+          check: 'avoided-terms',
+          findings,
+          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+        };
+      };
+      const quickChecks: Record<string, () => Promise<StepResult>> = { 'guide-pointers': pointers, format, secrets, 'avoided-terms': avoided };
+      const quick = () =>
+        Promise.all(
+          Object.entries(quickChecks)
+            .filter(([id]) => only === undefined || only.includes(id))
+            .map(([, run]) => run()),
+        );
+      if (only !== undefined) return quick();
       const eslint = ['node_modules/eslint/bin/eslint.js', '--max-warnings', '0', '--format', 'json'];
       const linted = async (name: string, args: readonly string[]): Promise<StepResult> => {
         const step = await tool(name, args, signal);
@@ -227,7 +279,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       };
       const compiled = async (): Promise<StepResult[]> =>
         (await compile(tier, signal)).map(step => (step.name.startsWith('tsc') ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step));
-      return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')), compile: compiled, lint, depcruise, pointers });
+      return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')), compile: compiled, lint, depcruise, quick });
     },
     loadPolicy: async () => {
       const text = await readFile(join(root, 'scripts/test-runner/policy.json'), 'utf8');
@@ -292,4 +344,75 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       return result;
     },
   };
+}
+
+/** The pinned gitleaks: mise.toml's version, as `mise where` installs it (never installed by a run), or FACTORY_GITLEAKS. */
+async function gitleaksBinary(root: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<{ path: string } | { problem: string }> {
+  const pinned = /^gitleaks\s*=\s*"([^"]+)"/m.exec(await readFile(join(root, 'mise.toml'), 'utf8'))?.[1];
+  if (!pinned) return { problem: 'mise.toml pins no gitleaks version' };
+  let path = env.FACTORY_GITLEAKS;
+  if (!path) {
+    const where = await execute('mise', ['where', `gitleaks@${pinned}`], root, env, signal).catch(() => undefined);
+    if (!where || where.code !== 0) return { problem: `gitleaks ${pinned} is not installed (mise install)` };
+    path = join(where.output.trim(), 'gitleaks');
+  }
+  const version = await execute(path, ['version'], root, env, signal).catch(() => undefined);
+  if (!version || version.code !== 0 || !version.output.includes(pinned)) return { problem: `${path} is not gitleaks ${pinned}` };
+  return { path };
+}
+
+/** gitleaks over the history reachable from HEAD and over the uncommitted and untracked files, matched to the tolerance policy. */
+export async function scanSecrets(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  signal: AbortSignal,
+): Promise<{ findings: { rule: string; location: string }[]; summary: string }> {
+  const binary = await gitleaksBinary(root, env, signal);
+  if ('problem' in binary) return { findings: [{ rule: 'scanner-unavailable', location: binary.problem }], summary: binary.problem };
+  const policy = parseTolerance(JSON.parse(await readFile(join(root, 'scripts/test-runner/secrets-tolerated.json'), 'utf8')));
+  const report = ['--no-banner', '--exit-code', '0', '--report-format', 'json', '--report-path', '-', '--log-level', 'error'];
+  const history = await execute(binary.path, ['git', ...report, '--log-opts=HEAD', '.'], root, env, signal);
+  if (history.code !== 0) return { findings: [{ rule: 'scanner-failed', location: history.output.slice(0, 200) }], summary: 'gitleaks git failed' };
+  const findings: SecretFinding[] = readGitleaks(history.output, false);
+  const git = (args: string[]) => execute('git', args, root, env, signal).then(exit => exit.output.split('\0').filter(Boolean));
+  const pending = [
+    ...new Set([...(await git(['diff', '--name-only', '--no-renames', '-z', 'HEAD'])), ...(await git(['ls-files', '--others', '--exclude-standard', '-z']))]),
+  ].filter(file => existsSync(join(root, file)));
+  if (pending.length) {
+    const staging = await mkdtemp(join(tmpdir(), 'sf-secrets-'));
+    try {
+      for (const file of pending) {
+        await mkdir(dirname(join(staging, file)), { recursive: true });
+        await writeFile(join(staging, file), await readFile(join(root, file)));
+      }
+      const tree = await execute(binary.path, ['dir', ...report, staging], root, env, signal);
+      if (tree.code !== 0) return { findings: [{ rule: 'scanner-failed', location: tree.output.slice(0, 200) }], summary: 'gitleaks dir failed' };
+      findings.push(
+        ...readGitleaks(tree.output, true).map(item => ({
+          ...item,
+          file: relative(staging, item.file.startsWith('/') ? item.file : join(staging, item.file)),
+        })),
+      );
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+  const covered = new Set<string>();
+  for (const entry of policy)
+    if ((await execute('git', ['merge-base', '--is-ancestor', entry.commit, 'HEAD'], root, env, signal)).code === 0) covered.add(entry.commit);
+  const failures = matchSecrets(findings, policy, commit => covered.has(commit));
+  return {
+    findings: failures,
+    summary: `gitleaks: ${findings.length} findings over the history of HEAD and ${pending.length} uncommitted files; ${policy.length} tolerated entries`,
+  };
+}
+
+/** Identifiers of the tracked and untracked code under src/, test/ and scripts/ against GLOSSARY.md's _Avoid_ terms. */
+export async function scanAvoidedTerms(root: string): Promise<{ rule: string; location: string }[]> {
+  const terms = avoidedTerms(await readFile(join(root, 'GLOSSARY.md'), 'utf8'));
+  const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', 'src', 'test', 'scripts'], { cwd: root, encoding: 'utf8' }).split('\0');
+  const files = listed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file)));
+  const found: { rule: string; location: string }[] = [];
+  for (const file of files) found.push(...findAvoided(file, await readFile(join(root, file), 'utf8'), terms));
+  return found;
 }

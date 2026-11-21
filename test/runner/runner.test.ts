@@ -326,9 +326,9 @@ test('static stage: without the staged SDK depcruise waits for compile (prepare-
         events.push('depcruise');
         return [{ name: 'depcruise', ms: 1, ok: true }];
       },
-      pointers: async () => {
-        events.push('pointers');
-        return { name: 'guide-pointers', ms: 1, ok: true };
+      quick: async () => {
+        events.push('quick');
+        return [{ name: 'guide-pointers', ms: 1, ok: true }];
       },
     });
     await new Promise(resolve => setImmediate(resolve));
@@ -368,17 +368,17 @@ test('validation by change runs the affected tests only and says the result cove
 });
 
 test('a documentation-only change runs only the documentation checks and reports the rest as not applicable', async () => {
-  const parts: string[] = [];
+  const parts: (readonly string[] | undefined)[] = [];
   const { steps, events } = fakeSteps({
     changedSet: async () => changed(['docs/x.md']),
-    staticAnalysis: async (_tier, _signal, part) => {
-      parts.push(part ?? 'all');
+    staticAnalysis: async (_tier, _signal, only) => {
+      parts.push(only);
       return [{ name: 'guide-pointers', ms: 1, ok: true, check: 'guide-pointers' }];
     },
   });
   const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
   assert.equal(outcome.exitCode, 0, outcome.report);
-  assert.deepEqual(parts, ['documentation']);
+  assert.deepEqual(parts, [['guide-pointers']], 'only the checks whose inputs the change reaches');
   assert.ok(!events.some(event => event.startsWith('run ')));
   assert.match(outcome.report, /not applicable types \[Types\]: no affected input/);
   assert.match(outcome.report, /ran guide-pointers \[Guide pointers\]: passed/);

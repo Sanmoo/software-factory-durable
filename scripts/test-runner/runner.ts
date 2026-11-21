@@ -42,8 +42,8 @@ export interface Steps {
   loadManifest(): Promise<Manifest>;
   loadPolicy(): Promise<Policy>;
   acquireLock(tier: Tier): Promise<MachineLock>;
-  /** `documentation`: only the checks a documentation-only change can affect (the Guide pointers). */
-  staticAnalysis(tier: Tier, signal: AbortSignal, part?: 'all' | 'documentation'): Promise<StepResult[]>;
+  /** `only`: just these quick checks (those a documentation-only change reaches); every static check otherwise. */
+  staticAnalysis(tier: Tier, signal: AbortSignal, only?: readonly string[]): Promise<StepResult[]>;
   changedSet(base: string): Promise<Change & { base: string; compared?: string }>;
   loadIntegral(): Promise<IntegralRecord | undefined>;
   saveIntegral(record: IntegralRecord): Promise<void>;
@@ -144,7 +144,10 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
     try {
       const change = mode === 'change' ? await steps.changedSet(policy.base) : { files: [], deleted: [] };
       const documentationOnly = mode === 'change' && isDocumentation(policy, change);
-      summary.static = await steps.staticAnalysis(tier, controller.signal, documentationOnly ? 'documentation' : 'all');
+      const reached = documentationOnly
+        ? policy.checks.filter(check => check.cadence === 'change' && change.files!.some(file => matchesAny(file, check.appliesTo))).map(check => check.id)
+        : undefined;
+      summary.static = await steps.staticAnalysis(tier, controller.signal, reached);
       for (const step of summary.static) if (!step.ok && step.output) steps.log(step.output.trimEnd());
       summary.failures.push(...staticFailures(summary.static, policy));
       for (const step of summary.static) if (step.check) outcomes[step.check] = outcomes[step.check] === 'failed' || !step.ok ? 'failed' : 'passed';

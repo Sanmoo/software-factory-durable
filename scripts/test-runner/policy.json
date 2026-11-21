@@ -17,7 +17,9 @@
     ".dependency-cruiser.cjs",
     "test/tiers.json",
     "scripts/**",
-    ".github/**"
+    ".github/**",
+    ".prettierrc.json",
+    ".prettierignore"
   ],
   "documentation": ["**/*.md", "docs/**/*.json", "docs/**/*.jsonl", "docs/**/*.txt", "docs/**/*.log", "docs/**/*.patch", "docs/**/*.yaml", ".scratch/**"],
   "runtimeDependents": {
@@ -43,7 +45,9 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 15,
-      "gateByRule": { "no-restricted-syntax:pure-rules": "Dependency rule" }
+      "gateByRule": {
+        "no-restricted-syntax:pure-rules": "Dependency rule"
+      }
     },
     {
       "id": "boundaries",
@@ -53,7 +57,11 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 5,
-      "gateByRule": { "neutral-contracts": "Dependency rule", "pure-rules-imports": "Dependency rule", "no-cycles": "Static metrics" }
+      "gateByRule": {
+        "neutral-contracts": "Dependency rule",
+        "pure-rules-imports": "Dependency rule",
+        "no-cycles": "Static metrics"
+      }
     },
     {
       "id": "guide-pointers",
@@ -63,6 +71,33 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 3
+    },
+    {
+      "id": "format",
+      "gate": "Format",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**", "*.mjs", "*.cjs"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 10
+    },
+    {
+      "id": "secrets",
+      "gate": "Secrets",
+      "tier": "fast",
+      "appliesTo": ["**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 8
+    },
+    {
+      "id": "avoided-terms",
+      "gate": "Avoided terms",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**", "GLOSSARY.md"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 5
     },
     {
       "$comment": "Unit and Integration levels are declared per file in stage S3 of ADOPTION-PLAN.md; until then this is the whole regression suite.",

@@ -10,14 +10,13 @@ Dono do ciclo de vida do Trabalho: admissão, filas e Slots, orçamentos, pronti
 
 **Work** (Trabalho):
 Unidade lógica persistente da fábrica, associada a um Ticket e ao seu ciclo de entrega.
-_Avoid_: job
 
 **Execution** (Execução):
 Uma ativação de Builder para implementar, retomar ou reparar um Work.
 
 **Slot**:
 Capacidade para uma Execution ativa de Builder; não inclui esperas externas.
-_Avoid_: seat, lane
+_Avoid_: seat
 
 **Repair** (Reparo):
 Execution motivada por conflito, check obrigatório, review humano ou comando autorizado de correção.
