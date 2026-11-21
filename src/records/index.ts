@@ -591,6 +591,14 @@ export async function createRecords({ root }: { root: string }) {
         return (await output.finish()).reference;
       } catch { throw new RecordsError(); }
     },
+    /**
+     * Spec §12.2: a short text that leaves the capture path (a description kept in a host record, shown or put into a prompt) through the
+     * SAME matcher as every capture: each known secret becomes the redaction marker. No capture is created.
+     */
+    filterText(value: string): string {
+      if (typeof value !== 'string' || value.length > outputLimits.chunkBytes) throw new RecordsError();
+      return filter(value, true).text;
+    },
     registerSecret(value: string) {
       if (typeof value !== 'string' || !value || value.includes(redactionMarker) || value.length > outputLimits.secretCharacters) throw new RecordsError();
       if (secrets.includes(value)) return;

@@ -31,3 +31,5 @@ export type ChannelReport = {
 
 /** Bound of one effect description (a Bash command may be 16 KiB). */
 export const effectDescriptionLimit = 512;
+/** What the description says when the secret filter could not be applied to the call's text (MVP §12.2: never the raw text). */
+export const effectTextWithheld = '(text withheld: the secret filter could not be applied)';

@@ -23,7 +23,7 @@ const remote = 'https://github.com/acme/shop.git';
 const startingCommit = '1'.repeat(40);
 const builderToken = 'ghs_builderTokenOfThisExecution';
 
-type Bind = Partial<{ role: ToolContext['role']; invocationId: string; credential: { current(): string | undefined }; editSourceMaxBytes: number; copyOutput: boolean; selectedOutputCopies: string[] }>;
+type Bind = Partial<{ role: ToolContext['role']; invocationId: string; credential: { current(): string | undefined }; editSourceMaxBytes: number; copyOutput: boolean; selectedOutputCopies: string[]; records: Awaited<ReturnType<typeof createRecords>> }>;
 
 async function activeBoot(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-tools-'));
@@ -458,4 +458,20 @@ test('a reconnection accepts only the host key pinned at the boot; a call that n
   assert.deepEqual(guest.processes.map(process => process.state), ['exited', 'running']);
   assert.ok(guests.connections.every(connection => connection.hostKey === pinned));
   assert.equal((await sandbox.channelReport({ environment, boot })).unrecoverable?.attempts, 5);
+});
+
+test('MVP §12.2: the command text of an uncertain effect passes the Records secret filter before it reaches the boot\'s host record; a write names its path only', async t => {
+  const { guests, sandbox, environment, boot, records, invocation } = await activeBoot(t);
+  const secret = 'ghs_synthetic0123456789abcdefSECRET';
+  records.registerSecret(secret);
+  const command = `curl -H "Authorization: Bearer ${secret}" https://deploy.example/release`;
+  guests.world.commands[command] = async (_guest, run) => { guests.drop(); await run.killed; return 0; };
+  const builder = await invocation({});
+  await builder.call({ name: 'bash', command }, () => {});
+  const [effect] = (await sandbox.channelReport({ environment, boot })).indeterminateEffects;
+  assert.equal(effect!.description, 'curl -H "Authorization: Bearer █" https://deploy.example/release');
+  // A filter that fails never releases the raw text by another path: the record says the text was withheld.
+  const failing = await invocation({ records: { ...records, filterText() { throw new Error('filter'); } } as typeof records });
+  await failing.call({ name: 'bash', command }, () => {});
+  assert.deepEqual((await sandbox.channelReport({ environment, boot })).indeterminateEffects.map(item => item.description).slice(1), ['(text withheld: the secret filter could not be applied)']);
 });

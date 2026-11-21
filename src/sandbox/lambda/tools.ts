@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { effectDescriptionLimit, type ChannelDropOutcome } from '../../contracts/index.js';
+import { effectDescriptionLimit, effectTextWithheld, type ChannelDropOutcome } from '../../contracts/index.js';
 import type { BootRef } from '../lifecycle.js';
 import type { EnvironmentRef } from '../prepare.js';
 import { serveReadTools } from '../read-tools.js';
@@ -284,8 +284,12 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
       const vm = lambdaGuestOwner(channels.get(guestUserOfRole(context.data.role))!, recovery, gone.signal, calls);
       const { executionId, invocationId, role } = context.data;
       // Written on the host before the call answers: the record does not depend on the session, the worker or this process surviving.
+      // MVP §12.2: the text of the call (a Bash command, a path) passes the Records secret filter of this binding BEFORE it is written to
+      // the boot's host file, from where Control copies it into the Work document and a substitute's prompt. A filter that cannot be
+      // applied never releases the raw text: the effect is still recorded, with its text withheld.
+      const described = (text: string) => { try { return binding.records.filterText(text).slice(0, effectDescriptionLimit); } catch { return effectTextWithheld; } };
       const uncertainEffect: ReadBinding['uncertainEffect'] = effect => recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'effect',
-        at: new Date(dependencies.clock.now()).toISOString(), executionId, invocationId, role, ...effect, description: effect.description.slice(0, effectDescriptionLimit) });
+        at: new Date(dependencies.clock.now()).toISOString(), executionId, invocationId, role, ...effect, description: described(effect.description) });
       let owner: Awaited<ReturnType<typeof serveReadTools>>;
       try { owner = await serveReadTools({ ...binding, context: context.data, vm, profileOrigin: lambdaToolOrigin, guestConventions: 'ssh-channel', uncertainEffect, environmentEnded: () => gone.signal.aborted }); }
       catch { return { status: 'refused', code: 'TOOL_BINDING_INVALID' }; }
