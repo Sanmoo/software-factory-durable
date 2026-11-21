@@ -871,7 +871,8 @@ export type WorkView = {
     /** Ticket 48: a continuation after a budget end with progress (charged to `continuations`, no wait); absent = operational recovery. */
     kind?: 'budget-continuation' } | null;
   /** Ticket 50: persisted capacity wait after a boot/preparation refused for lack of host memory/storage (nothing started, nothing charged). */
-  bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number } | null;
+  bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number;
+    /** v2 (Operator decision 5): the cause the sandbox gave for the refusal, when it gave one (the reason shown for the wait). */ detail?: string | null } | null;
   /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (recreate the divergent artifact seeds) or, ticket 47, the
    * next boot (repair/replace a preserved disk that fails its check). */
   startRemedy?: { remedy: StartRetryRemedy; request_id: string; executionId: string; at: string; seeds: string[] } | null;
@@ -946,8 +947,7 @@ export type WorkView = {
 /** Ticket 50: a boot/preparation refusal that blocks recovery (cessation from the reconciliation) and the operator's explicit, audited retry. */
 export type BlockedStartView = { code: string; detail: string | null; at: string; cessation: 'confirmed' | 'unconfirmed';
   retry: { request_id: string; operator: { kind: 'local-administrator' }; at: string; code: string; remedy: StartRetryRemedy | null;
-    /** `not-required` (v2 ticket 14): the retry of a start the service refused for quota or capacity returns to the queue without a recovery unit. */
-    recoveryRequest: 'requested' | 'already-open' | 'not-required' } | null };
+    recoveryRequest: 'requested' | 'already-open' } | null };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };

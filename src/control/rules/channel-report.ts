@@ -1,5 +1,5 @@
 import type { ChannelReport } from '../../contracts/index.js';
-import type { Impediment, IndeterminateEffectRecord } from '../types.js';
+import type { IndeterminateEffectRecord } from '../types.js';
 
 /**
  * v2 ticket 11 (V2-21), pure: what Control keeps of a sandbox's channel report. Control decides from the declared capability and the
@@ -29,11 +29,11 @@ export function failureCodeAfter(code: string, report: ChannelReport | null): st
   return report?.unrecoverable ? channelUnrecoverableCode : code;
 }
 
-/** The visible impediment of a Work whose Execution lost its tool channel for good with the environment alive. Not transient: never retried by itself. */
-export function channelUnrecoverableImpediment(unrecoverable: NonNullable<ChannelReport['unrecoverable']>, context: { workId: string; boot: string; effects: number }): Impediment {
-  return { code: channelUnrecoverableCode, scope: 'work', since: unrecoverable.at,
-    nextStep: `The tool channel to the environment of boot ${context.boot} dropped and could not be re-established in ${unrecoverable.attempts} attempts while the service ` +
-      `reported the environment alive. ${context.effects === 0 ? 'No started tool call was left without a result.'
-        : `${context.effects} tool call(s) were left without a result: their effects may have happened and their processes may still be running until the boot ends (see the Execution's indeterminate effects in \`factory show ${context.workId}\`).`} ` +
-      `Nothing is retried automatically. Inspect the Execution and the network between this host and the sandbox service; \`factory cancel ${context.workId}\` ends the Work.` };
+/**
+ * Operator decision 6: a channel that could not be recovered leaves no impediment. The Execution's failure is transient: its boot is ended
+ * and the Work retries on a new boot through one operational recovery. Where the sandbox has no persistent disk, ending a boot that was
+ * alive and unreachable loses what it held and `origin` does not: this is the reason recorded on that loss.
+ */
+export function channelLossReason(unrecoverable: NonNullable<ChannelReport['unrecoverable']>): string {
+  return `${channelUnrecoverableCode}: the tool channel could not be re-established in ${unrecoverable.attempts} attempts with the environment alive; Control ended the boot`;
 }

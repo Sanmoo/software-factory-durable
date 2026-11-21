@@ -44,7 +44,10 @@ export function recoveryBackoff(notBeforeMs: number | null, nowMs: number): bool
  * Execution and the substitute comes back through the queue consuming one operational recovery, so the code is transient.
  */
 export const environmentEndedCode = 'SANDBOX_ENVIRONMENT_ENDED';
-const transient = new Set([environmentEndedCode, 'WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
+const transient = new Set([environmentEndedCode,
+  // v2 ticket 11 + Operator decision 6: the tool channel could not be re-established with the environment alive. The boot is ended and the
+  // Work retries on a new boot, consuming one operational recovery; nothing waits for the Operator.
+  'SANDBOX_CHANNEL_UNRECOVERABLE', 'WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
   'WORKER_MODEL_UNAVAILABLE', 'WORKER_INTERRUPTED', 'TOOL_CHANNEL_CLOSED', 'CONTROLLER_CRASH', 'REVIEWER_CESSATION_UNCONFIRMED', 'REVIEW_DELIVERY_UNCERTAIN',
   'REVIEW_DELIVERY_FAILED', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED', 'ACTIVATION_REFUSED_CESSATION_UNCONFIRMED', 'ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED',
   'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED',
@@ -60,22 +63,17 @@ const phases = ['ACTIVATE_', 'STARTED_', 'REVIEW_', 'COMPLETED_', 'STOP_'];
  * Ticket 50: host capacity refusals raised BEFORE any boot/preparation effect (free memory or storage below what this guest needs NOW). They
  * pass when another guest ends or space is freed, so they are transient: the Work keeps its queue position behind a persisted capacity wait,
  * and nothing is charged because nothing started.
+ * v2 ticket 14 + Operator decision 5 (V2-30): `START_SERVICE_CAPACITY_REFUSED`, the sandbox's service refusing to start the boot for lack of
+ * quota or capacity, is the same case: it waits and is attempted again by itself, with no impediment and no operational recovery.
  */
-export const bootCapacityCodes = ['START_INSUFFICIENT_MEMORY_FOR_BOOT', 'START_INSUFFICIENT_STORAGE_FOR_BOOT', 'PREPARE_INSUFFICIENT_STORAGE_FOR_PREPARATION'] as const;
+export const bootCapacityCodes = ['START_INSUFFICIENT_MEMORY_FOR_BOOT', 'START_INSUFFICIENT_STORAGE_FOR_BOOT', 'PREPARE_INSUFFICIENT_STORAGE_FOR_PREPARATION',
+  'START_SERVICE_CAPACITY_REFUSED'] as const;
 export const isBootCapacityRefusal = (code: string | null | undefined) => (bootCapacityCodes as readonly string[]).includes(code ?? '');
 /** Persisted capacity waits (ticket 50): 15 s, 60 s, then 300 s repeated while the host stays short (a refusal costs no budget). */
 export const bootCapacityWaitsSeconds = [15, 60, 300] as const;
 export function bootCapacityWait(attempt: number): number {
   return bootCapacityWaitsSeconds[Math.min(Math.max(0, Math.floor(attempt)), bootCapacityWaitsSeconds.length - 1)]!;
 }
-
-/**
- * v2 ticket 14 (V2-30): the sandbox's service refused to start the boot for lack of quota or capacity. Nothing ran, so nothing is charged,
- * and unlike the host capacity wait above nothing is retried on its own: the Work shows the impediment with the cause, and the Operator's
- * retry returns it to the queue as what it was, without an operational recovery unit.
- */
-export const serviceCapacityCodes = ['START_SERVICE_CAPACITY_REFUSED'] as const;
-export const isServiceCapacityRefusal = (code: string | null | undefined) => (serviceCapacityCodes as readonly string[]).includes(code ?? '');
 
 // Ticket 50: Sandbox.prepare refusals that complete before any native effect still runs (checks, or a refusal returned after the awaited
 // work ended): the controller itself observed the end of the call, so its cessation is confirmed without a restart. Anything else (e.g. an
@@ -242,12 +240,6 @@ export const remediesFor = (code: string) => (Object.keys(startRetryRemedyCodes)
 
 /** `RECOVERY_BLOCKED` by a boot/preparation refusal (ticket 50), with its explicit exit (operator retry through one operational recovery). */
 export function blockedStartImpediment(workId: string, code: string, detail: string | null, since: string): Impediment {
-  // v2 ticket 14 (V2-30): a start impediment that costs nothing, neither now nor when the Operator retries it.
-  if (isServiceCapacityRefusal(code)) return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: 'The start of the Execution\'s boot was refused by the sandbox\'s ' +
-    `service for lack of quota or capacity (${code}${detail ? `: ${detail}` : ''}); nothing started, nothing was charged and nothing is retried automatically. ` +
-    'Check what else is using the account\'s quota (boots of other Works, resources left behind) and what `factory doctor` says about concurrency against the quota; ' +
-    `then retry explicitly: \`factory resume ${workId} --retry-blocked-start ${code} --request-id <id>\` (no operational recovery is consumed: the Work returns to ` +
-    `the queue as it was), or \`factory cancel ${workId}\`.` };
   const remedies = remediesFor(code);
   const why = code.endsWith('ENVIRONMENT_CONFIGURATION_MISMATCH') || code === 'START_GUEST_ASSET_PIN_MISMATCH'
     ? ' The configuration changed what identifies the prepared environment (profile, disk size or guest assets; memory/vCPU never do): restore it ' +
@@ -280,8 +272,7 @@ export type StartRetryFacts = {
 /**
  * Ticket 50 (generic operator retry of a refused boot/preparation; ticket 47 reuses it for START_PRESERVED_DISK_CHECK_REQUIRED): accepted
  * only for EXACTLY the refusal that blocked the Work, after confirmed cessation (the refused Execution was released: no activity, no Slot,
- * nothing started), and with a remedy only where it applies. Accepting lifts only that block; the Work returns through ONE operational recovery
- * (v2 ticket 14: none when the refusal was the service's quota or capacity).
+ * nothing started), and with a remedy only where it applies. Accepting lifts only that block; the Work returns through ONE operational recovery.
  */
 export function retryBlockedStartDecision(input: StartRetryFacts): { kind: 'accept'; code: string } | { kind: 'already'; code: string } | { kind: 'refuse'; code: string } {
   const { work, execution } = input;

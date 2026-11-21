@@ -34,7 +34,7 @@ import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { environmentEndedCode, interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { recordEnvironmentEnd } from './environment-end.js';
-import { failureCodeAfter } from '../rules/channel-report.js';
+import { channelLossReason, channelUnrecoverableCode, failureCodeAfter } from '../rules/channel-report.js';
 import { recordChannelReport } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
@@ -967,6 +967,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // its reservation) before the end is recorded.
     let reviewTask: Promise<boolean> | undefined;
     let endCode: string | null = null;
+    /** Operator decision 6: set when this Execution failed because its tool channel could not be recovered with the environment alive. */
+    let channelLost: { at: string; attempts: number } | null = null;
     /**
      * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
      * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
@@ -1428,8 +1430,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           // v2 ticket 07 (V2-05): a completed Execution returns control to the waits on GitHub (CI, readiness) and its boot ends: gate first.
           if (diskless && completed.status === 'success' && await preservationGate('ci-wait') !== 'accepted') return;
           timerStop.abort();
-          // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (not transient: no automatic retry).
-          const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, await channelReport());
+          // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (transient, Operator decision 6).
+          const reported = completed.status === 'success' ? null : await channelReport();
+          const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, reported);
+          if (failureCode === channelUnrecoverableCode) channelLost = reported?.unrecoverable ?? null;
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', failureCode,
           null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') endCode = failureCode;
@@ -1440,6 +1444,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'stop';
       // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
       const stop = await stopOwnBoot('builder execution ended');
+      // Operator decision 6: the environment was alive and unreachable, so without a persistent disk ending its boot loses what it held
+      // and `origin` does not. Recorded as a loss (v2 ticket 12) before the Slot is released, so before the substitute can start.
+      if (diskless && boot && channelLost) await recordLossOf(work, execution, { environment: environment ?? null, boot }, { reason: channelLossReason(channelLost), terminatedAt: null }, elapsed()).catch(() => {});
       // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
       const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? diskless ? {
         // v2 ticket 06 (decision 2a): the boot left nothing on the host; progress is the Work branch tip on `origin` having advanced.
