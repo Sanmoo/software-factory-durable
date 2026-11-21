@@ -26,6 +26,8 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 
 - [Definir as condições de admissão diante de bloqueadores e leituras incompletas](issues/04-admissao.md): a admissão considera os bloqueadores visíveis; uma lista vazia válida libera esse critério, mas uma leitura com falha não.
 
+- [Definir quem pode conduzir o Trabalho pelo Ticket Jira](issues/05-conversa.md): quem pode comentar no Card pode conduzir seu Trabalho; `/factory` endereça a fábrica e `q17:` distingue a pergunta quando necessário.
+
 ## Not yet specified
 
 - O desenho de persistência e reconciliação mostrará se algum estado legado exige um procedimento específico de atualização ou recuperação; não pressupor migração destrutiva nem ferramenta nova.
