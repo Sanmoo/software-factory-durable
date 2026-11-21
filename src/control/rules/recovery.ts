@@ -2,6 +2,7 @@
 import { blockedReferenceToken, blockedStartCodePattern, type StartRetryRemedy } from '../../contracts/index.js';
 import type { Impediment } from '../types.js';
 import { preservationClaim, recreatedClaim, withNotice, type RecreatedContext } from './boot-notice.js';
+import { gateRefusedCode } from './preservation.js';
 
 /** Persisted waits of the operational recoveries of one Work (spec §4.4): 5/15/45 s, the last one repeated for explicitly granted extra units. */
 export const recoveryWaitsSeconds = [5, 15, 45] as const;
@@ -44,7 +45,9 @@ export function recoveryBackoff(notBeforeMs: number | null, nowMs: number): bool
  * Execution and the substitute comes back through the queue consuming one operational recovery, so the code is transient.
  */
 export const environmentEndedCode = 'SANDBOX_ENVIRONMENT_ENDED';
-const transient = new Set([environmentEndedCode, 'WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
+// v2 ticket 13 (Operator decision 7 of 2026-11-21, amending V2-07): `gateRefusedCode` is the end of an Execution whose boot Control ended
+// after the preservation gate refused three times in a row. It is a loss like the death of the environment: transient, one operational recovery.
+const transient = new Set([environmentEndedCode, gateRefusedCode, 'WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
   'WORKER_MODEL_UNAVAILABLE', 'WORKER_INTERRUPTED', 'TOOL_CHANNEL_CLOSED', 'CONTROLLER_CRASH', 'REVIEWER_CESSATION_UNCONFIRMED', 'REVIEW_DELIVERY_UNCERTAIN',
   'REVIEW_DELIVERY_FAILED', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED', 'ACTIVATION_REFUSED_CESSATION_UNCONFIRMED', 'ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED',
   'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED',

@@ -28,7 +28,11 @@ import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservat
 import { recordGateCheck, recordGateCorrection } from './preservation.js';
 import { recordLoss } from './loss.js';
 import { confirmedAt, markerOf } from '../rules/loss.js';
-import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateHold, gateRefusalLimit, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
+import { gateCorrectionPrompt, gateCorrectionPush, gateDecision, gateLossReason, gateRefusalLimit, gateRefusedCode, preservedHeads, type GateDecision, type GateRefusal } from '../rules/preservation.js';
+import { substituteEffects, substitutePackage, substituteVersions, type SubstituteBoot } from '../rules/substitute.js';
+import { bootConsumption } from '../rules/inspection.js';
+import { followRewrittenHistory, settleBranchAbsent } from './origin-divergence.js';
+import { acceptCancel } from './cycles.js';
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
@@ -275,7 +279,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * the Work branch tip (the last commit that survived) and the listing of the Work's loss marker refs. A marker ref is recorded for
    * the substitute to reuse; it never becomes the confirmed commit and never satisfies the preservation gate.
    */
-  async function recordLossOf(work: WorkRecord, execution: ExecutionView, { environment, boot }: { environment: string | null; boot: string }, observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null) {
+  async function recordLossOf(work: WorkRecord, execution: ExecutionView, { environment, boot }: { environment: string | null; boot: string }, observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null,
+    /** v2 ticket 13 (Operator decision 7): Control ended the boot itself after the gate refused. */ cause?: 'preservation-gate-refused') {
     const branch = execution.request.branch;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     const origin = await readOrigin(work, branch).then(read => read.kind === 'observed' ? read.branch : { state: 'unknown' as const, code: read.code }, () => ({ state: 'unknown' as const, code: 'ORIGIN_NOT_READ' }));
@@ -284,7 +289,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         : await deps.access.repository.readLostMarkers({ repo: configured, repositoryId: work.repository.repositoryId, workId: work.work_id })
           .catch(() => ({ state: 'unknown' as const, code: 'LOST_MARKER_READ_FAILED' }));
     const current = (await readWork(session, work.work_id)) ?? work;
-    const loss = { at: new Date().toISOString(), executionId: execution.executionId, boot, environment,
+    const loss = { at: new Date().toISOString(), executionId: execution.executionId, boot, environment, ...(cause ? { cause } : {}),
       reason: observed.reason?.slice(0, 512) ?? null, terminatedAt: observed.terminatedAt,
       confirmed: confirmedAt({ branch, origin, preservation: current.preservation ?? null }), consumption: { executionMs },
       session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' as const }, marker: markerOf({ workId: work.work_id, boot, read }) };
@@ -565,7 +570,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * session saw (null: no earlier boot, or the same one).
    */
   type Prepared = { checkout: { baseCommit: string; branch: string; path: string; reused: boolean };
-    recreated?: { continuity: 'continuous' | 'unconfirmed'; notice: RecreatedContext | null } | null };
+    recreated?: { continuity: 'continuous' | 'unconfirmed' | 'rewritten' | 'restarted'; notice: RecreatedContext | null;
+      /** v2 ticket 13: what the substitute package names: the environment, the commit this boot cloned and whether an earlier boot took `/artifacts` versions with it. */
+      environment?: EnvironmentRef; startCommit?: string; artifactsLost?: boolean } | null };
   const recreatedOf = (prepared: Prepared, interruption = false) => prepared.recreated ? { recreated: { continuity: prepared.recreated.continuity, interruption } } : {};
   type Plan = { kind: 'ready'; prompt: string; resume: ExecutionView['request']['resume']; decision: ExecutionView['request']['session']; continuation: SessionRef | null } |
     { kind: 'refused'; reasons: string[] } | { kind: 'insufficient'; reasons: string[] };
@@ -611,13 +618,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         ? workSummary(current, execution, { previousExecutionId: basis.previousExecutionId, code: basis.code,
           progress: basis.reason === 'BUDGET_CONTINUATION' && previous.checkout?.progress ? { decision: previous.checkout.progress, start: previous.checkout.atStart, end: previous.checkout.atEnd ?? null } : null,
           answered }) : null;
-      const prompt = [...(reconciling ? [reconciling, ''] : []), interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+      // v2 ticket 13 (V2-18, V2-19): after a LOSS on a sandbox without a persistent disk this new session is the SUBSTITUTE. Its instruction
+      // is the package built from Control's records only (no transcript, no summary of the lost session) and the fixed conduct.
+      const loss = prepared.recreated ? (current?.losses ?? []).findLast(item => item.executionId === basis.previousExecutionId) ?? null : null;
+      const packaged = loss && current ? await substituteInstruction(current, execution, prepared, loss, skillDirectory) : null;
+      const prompt = [...(reconciling ? [reconciling, ''] : []), packaged ? withNotice(recreated, [packaged, ...(summary ? ['', summary] : [])]).join('\n')
+        : interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
         reviews: Boolean(ports.reviews), summary, recreated }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
       // Ticket 28 (spec §5.6): the preserved review state of the interrupted Execution, context only (a delivery to the old session is not
       // proof it was consumed); its valid opinions are carried at the next handoff when the proposal is unchanged. Dropped under the bound.
-      const review = ports.reviews?.partialRecovery ? preservedReviewContext(previous.review?.rounds ?? [], 6000, { carry: true }) : null;
+      // (A substitute after a loss gets none: the captures those opinions were about died with the environment.)
+      const review = ports.reviews?.partialRecovery && !packaged ? preservedReviewContext(previous.review?.rounds ?? [], 6000, { carry: true }) : null;
       const withReview = review ? `${prompt}\n\n${review}` : prompt;
       if (new TextEncoder().encode(withReview).length <= promptBudgetBytes) return { kind: 'ready', prompt: withReview, resume: null, decision: null, continuation: null };
       if (new TextEncoder().encode(prompt).length > promptBudgetBytes) return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
@@ -652,7 +665,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         .catch(() => ({ session: { state: 'unavailable' as const, code: 'SESSION_OBSERVATION_FAILED', differences: [] }, limitations: [] }))).session;
     }
     const decided = sessionDecision({ previous: { session: recorded, skillPack: previous.request.skillPack, policies: previous.request.policies,
-      environmentLost: Boolean(previous.environmentEnd) || Boolean(current?.losses?.some(loss => loss.executionId === previous.executionId)) },
+      environmentLost: Boolean(previous.environmentEnd) || Boolean(current?.losses?.some(loss => loss.executionId === previous.executionId)),
+      // v2 ticket 13 (Operator decision 8): the branch no longer continues what that session knew; a substitute session takes over.
+      originChanged: prepared.recreated?.continuity === 'rewritten' ? 'ORIGIN_HISTORY_REWRITTEN' : prepared.recreated?.continuity === 'restarted' ? 'ORIGIN_BRANCH_ABSENT' : null },
       next: { skillPack: pack, policies: execution.request.policies }, observation });
     const decision = { mode: decided.mode, reason: decided.reason, previousExecutionId: previous.executionId, previous: recorded, decidedAt: new Date().toISOString() };
     const answer = answered?.answer ? { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator',
@@ -685,6 +700,36 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         code: previous.end?.code ?? previous.end?.outcome ?? previous.state, progress: null, answered: allAnswered }) : null });
     if (recovered.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: recovered.prompt, resume, decision, continuation: null };
+  }
+
+  /**
+   * v2 ticket 13 (V2-18): the package of the substitute session, from Control's records. The channel report of the LOST boot is read and
+   * recorded first (only the live dispatch path reads it otherwise: a loss settled by a restarted controller never did); then the boots
+   * with their reasons and the accumulated consumption as the sandbox reports them. Nothing here comes from the lost session.
+   */
+  async function substituteInstruction(current: WorkRecord, execution: ExecutionView, prepared: Prepared, loss: NonNullable<WorkRecord['losses']>[number], skillDirectory: string): Promise<string> {
+    if (loss.environment && ports.sandbox.capabilities?.channelRecovery && ports.sandbox.channelReport) {
+      const report = await ports.sandbox.channelReport({ environment: loss.environment as EnvironmentRef, boot: loss.boot as BootRef }).catch(() => null);
+      if (report) await recordChannelReport(session, current.work_id, loss.executionId, loss.boot, report).catch(() => {});
+    }
+    const fresh = (await readWork(session, current.work_id)) ?? current;
+    const earlier = [...fresh.previousExecutions, ...(fresh.execution && fresh.execution.executionId !== execution.executionId ? [fresh.execution] : [])];
+    const environments = [...new Set([...earlier.map(item => item.dispatch.environment), prepared.recreated?.environment ?? null].filter((item): item is EnvironmentRef => Boolean(item)))];
+    const reports = ports.sandbox.usage ? await Promise.all(environments.map(environment => ports.sandbox.usage!({ environment }).catch(() => null))) : [];
+    const usage = ports.sandbox.usage ? bootConsumption(reports, 1000) : null;
+    // Without a usage report, the boots are the ones Control itself recorded, with the reason it knows.
+    const boots: SubstituteBoot[] = usage && usage.items.length ? usage.items.map(item => ({ boot: item.boot, begin: item.begin, end: item.end, seconds: item.seconds, state: item.state }))
+      : earlier.flatMap(item => item.dispatch.boot ? [{ boot: item.dispatch.boot, begin: 'start', end: (fresh.losses ?? []).some(lost => lost.boot === item.dispatch.boot) ? 'loss' : 'end', seconds: null, state: 'unknown' }] : []);
+    const measured = earlier.map(item => item.timing?.duration?.kind === 'measured' ? item.timing.duration.elapsedMs : null).filter((item): item is number => item !== null);
+    const recoveries = fresh.budget?.recoveries ?? null;
+    return substitutePackage({ workId: current.work_id, executionId: execution.executionId, ticketUrl: current.ticket.url, repository: current.repository.repository, base: current.repository.base,
+      branch: execution.request.branch, checkout: prepared.checkout.path, remote: publicationRemote(current.repository.repository), skillDirectory, loss,
+      startCommit: prepared.recreated?.startCommit ?? null, boots, effects: substituteEffects(earlier, loss.executionId),
+      consumption: { executions: earlier.length + 1, executionMs: measured.length ? measured.reduce((sum, item) => sum + item, 0) : null,
+        boots: usage ? { unit: usage.unit, seconds: usage.seconds, lowerBound: usage.lowerBound } : null,
+        // The unit this Execution reserved counts: it is consumed when this session starts.
+        recoveries: recoveries ? { consumed: recoveries.consumed + (recoveries.reserved === execution.executionId ? 1 : 0), limit: recoveries.limit + recoveries.granted } : null },
+      versions: substituteVersions(earlier), artifactsLost: prepared.recreated?.artifactsLost === true, reviews: Boolean(ports.reviews) });
   }
 
   /**
@@ -794,7 +839,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const authorization = authorizationInForce(publication);
     const basis = [...(work.previousExecutions ?? []), ...(work.execution ? [work.execution] : [])].find(item => item.executionId === publication.basisExecutionId);
     // v2 ticket 07: commits a preservation gate confirmed on `origin` are the Factory's own history on the Work branch (never a human change).
-    const preserved = preservedHeads(work);
+    // v2 ticket 13 (Operator decision 8): a rewritten tip the Factory FOLLOWED at a resume is the history the Work now builds on, by that
+    // decision: it is published on top of (lease on it), never taken for an unknown change.
+    const preserved = [...preservedHeads(work), ...(work.originDivergence?.kind === 'history-rewritten' ? [work.originDivergence.current] : [])];
     const known = knownRemote(publication, attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId), preserved);
     const compareFrom = comparisonBase(known);
     let observation: DiscoveryObservation;
@@ -967,6 +1014,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // its reservation) before the end is recorded.
     let reviewTask: Promise<boolean> | undefined;
     let endCode: string | null = null;
+    // Operator decision 7: the refusals that end this Execution's boot as a loss, with the diagnostic of the last one.
+    let gateLoss: { occasion: PreservationOccasion; refusal: GateRefusal; refusals: number } | null = null;
+    // v2 ticket 13 (V2-05 item 3, V2-19): this Execution starts the SUBSTITUTE session of a loss: the gate precedes the end of its activation.
+    const substitute = diskless && Boolean(execution.interruption && (work.losses ?? []).some(loss => loss.executionId === execution.interruption!.previousExecutionId));
     /**
      * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
      * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
@@ -1025,11 +1076,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
      * v2 ticket 07 (V2-05..V2-07): the preservation gate before this Execution returns control with its boot about to end. Imposed by Control,
      * not left to the prompt: a refusal is returned to the Builder with its reason, in an activation of THIS Execution and boot (own invocation,
      * no handoff, the one fast-forward push of HEAD to the Work branch), and the gate is checked again. An acceptance records the confirmed
-     * commit on the Work. Three refusals in a row hold the Execution with the last diagnostic: its boot is NOT stopped (what is not on
-     * `origin` would be lost) and stays subject to rotation. The same function serves the planned swap (ticket 09) and the substitute
-     * session (ticket 13).
+     * commit on the Work. Three refusals in a row return `lost` (Operator decision 7 of 2026-11-21: no hold for the Operator; the caller
+     * ends the boot as a loss, `endAsLoss`). The same function serves the planned swap (ticket 09) and the substitute session (ticket 13).
      */
-    const preservationGate = async (occasion: PreservationOccasion): Promise<'accepted' | 'held' | 'stale'> => {
+    const preservationGate = async (occasion: PreservationOccasion): Promise<'accepted' | 'lost' | 'stale'> => {
       if (!environment || !boot) return 'stale';
       const branch = execution.request.branch;
       const remote = publicationRemote(work.repository.repository);
@@ -1042,7 +1092,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
         if (decision.outcome === 'accepted') return 'accepted';
         refusal = { code: decision.code, detail: decision.detail };
-        // The third refusal blocks; a workspace that could not even be observed is nothing the Builder can correct (it is only asked again).
+        // The third refusal ends the boot as a loss; a workspace that could not even be observed is nothing the Builder can correct (it is only asked again).
         if (attempt === gateRefusalLimit || observation.status !== 'observed') continue;
         const invocationId = randomUUID();
         const grant = lifecycle?.current;
@@ -1071,9 +1121,27 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status, code: result.status === 'failure' ? result.code : null });
         } finally { corrector.close(); }
       }
-      const blocked = gateHold({ occasion, refusal: refusal! });
-      await hold(blocked.code, blocked.nextStep, false, blocked.detail);
-      return 'held';
+      // Operator decision 7 of 2026-11-21 (amends V2-07): no hold for the Operator. The caller ends the boot now, as a loss.
+      gateLoss = { occasion, refusal: refusal!, refusals: gateRefusalLimit };
+      return 'lost';
+    };
+    /**
+     * v2 ticket 13, Operator decision 7 (amends V2-07): the gate did not accept what the guest holds, so the loss path applies at once
+     * instead of a block that waits for the Operator. The Execution ends as a failure under `code`, its boot is ended as a loss (the
+     * credentials stay until the stop returned, so the sandbox's terminate hook may still push the loss marker, best effort), the loss is
+     * recorded on the Work with the diagnostic of the last refusal, and the Slot is released: a substitute session then resumes from the
+     * last push through the queue, on one operational recovery. The budget of recoveries and V2-14 remain the limits against loops.
+     */
+    const endAsLoss = async (code: string) => {
+      timerStop.abort();
+      const reason = gateLossReason(gateLoss!);
+      if (boot) await recordEnvironmentEnd(session, work.work_id, executionId, boot, { reason, terminatedAt: null }).catch(() => {});
+      const ended = await recordEnd(session, work.work_id, executionId, 'failure', code, null, elapsed()).catch(() => ({ kind: 'stale' as const }));
+      const stop = await stopOwnBoot('loss');
+      await lifecycle?.withdraw('ended', { notifyWorker: false }).catch(() => {});
+      if (boot && ended.kind === 'advanced') await recordLossOf(work, execution, { environment: environment ?? null, boot }, { reason, terminatedAt: null }, elapsed(), 'preservation-gate-refused').catch(() => {});
+      if (ended.kind === 'advanced') await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
+      observe(work.work_id, stop?.cessationConfirmed && ended.kind === 'advanced' ? 'gate-loss-slot-released' : 'gate-loss-cessation-unconfirmed', [gateLoss!.refusal.code]);
     };
     // v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on this boot, recorded durably before the end and before the stop
     // (idempotent). Only a sandbox that declares channel recovery is asked; a report that cannot be read is retried at the stop.
@@ -1109,7 +1177,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       let checkout: { baseCommit: string; branch: string; path: string; reused: boolean };
       let clone: { repository: string; installationId: number; commit: string; branch: string } | null = null;
       let originAtStart: OriginObservation | null = null;
-      let continuity: Extract<OriginContinuity, { outcome: 'continuous' | 'unconfirmed' }> | null = null;
+      // v2 ticket 13 (Operator decision 8): `rewritten` = the history changed and the remote is followed; `restarted` = the branch was gone and
+      // the accepted answer restarts the Work from the base.
+      let continuity: Extract<OriginContinuity, { outcome: 'continuous' | 'unconfirmed' }> | { outcome: 'rewritten'; startCommit: string; confirmed: string; current: string } |
+        { outcome: 'restarted'; startCommit: string; confirmed: string } | null = null;
       if ('checkout' in prepared) checkout = prepared.checkout;
       else {
         // v2 ticket 08 (V2-11): continuity is a fact of `origin`. With a commit the preservation gate confirmed, the Work branch tip must be
@@ -1126,19 +1197,35 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           await releaseBeforeStart(session, work.work_id, executionId, [read.code]);
           observe(work.work_id, 'released-before-start', [read.code]); return;
         }
-        // Rewritten history or a missing branch (MVP §10.1): a remote change the Factory cannot attribute blocks the next write. No boot is
-        // started from another commit and no Builder is activated; the known and the current refs are presented for an explicit decision.
-        if (read.outcome === 'divergent') {
+        // Operator decision 8 of 2026-11-21 (amends V2-11 on this profile; a sandbox with a persistent disk keeps MVP §10.1). Rewritten
+        // history: the Factory follows the remote with a SUBSTITUTE session on one operational recovery, without a Question. Branch absent:
+        // an ordinary Question (restart from the base, or end the Work) whose answer decides. Either is settled BEFORE any boot.
+        if (read.outcome === 'divergent' && read.code === 'ORIGIN_HISTORY_REWRITTEN' && read.current) {
+          const followed = await followRewrittenHistory(session, work.work_id, executionId, { branch: execution.request.branch, confirmed: read.confirmed, current: read.current });
+          if (followed !== 'followed') { observe(work.work_id, followed === 'requeued' ? 'origin-rewrite-requeued' : 'stale', [read.code]); return; }
+          continuity = { outcome: 'rewritten', startCommit: read.current, confirmed: read.confirmed, current: read.current };
+        } else if (read.outcome === 'divergent' && read.code === 'ORIGIN_BRANCH_ABSENT') {
+          const settled = await settleBranchAbsent(session, work.work_id, executionId, { branch: execution.request.branch, confirmed: read.confirmed, base: work.repository.base });
+          if (settled.kind === 'asked') deps.questionRecorded?.();
+          // "End the Work": the ordinary cancellation, by the answer (nothing of this Execution ever started).
+          if (settled.kind === 'end') await acceptCancel(session, { request_id: `origin-branch-absent-${settled.questionId}`, operation: 'cancel', work_id: work.work_id, origin: 'local-cli' }).catch(() => {});
+          if (settled.kind !== 'restart') { observe(work.work_id, `origin-branch-absent-${settled.kind}`, [read.code]); return; }
+          continuity = { outcome: 'restarted', startCommit: origin.base, confirmed: read.confirmed };
+        } else if (read.outcome === 'divergent') {
+          // A confirmation of another branch name is nothing the Operator decided about: explicit block, as before.
           const nextStep = `The resumption context is insufficient (${read.code}): the Work branch ${execution.request.branch} on origin ` +
-            `${read.current ? `is at ${read.current}, which does not descend from` : 'no longer exists; it was confirmed at'} ${read.confirmed}, the commit the Factory ` +
-            'confirmed before the previous boot ended. No environment was started and no Builder was activated; nothing was written. Restore the branch to a descendant of that ' +
-            'commit, or inspect the Work and decide explicitly (ticket 26).';
+            `${read.current ? `is at ${read.current}, which does not continue` : 'does not continue'} ${read.confirmed}, the commit the Factory ` +
+            'confirmed before the previous boot ended. No environment was started and no Builder was activated; nothing was written. Inspect the Work and decide explicitly (ticket 26).';
           await blockBeforeStart(session, work.work_id, executionId, 'RECOVERY_CONTEXT_INSUFFICIENT', nextStep);
           observe(work.work_id, 'recovery-context-insufficient', [read.code]); return;
-        }
-        continuity = read;
+        } else continuity = read;
         // The review base stays the commit the Work started from; a later Execution starts at whatever the Work branch holds on `origin`.
-        const firstBase = [...(work.previousExecutions ?? [])].map(item => item.request.baseCommit).find((commit): commit is string => typeof commit === 'string');
+        // (`work` is the record read before this Execution was admitted: its `execution` is the previous one.) A Work restarted from the base
+        // (decision 8) is reviewed against the base it restarted from, from then on.
+        const before = [...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])];
+        const restart = before.findLastIndex(item => item.bootNotice?.origin === 'restarted');
+        const firstBase = continuity.outcome === 'restarted' ? origin.base
+          : before.slice(Math.max(0, restart)).map(item => item.request.baseCommit).find((commit): commit is string => typeof commit === 'string');
         checkout = { baseCommit: firstBase ?? origin.base, branch: execution.request.branch, path: guestCheckoutPath, reused: false };
         clone = { repository: work.repository.repository, installationId: configured.installationId, commit: continuity.startCommit ?? origin.base, branch: execution.request.branch };
         originAtStart = origin.branch;
@@ -1221,15 +1308,20 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // session of this Work saw starts with the fixed text; tickets 09 (planned swap) and 13 (substitute) ask the same question.
       // `work` is the record read before this Execution was admitted: its `execution` is still the previous one.
       const lastSeen = lastSessionBoot([...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : []), execution]);
+      const artifactsLost = (started.artifacts?.lost.length ?? 0) > 0;
+      const confirmedBefore = continuity && continuity.outcome !== 'unconfirmed' ? continuity.confirmed : null;
       const noticed = clone && continuity && bootNoticeDue({ lastSeen, boot }) ? {
-        record: { boot: boot as string, previousBoot: lastSeen!, startCommit: clone.commit, confirmed: continuity.outcome === 'continuous' ? continuity.confirmed : null,
-          commits: continuity.outcome === 'continuous' ? continuity.commits.length : 0, restored: [...(started.artifacts?.restored ?? [])], lost: (started.artifacts?.lost.length ?? 0) > 0 },
+        record: { boot: boot as string, previousBoot: lastSeen!, startCommit: clone.commit, confirmed: confirmedBefore,
+          commits: continuity.outcome === 'continuous' ? continuity.commits.length : 0, restored: [...(started.artifacts?.restored ?? [])], lost: artifactsLost,
+          ...(continuity.outcome === 'rewritten' || continuity.outcome === 'restarted' ? { origin: continuity.outcome } : {}) },
         context: recreatedContext(newBootNotice({ branch: clone.branch, checkout: checkout.path, startCommit: clone.commit,
-          confirmed: continuity.outcome === 'continuous' ? continuity.confirmed : null, commits: continuity.outcome === 'continuous' ? continuity.commits : [],
+          confirmed: confirmedBefore, commits: continuity.outcome === 'continuous' ? continuity.commits : [],
           truncated: continuity.outcome === 'continuous' && continuity.truncated,
-          artifacts: { restored: started.artifacts?.restored ?? [], lost: (started.artifacts?.lost.length ?? 0) > 0 } })) } : null;
+          artifacts: { restored: started.artifacts?.restored ?? [], lost: artifactsLost },
+          ...(continuity.outcome === 'rewritten' ? { origin: { kind: 'rewritten' as const, confirmed: continuity.confirmed, current: continuity.current } }
+            : continuity.outcome === 'restarted' ? { origin: { kind: 'restarted' as const, confirmed: continuity.confirmed, base: work.repository.base } } : {}) })) } : null;
       const plan = await activationPlan(work, execution, { checkout, ...(clone && continuity
-        ? { recreated: { continuity: continuity.outcome, notice: noticed?.context ?? null } } : {}) }, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
+        ? { recreated: { continuity: continuity.outcome, notice: noticed?.context ?? null, environment, startCommit: clone.commit, artifactsLost } } : {}) }, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
       if (plan.kind === 'refused') { await refuse(plan.reasons); return; }
       if (plan.kind === 'insufficient') {
         // Spec §5.5/§6.1: insufficient recovery context blocks explicitly (before any credential), never a `continue`/recovery without context.
@@ -1391,7 +1483,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             await recordContentLost(session, work.work_id, executionId, request.questionId);
           }
           // v2 ticket 07 (V2-05): the Question is recorded; before the boot ends for the wait, the workspace must be on `origin`.
-          if (diskless && await preservationGate('question') !== 'accepted') return;
+          if (diskless) {
+            const gated = await preservationGate(substitute ? 'substitute-end' : 'question');
+            // Decision 7: the Question stays recorded and pending; the unpublished work is lost and the substitute waits for the answer.
+            if (gated === 'lost') await endAsLoss(gateRefusedCode);
+            if (gated !== 'accepted') return;
+          }
           timerStop.abort();
           const bound = own(await readQuestion(session, request.questionId));
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
@@ -1426,10 +1523,27 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             }
           }
           // v2 ticket 07 (V2-05): a completed Execution returns control to the waits on GitHub (CI, readiness) and its boot ends: gate first.
-          if (diskless && completed.status === 'success' && await preservationGate('ci-wait') !== 'accepted') return;
-          timerStop.abort();
+          if (diskless && completed.status === 'success') {
+            const gated = await preservationGate(substitute ? 'substitute-end' : 'ci-wait');
+            if (gated === 'lost') await endAsLoss(gateRefusedCode);
+            if (gated !== 'accepted') return;
+          }
           // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (not transient: no automatic retry).
           const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, await channelReport());
+          // v2 ticket 13 (V2-05 item 3): a substitute activation that FAILED with its environment alive is checked once too. Nobody is left
+          // to correct a refusal (the Builder is what failed), so an unpreserved workspace is a loss, visible, under the failure's own code.
+          if (substitute && completed.status === 'failure' && environment && boot && !interrupted()) {
+            const { decision } = await wait(checkPreservation(work, { environment, boot, branch: execution.request.branch }));
+            if (await recordGateCheck(session, work.work_id, executionId, { occasion: 'substitute-end', boot, branch: execution.request.branch, decision }) === 'stale') return;
+            observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
+            if (decision.outcome === 'refused') {
+              gateLoss = { occasion: 'substitute-end', refusal: { code: decision.code, detail: decision.detail }, refusals: 1 };
+              await endAsLoss(failureCode ?? 'UNEXPECTED_FAILURE');
+              await questionUncertain();
+              return;
+            }
+          }
+          timerStop.abort();
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', failureCode,
           null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') endCode = failureCode;

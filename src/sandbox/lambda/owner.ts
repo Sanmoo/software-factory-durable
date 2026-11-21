@@ -46,7 +46,7 @@ export async function lambdaOwnerEndpoint(root: string, context: Pick<WorkerLaun
 export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { launcher?: LambdaWorkerLauncher;
   /** v2 ticket 12: the URL of `origin` for a repository, as the boot's clone used it: where the loss marker of this boot is pushed. */
   remoteUrl?: (scope: { repository: string }) => string }, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }):
-  Promise<{ status: 'serving'; close(): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd> } | { status: 'unavailable'; code: string }> {
+  Promise<{ status: 'serving'; close(options?: { keepMarker?: boolean }): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd> } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
   const environmentGone = new AbortController();
@@ -99,8 +99,10 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         return dependencies.launcher ? dependencies.launcher(request, endpoint, signal, secrets, relay, onHandoff) : launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff);
       },
     });
-    // A boot that is being stopped keeps no holder: the terminate hook of a requested end finds nothing to trigger.
-    return { status: 'serving', close: async () => { await setMarker(undefined); await owner.close(); }, ended };
+    // A boot that is being stopped keeps no holder: the terminate hook of a requested end finds nothing to trigger. The exception is a
+    // boot ended AS A LOSS (v2 ticket 13, Operator decision 7: the preservation gate did not accept what the guest holds): its holder
+    // stays armed, so the terminate hook pushes the committed HEAD to the marker ref, best effort, exactly as when the environment dies.
+    return { status: 'serving', close: async options => { if (!options?.keepMarker) await setMarker(undefined); else await marker; await owner.close(); }, ended };
   } catch {
     await tools.close();
     return { status: 'unavailable', code: 'BOOT_OWNER_UNAVAILABLE' };

@@ -2,10 +2,10 @@ import type { PreservationObservation } from '../../contracts/index.js';
 import type { OriginObservation, PreservationOccasion, PreservationView } from '../types.js';
 
 // Pure rules of v2 ticket 07 (V2-05..V2-08): what the preservation gate accepts, why it refuses, the instruction that returns a refusal to
-// the Builder and the block after three refusals in a row. No I/O, clock or randomness: callers supply every fact. The gate exists only
+// the Builder and the loss after three refusals in a row. No I/O, clock or randomness: callers supply every fact. The gate exists only
 // where the sandbox declares no persistent disk; the caller decides that from the capability.
 
-/** V2-07: refusals in a row, in the same return of control, that block. */
+/** V2-07: refusals in a row, in the same return of control, after which the boot is ended as a loss (Operator decision 7 of 2026-11-21). */
 export const gateRefusalLimit = 3;
 export const gateRefusedCode = 'PRESERVATION_GATE_REFUSED';
 export type GateRefusalCode = 'WORKSPACE_MODIFIED' | 'WORKSPACE_UNTRACKED' | 'STASH_PRESENT' | 'HEAD_NOT_PUBLISHED' | 'REMOTE_UNAVAILABLE' | 'REMOTE_UNCONFIRMED' |
@@ -52,7 +52,7 @@ const occasionText: Record<PreservationOccasion, string> = {
 export function gateCorrectionPrompt(input: { occasion: PreservationOccasion; refusal: GateRefusal; attempt: number; branch: string; push: string; pullRequest: boolean }): string {
   return [
     `Factory preservation gate: ${occasionText[input.occasion]}. This environment keeps NO disk: whatever is not on the Work branch ${input.branch} on origin is lost.`,
-    `The gate refused (refusal ${input.attempt} of ${gateRefusalLimit}; after ${gateRefusalLimit} in a row the Work is blocked): ${input.refusal.code}: ${input.refusal.detail}`,
+    `The gate refused (refusal ${input.attempt} of ${gateRefusalLimit}; after ${gateRefusalLimit} in a row this environment is ended and what is not on origin is LOST): ${input.refusal.code}: ${input.refusal.detail}`,
     'Correct exactly that, in /workspace/checkout, and end your turn; the Factory checks again by itself. The gate accepts only: no uncommitted change, no untracked ' +
       'file that is not ignored, no stash, and HEAD equal to the tip of the Work branch on origin.',
     '- Commit what belongs to the work as work in progress (a WIP commit is fine), delete or ignore what is disposable, and apply or drop every stash.',
@@ -65,11 +65,13 @@ export function gateCorrectionPrompt(input: { occasion: PreservationOccasion; re
   ].join('\n');
 }
 
-/** V2-07: three refusals in a row block with the diagnostic of the last one. The environment is NOT stopped: it stays subject to rotation. */
-export function gateHold(input: { occasion: PreservationOccasion; refusal: GateRefusal }): { code: string; nextStep: string; detail: string } {
-  return { code: gateRefusedCode, detail: `${input.refusal.code}: ${input.refusal.detail}`.slice(0, 512),
-    nextStep: `The preservation gate refused ${gateRefusalLimit} times in a row before ${input.occasion} (last: ${input.refusal.code}). The Work is blocked and its environment was not ` +
-      'stopped: what is not on origin is lost when it ends (rotation or stop). Decide explicitly (factory resume / cancel).' };
+/**
+ * V2-07 as amended by the Operator on 2026-11-21 (decision 7): refusals in a row no longer block the Work for the Operator. The loss path
+ * applies: Control ends the boot at once and records a loss whose reason is this text, with the diagnostic of the last refusal; a
+ * substitute session resumes from the last push through the queue, on one operational recovery.
+ */
+export function gateLossReason(input: { occasion: PreservationOccasion; refusal: GateRefusal; refusals: number }): string {
+  return `Ended by the Factory: the preservation gate refused ${input.refusals} time(s) in a row before ${input.occasion} (last: ${input.refusal.code}: ${input.refusal.detail}).`.slice(0, 512);
 }
 
 /** The commits the gate confirmed on `origin` for a Work: the Factory's own history on the Work branch (V2-08). */

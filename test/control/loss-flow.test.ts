@@ -109,14 +109,15 @@ test('NEGATIVE (V2-16): a marker ref that holds the guest HEAD does not satisfy 
   // `origin` holds the marker of this very boot at the guest's HEAD for the whole scenario; the Work branch does not exist.
   const h = await harness(t, remote, [ask, noop, noop], { read: id => ({ state: 'complete', observedAt: '2026-11-21T10:00:01.000Z',
     markers: [{ ref: `refs/factory/lost/${id}/${h.watched[0]!.boot}`, boot: h.watched[0]!.boot, sha: lost }] }) });
-  await h.settle('held', value => value?.execution?.state === 'held');
+  await h.settle('ended as a loss', value => value?.execution?.end?.code === 'PRESERVATION_GATE_REFUSED' && value.losses?.length === 1);
   const work = (await h.work())!;
   assert.deepEqual(work.execution!.preservationGate?.attempts.map(item => [item.outcome, item.code]), [['refused', 'HEAD_NOT_PUBLISHED'], ['refused', 'HEAD_NOT_PUBLISHED'], ['refused', 'HEAD_NOT_PUBLISHED']]);
-  assert.equal(work.execution!.held?.code, 'PRESERVATION_GATE_REFUSED');
+  // Operator decision 7 of 2026-11-21: the three refusals end the boot as a loss. The marker is recorded FOR THE SUBSTITUTE, and still
+  // counts for nothing: no commit was confirmed as preserved.
   assert.equal(work.preservation, undefined);
-  // The gate never even looks at marker refs: it asks about the Work branch only.
-  assert.deepEqual(h.markerReads, []);
-  assert.equal(work.losses, undefined);
+  assert.deepEqual([work.losses![0]!.cause, work.losses![0]!.marker.state, work.losses![0]!.confirmed.commit], ['preservation-gate-refused', 'present', null]);
+  // The gate never looked at marker refs (it asks about the Work branch only): the one read is the loss record's.
+  assert.deepEqual(h.markerReads, [work.work_id]);
 });
 
 test('V2-02 Remover: the cleanup of a Work deletes its loss marker refs and records it, and touches neither another Work\'s marker nor the base', async t => {

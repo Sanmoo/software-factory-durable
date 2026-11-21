@@ -171,7 +171,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
   const lambdaBoots = () => ({ root, service: lambdaService, transport: lambdaTransport ?? (sshTransport ??= createSshTransport()), clock: lambdaBootClock,
     ...(lambdaObservationTimer ? { observationTimer: lambdaObservationTimer } : {}) });
   // v2 ticket 06: the boot owners THIS process serves (owner endpoint, tool bindings and workers of each active Lambda boot).
-  const lambdaOwners = new Map<string, { close(): Promise<void>; ended: Promise<LambdaEnvironmentEnd> }>();
+  const lambdaOwners = new Map<string, { close(options?: { keepMarker?: boolean }): Promise<void>; ended: Promise<LambdaEnvironmentEnd> }>();
   /** One fixed observation program over the channel of the environment's CURRENT boot (decisions 1A and 2b-A): guest-attested. */
   const onCurrentBoot = async <T>(environment: EnvironmentRef, unavailable: T, read: (channel: Awaited<ReturnType<typeof openLambdaBootChannel>> & { status: 'open' }) => Promise<T>): Promise<T> => {
     try {
@@ -335,7 +335,8 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         // v2 ticket 06: the boot owner of this process ends first (bindings, workers, channel); the stop then collects over its own connection.
         const owner = lambdaOwners.get(`${environment}/${boot}`);
         lambdaOwners.delete(`${environment}/${boot}`);
-        await owner?.close().catch(() => {});
+        // v2 ticket 13 (Operator decision 7): a boot ended as a loss keeps its loss marker holder for the terminate hook.
+        await owner?.close({ keepMarker: reason === 'loss' }).catch(() => {});
         try { return await stopLambdaBoot(lambdaBoots(), { environment, boot, reason }); }
         catch { return { status: 'indeterminate', code: 'STOP_UNAVAILABLE', cessationConfirmed: false }; }
       }

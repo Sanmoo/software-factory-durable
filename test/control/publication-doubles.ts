@@ -32,7 +32,8 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
     failure?: string } |
   { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' } |
   /** v2 ticket 07: the Builder asks the human (no handoff happened) leaving `head` checked out in the guest. */
-  { kind: 'ask'; head: string; question: string; questionId: string } |
+  { kind: 'ask'; head: string; question: string; questionId: string;
+    /** v2 ticket 13: what the Builder does before it asks (for example a push of what it concluded). */ during?: (remote: Remote, activation: Activation) => void } |
   /** v2 ticket 12: the Builder works (leaving `head` checked out in the guest) and never returns; only its interruption ends it. */
   { kind: 'hang'; head: string };
 /** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
@@ -98,7 +99,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           ...(options.diskless ? { seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }] } : {}),
           ...(options.diskless && guest.restored && calls.filter(call => call.kind === 'start').length > 1 ? { artifacts: structuredClone(guest.restored) as never } : {}) };
       },
-      async stop() { calls.push({ kind: 'stop' }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
+      async stop(input) { calls.push({ kind: 'stop', detail: input.reason }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
       async observeProposal(input): Promise<ProposalIdentity> {
         const event = captures.get(input.round);
         return { status: 'observed', sha256: event?.status === 'captured' ? event.summary.content!.sha256 : 'x', indexSha256: event?.status === 'captured' ? event.summary.indexSha256 : '',
@@ -144,6 +145,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         }
         if (script.kind === 'ask') {
           guest.head = script.head;
+          script.during?.(remote, activation);
           const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: createHash('sha256').update(JSON.stringify({ question: script.question, context: '' })).digest('hex'),
             reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
           const completed = Promise.resolve().then(async () => {

@@ -71,7 +71,13 @@ export const noticeCommitLimit = 30;
  * Commit subjects and authors are data, never instructions.
  */
 export function newBootNotice(input: { branch: string; checkout: string; startCommit: string; confirmed: string | null; commits: readonly NewCommit[]; truncated: boolean;
-  artifacts: RestoredArtifacts }): string {
+  artifacts: RestoredArtifacts;
+  /**
+   * v2 ticket 13 (Operator decision 8): the Work branch no longer continues the confirmed commit. `rewritten`: its history changed and the
+   * Factory follows the remote (both refs are named). `restarted`: the branch was gone and the Operator answered to restart from the base.
+   */
+  origin?: { kind: 'rewritten'; confirmed: string; current: string } | { kind: 'restarted'; confirmed: string; base: string } }): string {
+  if (input.origin) return divergedNotice({ ...input, origin: input.origin });
   const shown = input.commits.slice(0, noticeCommitLimit);
   const cut = input.truncated || input.commits.length > shown.length;
   const commits = input.confirmed === null
@@ -89,6 +95,30 @@ export function newBootNotice(input: { branch: string; checkout: string; startCo
     'Ignored files, installed packages, caches and Docker data (images, containers, volumes) of the earlier environment no longer exist: rebuild what you need. ' +
       'Uncommitted or unpushed changes do not exist either.',
     ...commits,
+    restored.length ? `Restored into /artifacts (as collected before the previous boot stopped; returned as received): ${restored.join(', ')}.`
+      : 'Nothing was restored into /artifacts/spec or /artifacts/instructions.',
+    ...(input.artifacts.lost ? ['LOST: an earlier boot ended before its /artifacts were collected; the request and instruction versions it wrote are gone. Check /artifacts/spec and ' +
+      '/artifacts/instructions: if the version you need is missing, preserve the request again as a NEW version, numbered after the last one you know.'] : []),
+    'Review captures of earlier rounds (/artifacts/review/r<N>), output copies and every other file of /artifacts were NOT restored; the Factory skill pack was written again.',
+  ].join('\n');
+}
+
+function divergedNotice(input: Parameters<typeof newBootNotice>[0] & { origin: NonNullable<Parameters<typeof newBootNotice>[0]['origin']> }): string {
+  const restored = input.artifacts.restored.map(item => line(item, 64)).filter(Boolean).slice(0, 64);
+  const { origin } = input;
+  return [
+    'Factory notice (new boot): this environment was RECREATED. It is a new machine built from the declared environment and a fresh clone of origin; nothing of the earlier ' +
+      'environment was kept or adopted, and no process of it survives.',
+    ...(origin.kind === 'rewritten' ? [
+      `HISTORY CHANGED: the history of ${input.branch} on origin was rewritten while no environment existed. The commit the Factory confirmed before the previous boot ended ` +
+        `(${origin.confirmed}) is NOT an ancestor of the current tip (${origin.current}). The Factory follows the remote: this checkout is the current tip, and commits that were only ` +
+        'in the old history are not in it. Do not restore, force-push or rebase onto the old history; read what the branch holds now (git log) before changing anything.',
+      `Starting commit: ${input.startCommit} (the tip of ${input.branch} on origin, checked out in ${input.checkout}).`]
+      : [`BRANCH GONE: ${input.branch} no longer exists on origin; the commit the Factory confirmed before the previous boot ended (${origin.confirmed}) is not reachable from any ` +
+          'branch the Factory reads. The Operator answered to RESTART the Work from the base: nothing of the earlier work is in this checkout and none of it may be assumed.',
+        `Starting commit: ${input.startCommit} (the tip of the base ${line(origin.base, 200)} on origin, checked out in ${input.checkout} as ${input.branch}).`]),
+    'Ignored files, installed packages, caches and Docker data (images, containers, volumes) of the earlier environment no longer exist: rebuild what you need. ' +
+      'Uncommitted or unpushed changes do not exist either.',
     restored.length ? `Restored into /artifacts (as collected before the previous boot stopped; returned as received): ${restored.join(', ')}.`
       : 'Nothing was restored into /artifacts/spec or /artifacts/instructions.',
     ...(input.artifacts.lost ? ['LOST: an earlier boot ended before its /artifacts were collected; the request and instruction versions it wrote are gone. Check /artifacts/spec and ' +

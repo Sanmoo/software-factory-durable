@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { classifyInterruption } from '../../src/control/rules/recovery.js';
 import type { PreservationObservation } from '../../src/contracts/index.js';
-import { gateCorrectionPrompt, gateDecision, gateHold, gateRefusalLimit, preservedHeads, recordPreserved } from '../../src/control/rules/preservation.js';
+import { gateCorrectionPrompt, gateDecision, gateLossReason, gateRefusalLimit, gateRefusedCode, preservedHeads, recordPreserved } from '../../src/control/rules/preservation.js';
 import { knownRemote } from '../../src/control/rules/divergence.js';
 import { decideDiscovery } from '../../src/control/rules/publication.js';
 import type { PublicationView } from '../../src/control/types.js';
@@ -62,12 +63,15 @@ test('the instruction returned to the Builder names the reason, the one push all
   assert.match(prompt, /report the impediment instead of forcing the commit/i);
 });
 
-test('three refusals in a row block with the diagnostic of the last one', () => {
+test('three refusals in a row end the boot as a loss whose reason is the diagnostic of the last one; the end is transient, never a block (Operator decision 7 of 2026-11-21)', () => {
   assert.equal(gateRefusalLimit, 3);
-  const hold = gateHold({ occasion: 'ci-wait', refusal: { code: 'STASH_PRESENT', detail: '2 stash entr(ies)' } });
-  assert.equal(hold.code, 'PRESERVATION_GATE_REFUSED');
-  assert.match(hold.detail, /STASH_PRESENT: 2 stash entr\(ies\)/);
-  assert.match(hold.nextStep, /3 times in a row/);
+  assert.equal(gateLossReason({ occasion: 'ci-wait', refusal: { code: 'STASH_PRESENT', detail: '2 stash entr(ies)' }, refusals: 3 }),
+    'Ended by the Factory: the preservation gate refused 3 time(s) in a row before ci-wait (last: STASH_PRESENT: 2 stash entr(ies)).');
+  assert.equal(gateRefusedCode, 'PRESERVATION_GATE_REFUSED');
+  // The Execution comes back through the queue as one operational recovery, like the death of the environment.
+  assert.deepEqual(classifyInterruption(gateRefusedCode), { kind: 'recoverable' });
+  const prompt = gateCorrectionPrompt({ occasion: 'question', refusal: { code: 'STASH_PRESENT', detail: 'x' }, attempt: 2, branch: 'b', push: 'p', pullRequest: false });
+  assert.match(prompt, /after 3 in a row this environment is ended and what is not on origin is LOST/);
 });
 
 test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP tip is never taken for a human change', () => {

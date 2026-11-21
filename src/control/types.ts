@@ -410,13 +410,29 @@ export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'su
 export type PreservationView = { commit: string; branch: string; confirmedAt: string; executionId: string; boot: string; occasion: PreservationOccasion; heads: string[] };
 export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
 /** `commits`: how many commits the notice named as new since `confirmed` (the gate-confirmed commit; null = none was ever confirmed). */
-export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean };
+export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean;
+  /** v2 ticket 13 (Operator decision 8): the notice said the history of the Work branch changed (`rewritten`) or that the Work restarts from the base (`restarted`). */
+  origin?: 'rewritten' | 'restarted' };
+/**
+ * v2 ticket 13 (Operator decision 8 of 2026-11-21, amending V2-11 where the sandbox keeps no disk): what Control found on `origin` at a
+ * resume when the Work branch no longer continues the commit a preservation gate confirmed, and what was decided. `history-rewritten`:
+ * the remote is followed by a substitute session on one operational recovery, without a Question. `branch-absent`: an ordinary Question
+ * (restart from the base, or end the Work); its answer decides.
+ */
+export type OriginDivergenceView = { kind: 'history-rewritten'; at: string; branch: string; confirmed: string; current: string; executionId: string } |
+  { kind: 'branch-absent'; at: string; branch: string; confirmed: string; questionId: string; executionId: string;
+    state: 'awaiting-answer' | 'restart-authorized' | 'end-authorized' | 'not-authorized'; resolvedAt: string | null };
 /**
  * v2 ticket 12 (V2-17): one environment of this Work that died before its work was published, as Control recorded it when the sandbox
  * confirmed the end. Whatever the guest held that was not on the Work branch of `origin` is gone; nothing here says it was recovered.
  * A substitute session (ticket 13) reads this; the old session is evidence and is never continued.
  */
 export type LossRecord = { at: string; executionId: string; boot: string; environment: string | null;
+  /**
+   * v2 ticket 13 (Operator decision 7 of 2026-11-21, amending V2-07): absent = the environment died on its own. `preservation-gate-refused`:
+   * Control ended the boot itself because the preservation gate did not accept what the guest held (`reason` carries the last diagnostic).
+   */
+  cause?: 'preservation-gate-refused';
   /** What the sandbox reported about the end, as given. */ reason: string | null; terminatedAt: string | null;
   /**
    * The last commit of the Work known to be on `origin` at the loss: the Work branch tip by Control's own read made then (`origin-read`),
@@ -865,6 +881,8 @@ export type WorkView = {
   preservation?: PreservationView;
   /** v2 ticket 12 (V2-17): environments of this Work lost before publication, oldest first (bounded). Absent: none was recorded. */
   losses?: LossRecord[];
+  /** v2 ticket 13 (Operator decision 8): the latest divergence of the Work branch found at a resume, and its decision. */
+  originDivergence?: OriginDivergenceView;
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
@@ -902,7 +920,8 @@ export type WorkView = {
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
-      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' | /* v2 ticket 12 */ 'loss-recorded';
+      /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' | /* v2 ticket 12 */ 'loss-recorded' |
+      /* v2 ticket 13 */ 'origin-rewrite-followed' | 'origin-branch-absent-asked' | 'origin-branch-absent-resolved';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
