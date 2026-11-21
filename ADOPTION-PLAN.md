@@ -1,0 +1,143 @@
+# Adoption plan: engineering harness for software-factory-durable
+
+Status: **approved by the maintainer on 2026-11-21**, before any change to the application, its tests, or its tooling. Stage completion records follow each stage.
+Pinned tree: `eafcb0ab3bd0156cea6af52bbb15fe0a0b6576ff`. Branch: `acceptance/adoption-2026-11-21` (disposable, never merged).
+The confirmed answers, including the inventory measurements, are in `INTERVIEW-ANSWERS.md` under _Adoption_.
+
+"Harness" and "gate" belong to the factory's domain (the agent runtime; Builder-declared validation commands). This plan and the Guides it writes say **engineering harness** and **quality gate**. Gate Contract names (Format, Lint, ...) are used as proper names.
+
+## Gate Floor: current state
+
+Every quality gate is **pending** at the pinned tree. A tool that already exists is not an adopted quality gate: none has a Gate Proof that turns an Entry Point red, and Lint, Guide pointers, and the test levels do not meet their Contracts.
+
+| Quality gate | Existing check | State now | Stage |
+|---|---|---|---|
+| Types | tsc 6.0.3 strict (`tsconfig.json`), green | pending (unproven) | S1 |
+| Context boundaries | dependency-cruiser 18.7.2 map (`.dependency-cruiser.cjs`), green | pending (unproven) | S1 |
+| Dependency rule | `neutral-contracts`, `pure-rules-imports`, ESLint ambient bans in `src/control/rules`, green | pending (unproven) | S1 |
+| Guide pointers | `scripts/agent-checks/check.mjs` (AGENTS.md, docs/agents only; no command check) | pending (partial scope) | S1 |
+| Format | none | pending (missing) | S2 |
+| Lint | ESLint 10.14.0, `no-restricted-syntax` only | pending (vacuous as a linter) | S2 |
+| Secrets | none (gitleaks 8.30.1 on the host) | pending (missing) | S2 |
+| Avoided terms | none; no GLOSSARY.md | pending (missing) | S2 |
+| Unit tests | node:test suite, tiered by speed, not level | pending (no level declared) | S3 |
+| Integration tests | same suite | pending (no level declared) | S3 |
+| Dependency vulnerabilities | none (one manual audit on record) | pending (missing) | S3 |
+| E2E tests | none (no Gherkin) | pending (missing) | S4 |
+| Mutation | none | pending (missing) | S5 |
+| Static metrics | cycles only (`no-cycles`); no complexity or duplication | pending (partial) | S6 |
+
+Nothing is blocked at approval time. Environment checked: Node 24.21.0 via mise, `npm ci` with network, `/dev/kvm`, qemu, docker, gitleaks 8.30.1. Vulnerabilities needs the npm registry; without network it is blocked.
+
+## Entry Points, modes, budget, cadence (all stages)
+
+- **Fast Entry Point**: `npm run test:fast` (retained). A versioned `pre-commit` hook calls it; installing the hook (`core.hooksPath`) is an operator step, like the systemd units.
+- **Full Entry Point**: the runner `scripts/test-runner/run`, retained, with its two modes:
+  - validation by change: `npm run test:ci`. The local supervisor runs it under its machine lock before delivery and after rebase; that run is this project's CI (decision 6). GitHub Actions keeps only the documentary job.
+  - integral validation: `npm run test:full`, called nightly at 03:30 by the versioned systemd timer.
+- **Selection policy**: versioned code beside the runner, holding every check with its tier, the changes that make it apply, the scope it verifies, its cadence, its estimated cost, and the budget. Affected scope is the changed files plus their dependents from the dependency-cruiser graph, compared against one base (`main`, or `VALIDATION_BASE`). It widens on a manifest/lockfile, shared config, quality gate config, ignore file, CI/runner/policy change, or any impact it cannot place. Required validation over budget is inconclusive and starts nothing expensive.
+- **Budget**: validation by change ≤ 15 min wall clock (the runner's `ci` budget goes from 600 s to 900 s). Integral validation: nightly, ≤ 2 h (`RuntimeMaxSec`).
+- **Periodic checks** (integral only): whole-codebase mutation (S5), the sandbox real-disk and random-order passes already in `test:full`. Each states its protection between runs and its residual risk in the policy. The last integral result is published in the runner's state directory (`$XDG_STATE_HOME/software-factory/nightly-tests/`), where validation by change reads it. The policy's cadence is checked against the timer's `OnCalendar`.
+- **Rehearsal**: an executable script outside both Entry Points rehearses the modes on a disposable copy (dependent caught without widening, shared config widens, over-budget is inconclusive, integral runs a periodic check change mode only reported).
+- **Gate Proofs**: one executable proof file outside both Entry Points; each proof runs the Entry Point of its tier on a disposable copy with one violation, and its attribution rules are tested. Results go to `GATE-PROOFS.md`.
+
+## S1: existing structural quality gates, modes, Guides
+
+- **Scope**: whole repository; `src/`, `test/`, `scripts/` as each quality gate's Contract measures.
+- **Contracts realized**: Types, Context boundaries, Dependency rule, Guide pointers; plus the Entry Point modes and selection policy.
+- **Adoption criteria**:
+  - Types: tsc strict over `src`, `test`, `scripts` (existing `tsconfig.json`), fast tier.
+  - Context boundaries: the existing dependency-cruiser map is the context map, `cli-workers-setup-only` carve-out included; fast tier.
+  - Dependency rule: domain model = `src/contracts` and `src/control/rules` (existing rules); fast tier.
+  - Guide pointers: the existing documentary checker is retained and extended to GLOSSARY.md, `docs/guides/`, `docs/adr/` and to the command rule (a Guide names only the Entry Points and modes); it joins the fast Entry Point.
+  - Cadence: every change; fast tier in both Entry Points.
+- **Tolerated findings**: none (all four are green at the pinned tree).
+- **Gate Proofs**: Types: pass a wrong-typed argument; Context boundaries: import a non-public module of another context; Dependency rule: import `node:fs` in `src/control/rules`; Guide pointers: point a Guide link at a missing file.
+- **Tooling changes**: fast tier gains dependency-cruiser and the documentary checker (today ci only / GitHub only); runner gains the two modes' selection policy, inconclusive outcome, last-integral reporting; rehearsal script; proof file; `pre-commit` hook; `mise.toml` pinning gitleaks (Node stays in `.node-version`).
+- **Guides** (written in Portuguese, like the existing ones; identifiers and quality gate names stay English):
+  - `AGENTS.md` amended: Entry Points and modes, what green covers, code is the source of truth (GLOSSARY wins for naming), links to GLOSSARY, Guides, ADRs. `CLAUDE.md` symlink created.
+  - `GLOSSARY.md` created: PRD §3 terms with their English identifiers; _Avoid_: Work → Job; Slot → Seat, Lane; Repair → Hotfix. Product vocabulary only; it adds no domain model (map.md:21 honoured).
+  - `docs/guides/architecture.md` created from the architecture part of `docs/development.md` (that part then points at it; the stale CLI-imports prose is corrected).
+  - `docs/guides/testing-strategy.md` replaces `docs/agents/testing.md` (moved and amended; AGENTS.md link updated).
+  - `docs/guides/coding-standards.md` created (judgment only, pointers to formatter, linter, metrics config).
+  - `docs/adr/` created: 0001 the local supervisor's `test:ci` is the change-mode CI; 0002 qualified terminology for the engineering harness.
+- **Budget**: 1 working session; regression suite (`test:ci`) green after the stage.
+- **Remains pending**: everything outside S1.
+
+## S2: Format, Lint, Secrets, Avoided terms
+
+- **Contracts realized**: Format, Lint, Secrets, Avoided terms.
+- **Adoption criteria**:
+  - Format: prettier 3.9.10 pinned, check mode, over `*.{ts,mts,cts,js,mjs,cjs}`; one approved reformat commit, listed in `.git-blame-ignore-revs`; fast tier; changed set in change mode, whole tree in integral.
+  - Lint: ESLint 10.14.0 retained with its rules, plus typescript-eslint 8.72.1 `recommended`, over `src`, `test`, `scripts`; `--max-warnings 0`; fast tier. Complexity is **not** part of Lint (it is S6).
+  - Secrets: gitleaks 8.30.1 over the working tree and all local refs' history; fast tier; a wrapper matches findings to the tolerance policy by identity (commit, file, rule, line, column) and fails unmatched, duplicated, grown, or stale entries.
+  - Avoided terms: a checker reading GLOSSARY.md's _Avoid_ lines, identifiers split on camelCase/snake_case/kebab-case, over `src`, `test`, `scripts`; fast tier.
+- **Code changes**: fix the 110 typescript-eslint findings (24 unused-vars + 3 prefer-const in src; 47 unused-vars, 25 prefer-const, 9 explicit-any, 2 this-alias in tests/scripts); rename the single `job` identifier; rewrite the 8 synthetic tokens that gitleaks matches in the tracked tree to strings it does not match, in the reformat commit. Behavior preserved; `test:ci` must stay green.
+- **Tolerated findings** (Secrets only; each with the maintainer's explicit decision "synthetic fixture or public SSH host-key fingerprint, no credential", recorded beside each entry in the Secrets tolerance policy):
+
+| Commit | File | Rule | Line:column |
+|---|---|---|---|
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 33:1168 |
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 33:1362 |
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 37:1168 |
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 37:1362 |
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 37:1922 |
+| `da556394ac37` | `.scratch/software-factory-v2/research/alpine-guest-evidence.json` | generic-api-key | 37:2116 |
+| `6be181a31186` | `test/control/budget-doubles.ts` | generic-api-key | 71:31 |
+| `c14a6f1d0a5d` | `test/control/budget-doubles.ts` | generic-api-key | 71:31 |
+| `48eb6e96a546` | `test/control/continuation-flow.test.ts` | generic-api-key | 42:31 |
+| `5befa5359532` | `test/control/continuation-flow.test.ts` | generic-api-key | 42:31 |
+| `0b7adf11c59c` | `test/control/cycles-flow.test.ts` | generic-api-key | 33:66 |
+| `dc080a446b6a` | `test/control/cycles-flow.test.ts` | generic-api-key | 33:66 |
+| `fee42f48584e` | `test/control/cycles-flow.test.ts` | generic-api-key | 33:66 |
+| `a719df2e0e60` | `test/control/delivery-control-flow.test.ts` | generic-api-key | 33:66 |
+| `d2696290750a` | `test/control/delivery-control-flow.test.ts` | generic-api-key | 33:66 |
+| `04f4878f0360` | `test/control/question-flow.test.ts` | generic-api-key | 40:31 |
+| `bed2a2edda9a` | `test/control/question-flow.test.ts` | generic-api-key | 40:31 |
+| `479b4c03659e` | `test/control/review13-question-flow.test.ts` | generic-api-key | 60:45 |
+| `807f6798d600` | `test/control/review13-question-flow.test.ts` | generic-api-key | 60:45 |
+| `1b5b6ab7a717` | `test/entrypoints/inspect29-qualification.test.ts` | jwt | 34:85 |
+| `67151788ba76` | `test/entrypoints/inspect29-qualification.test.ts` | jwt | 35:85 |
+| `67216d1b551a` | `test/entrypoints/inspect29-qualification.test.ts` | jwt | 35:85 |
+| `f6b463c83399` | `test/entrypoints/inspect29-qualification.test.ts` | jwt | 35:85 |
+| `0d2e225ffdd4` | `test/entrypoints/long34-provider.ts` | generic-api-key | 11:15 |
+| `e9455b443a62` | `test/entrypoints/long34-provider.ts` | generic-api-key | 11:15 |
+
+  Full 40-character commits are recorded in the policy. These are the only tolerated findings this plan names.
+- **Tightening rule**: an entry is removed in the same reviewed change that removes its finding; a stale entry fails. A new security finding after adoption began is tolerated only by a new explicit decision recorded beside it; any other new finding is fixed.
+- **Gate Proofs**: Format: misindent one line; Lint: add an unused variable; Secrets: add a file with a well-formed fake AWS access key; Avoided terms: rename a Work identifier to `job`.
+- **Guides**: `docs/guides/coding-standards.md` gains pointers to the prettier and ESLint config.
+- **Budget**: 1 working session plus one `test:ci` run after the reformat and after the lint fixes.
+
+## S3: Unit and Integration levels, Dependency vulnerabilities
+
+- **Adoption criteria**:
+  - A versioned `level` (unit or integration) per test file in the runner's policy; no file moves. A check enforces that unit files import no `node:fs`, `node:child_process`, `node:net`, or a process-spawning helper.
+  - Unit tests: every unit-level file passes; fast tier. Integration tests: every integration-level file passes, with the local fake `gh` and scripted model providers as the only doubles (third-party systems at the boundary); full tier. The `gondolin.test.ts` VM qualification stays outside the levels (operator-authorized).
+  - Dependency vulnerabilities: `npm audit --audit-level=high` with the npm pinned in `engines` (11.19.0) over the lockfile; full tier; zero high/critical today, so no tolerated findings.
+- **Regression contract**: the current `test:ci` suite; a test failing at the pinned tree is investigated within 1 hour, else its quality gate stays pending.
+- **Gate Proofs**: Unit: invert a condition in a `src/control/rules` operation; Integration: break a mapping in an adapter (e.g. `src/platform/github`); Vulnerabilities: lock a dependency version with a published critical advisory.
+- **Guides**: `docs/guides/testing-strategy.md` gains the level definitions and pointers to the level policy.
+- **Budget**: 1 working session.
+
+## S4: E2E tests (Gherkin)
+
+- **Adoption criteria**: @cucumber/cucumber 13.3.0 pinned; features in Portuguese Gherkin (`# language: pt`); each scenario drives the `factory` CLI of the built release tarball (the existing release fixture build), with the local fake `gh` and scripted model providers behind it; readiness from the controller's socket/status, never sleeps; the full Entry Point builds the release before this level. The executor is verified to fail on no scenarios, an undefined/pending step, a wrong assertion, and an artifact that does not start. Full tier.
+- **Human review**: the maintainer approves the scenario set before any step definition is written. Proposed portfolio (2–3 journeys): ticket admitted to delivered (admission, Builder, reviews, draft PR, ready, merge confirmed, cleanup); a question suspends and resumes Work; a required check failure produces a Repair.
+- **Gate Proof**: remove one CLI command's route where the release composes it (e.g. `status` in `src/entrypoints/cli.ts`), so no lower-level test sees it first.
+- **Budget**: 2 working sessions; release build ≤ 3 min inside the change-mode budget, else E2E runs only under integral validation and the plan is amended.
+
+## S5: Mutation
+
+- **Adoption criteria**: Stryker 10.1.1 pinned, tap runner over node:test; validation by change mutates the changed set relative to the shared base; whole-codebase mutation is periodic (nightly). Thresholds 80% overall, 90% core (`src/control`, `src/workers`), applied by a wrapper over Stryker's JSON report. No tolerated mutants: below threshold, Mutation stays pending until tests raise the score.
+- **Gate Proof**: delete the assertions of every test covering one core file (e.g. a `src/control/rules` file) at every level the mutation run executes, with that file as the declared scope.
+- **Budget**: 1 working session; the nightly whole-codebase run must fit in 2 h, else Mutation stays pending and the plan is amended.
+
+## S6: Static metrics (complexity and duplication)
+
+- **Adoption criteria**: complexity ≤ 10 per function (ESLint `complexity`), zero cycles (existing `no-cycles`), duplication ≤ 3% (jscpd 5.4.2), over `src/` and `test/`; `scripts/` declared out of scope (tooling). **No tolerated findings**: today's 620 complexity findings and 956 clones (9.35%) are resolved by refactoring, behavior preserved under the regression suite.
+- **State in this run**: **pending**. The refactor belongs to the real adoption on `main`, not to this disposable branch. Static metrics is not wired into either Entry Point until this stage runs, so the final Entry Point is not red for it.
+
+## Establishment expectation
+
+At the end of this run Static metrics is pending by approval, so the engineering harness **will not be established**; the final report will say so and name every other quality gate's state.
