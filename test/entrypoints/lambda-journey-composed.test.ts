@@ -254,7 +254,12 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   // No workspace on the host and no mounted bare cache; no checkpoint other than the Git remote.
   const entries = await readdir(world.root);
   assert.equal(entries.includes('environments') || entries.includes('cache'), false, entries.join(','));
-  assert.deepEqual([...new Set(programs)].sort(), ['artifact-seed', 'boot-ready', 'clone', 'collect-artifacts', 'evidence', 'preservation-gate', 'proposal-identity', 'tool']);
+  // v2 ticket 12: the loss marker holder follows the Builder's grant: armed at each delivery, ended at each withdrawal.
+  assert.deepEqual([...new Set(programs)].sort(), ['artifact-seed', 'boot-ready', 'clone', 'collect-artifacts', 'evidence', 'loss-marker-arm', 'loss-marker-disarm', 'preservation-gate', 'proposal-identity', 'tool']);
+  // The boot ended by a requested Stop with no holder left: its terminate hook has nothing to trigger, so a normal end leaves no marker ref.
+  assert.equal(guest.lossMarker, null);
+  assert.deepEqual([...new Set(guest.executions.filter(item => item.program.startsWith('loss-marker-')).map(item => item.user))], ['builder']);
+  assert.equal(guest.executions.filter(item => item.program === 'loss-marker-arm').every(item => item.environmentNames.includes('FACTORY_GIT_TOKEN')), true);
   assert.deepEqual([...new Set(fake.mutations.map(mutation => mutation.operation))].sort(), ['createImage', 'putBuildArtifact', 'runMicrovm', 'terminateMicrovm']);
   // Decision 2c: the evidence was collected over the channel BEFORE the stop, into the protected Records of the Work.
   const environment = execution.dispatch.environment!, boot = execution.dispatch.boot!;
