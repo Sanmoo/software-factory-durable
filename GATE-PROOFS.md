@@ -4,10 +4,10 @@ The record of each quality gate's proof and outcome. The violations are executab
 
 | Quality gate | State | Tier · Entry Point | Tool · version | Violation | Outcome · failing gate | Tree |
 |---|---|---|---|---|---|---|
-| Types | adopted | fast · `npm run test:fast` | tsc 6.0.3 | pass a string where `timeoutReached` takes a number (`src/control/rules/budget.ts`) | red: Types, TS2345 at `src/control/rules/budget.ts` | S1_TREE |
-| Context boundaries | adopted | fast · `npm run test:fast` | dependency-cruiser 18.7.2 | import the non-public `src/contracts/environment.ts` from `src/records/index.ts` | red: Context boundaries, `public-entry:contracts` | S1_TREE |
-| Dependency rule | adopted | fast · `npm run test:fast` | dependency-cruiser 18.7.2 | import `node:fs` in `src/control/rules/budget.ts` | red: Dependency rule, `pure-rules-imports` | S1_TREE |
-| Guide pointers | adopted | fast · `npm run test:fast` | `scripts/agent-checks/check.mjs` on Node 24.21.0 | link `docs/guides/architecture.md` to a missing file | red: Guide pointers, `BROKEN_LINK` | S1_TREE |
+| Types | adopted | fast · `npm run test:fast` | tsc 6.0.3 | pass a string where `timeoutReached` takes a number (`src/control/rules/budget.ts`) | red: Types, TS2345 at `src/control/rules/budget.ts` | `d15f04a` |
+| Context boundaries | adopted | fast · `npm run test:fast` | dependency-cruiser 18.7.2 | import the non-public `src/contracts/environment.ts` from `src/records/index.ts` | red: Context boundaries, `public-entry:contracts` | `d15f04a` |
+| Dependency rule | adopted | fast · `npm run test:fast` | dependency-cruiser 18.7.2 | import `node:fs` in `src/control/rules/budget.ts` | red: Dependency rule, `pure-rules-imports` | `d15f04a` |
+| Guide pointers | adopted | fast · `npm run test:fast` | `scripts/agent-checks/check.mjs` on Node 24.21.0 | link `docs/guides/architecture.md` to a missing file | red: Guide pointers, `BROKEN_LINK` | `d15f04a` |
 | Format | pending | — | — | — | not wired yet (S2) | — |
 | Lint | pending | — | — | — | not wired yet (S2) | — |
 | Secrets | pending | — | — | — | not wired yet (S2) | — |
