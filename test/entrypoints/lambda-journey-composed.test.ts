@@ -285,9 +285,10 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
     ['microvm-seconds', (microvm.terminatedAt! - microvm.startedAt) / 1000, 1, 0, false, 'complete']);
   assert.deepEqual(consumed.items.map(item => [item.boot, item.begin, item.end, item.size, item.startedAt, item.endedAt]),
     [[boot, 'start', 'end', '4096 MiB / 2 vCPU (baseline 1024 MiB)', new Date(microvm.startedAt).toISOString(), new Date(microvm.terminatedAt!).toISOString()]]);
-  const imageKey = (JSON.parse(await readFile(join(world.root, 'lambda', 'works', environment, 'image.json'), 'utf8')) as { key: string }).key;
+  // Remove deleted the environment's `image.json` (v2 ticket 15): the build of the key stays in the ledger, and no Work holds the key any more.
+  const imageKey = (JSON.parse((await readFile(join(world.root, 'lambda', 'image-builds.jsonl'), 'utf8')).split('\n')[0]!) as { key: string }).key;
   assert.ok(usage.environmentBuilds?.status === 'reported');
-  assert.deepEqual(usage.environmentBuilds.keys.map(entry => [entry.key, entry.builds, entry.works, entry.last.outcome]), [[imageKey, 1, 1, 'created']]);
+  assert.deepEqual(usage.environmentBuilds.keys.map(entry => [entry.key, entry.builds, entry.works, entry.last.outcome]), [[imageKey, 1, 0, 'created']]);
   assert.doesNotMatch(JSON.stringify(usage.works[0]!.boots) + JSON.stringify(usage.environmentBuilds), /usd|dollar|price|cost/i);
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
