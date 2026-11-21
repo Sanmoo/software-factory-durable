@@ -190,7 +190,10 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       // v2 ticket 11 (V2-21): asked only of a sandbox that declares channel recovery; the boot's own host record answers.
       channelReport: input => sandbox.channelReport(input),
       // v2 ticket 10 (V2-15): the boot owner of this process watches the environment; Control only waits for its confirmed end.
-      awaitEnvironmentEnd: input => sandbox.awaitEnvironmentEnd(input) },
+      awaitEnvironmentEnd: input => sandbox.awaitEnvironmentEnd(input),
+      // v2 ticket 14 (V2-32): boot seconds and environment builds, reported by a sandbox whose boots are measured by its service. The
+      // sandbox with a persistent disk has no such report, and its usage view stays as it was.
+      ...(lambda ? { usage: input => sandbox.usage(input), environmentBuilds: () => sandbox.environmentBuilds() } : {}) },
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
       observe: input => workers.observe(input),
       // Ticket 26: protected start receipt of an invocation, discovered without its notification.

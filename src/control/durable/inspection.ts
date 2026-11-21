@@ -1,8 +1,9 @@
 // Ticket 29: read-only inspection handlers (history, logs, one log page, consumption) over the Control authority and the injected
 // Records/Workers observation ports. Nothing here writes: no commit, no Records capture, no external read.
-import type { CounterView, EvidenceState, ExecutionPorts, UsageObservation, HistoryQuery, HistoryView, LogCaptureView, LogPageView, LogReadQuery, LogsQuery, LogsView, UsageActivityView,
+import type { BootUsageReport } from '../../contracts/index.js';
+import type { CounterView, EnvironmentBuildsView, EvidenceState, ExecutionPorts, UsageObservation, HistoryQuery, HistoryView, LogCaptureView, LogPageView, LogReadQuery, LogsQuery, LogsView, UsageActivityView,
   UsageView, WorkUsageView } from '../types.js';
-import { aggregateUsage, captureState, combineAggregates, executionsOf, fitPage, historyEntries, inspectionLimits, page, pageState, sessionCopy, sessionLocator, trimEntry, captureRemoval,
+import { aggregateUsage, bootConsumption, captureState, combineAggregates, executionsOf, fitPage, historyEntries, inspectionLimits, page, pageState, sessionCopy, sessionLocator, trimEntry, captureRemoval,
   usageActivity, usageSubjects } from '../rules/inspection.js';
 import { counterView, defaultLimits } from '../rules/budget.js';
 import type { WorkRecord } from './admission.js';
@@ -138,12 +139,30 @@ export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefi
     else if (execution.start) unknown++;
   }
   const counter = (key: 'corrections' | 'recoveries'): CounterView | null => work.budget ? counterView(work.budget[key]) : null;
+  // v2 ticket 14 (V2-32): the sandbox's own report for each environment of the Work, covering the boots of every Execution. A report
+  // that cannot be obtained is `null` (unavailable), never an empty list.
+  const report = ports?.sandbox.usage;
+  const reports: (BootUsageReport | null)[] = [];
+  if (report) for (const environment of new Set(executions.flatMap(item => item.dispatch.environment ? [item.dispatch.environment] : []))) {
+    reports.push(await report({ environment: environment as Parameters<typeof report>[0]['environment'] }).catch(() => null));
+  }
   return { work_id: work.work_id, ticket: `${work.ticket.repository}#${work.ticket.number}`, activities, byRole, total: aggregateUsage(activities),
     budget: { corrections: counter('corrections'), recoveries: counter('recoveries'),
       continuations: work.budget ? counterView(work.budget.continuations ?? { limit: defaultLimits.continuations, granted: 0, consumed: 0, reserved: null }) : null,
       grants: work.budget?.grants.length ?? 0 },
     time: { executions: executions.length, measuredMs, lowerBoundMs, unknown,
-      measurement: executions.length === 0 ? 'unavailable' : unknown === 0 && lowerBoundMs === 0 ? 'complete' : 'partial' } };
+      measurement: executions.length === 0 ? 'unavailable' : unknown === 0 && lowerBoundMs === 0 ? 'complete' : 'partial' },
+    ...(report ? { boots: bootConsumption(reports) } : {}) };
+}
+
+const buildKeysLimit = 50;
+/** v2 ticket 14 (V2-32): environment base builds per key, as the sandbox recorded them (the latest keys when there are many). */
+async function environmentBuilds(ports: ExecutionPorts): Promise<EnvironmentBuildsView> {
+  let report: Awaited<ReturnType<NonNullable<ExecutionPorts['sandbox']['environmentBuilds']>>>;
+  try { report = await ports.sandbox.environmentBuilds!(); } catch { return { status: 'unavailable', code: 'ENVIRONMENT_BUILDS_OBSERVATION_FAILED' }; }
+  if (report.status !== 'reported') return { status: 'unavailable', code: report.code };
+  return { status: 'reported', builds: report.keys.reduce((total, entry) => total + entry.builds, 0), omitted: Math.max(0, report.keys.length - buildKeysLimit),
+    keys: report.keys.slice(-buildKeysLimit) };
 }
 
 export async function inspectUsage(all: WorkRecord[], scope: 'installation' | 'work', ports: ExecutionPorts | undefined, slots: { capacity: number; held: number },
@@ -157,13 +176,18 @@ export async function inspectUsage(all: WorkRecord[], scope: 'installation' | 'w
     'A continued session carries earlier messages: they are counted once, for the activity that produced them.',
     '`unavailable` means not measurable (session not recorded, removed, unreadable or not composed); it is never a zero. Totals sum only measured activities.',
     ...(ports?.workers.observeUsage ? [] : ['Usage observation is not composed in this controller (no release execution): every activity is `unavailable`.']),
+    ...(ports?.sandbox.usage ? ['`boots` are the sandbox\'s own seconds per boot, summed per Work over every boot and Execution; a boot still running or without a final observation ' +
+      'is counted apart and makes the sum a lower bound, never a zero. No monetary value or ceiling is computed: check the cost in the provider\'s billing by the installation tag.'] : []),
   ];
   const view: UsageView = { kind: 'usage', scope, at: new Date(now).toISOString(), works: views, total: combineAggregates(views.map(item => item.total)), page: paged.page, slots,
     resources: { state: 'unavailable', code: 'ADAPTER_RESOURCE_METRICS_NOT_OBSERVED', note: 'Adapter RAM/CPU/I/O/disk are not measured by this release; they are distinct from tokens/cost and from configured virtual capacity.' },
+    ...(scope === 'installation' && ports?.sandbox.environmentBuilds ? { environmentBuilds: await environmentBuilds(ports) } : {}),
     limitations };
   // Keep the installation view within one frame: per-activity detail is dropped first (still available per Work with `usage <work>`).
   if (size(view) > viewBudgetBytes) {
-    return { ...view, works: views.map(item => ({ ...item, activities: [] })), limitations: [...limitations, 'Per-activity detail omitted to fit one view; query `factory usage <work>`.'] };
+    return { ...view, works: views.map(item => ({ ...item, activities: [],
+      ...(item.boots ? { boots: { ...item.boots, omitted: item.boots.omitted + item.boots.items.length, items: [] } } : {}) })),
+      limitations: [...limitations, 'Per-activity and per-boot detail omitted to fit one view; query `factory usage <work>`.'] };
   }
   return view;
 }

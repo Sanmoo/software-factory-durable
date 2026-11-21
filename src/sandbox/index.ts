@@ -11,7 +11,8 @@ import { selectSandboxAdapter, validateConfiguration } from './configuration.js'
 export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type SandboxAdapterSelection } from './configuration.js';
 // v2 ticket 02: the Lambda adapter's profile, the installation's account resources and the narrow port to the AWS account (CLI-backed in
 // production; tests compose the in-memory account of `test/sandbox/lambda-service-fake.ts` through `lambdaService`).
-import type { ChannelReport } from '../contracts/index.js';
+import type { BootUsageReport, ChannelReport, EnvironmentBuildReport } from '../contracts/index.js';
+import { lambdaEnvironmentUsage, lambdaImageBuilds } from './lambda/usage.js';
 import { validateLambdaInstallation } from './lambda/validate.js';
 import { createLambdaCliService } from './lambda/cli-service.js';
 import type { LambdaServiceFactory } from './lambda/service.js';
@@ -191,6 +192,13 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** v2 ticket 04: the boots recorded for a Lambda environment (identity, reasons, size, start and end) and one of them; read-only. */
     async boots({ environment }: { environment: EnvironmentRef }) { return listLambdaBoots(root, environment); },
     async bootRecord({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return readLambdaBoot(root, environment, boot); },
+    /**
+     * v2 ticket 14 (V2-32): what the boots of one environment consumed, in adapter-neutral terms (seconds, size label, reasons), read from
+     * the host records of every boot of the Work. An environment whose adapter does not measure boots is `unavailable`, never empty.
+     */
+    async usage({ environment }: { environment: EnvironmentRef }): Promise<BootUsageReport> { return lambdaEnvironmentUsage(root, environment); },
+    /** v2 ticket 14 (V2-32): builds of the environment base per environment key, as this installation recorded them. */
+    async environmentBuilds(): Promise<EnvironmentBuildReport> { return lambdaImageBuilds(root); },
     /** v2 ticket 04: the channel to an active Lambda boot, for trusted host composition only (tool calls bind a role on top of it, ticket 05). */
     async openChannel({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return openLambdaBootChannel(lambdaBoots(), { environment, boot }); },
     /**
@@ -405,7 +413,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         const profile = selection.configuration;
         try {
           return await prepareLambdaImage({ root, workId, profile, environment, retry: retryEnvironmentBase,
-            service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), wait: lambdaImageWait });
+            service: lambdaService({ awsProfile: profile.awsProfile, region: profile.region }), wait: lambdaImageWait, now: lambdaBootClock.now });
         } catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
       }
       const parsed = validateConfiguration(configuration);

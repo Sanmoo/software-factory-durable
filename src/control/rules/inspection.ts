@@ -1,6 +1,7 @@
 // Ticket 29 (spec §2.3 `inspect`, §11.3 history/logs, §12.1-12.2): pure presentation rules of the correlated inspection and consumption.
 // Nothing here is authority: the Work's dimensions stay the source; these rules only correlate, page and classify them, without I/O or clocks.
-import type { ChainExecutionView, ChainView, CostEstimate, EvidenceState, ExecutionView, HistoryEntryView, InspectionFilter, InspectionRole, ObservationView,
+import type { BootUsageReport } from '../../contracts/index.js';
+import type { BootConsumptionView, ChainExecutionView, ChainView, CostEstimate, EvidenceState, ExecutionView, HistoryEntryView, InspectionFilter, InspectionRole, ObservationView,
   PageView, QuestionView, TokenUsage, UsageActivityView, UsageAggregate, UsageMeasurement, UsageObservation, WorkView } from '../types.js';
 
 type Work = Omit<WorkView, 'dispatch' | 'limits'>;
@@ -364,4 +365,27 @@ export function compactWork<T extends WorkView>(work: T): T {
     ...(work.checks ? { checks: { ...work.checks, history: [] } } : {}),
     compacted: { history: work.history.length, previousExecutions: work.previousExecutions.length,
       nextStep: `factory history ${work.work_id} (history), factory show ${work.work_id} --limit <n> (executions)` } };
+}
+
+/**
+ * v2 ticket 14 (V2-32): the seconds of one Work's boots, folded from what the sandbox reported for each of its environments (`null`: the
+ * report could not be obtained). Only measured boots are summed. A boot still running, or whose final observation was not possible, makes
+ * the total a lower bound and is counted apart: unknown is never zero. A refused start ran nothing and adds nothing.
+ */
+export function bootConsumption(reports: readonly (BootUsageReport | null)[], limit = 50): BootConsumptionView {
+  const reported = reports.filter((report): report is Extract<BootUsageReport, { status: 'reported' }> => report?.status === 'reported');
+  const missing = reports.find(report => report?.status !== 'reported');
+  const code = reports.length === 0 ? 'ENVIRONMENT_NOT_PREPARED' : missing === undefined ? null : missing === null ? 'BOOT_USAGE_OBSERVATION_FAILED' : (missing as { code: string }).code;
+  const boots = reported.flatMap(report => report.boots);
+  let milliseconds = 0, measured = 0, running = 0, unknown = 0, notRun = 0;
+  for (const boot of boots) {
+    if (boot.state === 'measured' && typeof boot.seconds === 'number' && Number.isFinite(boot.seconds) && boot.seconds >= 0) { measured++; milliseconds += Math.round(boot.seconds * 1000); }
+    else if (boot.state === 'not-run') notRun++;
+    else if (boot.state === 'running') running++;
+    else unknown++;
+  }
+  const lowerBound = running + unknown > 0 || (reported.length > 0 && code !== null);
+  const nothing = reported.length === 0 || (measured === 0 && lowerBound);
+  return { unit: reported[0]?.unit ?? null, seconds: nothing ? null : milliseconds / 1000, measured, running, unknown, notRun, lowerBound,
+    measurement: nothing ? 'unavailable' : lowerBound ? 'partial' : 'complete', code, omitted: Math.max(0, boots.length - limit), items: boots.slice(-limit) };
 }
