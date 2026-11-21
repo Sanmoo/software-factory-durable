@@ -45,7 +45,11 @@ test('V2-19: the fixed conduct says the four points, each under its number, and 
   assert.match(conduct, /3\. If the rest depends on it, ask with ask_user/);
   assert.match(conduct, /authorizes repeating it or taking it as done/);
   assert.match(conduct, /4\. Publish what you did before returning control .* the Factory checks it by itself/);
-  assert.ok(substitutePackage(input()).includes(conduct));
+  // Final review, must-fix 2: point 4 names the one push the Builder Host allows the working activation, so obeying it is never refused.
+  const packaged = substitutePackage(input());
+  const push = `git -C /workspace/checkout push ${input().remote} HEAD:refs/heads/${branch}`;
+  assert.ok(packaged.includes(substituteConduct({ effects: 1, branch, push }).join('\n')));
+  assert.ok(packaged.includes(`with exactly this command, ALONE as its own bash call (any other push is refused by the Factory Host): ${push}.`));
   // With no recorded effect the conduct still binds the session to conclude and publish, and says that none was recorded.
   const none = substitutePackage(input({ effects: [] }));
   assert.match(none, /The Factory recorded NO tool call of uncertain result/);

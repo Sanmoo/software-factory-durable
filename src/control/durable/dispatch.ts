@@ -836,7 +836,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     }
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: [...(publication.linkedHeads ?? []), ...preserved],
-      prOnlyRecovery: prOnlyRecovery(publication), known,
+      prOnlyRecovery: prOnlyRecovery(publication), known, preservedHeads: preserved, wipPushes: ports.sandbox.capabilities?.persistentDisk === false,
       refsBefore: publication.refsBefore ?? null, observation,
       // Ticket 61: the other Works' own publication expectations (Control state): their own branch at a recorded head is not unexpected.
       others: otherPublications(listing, { workId: work.work_id, repositoryId: work.repository.repositoryId }) });
@@ -1469,7 +1469,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       // The Host policies of the Builder activation that does the work, and of the one that continues it after a planned swap.
-      const builderPolicies = { ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder),
+      // Final review, must-fix 2 (V2-07): without a persistent disk the working Builder may publish work in progress at ANY time, with the
+      // one push of ticket 07 (HEAD to the Work branch, no force); the head named here is unused by that policy. With a persistent disk a
+      // working Builder gets no push policy, as in the MVP.
+      const wipPolicy = diskless && !execution.request.publication ? { pushPolicy: { branch: execution.request.branch, head: checkout.baseCommit, expected: null,
+        remote: publicationRemote(work.repository.repository), wip: true as const } } : {};
+      const builderPolicies = { ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder), ...wipPolicy,
         // Ticket 48: the repository's Builder budget adjustment recorded with this Execution's policies.
         ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
         // Ticket 21 review: the exact leased push Control derived; any other push form is refused by the Builder Host.

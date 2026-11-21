@@ -226,7 +226,11 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
   /** Ticket 61: the other Works' own publication expectations in this installation (Control state). */
   others?: readonly OtherPublication[];
   /** The only attempt of this head expected the own branch ABSENT (it pushed); no PR-only continuation ran yet. */
-  prOnlyRecovery?: boolean; known?: KnownRemote; observation: DiscoveryObservation }): DiscoveryDecision {
+  prOnlyRecovery?: boolean; known?: KnownRemote;
+  /** v2 ticket 07: the commits a preservation gate confirmed on `origin` (and a rewritten tip the Factory followed, decision 8). Empty with a persistent disk. */
+  preservedHeads?: readonly string[];
+  /** V2-07: the working Builder may publish work in progress at any time (a sandbox without a persistent disk), so a tip the Factory App pushed is its own. */
+  wipPushes?: boolean; observation: DiscoveryObservation }): DiscoveryDecision {
   const { expect, observation } = input;
   if (observation.kind === 'incomplete') return { outcome: 'incomplete', reasons: [observation.code], candidates: [] };
   // Without the pinned App identity nothing can be recognized as own: decide nothing (resolved again on a later cycle).
@@ -338,10 +342,21 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
   }
   if (input.attempted) return blocked(['PUBLICATION_OUTCOME_UNCONFIRMED', where]);
   // v2 ticket 07: a tip the Factory itself confirmed under a preservation gate (work in progress published before any PR) is its own; the
-  // verified head is then published over exactly that tip. Any other tip is an unknown change.
-  if (where === 'REMOTE_BRANCH_UNKNOWN_CHANGE' && !(tip.state === 'present' && (input.known?.heads ?? []).includes(tip.sha))) return blocked([where]);
+  // verified head is then published over exactly that tip. Final review, must-fix 3: ONLY such a tip. A head Control merely linked or
+  // attempted before is, without a PR, the unknown change it was in the MVP, so a sandbox with a persistent disk (no gate) decides as before.
+  // V2-07 (must-fix 2): where the Builder may push work in progress at any time, the tip is also its own when GitHub's push activity of
+  // the branch (Control's read, never the guest's word) shows that the Factory App moved the branch to it.
+  const ownWip = tip.state === 'present' && ((input.preservedHeads ?? []).includes(tip.sha) || (input.wipPushes === true && pushedByApp(observation.activity, tip.sha, expect.app)));
+  if (where === 'REMOTE_BRANCH_UNKNOWN_CHANGE' && !ownWip) return blocked([where]);
   // The verified commit already on the own branch is a compatible push (only reachable from this Work's workspace); only the PR is missing.
   return request(tip.state === 'absent' ? { state: 'absent' } : { state: 'present', sha: tip.sha }, null);
+}
+
+/** Whether the complete push activity of the branch shows that the pinned Factory App is who moved it to `sha` (latest such entry). Anything unread proves nothing. */
+function pushedByApp(activity: Extract<DiscoveryObservation, { kind: 'observed' }>['activity'], sha: string, app: FactoryAppIdentity): boolean {
+  if (!activity || activity.state !== 'complete' || activity.truncated) return false;
+  const actor = activity.entries.find(entry => entry.after === sha)?.actor ?? null;
+  return Boolean(actor && actor.id === app.id && actor.login.toLowerCase() === app.login.toLowerCase());
 }
 
 export const descriptionLimits = Object.freeze({ chars: 6000, fencedLines: 30 });

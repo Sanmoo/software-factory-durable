@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { ExecutionView, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
-import { app, executionDoubles, publishOwn, pushWip, type Activation, type Script } from './publication-doubles.js';
+import { app, executionDoubles, humanPush, publishOwn, pushAs, pushWip, type Activation, type Script } from './publication-doubles.js';
 import { untilHolds } from '../runner/budget.js';
 
 // v2 ticket 06 (Operator decision 1A/2a; V2-05, V2-08), flow level: real Control + Pi Durable + temporary SQLite with the real review rounds
@@ -54,11 +54,13 @@ test('without a persistent disk a Work goes from the Ticket to its own draft PR 
   assert.deepEqual([execution.request.baseCommit, execution.request.checkout, execution.request.skillPack?.name], [main, '/workspace/checkout', 'factory/skill-pack/factory-skills-v6']);
   assert.deepEqual(execution.origin, { atStart: { state: 'absent' }, startCommit: main });
   assert.equal(execution.checkout, undefined, 'no host checkout is fingerprinted');
-  // The write grant is the Execution's own, issued once; the implementation Builder gets no push policy, the publishing one exactly the lease.
+  // The write grant is the Execution's own, issued once; the implementation Builder may publish work in progress (HEAD to its branch, no
+  // force: final review, must-fix 2), the publishing one gets exactly the lease.
   assert.deepEqual(h.execution.calls.filter(call => call.kind === 'issue').map(call => call.detail), ['builder-publish']);
   assert.equal(execution.credential?.purpose, 'builder-publish');
   const [implementation, publication] = h.activations() as [Activation, Activation];
-  assert.deepEqual([implementation.phaseId, implementation.pushPolicy, Boolean(implementation.handoff)], ['builder-initial', null, true]);
+  assert.deepEqual([implementation.phaseId, implementation.pushPolicy, Boolean(implementation.handoff)],
+    ['builder-initial', { branch: work.branch, head: main, expected: null, remote: 'https://github.com/acme/project.git', wip: true }, true]);
   assert.deepEqual([publication.phaseId, publication.executionId, publication.handoff, publication.editSourceMaxBytes], ['builder-publication', execution.executionId, null, undefined]);
   assert.deepEqual(publication.pushPolicy, { branch: work.branch, head, remote: 'https://github.com/acme/project.git', expected: null });
   assert.ok(publication.prompt.includes(`push --force-with-lease=refs/heads/${work.branch}: https://github.com/acme/project.git ${head}:refs/heads/${work.branch}`));
@@ -88,6 +90,8 @@ test('the same scenario on a sandbox WITH a persistent disk keeps the MVP flow: 
     [[null, null, 'builder-start', null, null], ['PUBLICATION_REQUESTED', null, 'builder-publish', null, null]]);
   assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'stop', 'prepare', 'start', 'issue', 'activate', 'stop']);
   assert.deepEqual(h.execution.calls.filter(call => call.kind === 'start').map(call => call.detail), [null, null], 'the host checkout is prepared; nothing is cloned in the guest');
+  // The working Builder of a sandbox that keeps its disk gets no push policy at all, as in the MVP (final review, must-fix 2).
+  assert.deepEqual(h.activations().map(item => [item.phaseId, item.pushPolicy && 'wip' in (item.pushPolicy as object)]), [['builder-initial', null], ['builder-publication', false]]);
   // v2 ticket 07: a sandbox that keeps its disk has no preservation gate.
   assert.deepEqual([h.execution.calls.filter(call => call.kind === 'gate').length, work.preservation ?? null, executions.map(item => item.preservationGate ?? null)], [0, null, [null, null]]);
 });
@@ -122,4 +126,28 @@ test('without a persistent disk an undecided discovery in the boot blocks the pu
   remote.refsUnknown = false;
   for (let cycle = 0; cycle < 3; cycle += 1) await h.settle('cycle', () => true);
   assert.equal(executionsOf((await h.work())!).length, 1);
+});
+
+const wip = 'e'.repeat(40);
+const branchOf = (activation: Activation) => /branch=(\S+)/.exec(activation.prompt)![1]!;
+test('V2-07: work in progress the working Builder pushed with the Factory App identity is the Factory\'s own tip: the verified commit is published over exactly it', async t => {
+  // The verified commit descends from the work in progress (the WIP push is never forced): Control's later preservation check reads that.
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main }, graph: { [head]: [wip] } };
+  const h = await harness(t, remote, [{ kind: 'implement', head, during: (world, activation) => pushAs(world, branchOf(activation), wip, app) }, { kind: 'publish', publish: publishOwn(), end: 'success' }], { diskless: true });
+  await h.settle('published', value => value?.publication?.state === 'published');
+  const work = (await h.work())!;
+  assert.deepEqual(work.publication!.discoveries.map(item => [item.trigger, item.outcome]), [['verified', 'absent'], ['after-publication', 'linked']]);
+  assert.deepEqual(h.activations()[1]!.pushPolicy, { branch: work.branch, head, remote: 'https://github.com/acme/project.git', expected: wip });
+  assert.deepEqual(work.impediments, []);
+});
+
+test('NEGATIVE (MVP §10.1): a tip somebody else pushed to the Work branch before any PR is still an unknown change and blocks, with or without a persistent disk', async t => {
+  for (const diskless of [true, false]) {
+    const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
+    const scripts: Script[] = [{ kind: 'implement', head, during: (world, activation) => humanPush(world, branchOf(activation), wip) }];
+    const h = await harness(t, remote, scripts, { diskless });
+    if (diskless) scripts.push({ kind: 'publish', publish: () => {}, end: 'success' }, { kind: 'publish', publish: () => {}, end: 'success' });
+    await h.settle('blocked', value => value?.publication?.state === 'blocked');
+    assert.deepEqual((await h.work())!.publication!.reasons.filter(reason => reason === 'REMOTE_BRANCH_UNKNOWN_CHANGE'), ['REMOTE_BRANCH_UNKNOWN_CHANGE'], `diskless=${diskless}`);
+  }
 });

@@ -1,4 +1,5 @@
 import type { IndeterminateEffectRecord, LossRecord } from '../types.js';
+import { gateCorrectionPush } from './preservation.js';
 
 // Pure rules of v2 ticket 13 (V2-18, V2-19; the continuity proof failed the absence of the conduct: P2). After a LOSS on a sandbox without
 // a persistent disk the Work comes back through the queue as a new Execution with a NEW session: the substitute. What it receives is an
@@ -54,14 +55,15 @@ export function substituteVersions(executions: readonly { review?: { rounds: rea
  * V2-19, the fixed conduct. Point 4 is enforced by Control (the preservation gate precedes the end of every activation of the substitute,
  * V2-05); points 1 to 3 are instruction: Control supplies the record of the effects and the ordinary Question, and cannot observe intent.
  */
-export function substituteConduct(input: { effects: number; branch: string }): string[] {
+export function substituteConduct(input: { effects: number; branch: string; /** The one push the Builder Host allows the working activation (`gateCorrectionPush`). */ push?: string }): string[] {
   return ['Conduct of this session (fixed by the Factory):',
     `1. NEVER repeat an effect of uncertain result${input.effects ? ' listed above' : ''}: not the same command, not an equivalent one. You may inspect whether it happened with read-only ` +
       'commands; a result you cannot establish stays uncertain.',
     '2. Conclude everything that does not depend on it: implement, validate and commit the rest of the Ticket in this session instead of stopping at the uncertainty.',
     '3. If the rest depends on it, ask with ask_user: describe the effect and quote the Factory record of it (tool, call, boot, outcome). The answer authorizes repeating it or ' +
       'taking it as done; until then do neither.',
-    `4. Publish what you did before returning control (a Question, a handoff\'s end, the end of your turn): commit it and push it to ${input.branch} on origin. This environment keeps no ` +
+    `4. Publish what you did before returning control (a Question, a handoff\'s end, the end of your turn): commit it and push it to ${input.branch} on origin` +
+      (input.push ? ` with exactly this command, ALONE as its own bash call (any other push is refused by the Factory Host): ${input.push}` : '') + '. This environment keeps no ' +
       'disk; the Factory checks it by itself before the environment ends and returns a refusal to you for correction.'];
 }
 
@@ -119,7 +121,7 @@ export function substitutePackage(input: SubstitutePackageInput): string {
     'This is a NEW session. No transcript and no summary of the previous session is part of this package: that session is kept as evidence only and is never continued. ' +
       'What you know of the work is the starting commit, the Ticket, /artifacts and the records above.',
     '',
-    ...substituteConduct({ effects: input.effects.length, branch: input.branch }),
+    ...substituteConduct({ effects: input.effects.length, branch: input.branch, push: gateCorrectionPush(input.branch, input.remote) }),
     '',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions, resuming from the state described above.`].join('\n');
 }

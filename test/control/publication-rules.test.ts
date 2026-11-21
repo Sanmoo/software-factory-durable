@@ -243,3 +243,22 @@ test('v2 ticket 06: a LIVE basis (started, not ended) is publishable under the s
   const dirty = { ...execution({ content: { sha256: 'f'.repeat(64), clean: false, headMatches: true } }), state: 'started', end: null } as unknown as ExecutionView;
   assert.deepEqual(reasons(publishableContent(dirty, { live: true })), ['VERIFIED_CONTENT_NOT_COMMITTED']);
 });
+
+test('final review, must-fix 3: without a PR only a tip a preservation gate confirmed (or, where the Builder may publish work in progress, one the Factory App pushed) is the Factory\'s own; a linked or attempted head is not', () => {
+  const tip = 'e'.repeat(40);
+  const known = { heads: [tip], pullRequestId: null, expected: null, authorized: null, required: [], waived: [] };
+  const at = observed([], { state: 'present', sha: tip });
+  // The MVP rule, exactly: a tip Control merely knows as a linked or attempted head is an unknown change when no PR exists.
+  assert.deepEqual([decideDiscovery({ expect, attempted: false, known, observation: at }).outcome, decideDiscovery({ expect, attempted: false, known, observation: at }).reasons], ['blocked', ['REMOTE_BRANCH_UNKNOWN_CHANGE']]);
+  assert.equal(decideDiscovery({ expect, attempted: false, known, previousHeads: [tip], observation: at }).outcome, 'blocked');
+  // v2 ticket 07: the gate-confirmed tip is published over.
+  const preserved = decideDiscovery({ expect, attempted: false, known, preservedHeads: [tip], observation: at });
+  assert.deepEqual([preserved.outcome, preserved.outcome === 'absent' && preserved.expectedRemote], ['absent', { state: 'present', sha: tip }]);
+  // V2-07 (work in progress at any time): the push activity GitHub reports names who moved the branch to that tip.
+  const activity = (actor: { login: string; id: number } | null, truncated = false) => ({ ...at, activity: { state: 'complete' as const, truncated, entries: [{ before: '0'.repeat(40), after: tip, type: 'push', actor, at: '2026-11-21T10:00:00.000Z' }] } });
+  assert.equal(decideDiscovery({ expect, attempted: false, wipPushes: true, observation: activity(app) }).outcome, 'absent');
+  assert.equal(decideDiscovery({ expect, attempted: false, wipPushes: true, observation: activity({ login: 'operator-one', id: 5 }) }).outcome, 'blocked');
+  assert.equal(decideDiscovery({ expect, attempted: false, wipPushes: true, observation: activity(app, true) }).outcome, 'blocked', 'a truncated activity proves nothing');
+  assert.equal(decideDiscovery({ expect, attempted: false, wipPushes: true, observation: at }).outcome, 'blocked', 'no activity read proves nothing');
+  assert.equal(decideDiscovery({ expect, attempted: false, observation: activity(app) }).outcome, 'blocked', 'with a persistent disk the Builder never publishes work in progress');
+});
