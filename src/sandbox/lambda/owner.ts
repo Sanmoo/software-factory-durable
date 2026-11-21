@@ -6,7 +6,9 @@ import { serveBootOwner, type BootOwnerParts } from '../owner-registration.js';
 import type { EnvironmentRef } from '../prepare.js';
 import { cleanupAuthorizationSchema } from '../cleanup-records.js';
 import type { RemoveResult } from '../remove.js';
-import { currentLambdaBoot, listLambdaBoots, readLambdaBoot, stopLambdaBoot, type LambdaBootDependencies } from './boot.js';
+import { currentLambdaBoot, listLambdaBoots, openLambdaBootChannel, readLambdaBoot, stopLambdaBoot, type LambdaBootDependencies } from './boot.js';
+import { lostMarkerRef } from '../../contracts/index.js';
+import { armLossMarker, disarmLossMarker } from './loss-marker.js';
 import { serveLambdaTools, type LambdaEnvironmentEnd } from './tools.js';
 
 /**
@@ -41,7 +43,9 @@ export async function lambdaOwnerEndpoint(root: string, context: Pick<WorkerLaun
  * calls in flight answered; this owner then aborts the lifetime of EVERY worker it launched (the signal the worker launch supervises: the
  * worker process is told to abort its session, so it makes no further model request) and resolves `ended` for Control.
  */
-export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { launcher?: LambdaWorkerLauncher }, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }):
+export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { launcher?: LambdaWorkerLauncher;
+  /** v2 ticket 12: the URL of `origin` for a repository, as the boot's clone used it: where the loss marker of this boot is pushed. */
+  remoteUrl?: (scope: { repository: string }) => string }, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }):
   Promise<{ status: 'serving'; close(): Promise<void>; /** Resolves once, when the service confirmed the end of the environment. */ ended: Promise<LambdaEnvironmentEnd> } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
@@ -51,6 +55,25 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
   const served = await serveLambdaTools(dependencies, { environment, boot }, { environmentEnded: observed => { environmentGone.abort(); reportEnd(observed); } });
   if (served.status !== 'serving') return served;
   const { tools } = served;
+  // v2 ticket 12 (V2-16, V2-24): the loss marker holder of this boot lives exactly as long as the Builder's grant. Each delivery or renewal
+  // (re)arms it with the current value, in the explicit environment of one fixed command over the channel; the withdrawal ends it. One
+  // step at a time, in order; best effort: nothing of the boot or of the credential's delivery depends on it.
+  const markerRef = lostMarkerRef(record.workId, boot);
+  const remote = record.checkout && dependencies.remoteUrl ? dependencies.remoteUrl({ repository: record.checkout.repository }) : null;
+  let armed = false;
+  let marker: Promise<void> = Promise.resolve();
+  const setMarker = (token: string | undefined) => {
+    marker = marker.then(async () => {
+      if (!markerRef || !remote || environmentGone.signal.aborted || (token === undefined && !armed)) return;
+      const opened = await openLambdaBootChannel(dependencies, { environment, boot });
+      if (opened.status !== 'open') return;
+      try {
+        if (token === undefined) { await disarmLossMarker(opened.channel); armed = false; }
+        else armed = (await armLossMarker(opened.channel, { remote, ref: markerRef, token })).status === 'armed' || armed;
+      } finally { opened.channel.close(); }
+    }).catch(() => {});
+    return marker;
+  };
   try {
     const root = await realpath(dependencies.root);
     const runtimeDirectory = workerRuntimeDirectory(root, boot);
@@ -68,6 +91,7 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         if (bound.status !== 'bound') throw new Error(bound.code);
       },
       close: () => tools.close(),
+      credential: token => { void setMarker(token); },
       launch: async (request, endpoint, lifetime, secrets, relay, onHandoff) => {
         // No worker starts on an environment that ended, and none outlives it.
         if (environmentGone.signal.aborted) throw new Error('ENVIRONMENT_ENDED');
@@ -75,7 +99,8 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         return dependencies.launcher ? dependencies.launcher(request, endpoint, signal, secrets, relay, onHandoff) : launchWorker(host, request, endpoint, root, signal, secrets, relay, onHandoff);
       },
     });
-    return { status: 'serving', close: () => owner.close(), ended };
+    // A boot that is being stopped keeps no holder: the terminate hook of a requested end finds nothing to trigger.
+    return { status: 'serving', close: async () => { await setMarker(undefined); await owner.close(); }, ended };
   } catch {
     await tools.close();
     return { status: 'unavailable', code: 'BOOT_OWNER_UNAVAILABLE' };

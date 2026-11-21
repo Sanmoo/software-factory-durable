@@ -11,9 +11,13 @@
  * nothing, is in no group (so not `docker`) and gets no forwarding and no terminal from `sshd`. Residual risk, accepted and documented:
  * that user reaches the guest's loopback ports (hooks on 9000, `sshd`, the WebSocket listener, published container ports) but has no
  * tool that opens a connection. Nothing in the guest is hidden from the Builder, which reads any guest file through Docker (V2-24).
+ *
+ * v2 ticket 12 (V2-16): the `terminate` hook is the loss marker's trigger and nothing else. It reads nothing of its request (a caller,
+ * the service or a guest process on loopback, chooses no remote, ref, command or credential): it writes one fixed line to a FIFO that
+ * only root writes and waits, bounded, for the holder the HOST armed over the channel (`loss-marker.ts`). The agent holds no credential.
  */
 const hookAgent = `"""Software Factory guest hook agent: Lambda MicroVM lifecycle hooks on :9000. No diagnostics, no arbitrary execution."""
-import json, os, subprocess, threading
+import json, os, subprocess, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOCK = threading.Lock()
@@ -36,15 +40,42 @@ def on_run(raw):
         print(json.dumps({"hook": "run", "error": type(error).__name__}), flush=True)
     subprocess.Popen(["bash", "/opt/factory/start.sh"], start_new_session=True)
 
+TERMINATE_FIFO = "/run/factory/terminate"
+MARKER_DONE = "/run/factory/marker/done"
+
+def on_terminate(wait=45.0):
+    """Best effort (V2-16): pulls the trigger of the loss marker holder the HOST armed, then waits for its one push. Nothing of the
+    request is read: the remote, the ref and the credential are the holder's, fixed by the host. No reader on the trigger means no
+    holder is armed, and nothing happens."""
+    try:
+        trigger = os.open(TERMINATE_FIFO, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError:
+        return "unarmed"
+    try:
+        os.write(trigger, b"terminate\\n")
+    except OSError:
+        return "unarmed"
+    finally:
+        os.close(trigger)
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if os.path.lexists(MARKER_DONE):
+            return "done"
+        time.sleep(0.2)
+    return "timeout"
+
 class Hooks(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
     def do_POST(self):
         raw = self.rfile.read(int(self.headers.get("content-length") or 0))
         hook = self.path.rsplit("/", 1)[-1]
+        marker = None
         if hook == "run":
             on_run(raw)
-        print(json.dumps({"hook": hook, "bytes": len(raw)}), flush=True)
+        elif hook == "terminate":
+            marker = on_terminate()
+        print(json.dumps({"hook": hook, "bytes": len(raw), "marker": marker}), flush=True)
         body = b"{}"
         self.send_response(200)
         self.send_header("content-type", "application/json")
@@ -62,6 +93,12 @@ set -x
 rm -f /etc/ssh/factory_host_ed25519*
 ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/factory_host_ed25519
 mkdir -p /run/sshd /var/empty
+# Loss marker (V2-16): the trigger only root (the terminate hook) writes, and the state directory of the holder the host arms as builder.
+mkdir -p /run/factory/marker
+rm -f /run/factory/terminate
+mkfifo -m 0644 /run/factory/terminate
+chown builder /run/factory/marker
+chmod 0755 /run/factory/marker
 /usr/sbin/sshd -f /opt/factory/sshd_config -E /var/log/factory-sshd.log
 nohup websocat --binary -E ws-l:0.0.0.0:8022 tcp:127.0.0.1:22 > /var/log/factory-websocat.log 2>&1 &
 # cgroup v2 nesting, required by dockerd inside the MicroVM's own container.

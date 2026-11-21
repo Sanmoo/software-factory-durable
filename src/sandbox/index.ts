@@ -329,7 +329,8 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         finally { if (fetched) await repositoryFetch!.revoke(fetched).catch(() => {}); }
         if (started.status !== 'success' || !lambdaBootOwner) return started;
         // The boot is usable only with its owner: the endpoint the workers of this boot connect to, served by this process.
-        const owner = await serveLambdaOwner({ ...lambdaBoots(), ...(lambdaWorkerLauncher ? { launcher: lambdaWorkerLauncher } : {}) }, { environment, boot: started.boot })
+        const owner = await serveLambdaOwner({ ...lambdaBoots(), ...(lambdaWorkerLauncher ? { launcher: lambdaWorkerLauncher } : {}),
+          remoteUrl: remoteUrl ?? (scope => `https://github.com/${scope.repository}.git`) }, { environment, boot: started.boot })
           .catch(() => ({ status: 'unavailable' as const, code: 'BOOT_OWNER_UNAVAILABLE' }));
         if (owner.status !== 'serving') {
           const stopped = await stopLambdaBoot(lambdaBoots(), { environment, boot: started.boot, reason: 'end' }).catch(() => null);

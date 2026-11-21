@@ -36,6 +36,8 @@ export type FakeGuest = { microvmId: string;
   /** `/workspace/checkout` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
   /** v2 ticket 07: what `git status` and `git stash list` would count in the checkout (tests set it; a fresh clone is clean). */
   worktree: { modified: number; untracked: number; stashes: number };
+  /** v2 ticket 12: the loss marker holder the host armed in this boot (`null`: none, or ended), and how often it was armed. */
+  lossMarker: { remote: string; ref: string; token: string } | null; lossMarkerArmed: number;
   logs: Record<string, string>;
   /** Every program that ran here, with the NAMES of its environment (values are checked by the handlers, never kept). */
   executions: { program: string; user: string; script: string; environmentNames: string[] }[];
@@ -153,7 +155,9 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     /** `origin` per remote URL: the commits it has and the one Git credential it accepts. */
     /** `token`: the exact credential, or a predicate when the host mints it per start (v2 ticket 06). */
     /** `tip` (v2 ticket 07): what `ls-remote` answers for a branch NOW (`null`: no such branch; a throw: the remote does not answer). */
-    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean); tip?: (branch: string) => string | null | Promise<string | null> }>,
+    /** `push` (v2 ticket 12): what a push of `sha` to `ref` does on this remote (absent, or a throw: the remote does not take it). */
+    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean); tip?: (branch: string) => string | null | Promise<string | null>;
+      push?: (ref: string, sha: string) => void }>,
     /** Seconds after the MicroVM runs until its `sshd` answers (observed: about 7 s). */
     sshReadySeconds: 7,
     /** Image references whose pull by digest fails at boot. */
@@ -203,6 +207,16 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const { modified, untracked, stashes } = guest.worktree;
       return { exitCode: 0, stdout: `GATE head=${guest.repository.commit} modified=${modified} untracked=${untracked} stashes=${stashes} remote=${remote}\n` };
     },
+    // v2 ticket 12: the loss marker holder (`src/sandbox/lambda/loss-marker.ts`); the real programs run with the local bash and git in
+    // `lambda-loss-marker.test.ts`. Here: who holds what, so `terminateHook` can do what the guest's hook would.
+    'loss-marker-arm': (guest, request, run) => {
+      const remote = /FACTORY_MARKER_REMOTE='([^']+)'/.exec(request.script)?.[1], ref = /FACTORY_MARKER_REF='([^']+)'/.exec(request.script)?.[1];
+      if (run.user !== 'builder' || !remote || !ref) return { exitCode: 0, stdout: 'MARKER unavailable\n' };
+      guest.lossMarker = { remote, ref, token: request.environment?.FACTORY_GIT_TOKEN ?? '' };
+      guest.lossMarkerArmed += 1;
+      return { exitCode: 0, stdout: 'MARKER armed\n' };
+    },
+    'loss-marker-disarm': guest => { guest.lossMarker = null; return { exitCode: 0, stdout: 'MARKER disarmed\n' }; },
     evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
     tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
     // v2 ticket 06: the fixed observation programs (`src/sandbox/lambda/artifacts.ts`), answered from the fake disk. The real programs are
@@ -274,7 +288,7 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     const dockerImages = declared.filter(reference => !world.pullFailures.includes(reference));
     const pullFailed = dockerImages.length !== declared.length;
     const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? Object.fromEntries(Object.entries(users).filter(([, user]) => user.login).map(([name]) => [name, payload.builder!])) : {},
-      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, worktree: { modified: 0, untracked: 0, stashes: 0 }, executions: [], processes: [],
+      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, worktree: { modified: 0, untracked: 0, stashes: 0 }, lossMarker: null, lossMarkerArmed: 0, executions: [], processes: [],
       logs: { '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`, '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n') } };
     guests.set(microvm.microvmId, guest);
     return guest;
@@ -357,5 +371,18 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
   };
   /** Ticket 11: cuts every open connection as a network failure does. The programs keep running in their guests. */
   const drop = () => { for (const cut of [...drops]) cut(); };
-  return { world, guests, connections, transport, inside, drop, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
+  /**
+   * v2 ticket 12: what the guest's terminate hook does when the service ends the MicroVM (a test calls it right before `kill`): it takes
+   * no parameter; an armed holder pushes the checkout's HEAD to its marker ref with the token it holds. Returns whether a push landed.
+   */
+  const terminateHook = (microvmId: string): boolean => {
+    const guest = guests.get(microvmId);
+    const held = guest?.lossMarker;
+    if (!guest || !held || !guest.repository) return false;
+    guest.lossMarker = null;
+    const origin = world.origins[held.remote];
+    if (!origin?.push || !(typeof origin.token === 'string' ? held.token === origin.token : origin.token(held.token))) return false;
+    try { origin.push(held.ref, guest.repository.commit); return true; } catch { return false; }
+  };
+  return { world, guests, connections, transport, inside, drop, terminateHook, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
 }
