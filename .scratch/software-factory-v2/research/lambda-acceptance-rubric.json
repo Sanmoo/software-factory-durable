@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "id": "v2-acceptance-on-lambda-profile",
+  "version": 1,
+  "scope": "Somente o perfil testado: Software Factory em release construída da main, adapter Lambda MicroVMs em us-east-1, ARM64, guest Alpine v3.23, baseline 1 GB / 0,5 vCPU com pico de 4 GB / 2 vCPU, concurrency 2, modelo openai/gpt-6-luna nos três papéis, um repositório real e um repositório de apoio. Cobre os critérios CA-01 a CA-12 do MVP no limite declarado em cada linha e os gates da Seção 11 da spec da v2. Cada critério recebe approved, rejected ou inconclusive. Não é homologação de produção nem suporte oficial da AWS. V2-04 não é observável em conta real e fica fora.",
+  "criteria": [
+    {
+      "id": "X0-perfil",
+      "kind": "auxiliary",
+      "requirement": "O perfil efetivo da campanha está registrado antes do primeiro boot.",
+      "witness": "SHA da referência e identificador da release instalada; versões de Node, aws-cli, ssh e websocat com seus caminhos; modelo resolvido por papel; região, arquitetura, tamanho e limites lidos do config.yaml; saída de doctor --json sem valores de conta.",
+      "fixtures": [
+        "Release instalada na raiz da campanha"
+      ],
+      "excludes": [
+        "Homologação de produção"
+      ]
+    },
+    {
+      "id": "C01-jornada",
+      "kind": "contract",
+      "requirement": "CA-01 no perfil Lambda: um Ticket autorizado passa por implementação, dois reviews, PR draft, prontidão, merge humano e cleanup.",
+      "witness": "Histórico do Trabalho com cada transição; dois vereditos de review de papéis distintos; PR aberto pelo Builder no mesmo boot, com a ponta da branch igual ao commit verificado; conversão para pronto; merge feito pela conta do Operador; estado entregue; MicroVM em TERMINATED e nenhuma ref de marcador ao fim.",
+      "fixtures": [
+        "Sanmoo/java-springboot-event-sourcing (real)",
+        "Um Ticket de documentação"
+      ],
+      "excludes": [
+        "Qualidade do conteúdo entregue"
+      ]
+    },
+    {
+      "id": "C02-dependencia",
+      "kind": "contract",
+      "requirement": "CA-02: dependência nativa bloqueia a execução e a conclusão válida a libera.",
+      "witness": "Ticket B bloqueado por A: nenhum boot de B enquanto A está aberto (list-microvms e histórico); boot de B só depois da entrega de A.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Dois Tickets com dependência nativa do GitHub"
+      ],
+      "excludes": [
+        "Dados inacessíveis e fechamento não conclusivo (segundo repositório fora da instalação; evidência do MVP)"
+      ]
+    },
+    {
+      "id": "C03-concorrencia",
+      "kind": "contract",
+      "requirement": "CA-03 no limite da quota: dois Builders simultâneos no mesmo repositório, cada um na sua MicroVM e na sua branch, sem escritor duplicado.",
+      "witness": "Dois boots com intervalos sobrepostos em GetMicrovm, de Trabalhos diferentes; branches distintas; um terceiro Ticket elegível espera na fila sem boot.",
+      "fixtures": [
+        "Sanmoo/java-springboot-event-sourcing (real)",
+        "Três Tickets elegíveis, concurrency 2"
+      ],
+      "excludes": [
+        "Três Builders simultâneos (quota de 8 GB)"
+      ]
+    },
+    {
+      "id": "C04-reparos",
+      "kind": "contract",
+      "requirement": "CA-04: conflito com a base e falha de check obrigatório geram reparo antes de Trabalho novo.",
+      "witness": "PR com check factory-gate em falha e, em outro caso, em conflito com a base: Execução de reparo iniciada antes de um Ticket novo elegível; um único reparo para o evento repetido.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Ruleset com check obrigatório factory-gate publicado pela conta do Operador"
+      ],
+      "excludes": [
+        "Preempção sob três Slots"
+      ]
+    },
+    {
+      "id": "C05-pergunta",
+      "kind": "contract",
+      "requirement": "CA-05: a Pergunta libera o Slot e a resposta autorizada e correlacionada retoma.",
+      "witness": "Pergunta publicada no Ticket; Slot livre e outro Trabalho iniciado durante a espera; resposta do Operador retoma o mesmo Trabalho.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Comentário de conta não autorizada (exige segunda conta)"
+      ]
+    },
+    {
+      "id": "C06-crash",
+      "kind": "contract",
+      "requirement": "CA-06 no perfil Lambda: o controller morto durante um boot não duplica efeitos nem escritores; a MicroVM órfã é encerrada e registrada como perda e o Trabalho continua.",
+      "witness": "SIGKILL do controller com um Builder ativo; no reinício, registro de reconciliação com a MicroVM encerrada por tag; registro de perda; substituta retoma pela fila; no máximo um PR e nenhuma Pergunta duplicada.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Cortes exatos após push, criação de PR e publicação de Pergunta (receitas do MVP sobre systemd)"
+      ]
+    },
+    {
+      "id": "C07-cancelamento-limites",
+      "kind": "contract",
+      "requirement": "CA-07: cancelamento e esgotamento de limite deixam resultado explícito, com o trabalho não entregue preservado no remoto.",
+      "witness": "Cancelamento com boot ativo: MicroVM em TERMINATED, estado cancelado, branch de trabalho presente na origem; Trabalho com orçamento mínimo: estado bloqueado com a causa no CLI.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Falha de cleanup"
+      ]
+    },
+    {
+      "id": "C08-containers",
+      "kind": "contract",
+      "requirement": "CA-08: os testes de integração do repositório-piloto criam containers em dois Trabalhos simultâneos, sem colisão.",
+      "witness": "Dois Trabalhos de código concorrentes com o gate ./gradlew check acceptanceTest aprovado em cada um; containers de Testcontainers criados dentro de cada MicroVM.",
+      "fixtures": [
+        "Sanmoo/java-springboot-event-sourcing (real)",
+        "Dois Tickets de código"
+      ],
+      "excludes": [
+        "Cache entre boots; limite de pulls do Docker Hub"
+      ]
+    },
+    {
+      "id": "C09-mudanca-humana",
+      "kind": "contract",
+      "requirement": "CA-09: commit humano na branch do Trabalho não é sobrescrito.",
+      "witness": "Commit de terceiro empurrado na branch durante uma espera; depois da retomada o commit continua no histórico da branch e do PR.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Política de rebase diferente da do repositório de apoio"
+      ]
+    },
+    {
+      "id": "C10-elegibilidade",
+      "kind": "contract",
+      "requirement": "CA-10: retirar a elegibilidade ou fechar o Ticket não provoca nova Execução; o polling repetido não duplica Trabalho.",
+      "witness": "Label retirada de um Ticket na fila e Ticket fechado: nenhum boot e nenhum Trabalho novo após vários ciclos de polling; um só Trabalho por Ticket.",
+      "fixtures": [
+        "Sanmoo/java-springboot-event-sourcing (real)",
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Fechamento de PR por terceiro"
+      ]
+    },
+    {
+      "id": "C11-tempo",
+      "kind": "contract",
+      "requirement": "CA-11: sem timeout configurado não há corte em 60 minutos; esperas externas não consomem Slot.",
+      "witness": "Uma Execução que soma mais de 3600 s de boots, atravessando a troca planejada, sem bloqueio por tempo; Slot livre durante espera humana.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Tarefa longa roteirizada"
+      ],
+      "excludes": [
+        "Timeout do repositório bloqueando (regra pura, evidência do MVP)"
+      ]
+    },
+    {
+      "id": "C12-cli",
+      "kind": "contract",
+      "requirement": "CA-12: bloqueios observados na campanha aparecem no CLI com causa e histórico, nunca como sucesso.",
+      "witness": "Para cada bloqueio ou impedimento ocorrido: saída de factory show e factory history com o código e o próximo passo.",
+      "fixtures": [
+        "Os bloqueios das fases 5 a 7"
+      ],
+      "excludes": [
+        "Revisão indisponível e validação não executada (sem injeção em conta real)"
+      ]
+    },
+    {
+      "id": "G05-gate",
+      "kind": "contract",
+      "requirement": "V2-05 a V2-07: no retorno de controle com trabalho não salvo o gate recusa e o Builder real corrige; três recusas seguidas encerram o boot como perda e a substituta retoma pela fila.",
+      "witness": "Pergunta com workspace sujo: recusa registrada com diagnóstico, ativação de preservação, commit e push, MicroVM encerrada só depois. Caso das três recusas: três recusas no mesmo retorno, registro de perda com o diagnóstico da última, substituta iniciada com um resume operacional consumido.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Arquivo não rastreado recriado por processo injetado pelo canal (caso das três recusas)"
+      ],
+      "excludes": [
+        "Push lento"
+      ]
+    },
+    {
+      "id": "G09-espera",
+      "kind": "contract",
+      "requirement": "V2-09: espera humana e espera de CI encerram a MicroVM antes de liberar o Slot.",
+      "witness": "Para uma espera de cada tipo: terminatedAt de GetMicrovm anterior ao registro de liberação do Slot.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "G10-mesma-sessao",
+      "kind": "contract",
+      "requirement": "V2-10: depois de uma troca de boot o Builder continua a mesma sessão e recebe o aviso de boot novo.",
+      "witness": "Identificador de sessão igual antes e depois; aviso fixo presente na sessão; /artifacts com spec e instructions reenviados.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Sessões longas, compactação"
+      ]
+    },
+    {
+      "id": "G11-divergencia",
+      "kind": "contract",
+      "requirement": "V2-11: retomada com commits de terceiros segue; histórico reescrito segue o remoto com sessão substituta; branch ausente abre Pergunta.",
+      "witness": "Três retomadas: (a) commit de terceiro incorporado, mesma sessão; (b) force-push na branch: sessão nova com o aviso das duas refs e um resume consumido; (c) branch apagada: Pergunta de reinício ou encerramento.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "G12-troca",
+      "kind": "contract",
+      "requirement": "V2-12 e V2-13: a troca planejada acontece sob margem real, uma chamada em curso na metade da margem é interrompida, e um boot acima de uma hora funciona.",
+      "witness": "maxBootSeconds 900 com margem 300: troca registrada antes do limite, chamada longa interrompida e devolvida à sessão, trabalho publicado antes do fim. Um boot com maxBootSeconds 4500 vivo além de 3600 s por GetMicrovm.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Tarefa longa roteirizada"
+      ],
+      "excludes": [
+        "Oito horas, carga sustentada"
+      ]
+    },
+    {
+      "id": "G14-sem-progresso",
+      "kind": "contract",
+      "requirement": "V2-14: dois boots seguidos sem commit novo na origem geram Bloqueio.",
+      "witness": "Dois boots encerrados sem avanço da ponta da branch; Bloqueio com a causa de falta de progresso no CLI.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Tarefa que não produz commit"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "G15-cessacao",
+      "kind": "contract",
+      "requirement": "V2-15 (obrigatório): depois da cessação confirmada do ambiente não há pedido de modelo nem chamada de ferramenta.",
+      "witness": "MicroVM encerrada por fora no meio de uma ativação: nenhum pedido de modelo e nenhuma chamada com início posterior à cessação confirmada pela Factory, lido na sessão e no registro de uso do boot contra o terminatedAt do serviço.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Log do lado do provedor do modelo"
+      ]
+    },
+    {
+      "id": "G16-marcador",
+      "kind": "contract",
+      "requirement": "V2-16: a ref de marcador é criada na perda, informada à substituta e removida no cleanup.",
+      "witness": "Perda com commit não publicado: refs/factory/lost/<trabalho>/<boot> presente na origem; ref citada no pacote da substituta; ausente depois da remoção do Trabalho.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Hook com remoto indisponível"
+      ]
+    },
+    {
+      "id": "G17-substituta",
+      "kind": "contract",
+      "requirement": "V2-17 a V2-19 (obrigatório): a sessão substituta conclui o trabalho, publica, não repete o efeito incerto e pergunta sobre ele.",
+      "witness": "Tarefa com um efeito não idempotente contável na origem; MicroVM encerrada durante o efeito. Depois: no máximo um efeito na origem, Pergunta sobre o efeito publicada, resto do Ticket concluído e PR aberto.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Roteiro de efeito que acrescenta um commit a uma ref de registro"
+      ],
+      "excludes": [
+        "Variância do modelo além de uma execução; efeitos em serviços reais"
+      ]
+    },
+    {
+      "id": "G20-canal",
+      "kind": "contract",
+      "requirement": "V2-20 a V2-22: canal caído com a MicroVM viva reconecta, a chamada órfã é encerrada no guest e volta à sessão como indeterminada.",
+      "witness": "Processo do túnel morto durante uma chamada Bash longa: reconexão registrada, processo da chamada ausente no guest, resultado indeterminado na sessão, ativação continua. Túnel bloqueado além do limite: boot encerrado e boot novo com um resume consumido.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)"
+      ],
+      "excludes": [
+        "Conexão além de 38 minutos sem medição"
+      ]
+    },
+    {
+      "id": "G23-revisores",
+      "kind": "contract",
+      "requirement": "V2-23: os revisores reais do harness rodam no Lambda sem escrever no workspace nem alcançar Docker.",
+      "witness": "Dois vereditos de review produzidos em MicroVM; sonda como o usuário revisor: escrita em /workspace e acesso ao socket do Docker recusados.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Sanmoo/java-springboot-event-sourcing (real)"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "G24-credenciais",
+      "kind": "contract",
+      "requirement": "V2-24 e V2-25: o token não persiste no guest e o guest não tem credenciais AWS.",
+      "witness": "Varredura do guest em execução (arquivos, ambiente de processos, configuração do Git) sem o token, com a varredura provando que encontra um sentinela plantado; nenhuma credencial AWS em ambiente, arquivos ou endpoint de metadados.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Sentinela de controle positivo"
+      ],
+      "excludes": [
+        "VPC",
+        "Token no processo residente do marcador, aceito na decisão 9"
+      ]
+    },
+    {
+      "id": "G27-ambiente",
+      "kind": "contract",
+      "requirement": "V2-27 e V2-28: o ambiente declarado de um repositório real vira imagem e a causa de uma falha de build fica visível.",
+      "witness": "Imagem construída a partir do .factory/environment.yaml do repositório real, com o JDK na versão declarada dentro do guest; declaração com versão inexistente: impedimento com a causa do apk; segundo Trabalho reusa a imagem sem build novo.",
+      "fixtures": [
+        "Sanmoo/java-springboot-event-sourcing (real)",
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha) com versão inexistente"
+      ],
+      "excludes": [
+        "x86_64"
+      ]
+    },
+    {
+      "id": "G30-validate",
+      "kind": "contract",
+      "requirement": "V2-30 e V2-31: validate acusa quota excedida e permissão faltante pelo nome.",
+      "witness": "doctor saudável com todos os checks do Lambda aprovados; com concurrency 3: bloqueio citando a quota; com uma ação retirada da role: bloqueio citando a ação.",
+      "fixtures": [
+        "Instalação da campanha"
+      ],
+      "excludes": [
+        "Outras regiões, x86, outros tamanhos"
+      ]
+    },
+    {
+      "id": "G30b-espera-capacidade",
+      "kind": "auxiliary",
+      "requirement": "Decisão 5: recusa de capacidade no início de um boot vira espera automática, sem impedimento e sem resume consumido.",
+      "witness": "Com a quota ocupada, início recusado pelo serviço: razão de espera visível no CLI e início bem-sucedido depois, sem intervenção.",
+      "fixtures": [
+        "Quota ocupada por MicroVMs da campanha"
+      ],
+      "excludes": [
+        "Tentado só se a recusa puder ser provocada dentro dos tetos"
+      ]
+    },
+    {
+      "id": "G32-consumo",
+      "kind": "contract",
+      "requirement": "V2-32 a V2-34: consumo por boot e por Trabalho registrado; reconciliação encerra órfãs por tag; o que não foi coletado antes de uma morte é declarado perdido.",
+      "witness": "factory usage de um Trabalho com MicroVM-segundos por boot coerentes com GetMicrovm; registro de reconciliação da MicroVM órfã de C06; evidência do guest declarada perdida no boot morto de G15.",
+      "fixtures": [
+        "Sanmoo/sfv2acc-fixture (apoio, privado, da campanha)",
+        "Sanmoo/java-springboot-event-sourcing (real)"
+      ],
+      "excludes": [
+        "Cobrança acima do baseline; custo por tag na fatura"
+      ]
+    },
+    {
+      "id": "X1-custo",
+      "kind": "auxiliary",
+      "requirement": "A campanha fica dentro dos tetos autorizados.",
+      "witness": "Soma de MicroVM-segundos, número de builds e tokens registrados, com a estimativa em dólares e o momento de cada leitura.",
+      "fixtures": [
+        "Watcher de consumo da campanha"
+      ],
+      "excludes": [
+        "Fatura da AWS"
+      ]
+    },
+    {
+      "id": "X2-cleanup",
+      "kind": "contract",
+      "requirement": "Ao fim não resta recurso da campanha.",
+      "witness": "Leituras depois da remoção: nenhuma MicroVM fora de TERMINATED, nenhuma imagem, bucket, log group, stack, usuário IAM ou chave; perfil AWS removido; repositório de apoio apagado; nenhuma ref refs/factory/lost; ruleset do repositório real igual ao anterior.",
+      "fixtures": [
+        "Inventário gravado na fase 1"
+      ],
+      "excludes": []
+    }
+  ]
+}
