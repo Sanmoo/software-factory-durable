@@ -24,6 +24,7 @@ import { counterView, defaultLimits, durationView, maxGrantAmount } from '../rul
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
 import { reconcileBoot } from './recovery.js';
 import { dispatchGate } from '../rules/recovery.js';
+import { capabilityImpediment, missingCapabilities, sandboxCapabilityImpediment } from '../rules/capabilities.js';
 import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies } from '../../contracts/index.js';
 import { backoffRunning, bootDeferralRunning } from './recovery-request.js';
 import { createDeliveryDesk } from './delivery-desk.js';
@@ -125,11 +126,19 @@ export async function openControl(options: { storagePath: string;
   let stopped = false;
   let recovery: RecoveryView | null = null;
   const calendar = options.execution?.calendar ?? { now: () => Date.now() };
+  // v2 (V2-04): a Work whose pinned declaration requires a capability the installation's sandbox does not declare never starts. Derived at
+  // each read from the pin and the declared capabilities (both fixed for this run), never stored: no fallback, nothing prepared on a guess.
+  const capabilityGate = (work: WorkRecord): Impediment | null => {
+    if (work.result !== 'open' || work.environment?.state !== 'pinned') return null;
+    const missing = missingCapabilities(work.environment.pin.declaration, options.execution?.sandbox.capabilities);
+    return missing.length ? { ...capabilityImpediment(missing, { repository: work.repository.repository }), since: work.environment.pinnedAt } : null;
+  };
   // Boot facts of THIS run (ticket 26): a repository whose host Git cache was being prepared stays blocked (a fetch/clone may still run).
   const runBlockers = (work: WorkRecord): string[] => [
     ...(recovery?.cachePreparing.includes(work.repository.repositoryId) ? ['CACHE_RECONCILIATION_REQUIRED'] : []),
     ...(backoffRunning(work, calendar.now()) ? ['RECOVERY_BACKOFF'] : []),
-    ...(bootDeferralRunning(work, calendar.now()) ? ['BOOT_CAPACITY_WAIT'] : [])];
+    ...(bootDeferralRunning(work, calendar.now()) ? ['BOOT_CAPACITY_WAIT'] : []),
+    ...(capabilityGate(work) ? [sandboxCapabilityImpediment] : [])];
   const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
@@ -206,7 +215,8 @@ export async function openControl(options: { storagePath: string;
   const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
     currentAttempt: poller?.currentAttempt(work.repository.repository) ?? null }), ...runBlockers(work)];
   const present = (work: WorkRecord, paused: boolean): WorkView => {
-    const impediments: Impediment[] = [...work.impediments,
+    const capability = capabilityGate(work);
+    const impediments: Impediment[] = [...work.impediments, ...(capability ? [capability] : []),
       ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
     // A Question wait whose boot ceased occupies nothing: the Work shows its queue blockers (QUESTION_PENDING...), not "executing".
     // Likewise an ended, ceased Execution whose Work is pending again (correction/recovery/timeout): its queue blockers are shown.

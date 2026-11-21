@@ -142,6 +142,25 @@ test('architecture syntax gate rejects real clocks in pure Control rules', async
   assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax' && /injected/.test(message.message)));
 });
 
+test('v2: Control never names a sandbox adapter or its service: it reads declared capabilities only', async () => {
+  for (const source of ["export const preserves = (adapter: string) => adapter === 'gondolin';",
+    "export const rotate = (sandbox: { profile: string }) => sandbox.profile.startsWith('lambda-');",
+    'export const isLambda = (capabilities: { docker: boolean }) => !capabilities.docker;',
+    "export const stop = (service: { terminateMicrovm(): void }) => service.terminateMicrovm();",
+    'export const label = (boot: string) => `qemu:${boot}`;']) {
+    for (const path of ['src/control/durable/dispatch.ts', 'src/control/rules/capabilities.ts', 'src/control/types.ts']) {
+      const result = await syntaxViolations(path, source);
+      assert.equal(result.status, 1, `${path}: ${source}`);
+      assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax' && /declared capabilities/.test(message.message)), `${path}: ${source}`);
+    }
+  }
+  // Deciding from the declared capabilities is the permitted form; other zones (the Sandbox, the composition) name their adapters freely.
+  const byCapability = "export const preserves = (capabilities: { persistentDisk: boolean }) => capabilities.persistentDisk; // Gondolin declares it";
+  assert.equal((await syntaxViolations('src/control/rules/capabilities.ts', byCapability)).status, 0);
+  assert.equal((await syntaxViolations('src/sandbox/configuration.ts', "export const adapters = ['gondolin', 'lambda'];")).status, 0);
+  assert.equal((await syntaxViolations('src/entrypoints/controller/composition.ts', "export const adapter = 'gondolin';")).status, 0);
+});
+
 test('architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports', async () => {
   const rejected = await syntaxViolations('src/entrypoints/cli.ts', "const path = './unknown.js'; export const load = () => import(path);");
   assert.equal(rejected.status, 1);

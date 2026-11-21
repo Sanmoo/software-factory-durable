@@ -69,6 +69,8 @@ test('invalid configuration is rejected as a whole without echoing secrets or ex
     ['arbitrary sandbox flags', configuration.replace('profile: gondolin-qemu-alpine-dev-v1}', 'profile: gondolin-qemu-alpine-dev-v1, qemuArgs: [-enable-kvm]}')],
     ['zero sandbox resource', configuration.replace('profile: gondolin-qemu-alpine-dev-v1}', 'profile: gondolin-qemu-alpine-dev-v1, memoryMiB: 0}')],
     ['unknown sandbox profile', configuration.replace('gondolin-qemu-alpine-dev-v1', 'tcg-fallback')],
+    // v2 ticket 01 (V2-01): one adapter for the whole installation, chosen statically (unknown/several adapters: test/sandbox/adapter-selection.test.ts).
+    ['sandbox chosen per repository', configuration.replace('    workflows: false\n', '    workflows: false\n    sandbox: {adapter: gondolin}\n')],
   ];
   for (const [name, yaml] of invalid) {
     assert.ok(yaml);
@@ -165,4 +167,17 @@ test('ticket 48: a repository adjusts the Builder budget up to 2x of 150 request
     assert.equal(invalid.configuration.valid, false, yaml);
     assert.equal(invalid.configuration.errors[0].code, 'CONFIGURATION_INVALID', yaml);
   }
+});
+
+test('v2 ticket 01: sandbox.adapter selects the installation adapter; Gondolin named explicitly is the existing profile, Lambda is refused with a diagnostic', async () => {
+  const explicit = await diagnose(configuration.replace('sandbox: {', 'sandbox: {adapter: gondolin, '));
+  assert.equal(explicit.report.configuration.valid, true);
+  assert.deepEqual(explicit.report.configuration.effective.sandbox, { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048,
+    vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 }, 'identical to an installation that never named an adapter');
+  const lambda = await diagnose(configuration.replace('sandbox: {schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1}', 'sandbox: {adapter: lambda, schemaVersion: 1}'));
+  assert.equal(lambda.status, 2);
+  assert.deepEqual(lambda.report.configuration, { valid: false, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] });
+  const check = lambda.report.checks.find((item: { id: string }) => item.id === 'sandbox-adapter');
+  assert.equal(check.status, 'blocked');
+  assert.match(check.message, /lambda/);
 });

@@ -6,7 +6,7 @@
     "test/entrypoints/release-install.test.ts": { "slow": true, "reason": "Extracts the run's shared release build (release-fixture, built once per runner run) and runs its launcher with the private Node. Builds it itself when it is the first of the three release files." },
     "test/entrypoints/release-artifact.test.ts": { "slow": true, "reason": "Extracts and tampers copies of the run's shared release build (built once per runner run by the first release file)." },
     "test/entrypoints/release-upgrade.test.ts": { "slow": true, "reason": "Extracts the run's shared release build next to a previous release and runs the explicit migration and switch." },
-    "test/architecture/architecture-gate.test.ts": { "slow": true, "reason": "20 tests, each analysing a synthetic fixture tree with dependency-cruiser or ESLint (in-process APIs since ticket 37)." },
+    "test/architecture/architecture-gate.test.ts": { "slow": true, "reason": "21 tests, each analysing a synthetic fixture tree with dependency-cruiser or ESLint (in-process APIs since ticket 37)." },
     "test/entrypoints/controller-ownership.test.ts": { "slow": true, "reason": "Real controller processes under flock with SIGKILL and restart over the same storage. ~13 s alone." },
     "test/workers/sdk-profile.test.ts": { "slow": true, "reason": "Copies the 40 MB pinned SDK into a private project and prepares it four times. ~7 s alone, ~40 s under 8-way load." },
     "test/sandbox/gondolin-sdk-profile.test.ts": { "slow": true, "reason": "Copies and hashes the Gondolin distribution in nine private fixtures. ~7 s alone, ~40 s under 8-way load." },

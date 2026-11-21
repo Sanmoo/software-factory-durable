@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -139,6 +139,13 @@ export type RecoveryRecord = { at: string; controllerRunId: string;
 /** Injected execution boundaries (spec §2.4/Q11): public Sandbox lifecycle, Workers activation and the Builder credential projection. */
 export type ExecutionPorts = {
   sandbox: {
+    /**
+     * v2 (V2-03): what the installation's single sandbox declares about itself. Control decides from these values only (never from which
+     * sandbox or service is behind them): a repository requiring a capability that is not declared never starts (V2-04), and "stop
+     * preserves the disk/workspace" holds only where `persistentDisk` is declared. Absent = composed without a declaration (before v2):
+     * no capability gate. The production composition always declares it.
+     */
+    capabilities?: SandboxCapabilities;
     /** `recreateSeeds` (ticket 50): artifact seeds the operator explicitly decided to recreate (divergent copy set aside, never deleted). */
     /** `environment` (ticket 44): the Work's pinned declaration; a NEW environment is created from the base disk prepared for it (an existing one
      * keeps the base it was created from). `retryEnvironmentBase`: the operator's retry of a failed/incomplete base preparation. */

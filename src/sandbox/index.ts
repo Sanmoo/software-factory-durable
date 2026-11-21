@@ -6,7 +6,9 @@ import type { Diagnostic } from '../contracts/index.js';
 import { canAccess, inspectMemory, inspectStorage, versionOf } from '../platform/host/index.js';
 import { createBootLedger } from './capacity.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
-import { validateConfiguration } from './configuration.js';
+import { selectSandboxAdapter, validateConfiguration } from './configuration.js';
+// v2 ticket 01: the installation's single adapter selection and the capabilities it declares (pure; composition and diagnostics).
+export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type SandboxAdapterSelection } from './configuration.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
 export type { EnvironmentRef, PrepareResult } from './prepare.js';
 import type { RepositoryFetchCredentials } from '../contracts/index.js';
@@ -150,7 +152,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     /** `diskRemedy` (ticket 47): the operator's explicit decision for a preserved disk that fails its check, applied by this start only. */
     async start({ environment, configuration, diskRemedy }: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: DiskRemedy }): Promise<StartResult> {
       const parsed = validateConfiguration(configuration);
-      if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
+      if (!parsed.valid) return { status: 'failure', code: parsed.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
       let release: (() => void) | null = null;
       try {
         return await startEnvironment(root, guestAssets, environment, parsed.effective, async () => (release = await bootLedger.admit(parsed.effective)) !== null,
@@ -173,7 +175,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async prepare({ workId, configuration, checkout, recreateSeeds, environment, retryEnvironmentBase }: { workId: string; configuration: unknown; checkout?: CheckoutRequest;
       recreateSeeds?: readonly string[]; environment?: EnvironmentRequest; retryEnvironmentBase?: boolean }): Promise<PreparedWork> {
       const parsed = validateConfiguration(configuration);
-      if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
+      if (!parsed.valid) return { status: 'failure', code: parsed.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID' };
       let prepared: PrepareResult;
       try { prepared = await prepareEnvironment(root, guestAssets, workId, parsed.effective, { environment, retryEnvironmentBase, vm: preparationVm, alpine }); }
       catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
@@ -188,7 +190,12 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     },
     async validate(configuration: unknown) {
       const validated = validateConfiguration(configuration);
+      const selection = selectSandboxAdapter(configuration);
       const checks: Diagnostic[] = [
+        // V2-01/V2-04: a named adapter that this release cannot run is a visible refusal; the diagnostics below stay the Gondolin ones.
+        ...(selection.status === 'refused' && selection.errors.some(error => error.code === 'SANDBOX_ADAPTER_UNAVAILABLE') ? [{ id: 'sandbox-adapter', status: 'blocked' as const,
+          message: `The configured sandbox adapter (${selection.adapter}) is not available in this release.`,
+          nextStep: 'Select an adapter this release provides in sandbox.adapter (one adapter for the whole installation). There is no fallback to another sandbox.' }] : []),
         ...await inspectGuestAssets(guestAssets),
         { id: 'sandbox-release', status: 'unverified',
           message: 'Development profile only; no distributed release or real sandbox qualification is available.',

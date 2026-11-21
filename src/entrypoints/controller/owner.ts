@@ -54,7 +54,8 @@ async function own(root: string): Promise<number> {
     ? await composeProductionExecution({ root: paths.root, effective: validated.configuration.effective, guestAssets: release.guestAssets, github }) : undefined;
   if (composed?.status === 'refused') {
     console.error(JSON.stringify({ code: 'CONFIGURATION_UNSUPPORTED', reason: composed.code, roles: composed.roles,
-      message: 'Every role must name the release worker profile explicitly; storage was not opened.' }));
+      message: composed.code === 'WORKER_PROFILE_UNSUPPORTED' ? 'Every role must name the release worker profile explicitly; storage was not opened.'
+        : 'The configured sandbox adapter cannot be composed by this release; there is no fallback to another sandbox. Storage was not opened.' }));
     return 2;
   }
   const stop = new AbortController();

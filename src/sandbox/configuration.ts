@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SandboxCapabilities } from '../contracts/index.js';
 
 // Development profile identity only: no distributed assets or qualified release yet.
 export const configurationSchema = z.strictObject({
@@ -17,14 +18,47 @@ export const configurationSchema = z.strictObject({
 /** Ticket 24: the floor applied when `minFreeMemoryMiB` is absent (boot memory precondition in `capacity.ts`). */
 export const defaultMinFreeMemoryMiB = 1024;
 
-export function validateConfiguration(configuration: unknown) {
-  const parsed = configurationSchema.safeParse(configuration);
-  if (!parsed.success) {
-    return { valid: false as const, errors: parsed.error.issues.map(issue => ({
-      code: 'SANDBOX_CONFIGURATION_INVALID', path: ['sandbox', ...issue.path].join('.'),
-    })) };
+/** v2 (V2-01): the sandbox adapters an installation can name in `sandbox.adapter`. Absent = `gondolin` (every installation before v2). */
+export const sandboxAdapters = ['gondolin', 'lambda'] as const;
+export type SandboxAdapter = typeof sandboxAdapters[number];
+
+/** V2-03: what the Gondolin adapter declares. Docker in the guest, a root disk and workspace that survive the boot (so `stop` preserves
+ * them), no maximum boot duration (no rotation) and the MVP egress: public HTTP(S) through the adapter's mediation only. */
+export const gondolinCapabilities: SandboxCapabilities = Object.freeze({ docker: true, persistentDisk: true, bootDuration: null,
+  egress: Object.freeze({ mediation: 'http', publicTcp: false }) });
+
+export type SandboxAdapterSelection =
+  { status: 'selected'; adapter: 'gondolin'; capabilities: SandboxCapabilities; configuration: SandboxConfiguration } |
+  { status: 'refused'; /** The adapter the configuration names (`null`: it names none that exists). */ adapter: SandboxAdapter | null;
+    errors: { code: 'SANDBOX_CONFIGURATION_INVALID' | 'SANDBOX_ADAPTER_UNAVAILABLE'; path: string }[] };
+
+/**
+ * V2-01 (pure): the ONE adapter the installation configuration selects, statically, for every repository, with its declared capabilities
+ * and its own effective profile. `sandbox.adapter` is the only selector (no per-repository or per-Work choice, no automatic selection, no
+ * list); it is never part of an adapter's profile, so a Gondolin configuration written before v2 keeps its effective configuration and the
+ * identity of the environments prepared from it. An adapter that is named but not available is refused; there is never a fallback.
+ */
+export function selectSandboxAdapter(configuration: unknown): SandboxAdapterSelection {
+  let adapter: unknown = 'gondolin';
+  let profile = configuration;
+  if (configuration && typeof configuration === 'object' && !Array.isArray(configuration) && 'adapter' in configuration) {
+    const { adapter: named, ...rest } = configuration as Record<string, unknown>;
+    adapter = named; profile = rest;
   }
-  return { valid: true as const, effective: parsed.data };
+  if (adapter === 'lambda') return { status: 'refused', adapter, errors: [{ code: 'SANDBOX_ADAPTER_UNAVAILABLE', path: 'sandbox.adapter' }] };
+  if (adapter !== 'gondolin') return { status: 'refused', adapter: null, errors: [{ code: 'SANDBOX_CONFIGURATION_INVALID', path: 'sandbox.adapter' }] };
+  const parsed = configurationSchema.safeParse(profile);
+  if (!parsed.success) {
+    return { status: 'refused', adapter, errors: parsed.error.issues.map(issue => ({
+      code: 'SANDBOX_CONFIGURATION_INVALID' as const, path: ['sandbox', ...issue.path].join('.') })) };
+  }
+  return { status: 'selected', adapter, capabilities: gondolinCapabilities, configuration: parsed.data };
+}
+
+export function validateConfiguration(configuration: unknown) {
+  const selection = selectSandboxAdapter(configuration);
+  if (selection.status !== 'selected') return { valid: false as const, errors: selection.errors };
+  return { valid: true as const, effective: selection.configuration };
 }
 
 export type SandboxConfiguration = z.infer<typeof configurationSchema>;

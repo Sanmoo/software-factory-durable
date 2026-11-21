@@ -219,3 +219,5 @@ export const controlStorageCompatibility = Object.freeze({ format: 2, migratesFr
 export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits, environmentDeclarationMaxBytes, environmentDeclarationPath, imageReferencePattern,
   imageReferenceParts, validateEnvironmentDeclaration, type EnvironmentBaseIdentity, type EnvironmentDeclaration, type EnvironmentDeclarationError,
   type EnvironmentDeclarationObservation, type PinnedEnvironment } from './environment.js';
+// v2 ticket 01 (V2-03/V2-04): the capabilities a sandbox adapter declares; Control reads these, never the adapter or its service.
+export { declaresCapability, sandboxCapabilityNames, type SandboxCapabilities, type SandboxCapabilityName } from './sandbox-capabilities.js';

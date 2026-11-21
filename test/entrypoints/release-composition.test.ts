@@ -42,6 +42,9 @@ test('production composition: the release profile for all three roles, the deriv
   const { ports, summary } = composed;
   assert.equal(ports.capacity, 2);
   assert.equal(ports.configuration, effective.sandbox);
+  // v2 ticket 01 (V2-03): Control receives the capabilities the configured adapter declares (Gondolin: Docker, persistent disk, no boot
+  // limit, mediated egress), never the adapter itself.
+  assert.deepEqual(ports.sandbox.capabilities, { docker: true, persistentDisk: true, bootDuration: null, egress: { mediation: 'http', publicTcp: false } });
   assert.deepEqual(ports.builder, { skillPack: pack, modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 });
   // Ticket 13: production repeats review rounds inside the Execution (treatments/gates/verification), bounded by the release profile.
   // Ticket 28: and recovers partial reviews (only the failed reviewer; lost notifications from Records; carried opinions after recovery).
@@ -84,4 +87,9 @@ test('production composition refuses any role whose configured provider/model is
       { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: [role] });
     assert.equal('ports' in refused, false);
   }
+});
+
+test('v2 ticket 01: a sandbox adapter this release cannot run refuses the whole composition (no fallback to another sandbox)', async () => {
+  const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: { adapter: 'lambda', schemaVersion: 1 } }, guestAssets, github });
+  assert.deepEqual(refused, { status: 'refused', code: 'SANDBOX_ADAPTER_UNAVAILABLE', roles: [] });
 });

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts } from '../../control/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
-import { createPreparationVm, createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
+import { createPreparationVm, createSandbox, selectSandboxAdapter, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
@@ -110,11 +110,17 @@ export function productionSkillPack(): Promise<SkillPackId> {
 export async function composeProductionExecution(input: ProductionInput): Promise<
   { status: 'composed'; ports: ExecutionPorts; summary: { guestAssets: GuestAssetPin; artifactSeeds: string[];
     profiles: Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }> } } |
-  { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }> {
+  { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] } |
+  /** v2 ticket 01 (V2-01/V2-04): the configured sandbox adapter cannot be composed by this release (never replaced by another one). */
+  { status: 'refused'; code: 'SANDBOX_ADAPTER_UNAVAILABLE' | 'SANDBOX_CONFIGURATION_INVALID'; roles: [] }> {
   const roles = ['builder', 'standards', 'spec'] as const;
   const unsupported = roles.filter(role => input.effective.models[role].provider !== productionProfile.model.providerId ||
     input.effective.models[role].model !== productionProfile.model.modelId);
   if (unsupported.length > 0) return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: unsupported };
+  // v2 ticket 01 (V2-01/V2-03): the installation's ONE adapter, selected statically from the configuration, and the capabilities it declares.
+  // Control receives the capabilities only; the lifecycle below is that adapter's.
+  const adapter = selectSandboxAdapter(input.effective.sandbox);
+  if (adapter.status !== 'selected') return { status: 'refused', code: adapter.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID', roles: [] };
   const profile = (role: Role) => ({ id: productionProfile.sdkProfileId, systemPrompt: productionProfile.prompts[role],
     auth: productionProfile.model.auth, providerId: productionProfile.model.providerId, modelId: productionProfile.model.modelId, api: productionProfile.model.api });
   const profiles = { builder: profile('builder'), standards: profile('standards'), spec: profile('spec') };
@@ -128,7 +134,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
   const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt });
   const ports: ExecutionPorts = {
-    sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
+    sandbox: { capabilities: adapter.capabilities, prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),
       // Ticket 48: Host fingerprint of the checkout (start of the Execution / after a budget end): progress decides continuation vs recovery.
       observeCheckout: input => sandbox.observeCheckout(input),

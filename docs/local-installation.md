@@ -58,6 +58,15 @@ ou release homologados. A factory pública `createSandbox({root}).validate(confi
 possui a validação/probes do adapter; bootstrap delega os campos de sandbox, não
 mantém flags QEMU/modelo paralelo. Não existem prepare/start stubs neste incremento.
 
+`sandbox.adapter` (v2, opcional) escolhe o **único** adapter da instalação, para todos os
+repositórios: `gondolin` (default quando ausente; configurações anteriores continuam válidas
+sem edição e com a mesma configuração efetiva) ou `lambda`, que ainda não existe e é recusado
+com `SANDBOX_ADAPTER_UNAVAILABLE` (check `sandbox-adapter` no `doctor`). Não há escolha por
+repositório ou por Trabalho, seleção automática nem fallback. Cada adapter declara suas
+capacidades (Docker, disco que sobrevive ao boot, duração máxima do boot, saída de rede); um
+repositório cuja declaração de ambiente exige capacidade não declarada (por exemplo `images`
+sem Docker) não inicia e mostra o impedimento `SANDBOX_CAPABILITY_MISSING`.
+
 Defaults aprovados, visíveis em `doctor --json` (`configuration.effective`):
 
 | Campo | Default |
