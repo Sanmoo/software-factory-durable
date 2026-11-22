@@ -156,7 +156,7 @@ export function budgetDoubles(
       async issue() {
         calls.push({ kind: 'issue' });
         return {
-          delivery: { token: 'ghs_syntheticBudgetGrant0123' },
+          delivery: { token: 'ghs_' + 'syntheticBudgetGrant0123' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',

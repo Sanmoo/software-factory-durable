@@ -57,7 +57,7 @@ function ports(calls: Call[], asks: number): ExecutionPorts {
       async issue() {
         calls.push({ kind: 'issue' });
         return {
-          delivery: { token: 'ghs_syntheticJiraQuestion0123' },
+          delivery: { token: 'ghs_' + 'syntheticJiraQuestion0123' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',

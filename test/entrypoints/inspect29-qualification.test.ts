@@ -50,7 +50,7 @@ test('recipe secrets: sk-proj-/sk-ant-/JWT/OAuth/GitHub shapes are found and red
   const samples = [
     'sk-proj-' + 'A'.repeat(40),
     'sk-ant-api03-' + 'b'.repeat(40),
-    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXZhbHVl',
+    'eyJhbGciOiJIUzI1NiJ9' + '.eyJzdWIiOiIxMjM0NTY3ODkwIn0' + '.c2lnbmF0dXJlLXZhbHVl',
     '"refresh_token": "abc"',
     '"access_token":"x"',
     'ya29.' + 'c'.repeat(30),

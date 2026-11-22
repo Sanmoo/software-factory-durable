@@ -14,5 +14,6 @@
 - Linter (conjunto `recommended` do typescript-eslint, a convenção de `_` para bindings mantidos de propósito e as regras de carregamento): [eslint.config.mjs](../../eslint.config.mjs).
 - Supressões do ESLint: cada `eslint-disable` é um achado tolerado e precisa de entrada aprovada em [lint-tolerated.json](../../scripts/test-runner/lint-tolerated.json); uma supressão nova é corrigida, não acrescentada à política.
 - Termos evitados: as linhas _Avoid_ do [GLOSSARY.md](../../GLOSSARY.md), lidas pelo [checker](../../scripts/test-runner/avoided-terms.ts).
+- Segredos: o gitleaks fixado em [mise.toml](../../mise.toml) varre o histórico de HEAD e os arquivos não commitados, casados com [secrets-tolerated.json](../../scripts/test-runner/secrets-tolerated.json) pelo [wrapper](../../scripts/test-runner/secrets.ts). Um token sintético de teste é escrito em partes concatenadas (`'ghs_' + '…'`), para que o scanner não o reconheça; um achado novo é corrigido antes do commit, porque depois dele só sai do histórico com push forçado.
 - Tipos estritos: [tsconfig.json](../../tsconfig.json).
 - Quais quality gates existem e sobre qual escopo: [scripts/test-runner/policy.json](../../scripts/test-runner/policy.json).

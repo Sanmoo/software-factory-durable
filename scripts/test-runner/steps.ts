@@ -11,6 +11,7 @@ import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
 import { acquireMachineLock, machineLockPath } from './lock.ts';
 import type { FileRun, Steps } from './runner.ts';
+import { matchSecrets, parseTolerance as parseSecretsTolerance, readGitleaks, type SecretFinding } from './secrets.ts';
 import { parsePolicy, type IntegralRecord } from './selection.ts';
 
 /** The handoff's Node prefix, applied to every child: no inherited NODE_OPTIONS/compile cache. */
@@ -92,6 +93,7 @@ export interface StaticParts {
   avoided(): Promise<StepResult>;
   suppressions(): Promise<StepResult>;
   format(): Promise<StepResult>;
+  secrets(): Promise<StepResult>;
 }
 
 /**
@@ -100,7 +102,7 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed, avoided, suppressed, formatted] = await Promise.all([
+  const [compiled, linted, cruised, pointed, avoided, suppressed, formatted, scanned] = await Promise.all([
     compiling,
     parts.lint(),
     compiling.then(() => parts.depcruise()),
@@ -108,8 +110,9 @@ export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
     parts.avoided(),
     parts.suppressions(),
     parts.format(),
+    parts.secrets(),
   ]);
-  return [...compiled, linted, ...cruised, pointed, avoided, suppressed, formatted];
+  return [...compiled, linted, ...cruised, pointed, avoided, suppressed, formatted, scanned];
 }
 
 /** The files the Format quality gate checks; .prettierignore holds its traversal exclusions. */
@@ -288,6 +291,22 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
           .filter(line => line && !line.startsWith('['));
         return { ...step, check: 'format', findings: listed.map(file => ({ rule: 'not-formatted', location: file })), ok: step.ok && !listed.length };
       };
+      // The Secrets quality gate: gitleaks over the history reachable from HEAD and the uncommitted files, in both Entry Points.
+      const secrets = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const result = await scanSecrets(root, childEnv, signal).catch(error => ({
+          findings: [{ rule: 'secrets-tolerance-unreadable', location: String((error as Error).message) }],
+          summary: 'gitleaks not run',
+        }));
+        return {
+          name: 'gitleaks',
+          ms: Date.now() - started,
+          ok: !result.findings.length,
+          check: 'secrets',
+          findings: result.findings,
+          output: [result.summary, ...result.findings.map(f => `${f.rule}: ${f.location}`)].join('\n'),
+        };
+      };
       return composeStatic({
         staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
         compile: compiled,
@@ -297,6 +316,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         avoided,
         suppressions,
         format,
+        secrets,
       });
     },
     audit: async signal => {
@@ -389,6 +409,67 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       if (!result.ok) result.output = signal.aborted ? `${file}: stopped by the tier budget` : exit.output;
       return result;
     },
+  };
+}
+
+/** The pinned gitleaks: mise.toml's version, as `mise where` installs it (never installed by a run), or FACTORY_GITLEAKS. */
+async function gitleaksBinary(root: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<{ path: string } | { problem: string }> {
+  const pinned = /^gitleaks\s*=\s*"([^"]+)"/m.exec(await readFile(join(root, 'mise.toml'), 'utf8'))?.[1];
+  if (!pinned) return { problem: 'mise.toml pins no gitleaks version' };
+  let path = env.FACTORY_GITLEAKS;
+  if (!path) {
+    const where = await execute('mise', ['where', `gitleaks@${pinned}`], root, env, signal).catch(() => undefined);
+    if (!where || where.code !== 0) return { problem: `gitleaks ${pinned} is not installed (mise install)` };
+    path = join(where.output.trim(), 'gitleaks');
+  }
+  const version = await execute(path, ['version'], root, env, signal).catch(() => undefined);
+  if (!version || version.code !== 0 || !version.output.includes(pinned)) return { problem: `${path} is not gitleaks ${pinned}` };
+  return { path };
+}
+
+/** gitleaks over the history reachable from HEAD and over the uncommitted and untracked files, matched to the tolerance policy. */
+export async function scanSecrets(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  signal: AbortSignal,
+): Promise<{ findings: { rule: string; location: string }[]; summary: string }> {
+  const binary = await gitleaksBinary(root, env, signal);
+  if ('problem' in binary) return { findings: [{ rule: 'scanner-unavailable', location: binary.problem }], summary: binary.problem };
+  const policy = parseSecretsTolerance(JSON.parse(await readFile(join(root, 'scripts/test-runner/secrets-tolerated.json'), 'utf8')));
+  const report = ['--no-banner', '--exit-code', '0', '--report-format', 'json', '--report-path', '-', '--log-level', 'error'];
+  const history = await execute(binary.path, ['git', ...report, '--log-opts=HEAD', '.'], root, env, signal);
+  if (history.code !== 0) return { findings: [{ rule: 'scanner-failed', location: history.output.slice(0, 200) }], summary: 'gitleaks git failed' };
+  const findings: SecretFinding[] = readGitleaks(history.output, false);
+  const git = (args: string[]) => execute('git', args, root, env, signal).then(exit => exit.output.split('\0').filter(Boolean));
+  const pending = [
+    ...new Set([...(await git(['diff', '--name-only', '--no-renames', '-z', 'HEAD'])), ...(await git(['ls-files', '--others', '--exclude-standard', '-z']))]),
+  ].filter(file => existsSync(join(root, file)));
+  if (pending.length) {
+    const staging = await mkdtemp(join(tmpdir(), 'sf-secrets-'));
+    try {
+      for (const file of pending) {
+        await mkdir(dirname(join(staging, file)), { recursive: true });
+        await writeFile(join(staging, file), await readFile(join(root, file)));
+      }
+      const tree = await execute(binary.path, ['dir', ...report, staging], root, env, signal);
+      if (tree.code !== 0) return { findings: [{ rule: 'scanner-failed', location: tree.output.slice(0, 200) }], summary: 'gitleaks dir failed' };
+      findings.push(
+        ...readGitleaks(tree.output, true).map(item => ({
+          ...item,
+          file: relative(staging, item.file.startsWith('/') ? item.file : join(staging, item.file)),
+        })),
+      );
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+  const covered = new Set<string>();
+  for (const entry of policy)
+    if ((await execute('git', ['merge-base', '--is-ancestor', entry.commit, 'HEAD'], root, env, signal)).code === 0) covered.add(entry.commit);
+  const failures = matchSecrets(findings, policy, commit => covered.has(commit));
+  return {
+    findings: failures,
+    summary: `gitleaks: ${findings.length} findings over the history of HEAD and ${pending.length} uncommitted files; ${policy.length} tolerated entries`,
   };
 }
 

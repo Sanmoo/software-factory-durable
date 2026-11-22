@@ -10,7 +10,7 @@ import { suiteCommand } from './three24-qualification.js';
 // No request-selected tools/commands/routes; any deviation holds the fixture.
 export const port = 18734;
 export const path = '/q34l-v1/chat/completions';
-export const apiKey = 'q34l-dummy-key-v1';
+export const apiKey = 'q34l-' + 'dummy-key-v1';
 const repository = 'Sanmoo/java-springboot-event-sourcing';
 /** 75 min of real suite work: the first installation token (3600 s) expires inside this ONE command. */
 export const censusSeconds = 4500;

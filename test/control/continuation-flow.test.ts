@@ -86,7 +86,7 @@ function executionDoubles(
       async issue(input) {
         calls.push({ kind: 'issue', detail: input });
         return {
-          delivery: { token: 'ghs_syntheticContinuation0123' },
+          delivery: { token: 'ghs_' + 'syntheticContinuation0123' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',

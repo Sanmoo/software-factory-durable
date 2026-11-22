@@ -129,7 +129,7 @@ test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming t
     ['duplicate component', v2.replace("componentId: '10022'", "componentId: '10021'"), 'ticketSources.1.routes'],
     ['token file outside credentials/', v2.replace('tokenFile: credentials/jira-token', 'tokenFile: /etc/jira-token'), 'ticketSources.1.tokenFile'],
     ['token value instead of file', v2.replace('tokenFile: credentials/jira-token', 'tokenFile: ATATT3xFfGF0SYNTHETIC_SECRET'), 'ticketSources.1.tokenFile'],
-    ['inline token', v2.replace('    label: factory-ready\n', '    label: factory-ready\n    token: ATATT3xFfGF0SYNTHETIC_SECRET\n'), 'ticketSources.1'],
+    ['inline token', v2.replace('    label: factory-ready\n', '    label: factory-ready\n    token: ATATT3' + 'xFfGF0SYNTHETIC_SECRET\n'), 'ticketSources.1'],
     ['invalid e-mail', v2.replace('email: fabrica@example.org', 'email: fabrica'), 'ticketSources.1.email'],
     [
       'site with two origins',
