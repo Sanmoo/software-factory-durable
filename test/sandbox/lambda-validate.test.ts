@@ -121,6 +121,39 @@ test('each missing permission is diagnosed naming the action', async t => {
   assert.equal(unread.check('lambda-permissions')?.status, 'unverified');
 });
 
+test('an action the IAM simulator does not evaluate is unverified, never a blocking missing permission; the other actions keep blocking', async t => {
+  // The default account answers as the real one did (2026-11-21): the simulator denies lambda:PassNetworkConnector although the role has it.
+  const fake = lambdaAccountFake();
+  assert.deepEqual(fake.account.simulatorDoesNotEvaluate, ['lambda:PassNetworkConnector']);
+  const correct = await validate(t, fake);
+  assert.deepEqual(correct.blocked, []);
+  const connector = correct.check('lambda-permission:lambda:PassNetworkConnector')!;
+  assert.equal(connector.status, 'unverified');
+  assert.match(connector.message, /simulator does not evaluate lambda:PassNetworkConnector/);
+  assert.match(connector.nextStep, /RunMicrovm/);
+  assert.equal(correct.check('lambda-permissions')?.status, 'ok');
+  assert.match(correct.check('lambda-permissions')!.message, /except lambda:PassNetworkConnector/);
+
+  // A real denial next to it still blocks, and the unverified one is still said.
+  const lacking = lambdaAccountFake();
+  lacking.account.denied = ['lambda:RunMicrovm'];
+  const refused = await validate(t, lacking);
+  assert.deepEqual(refused.blocked, ['lambda-permission:lambda:RunMicrovm']);
+  assert.equal(refused.check('lambda-permission:lambda:PassNetworkConnector')?.status, 'unverified');
+
+  // A simulator that does evaluate the action and allows it says nothing about it.
+  const evaluating = lambdaAccountFake();
+  evaluating.account.simulatorDoesNotEvaluate = [];
+  const evaluated = await validate(t, evaluating);
+  assert.equal(evaluated.check('lambda-permission:lambda:PassNetworkConnector'), undefined);
+  assert.doesNotMatch(evaluated.check('lambda-permissions')!.message, /except/);
+
+  // Only the listed actions are excused: an unlisted action the simulator denies blocks as before.
+  const other = lambdaAccountFake();
+  other.account.simulatorDoesNotEvaluate = ['lambda:GetMicrovm'];
+  assert.deepEqual((await validate(t, other)).blocked, ['lambda-permission:lambda:GetMicrovm']);
+});
+
 test('a missing installation resource is diagnosed by name: build role, build bucket', async t => {
   const noRole = lambdaAccountFake();
   noRole.account.roles = noRole.account.roles.filter(name => name !== noRole.resources.buildRole);

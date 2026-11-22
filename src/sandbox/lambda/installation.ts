@@ -23,6 +23,15 @@ export function installationResources(profile: Pick<LambdaProfile, 'installation
   };
 }
 
+/**
+ * Actions of the operation policy that `iam simulate-principal-policy` does NOT evaluate: it answers `implicitDeny` with no matched
+ * statement for them on any resource (the template's pattern, a concrete ARN, `*`), whatever the role grants. The ONE list; `validate`
+ * reports a simulated denial of these as unverified instead of blocking on it.
+ * - `lambda:PassNetworkConnector`: observed in a real account on 2026-11-21. The operation role had the `NetworkConnectors` statement
+ *   (policy read back) and a real RunMicrovm with the two AWS-managed connectors succeeded with it, while the simulation denied it.
+ */
+export const actionsTheIamSimulatorDoesNotEvaluate: readonly string[] = ['lambda:PassNetworkConnector'];
+
 export type PolicyStatement = { sid: string; actions: string[]; resources: string[];
   /** `StringEquals` on one request-context key. */ condition?: { key: string; value: string } };
 

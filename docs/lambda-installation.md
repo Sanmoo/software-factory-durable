@@ -118,7 +118,7 @@ tem o seu):
 | `lambda-identity` | O perfil não dá identidade (sem credenciais, sessão expirada). |
 | `lambda-operation-role` | O perfil não assume `factory-<instalação>-operation` (role ausente ou outro perfil). |
 | `lambda-region` | O serviço não responde na região, ou o bucket está em outra região. |
-| `lambda-permission:<ação>` | A role não tem a ação nomeada (simulação da política, ou leitura negada). |
+| `lambda-permission:<ação>` | A role não tem a ação nomeada (simulação da política, ou leitura negada). Exceção: `lambda-permission:lambda:PassNetworkConnector` nunca bloqueia pela simulação, só aparece como `unverified` (ver abaixo). |
 | `lambda-build-role`, `lambda-artifact-bucket` | O recurso de instalação não existe. |
 | `lambda-quota` | `concurrency` x memória de pico por MicroVM excede a quota de memória alocada lida da conta. Nada é ajustado: reduza `concurrency` ou o tamanho, ou peça aumento de quota. |
 
@@ -126,6 +126,13 @@ tem o seu):
 do perfil de aceite), `lambda-runtime` (build, boot e canal só são provados numa execução real
 autorizada), e qualquer leitura que não pôde ser feita (por exemplo `lambda-quota` quando a quota
 não pôde ser lida; a leitura de quota ainda não foi observada numa conta real).
+
+`lambda-permission:lambda:PassNetworkConnector` também sai como `unverified`: o simulador de
+políticas do IAM não avalia essa ação e responde negação (`implicitDeny`, nenhuma declaração
+casada) para qualquer recurso, mesmo quando a role tem a declaração `NetworkConnectors` do
+template (observado numa conta real em 2026-11-21, em que um RunMicrovm real funcionou com a
+mesma role). Não é falha de instalação e não exige ação: só um RunMicrovm real prova essa
+permissão. As demais ações continuam bloqueando quando a simulação as nega.
 
 ## 5. Imagens de MicroVM (Preparar)
 

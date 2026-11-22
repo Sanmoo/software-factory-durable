@@ -23,6 +23,12 @@ export type FakeLambdaAccount = {
   buckets: Record<string, string>;
   /** IAM actions the identity lacks: refused by the policy simulation AND by the direct call that needs them. */
   denied: string[];
+  /**
+   * IAM actions the policy SIMULATOR does not evaluate: it answers `implicitDeny` for them whatever the policy grants, while the real call
+   * is allowed. Observed in a real account on 2026-11-21 for `lambda:PassNetworkConnector` (the role had the statement and a real
+   * RunMicrovm worked). The default is that observation, so that a "correct account" here answers what a real correct account answers.
+   */
+  simulatorDoesNotEvaluate: string[];
   /** Allocated-memory quota per architecture, MiB; `null`: the quota cannot be read. */
   memoryQuotaMiB: Record<LambdaArchitecture, number> | null;
   /** MicroVM images. A `CREATING` image settles at `readyAt` (account time) into `CREATED`, or `CREATE_FAILED` when its build log is a failing one. */
@@ -91,7 +97,7 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
     cli: true, account,
     profiles: { factory: { arn: `arn:aws:sts::${account}:assumed-role/${resources.operationRole}/factory-session` } },
     regions: [region], roles: [resources.operationRole, resources.buildRole], buckets: { [resources.artifactBucket]: region },
-    denied: [], memoryQuotaMiB: { arm64: 8192, x86_64: 8192 }, images: [],
+    denied: [], simulatorDoesNotEvaluate: ['lambda:PassNetworkConnector'], memoryQuotaMiB: { arm64: 8192, x86_64: 8192 }, images: [],
     clock: { now: Date.UTC(2026, 10, 21) }, buildSeconds: 130, failedBuildSeconds: 53, buildFailure: null, objects: {}, logs: {},
     microvms: [], terminateSeconds: 5, pendingSeconds: 1, runHookFails: false, runRefusal: null, tokens: [], listsMicrovmTags: false,
   };
@@ -278,7 +284,7 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
       ...images, ...microvms,
       callerIdentity: () => reach('callerIdentity', null, undefined, () => ({ ok: true, value: { account: world.account, arn: (world.profiles[awsProfile] as { arn: string }).arn } })),
       simulatePermissions: input => reach('simulatePermissions', 'iam:SimulatePrincipalPolicy', input, () => ({ ok: true,
-        value: input.actions.map(action => ({ action, allowed: !world.denied.includes(action) })) })),
+        value: input.actions.map(action => ({ action, allowed: !world.denied.includes(action) && !world.simulatorDoesNotEvaluate.includes(action) })) })),
       role: name => reach('role', 'iam:GetRole', name, () => world.roles.includes(name)
         ? { ok: true, value: { arn: `arn:aws:iam::${world.account}:role/${name}` } } : fail('not-found')),
       bucketRegion: bucket => reach('bucketRegion', 's3:GetBucketLocation', bucket, () => world.buckets[bucket]

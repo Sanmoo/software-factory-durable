@@ -1,5 +1,5 @@
 import type { Diagnostic } from '../../contracts/index.js';
-import { installationResources, operationPolicy } from './installation.js';
+import { actionsTheIamSimulatorDoesNotEvaluate, installationResources, operationPolicy } from './installation.js';
 import { acceptanceProfile, lambdaBootSize, provenMaxBootSeconds, type LambdaProfile } from './profile.js';
 import type { LambdaService, LambdaServiceFailure } from './service.js';
 import { lambdaHostTools, type HostToolProbe } from './host-tools.js';
@@ -122,19 +122,30 @@ async function accountChecks({ profile, concurrency, service }: { profile: Lambd
 
   // Permissions: the operation role's policy simulated statement by statement (each action named), plus what the reads above were refused.
   let simulated = operates;
+  /** Simulated denials of actions the simulator is known not to evaluate (`actionsTheIamSimulatorDoesNotEvaluate`): said, never blocking. */
+  const unevaluated: string[] = [];
   if (operates) {
     for (const statement of operationPolicy(profile, account)) {
       const result = await service.simulatePermissions({ principalArn: resources.operationRoleArn, actions: statement.actions, resources: statement.resources,
         ...(statement.condition ? { context: [statement.condition] } : {}) });
       if (!result.ok) { simulated = false; if (result.failure.kind === 'access-denied') refused(result.failure, 'iam:SimulatePrincipalPolicy'); break; }
-      for (const evaluated of result.value) if (!evaluated.allowed && !denied.includes(evaluated.action)) denied.push(evaluated.action);
+      for (const evaluated of result.value) {
+        if (evaluated.allowed) continue;
+        const list = actionsTheIamSimulatorDoesNotEvaluate.includes(evaluated.action) ? unevaluated : denied;
+        if (!list.includes(evaluated.action)) list.push(evaluated.action);
+      }
     }
   }
   for (const action of denied) checks.push({ id: `lambda-permission:${action}`, status: 'blocked', message: `The operation role lacks the permission ${action}.`,
     nextStep: `Apply the current ${template}; it grants ${action} with the minimal scope. The Factory never edits IAM.` });
+  // A direct read refused for the same action is a real denial and already blocks above.
+  const unproven = unevaluated.filter(action => !denied.includes(action));
+  for (const action of unproven) checks.push({ id: `lambda-permission:${action}`, status: 'unverified',
+    message: `The IAM policy simulator does not evaluate ${action}: it answers a denial whatever the operation role grants, so the permission was not checked.`,
+    nextStep: `None if the current ${template} is applied: it grants ${action}. Only a real RunMicrovm in the account proves it.` });
   if (!simulated) checks.push({ id: 'lambda-permissions', status: 'unverified', message: operates ? 'The operation role policy could not be simulated; its permissions were not evaluated.'
     : 'Permissions were not evaluated: the profile is not the installation operation role.', nextStep: 'Resolve the diagnostics above and run doctor again.' });
-  else if (denied.length === 0) checks.push({ id: 'lambda-permissions', status: 'ok', message: 'Policy simulation allows every action of the minimal operation policy. A simulation is not proof of each call.', nextStep: 'None.' });
+  else if (denied.length === 0) checks.push({ id: 'lambda-permissions', status: 'ok', message: `Policy simulation allows every action of the minimal operation policy${unproven.length > 0 ? ` except ${unproven.join(', ')}, which the simulator does not evaluate` : ''}. A simulation is not proof of each call.`, nextStep: 'None.' });
   checks.push(capacity);
   return [...checks, ...profileProof(profile)];
 }
