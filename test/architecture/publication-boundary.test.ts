@@ -67,7 +67,7 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   assert.match(github, /refUpdates: \[\{ name, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
   assert.match(
     github,
-    /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\) : \/[^ ]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/,
+    /const name = 'lostMarker' in input \? lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null : \/[^ ]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/,
   );
   assert.equal((github.match(/refUpdates: \[\{/g) ?? []).length, 1, 'one ref update site');
   assert.match(github, /'branch-cleanup': \{ metadata: 'read', contents: 'write', pull_requests: 'read' \}/);

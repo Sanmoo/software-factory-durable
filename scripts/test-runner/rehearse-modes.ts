@@ -121,7 +121,7 @@ function scenario(name: string, body: (expect: (condition: boolean, what: string
 }
 {
   const copy = repository('integral', () => {});
-  copy.edit('test/protocol/protocol.test.ts', text => `${text}\n`);
+  copy.edit('test/protocol/protocol.test.ts', text => `${text}// a change confined to this test file\n`);
   scenario(
     'integral validation runs the periodic checks that validation by change only reports',
     expect => {

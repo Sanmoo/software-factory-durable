@@ -259,12 +259,11 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
   const worker = await readFile('src/workers/worker-session.ts', 'utf8');
   // Exact host policy: an explicit zero-byte budget enables Edit too; neither
   // model args nor context fields can opt in, and reviewers remain read-only.
-  // OAuth composition adds a containing try block; indentation is not policy.
-  // Preserve the exact complete gate/brace sequence while ignoring line indentation.
-  const withoutIndentation = (value: string) => value.replace(/^[ \t]+/gm, '');
+  // OAuth composition adds a containing try block; layout is not policy (the Format quality gate owns it).
+  // Preserve the exact complete gate/brace sequence in its source shape.
   assert.ok(
-    withoutIndentation(worker).includes(
-      withoutIndentation(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
+    sourceShape(worker).includes(
+      sourceShape(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
   const customTools: ToolDefinition[] = invocation.context.role === 'builder'
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
       ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined,
