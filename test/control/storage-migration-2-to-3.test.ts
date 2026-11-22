@@ -93,7 +93,7 @@ test('format 2 → 3: the explicit migration is one commit that preserves everyt
     await rounds(control, time, 2);
     await untilHolds(`run ${run}: answered`, async () => { const view = await questionOf(control); return view.kind === 'question' && view.question.state === 'answered'; }, 5);
     const repeated = [];
-    for (const attempt of [1, 2]) repeated.push(await control.accept({ request_id: 'answer-again', operation: 'answer', question_id: questionId, text: 'Use docs/factory.md', origin: 'local-cli' }) as ControlReceipt);
+    for (const _attempt of [1, 2]) repeated.push(await control.accept({ request_id: 'answer-again', operation: 'answer', question_id: questionId, text: 'Use docs/factory.md', origin: 'local-cli' }) as ControlReceipt);
     assert.deepEqual(repeated[1], repeated[0], 'the same request id returns its recorded result');
     assert.deepEqual(['outcome' in repeated[0]! && repeated[0]!.outcome, 'reason' in repeated[0]! && repeated[0]!.reason], ['not-applied', 'QUESTION_ALREADY_ANSWERED']);
     const shown = await control.inspect({ kind: 'show', work_id: waiting.work_id }) as Extract<ShowView, { kind: 'work' }>;

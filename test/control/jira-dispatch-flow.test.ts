@@ -55,8 +55,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, jira: JiraRe
   const doubles = jiraDoubles(jira);
   const calls: Call[] = [];
   const time = manualClock();
-  let control!: Control;
-  control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: ports(calls),
+  const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: ports(calls),
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], sources: [jiraSource()], trackers: { jira: doubles.tracker } },
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();

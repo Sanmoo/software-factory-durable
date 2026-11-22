@@ -9,7 +9,7 @@ import { createJiraHttpTransport, type JiraTransport } from '../../src/issue-tra
 import { openControl } from '../../src/control/index.js';
 import type { AccessDependencies, AccessView, Control, ControlStatus, ListView, WorkView } from '../../src/control/index.js';
 import type { GitHubAccess } from '../../src/platform/github/index.js';
-import type { OwnPullRequestObservation, PullRequestCandidate } from '../../src/code-repository/index.js';
+import type { OwnPullRequestObservation } from '../../src/code-repository/index.js';
 import { githubDoubles, manualClock, remoteIssue, type Remote } from '../control/doubles.js';
 import { app, executionDoubles, facts, ownPull, type Activation, type Script } from '../control/publication-doubles.js';
 import { jiraHttpWorld, jiraOrigin, type HttpCard } from './jira-http-world.js';

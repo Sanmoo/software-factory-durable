@@ -1,7 +1,7 @@
 // Jira Cloud adapter of the issue tracker (spec §1-§5), re-exported by the module's index.
 import { z } from 'zod';
 import { jiraInputOrder } from '../contracts/index.js';
-import type { CommentEffect, IssueTracker, QuestionComment } from './tracker-types.js';
+import type { IssueTracker } from './tracker-types.js';
 import type { JiraBlockerReads, JiraCapabilityFact, JiraComment, JiraCommentListing, JiraComments, JiraContentReads, JiraInputCursor, JiraInputsObservation, JiraRemoteLinks,
   JiraTicketRef, JiraTrackerScope, JiraUnavailable, JiraVisibleComment } from './jira-types.js';
 import { jiraStatusCategories } from './jira-types.js';

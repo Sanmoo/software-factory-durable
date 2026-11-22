@@ -128,11 +128,11 @@ const schemaV2 = z.strictObject({ schemaVersion: z.literal(2), ...common, ticket
       linkTypesOf.set(source.siteId, indications);
     });
   });
-const schema = z.union([schemaV1, schemaV2]);
+type Schema = z.infer<typeof schemaV1> | z.infer<typeof schemaV2>;
 /** The effective configuration's Ticket sources (v1: every executable repository is a GitHub source with discovery on). */
 export type TicketSourceConfiguration = z.infer<typeof githubSource> | z.infer<typeof jiraSource>;
 /** One shape for both versions: `ticketSources` is derived for v1, so composition never branches on the YAML version. */
-function normalized(input: z.infer<typeof schema>) {
+function normalized(input: Schema) {
   const ticketSources: TicketSourceConfiguration[] = input.schemaVersion === 2 ? input.ticketSources
     : input.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
   return { ...input, ticketSources };

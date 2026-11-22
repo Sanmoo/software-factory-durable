@@ -4,9 +4,8 @@ import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type
 export * from './tracker-types.js';
 export * from './jira-types.js';
 export { createJiraTracker, jiraInputsOf } from './jira.js';
-import type { CandidateObservation, CommentEffect, CommentResult, DependencyGraphObservation, DependencyNode, DependencyPrincipal, DependencyProblem,
-  DependencyScope, GitHubTicketRef, GitHubTrackerScope, InputsObservation, IssueTracker, QuestionComment, QuestionSearch, TicketObservation, TrackerComment,
-  TrackerUnavailable } from './tracker-types.js';
+import type { DependencyGraphObservation, DependencyNode, DependencyPrincipal, DependencyProblem, GitHubTicketRef, GitHubTrackerScope, IssueTracker,
+  TrackerComment, TrackerUnavailable } from './tracker-types.js';
 
 const issueSchema = z.object({
   id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(),
