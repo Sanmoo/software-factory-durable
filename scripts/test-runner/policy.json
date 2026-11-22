@@ -18,6 +18,8 @@
     "GLOSSARY.md",
     "test/tiers.json",
     "test/levels.json",
+    ".prettierrc.json",
+    ".prettierignore",
     "scripts/**",
     ".github/**"
   ],
@@ -65,6 +67,16 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 3
+    },
+    {
+      "$comment": "Prettier in check mode (.prettierrc.json; traversal exclusions in .prettierignore). The fast Entry Point checks the changed files; the full one the whole tree.",
+      "id": "format",
+      "gate": "Format",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**", "*.mjs", "*.cjs"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 10
     },
     {
       "$comment": "Reads GLOSSARY.md's _Avoid_ lines (shared configuration: a change to them widens validation).",

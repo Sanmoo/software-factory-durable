@@ -91,6 +91,7 @@ export interface StaticParts {
   pointers(): Promise<StepResult>;
   avoided(): Promise<StepResult>;
   suppressions(): Promise<StepResult>;
+  format(): Promise<StepResult>;
 }
 
 /**
@@ -99,16 +100,20 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed, avoided, suppressed] = await Promise.all([
+  const [compiled, linted, cruised, pointed, avoided, suppressed, formatted] = await Promise.all([
     compiling,
     parts.lint(),
     compiling.then(() => parts.depcruise()),
     parts.pointers(),
     parts.avoided(),
     parts.suppressions(),
+    parts.format(),
   ]);
-  return [...compiled, linted, ...cruised, pointed, avoided, suppressed];
+  return [...compiled, linted, ...cruised, pointed, avoided, suppressed, formatted];
 }
+
+/** The files the Format quality gate checks; .prettierignore holds its traversal exclusions. */
+const sourceGlob = '**/*.{ts,mts,cts,js,mjs,cjs}';
 
 /** The files a changed-set step analyzed, named in its report line so a Gate Proof can record them. */
 export const analyzedNames = (files: readonly string[]) => (files.length <= 10 ? files.join(', ') : `${files.length} files`);
@@ -181,7 +186,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
   const changedLintable = async (signal: AbortSignal): Promise<string[] | 'all'> => {
     const git = (args: string[]) => execute('git', args, root, childEnv, signal).then(exit => (exit.code === 0 ? exit.output.split('\n').filter(Boolean) : []));
     const changed = [...(await git(['diff', '--name-only', '--diff-filter=d', 'HEAD'])), ...(await git(['ls-files', '--others', '--exclude-standard']))];
-    if (changed.some(file => /^(eslint\.config\.mjs|package(-lock)?\.json)$/.test(file))) return 'all';
+    if (changed.some(file => /^(eslint\.config\.mjs|package(-lock)?\.json|\.prettierrc\.json|\.prettierignore)$/.test(file))) return 'all';
     return [...new Set(changed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file))))];
   };
   return {
@@ -267,6 +272,22 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
           output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
         };
       };
+      // The Format quality gate: check mode only (it never rewrites); the changed files in the fast Entry Point, the whole tree otherwise.
+      const format = async (): Promise<StepResult> => {
+        const prettier = ['node_modules/prettier/bin/prettier.cjs', '--list-different', '--no-error-on-unmatched-pattern'];
+        const files = tier === 'fast' ? await changedLintable(signal) : 'all';
+        if (files !== 'all' && !files.length) return { name: 'prettier (no changed files)', ms: 0, ok: true, check: 'format', findings: [] };
+        const step = await tool(
+          files === 'all' ? 'prettier' : `prettier (changed: ${analyzedNames(files)})`,
+          [...prettier, ...(files === 'all' ? [sourceGlob] : files)],
+          signal,
+        );
+        const listed = (step.output ?? '')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.startsWith('['));
+        return { ...step, check: 'format', findings: listed.map(file => ({ rule: 'not-formatted', location: file })), ok: step.ok && !listed.length };
+      };
       return composeStatic({
         staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
         compile: compiled,
@@ -275,6 +296,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         pointers,
         avoided,
         suppressions,
+        format,
       });
     },
     audit: async signal => {

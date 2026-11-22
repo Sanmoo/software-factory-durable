@@ -61,6 +61,15 @@ export const proofs: Proof[] = [
     apply: copy => copy.edit('docs/guides/architecture.md', append('- [Removido](../../src/control/removed.ts).')),
   },
   {
+    id: 'format',
+    gate: 'Format',
+    tier: 'fast',
+    location: 'src/control/rules/budget.ts',
+    declared: { step: 'prettier', files: ['src/control/rules/budget.ts'] },
+    violation: 'misindent one line of src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', text => text.replace('\nexport function timeoutReached(', '\n   export function timeoutReached(')),
+  },
+  {
     id: 'lint',
     gate: 'Lint',
     tier: 'fast',

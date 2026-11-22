@@ -10,6 +10,7 @@
 
 ## Onde estão os fatos
 
+- Formatação: [.prettierrc.json](../../.prettierrc.json), com as exclusões de travessia em [.prettierignore](../../.prettierignore); o reformat inicial está em [.git-blame-ignore-revs](../../.git-blame-ignore-revs). Testes que afirmam a forma do código-fonte leem a fonte por [source-text.ts](../../test/architecture/source-text.ts), para que a formatação não mude o que afirmam.
 - Linter (conjunto `recommended` do typescript-eslint, a convenção de `_` para bindings mantidos de propósito e as regras de carregamento): [eslint.config.mjs](../../eslint.config.mjs).
 - Supressões do ESLint: cada `eslint-disable` é um achado tolerado e precisa de entrada aprovada em [lint-tolerated.json](../../scripts/test-runner/lint-tolerated.json); uma supressão nova é corrigida, não acrescentada à política.
 - Termos evitados: as linhas _Avoid_ do [GLOSSARY.md](../../GLOSSARY.md), lidas pelo [checker](../../scripts/test-runner/avoided-terms.ts).
