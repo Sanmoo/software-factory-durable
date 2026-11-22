@@ -69,7 +69,7 @@ test('once every Work that held it had its environment removed, the image leaves
   assert.deepEqual(deletions(), []);
   const cleaned = await cleanup({ confirm: true });
   assert.deepEqual([cleaned.status, cleaned.images.map(image => [image.imageName, image.outcome])], ['cleaned', [[name, 'removed']]]);
-  assert.deepEqual(deletions(), ['deleteImageVersion', 'deleteImage', 'deleteBuildArtifact', 'deleteBuildLog']);
+  assert.deepEqual(deletions(), ['deleteImage', 'deleteBuildArtifact', 'deleteBuildLog']);
   assert.deepEqual([fake.account.images, Object.values(fake.account.objects).flatMap(bucket => Object.keys(bucket)), Object.keys(fake.account.logs)], [[], [], []]);
 });
 

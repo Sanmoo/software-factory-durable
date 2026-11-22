@@ -216,13 +216,12 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
       deleteImageVersion: input => change('deleteImageVersion', 'lambda:DeleteMicrovmImageVersion', input, () => {
         const image = find(input.imageArn);
         if (!image || image.version !== input.version) return fail('not-found');
-        delete image.version;
-        return { ok: true, value: null };
+        // Acceptance finding A18 (real service): an image keeps one version here, and its last version is never deleted alone.
+        return fail('unknown', { detail: 'ValidationException: This is the last version. Please delete the entire image' });
       }),
       deleteImage: imageArn => change('deleteImage', 'lambda:DeleteMicrovmImage', imageArn, () => {
         const image = find(imageArn);
         if (!image) return fail('not-found');
-        if (image.version !== undefined) return fail('conflict', { detail: 'The image still has versions' });
         world.images.splice(world.images.indexOf(image), 1);
         return { ok: true, value: null };
       }),

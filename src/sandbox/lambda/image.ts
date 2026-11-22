@@ -194,8 +194,7 @@ export async function prepareLambdaImage({ root, workId, profile, service, envir
     if (!retry || builtHere || retried) return failed(await failureCause(service, image));
     // The Operator's explicit retry: the failed image is replaced under the same key (the service keeps one image per name).
     retried = true;
-    const version = image.latestFailedImageVersion ? await service.deleteImageVersion({ imageArn, version: image.latestFailedImageVersion }) : null;
-    if (version && !version.ok && version.failure.kind !== 'not-found') return unreachable('removing the failed image version', version.failure);
+    // Acceptance finding A18: the failed version is the image's last one, which the service only removes with the whole image.
     const removed = await service.deleteImage(imageArn);
     if (!removed.ok && removed.failure.kind !== 'not-found') return unreachable('removing the failed image', removed.failure);
     const gone = await leaves('DELETING', await service.image(imageArn));

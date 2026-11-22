@@ -91,7 +91,7 @@ export async function cleanupInstallationImages({ root, service, profile, image,
     if (item.decision !== 'removable') { item.outcome = 'kept'; continue; }
     const gone = (result: { ok: true } | { ok: false; failure: LambdaServiceFailure }) => result.ok || result.failure.kind === 'not-found';
     const steps: [string, () => Promise<{ ok: true } | { ok: false; failure: LambdaServiceFailure }>][] = [
-      ...(versions.get(item.imageArn) ? [['deleting the image version', () => service.deleteImageVersion({ imageArn: item.imageArn, version: versions.get(item.imageArn)! })] as [string, () => ReturnType<LambdaService['deleteImageVersion']>]] : []),
+      // Acceptance finding A18: the service refuses to delete an image's last version ("delete the entire image"); the image goes whole.
       ['deleting the image', () => service.deleteImage(item.imageArn)],
       ['deleting the build artifact', () => service.deleteBuildArtifact({ bucket: resources.artifactBucket, key: `${item.imageName}.zip` })],
       ['deleting the build log', () => service.deleteBuildLog(`/aws/lambda-microvms/${item.imageName}`)]];

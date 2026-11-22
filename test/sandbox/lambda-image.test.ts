@@ -160,11 +160,11 @@ test("only the Operator's explicit retry rebuilds a failed image, replacing it u
   fake.account.buildFailure = null;
   const retried = await prepare(works.first, pinned(), { retryEnvironmentBase: true });
   assert.ok(retried.status === 'success' && retried.base && !retried.base.reused);
-  assert.deepEqual(operations(), ['putBuildArtifact', 'createImage', 'deleteImageVersion', 'deleteImage', 'putBuildArtifact', 'createImage']);
+  assert.deepEqual(operations(), ['putBuildArtifact', 'createImage', 'deleteImage', 'putBuildArtifact', 'createImage']);
   assert.deepEqual(fake.account.images.map(image => image.state), ['CREATED']);
   // A retry never rebuilds an image that is fine.
   await prepare(works.second, pinned(), { retryEnvironmentBase: true });
-  assert.equal(operations().length, 6);
+  assert.equal(operations().length, 5);
 });
 
 test('a build that is still running when the wait ends is incomplete, and the next Prepare recognises it instead of building again', async t => {
