@@ -3,6 +3,7 @@ import { blockedReferenceToken, blockedStartCodePattern, type StartRetryRemedy }
 import type { Impediment } from '../types.js';
 import { preservationClaim, recreatedClaim, withNotice, type RecreatedContext } from './boot-notice.js';
 import { gateRefusedCode } from './preservation.js';
+import { ticketContentSection, type TicketText } from './continuation.js';
 
 /** Persisted waits of the operational recoveries of one Work (spec §4.4): 5/15/45 s, the last one repeated for explicitly granted extra units. */
 export const recoveryWaitsSeconds = [5, 15, 45] as const;
@@ -423,7 +424,9 @@ export function interruptionRecoveryPrompt(input: { ticketUrl: string; repositor
   /** Ticket 48: the bounded state summary (`stateSummary`): last phase, last gates, answered Questions. */
   summary?: string | null;
   /** v2 ticket 08 (V2-11): the environment was recreated (no persistent disk); the prompt starts with the fixed notice and claims no preservation. */
-  recreated?: RecreatedContext | null }): string {
+  recreated?: RecreatedContext | null;
+  /** A Jira Work: the Card's text persisted with the request. */
+  ticketContent?: TicketText | null }): string {
   const why = input.reason === 'ADMINISTRATIVE_STOP'
     ? 'The previous Execution was stopped administratively (clean stop with confirmed cessation); this continuation is not a failure recovery.'
     : input.reason === 'BUDGET_CONTINUATION'
@@ -441,6 +444,7 @@ export function interruptionRecoveryPrompt(input: { ticketUrl: string; repositor
       'no process of it survives. The output of its last tool call may be lost: inspect the current state (files, git status/log, /artifacts) before ' +
       'repeating anything, and never repeat a tool call blindly.',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions, resuming from the preserved state.`,
+    ...ticketContentSection(input.ticketContent),
     ...(input.summary ? ['', input.summary] : []),
     '', 'Reason recorded by the Factory:', fenced(`${input.reason}:${input.code}`)]).join('\n');
 }

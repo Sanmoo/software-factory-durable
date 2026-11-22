@@ -1,5 +1,5 @@
 import { questionMarkerPrefix } from '../../contracts/index.js';
-import { fenced, scopeSection, type ScopeText } from './continuation.js';
+import { fenced, scopeSection, ticketContentSection, type ScopeText, type TicketText } from './continuation.js';
 import { preservationClaim, recreatedClaim, withNotice, type RecreatedContext } from './boot-notice.js';
 
 // Pure rules for durable Questions (spec §5.5/§11.3): command parsing, authorization of the author, answer acceptance, destination,
@@ -217,7 +217,9 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
   /** Ticket 53: ticket 48's bounded state summary with EVERY answered Question of the Work (never dropped under the size bound). */
   summary?: string | null;
   /** v2 ticket 08 (V2-11): the environment was recreated (no persistent disk); the prompt starts with the fixed notice and claims no preservation. */
-  recreated?: RecreatedContext | null }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
+  recreated?: RecreatedContext | null;
+  /** A Jira Work: the Card's text persisted with the request (never dropped under the size bound). */
+  ticketContent?: TicketText | null }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const known = input.known;
   // Identities the Factory observed are quoted only in their exact canonical form (otherwise omitted, never interpreted).
   const versions = known?.versions ? { spec: known.versions.spec && versionId.test(known.versions.spec) ? known.versions.spec : null,
@@ -230,6 +232,7 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
     'This is a NEW session on the same Work: the previous Execution ended' + (input.question ? ' after asking the question below' : '') +
       preservationClaim(input.recreated, '. Its workspace, branch, commits and /artifacts were preserved; its session is not continued', `. ${recreatedClaim} Its session is not continued`) + (input.replacement ? ` (reason: ${input.replacement.reason})` : '') + '.',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions for resuming this Work in a new session.`,
+    ...ticketContentSection(input.ticketContent),
     ...(known ? ['', 'Recoverable context (Factory records; verify in the workspace before acting):',
       '- Request: the Ticket above; its preserved versions are under /artifacts/spec/ (latest complete version wins; incomplete ones are not ready).',
       '- Instructions: preserved under /artifacts/instructions/ (more specific instructions prevail in their scope, under the Factory policy).',

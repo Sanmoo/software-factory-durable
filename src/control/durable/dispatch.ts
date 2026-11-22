@@ -28,7 +28,7 @@ import { intactRequest, readQuestion, readQuestions, recordContentLost, register
 import { pendingScope } from './scope.js';
 import { answerAuthorLabel, recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
-import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
+import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision, ticketContentSection } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DescriptionTicket, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { recordBootEndCheck, recordGateCheck, recordGateCorrection } from './preservation.js';
@@ -618,11 +618,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // is the package built from Control's records only (no transcript, no summary of the lost session) and the fixed conduct.
       const loss = prepared.recreated ? (current?.losses ?? []).findLast(item => item.executionId === basis.previousExecutionId) ?? null : null;
       const packaged = loss && current ? await substituteInstruction(current, execution, prepared, loss, skillDirectory) : null;
-      const prompt = [...(reconciling ? [reconciling, ''] : []), packaged ? withNotice(recreated, [packaged, ...(summary ? ['', summary] : [])]).join('\n')
+      const prompt = [...(reconciling ? [reconciling, ''] : []), packaged ? withNotice(recreated, [packaged, ...ticketContentSection(execution.request.ticketContent),
+        ...(summary ? ['', summary] : [])]).join('\n')
         : interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
-        reviews: Boolean(ports.reviews), summary, recreated }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
+        reviews: Boolean(ports.reviews), summary, recreated, ticketContent: execution.request.ticketContent ?? null }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
       // Ticket 28 (spec §5.6): the preserved review state of the interrupted Execution, context only (a delivery to the old session is not
       // proof it was consumed); its valid opinions are carried at the next handoff when the proposal is unchanged. Dropped under the bound.
       // (A substitute after a loss gets none: the captures those opinions were about died with the environment.)
@@ -692,6 +693,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       skillDirectory, previousExecutionId: previous.executionId,
       question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
       answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds), ...(repair ? { repair } : {}), recreated,
+      ticketContent: execution.request.ticketContent ?? null,
       // Ticket 53: a replacement session gets EVERY answered Question of the Work (ticket 48's bounded block), not only the current answer.
       summary: allAnswered.length ? workSummary(current, execution, { previousExecutionId: previous.executionId,
         code: previous.end?.code ?? previous.end?.outcome ?? previous.state, progress: null, answered: allAnswered }) : null });
@@ -812,7 +814,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       checkout: prepared.checkout.path, pullRequest: current?.pullRequest ?? null, expected: request.expected, authorizedRemote: request.authorizedRemote,
       localHead: request.localHead, questionId: request.questionId,
       answer: { author: answerAuthorLabel(answered.answer.author, true), note }, commits,
-      recreated: prepared.recreated?.notice ?? null });
+      recreated: prepared.recreated?.notice ?? null, ticketContent: execution.request.ticketContent ?? null });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
   }
