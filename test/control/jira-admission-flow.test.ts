@@ -38,7 +38,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, jira: JiraRe
   const jiraCandidates = async () => (await list()).polling.sources?.[0]?.candidates ?? null;
   return { github, jira: doubles, start, stop, list, show, poll, jiraCandidates };
 }
-const writes = (methods: string[]) => methods.filter(method => method.startsWith('unexpected:') || /post|upsert/i.test(method));
+const writes = (methods: string[]) => methods.filter(method => method.startsWith('unexpected:') || /post|publish|upsert/i.test(method));
 const holdCodes = (candidate: { outcome: string; holds?: { code: string }[] } | undefined) => candidate?.outcome === 'held' ? candidate.holds!.map(hold => hold.code) : candidate?.outcome;
 
 test('an eligible Card is admitted once, in ONE commit, to its single revalidated destination; polls and restart never duplicate it', async t => {
@@ -69,15 +69,16 @@ test('an eligible Card is admitted once, in ONE commit, to its single revalidate
   assert.ok(h.jira.methods().includes('listCandidates') && h.jira.methods().includes('readTicket'));
 });
 
-test('edits between listing and admission: label removed, second destination, partial components, blocker not Done => no Work and no write', async t => {
-  const cases: [string, (item: ReturnType<typeof card>) => void, string[]][] = [
-    ['label removed', item => { item.labels = []; }, ['LABEL_NOT_PRESENT']],
-    ['second destination', item => { item.components = ['10022', '10021']; }, ['JIRA_ROUTE_DIVERGENT']],
-    ['partial components', item => { item.components = null; }, ['JIRA_COMPONENTS_UNVERIFIABLE']],
-    ['no route', item => { item.components = ['10099']; }, ['JIRA_ROUTE_NONE']],
-    ['blocker open', item => { item.links = [blockedBy('911', '70202', 'OPS-9')]; }, ['JIRA_BLOCKER_NOT_DONE']],
+test('edits between listing and admission: label removed, second destination, partial components, blocker not Done => no Work, no dispatch', async t => {
+  // Last column: impediment notices on the Card (ticket 05) — only a known impediment of a Card still marked is told, once; never without intent.
+  const cases: [string, (item: ReturnType<typeof card>) => void, string[], number][] = [
+    ['label removed', item => { item.labels = []; }, ['LABEL_NOT_PRESENT'], 0],
+    ['second destination', item => { item.components = ['10022', '10021']; }, ['JIRA_ROUTE_DIVERGENT'], 1],
+    ['partial components', item => { item.components = null; }, ['JIRA_COMPONENTS_UNVERIFIABLE'], 0],
+    ['no route', item => { item.components = ['10099']; }, ['JIRA_ROUTE_NONE'], 1],
+    ['blocker open', item => { item.links = [blockedBy('911', '70202', 'OPS-9')]; }, ['JIRA_BLOCKER_NOT_DONE'], 1],
   ];
-  for (const [name, edit, codes] of cases) {
+  for (const [name, edit, codes, notices] of cases) {
     const listed = card('81017', 'PAG-42');
     const jira: JiraRemote = { cards: [listed, card('70202', 'OPS-9', { statusCategory: 'indeterminate' })], listed: [refOf(listed)], afterListing: () => edit(listed) };
     const h = await harness(t, jira);
@@ -85,7 +86,9 @@ test('edits between listing and admission: label removed, second destination, pa
     const list = await h.list();
     assert.equal(list.works.length, 0, name);
     assert.deepEqual(holdCodes((await h.jiraCandidates())?.[0]), codes, name);
-    assert.deepEqual(writes(h.jira.methods()), [], name);
+    assert.deepEqual(writes(h.jira.methods()), Array(notices).fill('publishComment'), name);
+    // The notice never names the neighbour (it may be in a restricted project).
+    assert.ok(!JSON.stringify(h.jira.comments).includes('OPS-9'), name);
     await h.stop();
   }
 });

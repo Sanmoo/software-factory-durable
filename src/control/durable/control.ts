@@ -17,7 +17,7 @@ import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
-import { jiraNoticeStatus } from './jira-impediments.js';
+import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { acceptPublicationReevaluation } from './publication.js';
@@ -152,6 +152,11 @@ export async function openControl(options: { storagePath: string;
     admit: evidence => admitTicket(state, evidence, configuredRepository(evidence.repository.repository) ?? {}),
     pending: repositoryId => pendingWorks(state, repositoryId),
     pendingJira: source => pendingJiraWorks(state, source),
+    // Jira ticket 05: notices on the Card for this round's evaluated Cards (needs the Jira adapter; none composed = nothing to tell).
+    noticeImpediments: async (source, candidates) => {
+      const tracker = options.access?.trackers?.jira;
+      if (tracker) await noticeJiraImpediments({ session: state, tracker, source, evaluation: { kind: 'candidates', candidates }, stopped: () => stopped });
+    },
     presentation: async (work_id, fresh) => {
       const current = await readWork(state, work_id);
       if (current?.ticket.tracker === 'jira' && (current.ticket.key !== fresh.key || current.ticket.url !== fresh.url)) await recordTicketPresentation(state, work_id, fresh);

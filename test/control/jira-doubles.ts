@@ -1,6 +1,6 @@
 // Jira ticket 04: an in-memory Jira site behind the Jira tracker contract (JiraOriginTracker). Every call is recorded, unexpected ones
 // included (a Proxy records any method not modelled and answers unavailable), so a test can assert absence of comments/writes.
-import type { JiraLink, JiraLinkType, JiraTicketRef } from '../../src/issue-tracker/index.js';
+import type { JiraLink, JiraLinkType, JiraTicketRef, JiraVisibleComment } from '../../src/issue-tracker/index.js';
 import type { JiraOriginTracker, TicketSource } from '../../src/control/types.js';
 
 export const site = { siteId: 'site-A', url: 'https://equipe.atlassian.net' };
@@ -32,6 +32,9 @@ export function jiraDoubles(remote: JiraRemote) {
   const observedAt = () => new Date().toISOString();
   const unavailable = (code: string, waitSeconds?: number) => ({ kind: 'unavailable' as const, source: 'jira-rest' as const, observedAt: observedAt(), siteId: site.siteId,
     completeness: 'incomplete' as const, code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep: `synthetic ${code}` });
+  // Ticket 05's impediment notices: comments the Factory account posts on a Card (the only write the doubles model).
+  const comments: Record<string, JiraVisibleComment[]> = {};
+  let commentSequence = 10040;
   const find = (issueId: string) => remote.cards.find(item => item.issueId === issueId);
   const modelled: Partial<JiraOriginTracker> = {
     listCandidates: async scope => {
@@ -58,6 +61,18 @@ export function jiraDoubles(remote: JiraRemote) {
       if (!found) return unavailable('JIRA_NOT_FOUND');
       return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), ticket: refOf(found), summary: found.summary, description: found.description ?? null, truncated: false };
     },
+    publishComment: async (ticket, comment) => {
+      calls.push({ method: 'publishComment', args: { issueId: ticket.issueId, lines: comment.lines } });
+      const commentId = String(commentSequence += 1), at = observedAt();
+      (comments[ticket.issueId] ??= []).push({ commentId, authorAccountId: 'acc-factory', text: comment.lines.join('\n'), createdAt: at, updatedAt: at, restricted: false });
+      return { kind: 'published', observedAt: at, commentId, createdAt: at, authorAccountId: 'acc-factory', url: `${ticket.url}?focusedCommentId=${commentId}` };
+    },
+    listComments: async ticket => {
+      calls.push({ method: 'listComments', args: ticket.issueId });
+      return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId: site.siteId, issueId: ticket.issueId, completeness: 'complete',
+        comments: [...(comments[ticket.issueId] ?? [])], limitations: [] };
+    },
+    readAccount: async siteId => { calls.push({ method: 'readAccount' }); return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, accountId: 'acc-factory' }; },
     readLinkTypes: async siteId => {
       calls.push({ method: 'readLinkTypes', args: siteId });
       return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, types: structuredClone(remote.catalogue ?? [blocksType]) };
@@ -76,5 +91,5 @@ export function jiraDoubles(remote: JiraRemote) {
       return async (...args: unknown[]) => { calls.push({ method: `unexpected:${name}`, args }); return unavailable('JIRA_CAPABILITY_NOT_AVAILABLE'); };
     },
   }) as JiraOriginTracker;
-  return { tracker, calls, methods: () => calls.map(call => call.method) };
+  return { tracker, calls, comments, methods: () => calls.map(call => call.method) };
 }

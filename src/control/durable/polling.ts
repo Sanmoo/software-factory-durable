@@ -6,7 +6,7 @@ import type { AccessDependencies, CandidateView, ConfiguredRepository, Dependenc
 import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
 import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.js';
 import type { AdmissionEvidence, AdmissionResult, WorkRecord } from './admission.js';
-import { admittedJiraEvaluation, evaluateJiraTicket, evaluateJiraWork } from './jira-evaluation.js';
+import { admittedJiraEvaluation, evaluateJiraTicket, evaluateJiraWork, type JiraCandidateEvaluation } from './jira-evaluation.js';
 
 const maxTimer = 2 ** 31 - 1;
 
@@ -64,6 +64,8 @@ export function createPoller(deps: {
   /** Jira ticket 04: open pending Works admitted from one Jira source; and the presentation update of a Work whose Card key changed. */
   pendingJira?(source: { siteId: string; projectId: string }): Promise<{ work_id: string; ticket: TicketRef; repository: { repository: string }; environment?: WorkEnvironment | undefined }[]>;
   presentation?(work_id: string, fresh: JiraTicketRef): Promise<unknown>;
+  /** Jira ticket 05: once per Jira source round, after its admissions: the round's evaluated Cards (notices on the Card, reconciliation). */
+  noticeImpediments?(source: JiraSource, candidates: JiraCandidateEvaluation[]): Promise<unknown>;
   /** Ticket 44: record a read of the environment declaration on a pending Work not pinned yet. */
   recordEnvironment?(work_id: string, observation: EnvironmentDeclarationObservation): Promise<unknown>;
   ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
@@ -259,7 +261,7 @@ export function createPoller(deps: {
    * destination, visible blockers) -> admission of an eligible Card to its single revalidated destination. Refusals create nothing and
    * write nothing to Jira (impediment notices are ticket 05's); index and pause are checked again inside the admission commit.
    */
-  async function jiraEntry(source: JiraSource, ref: JiraTicketRef, attemptId: string, catalogue: () => Promise<JiraLinkTypesObservation>): Promise<Outcome> {
+  async function jiraEntry(source: JiraSource, ref: JiraTicketRef, attemptId: string, catalogue: () => Promise<JiraLinkTypesObservation>): Promise<Outcome & { evaluated?: JiraCandidateEvaluation }> {
     const tracker = deps.access.trackers!.jira!;
     const existing = await deps.indexed(ref);
     if (existing) {
@@ -273,11 +275,11 @@ export function createPoller(deps: {
         failed: true };
     }
     const { evaluation, ticket, observedAt } = evaluated;
-    if (evaluation.decision === 'not-candidate') return { view: held(ticket, [{ code: 'LABEL_NOT_PRESENT',
+    if (evaluation.decision === 'not-candidate') return { evaluated, view: held(ticket, [{ code: 'LABEL_NOT_PRESENT',
       nextStep: `The Card no longer carries the entry label "${source.label}" in its project; nothing is admitted and nothing is commented.` }], observedAt) };
     if (evaluation.decision !== 'eligible') {
       const waitSeconds = waitOf(evaluation.reasons);
-      return { view: held(ticket, evaluation.reasons.map(reason => ({ ...reason })), observedAt), ...(waitSeconds !== undefined ? { waitSeconds } : {}),
+      return { evaluated, view: held(ticket, evaluation.reasons.map(reason => ({ ...reason })), observedAt), ...(waitSeconds !== undefined ? { waitSeconds } : {}),
         ...(evaluation.reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode)) ? { failed: true } : {}) };
     }
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === evaluation.repository.toLowerCase())!;
@@ -294,8 +296,11 @@ export function createPoller(deps: {
         blockers: { observedAt: blockers.observedAt, coverage: 'visible', blockers: structuredClone(blockers.blockers), limitations: [...blockers.limitations] } } } });
     return admitted.kind === 'paused'
       ? { view: held(ticket, [{ code: 'GLOBAL_PAUSE', nextStep: 'Pause committed before admission; unpause to admit on the next poll.' }]) }
-      : { view: { ticket, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } };
+      // An admitted Card is passed to the notices too: eligible withdraws an unsent impediment notice (ticket 05).
+      : { evaluated, view: { ticket, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } };
   }
+
+  const notices = (source: JiraSource, candidates: JiraCandidateEvaluation[]) => deps.noticeImpediments?.(source, candidates).catch(() => undefined);
 
   /** Jira ticket 04: one round of a Jira source (listing + admissions when discovery is on; re-evaluation of its pending Works always). */
   async function jiraCycle(entry_: SourceState) {
@@ -319,10 +324,13 @@ export function createPoller(deps: {
     let failed = false;
     let candidates: CandidateView[] | null = null;
     let observedAt: string | null = null;
+    const evaluatedCards: JiraCandidateEvaluation[] = [];
     if (source.discover) {
       const listing = await guarded(source.siteId, () => tracker.listCandidates({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }));
       if (listing.kind !== 'observed') {
         unavailable(listing.code, `Listing unavailable; absence of Cards or labels is not concluded. ${listing.nextStep}`, listing.observedAt, listing.waitSeconds);
+        // Reconciliation of earlier notices still runs (a safe read); nothing new is evaluated.
+        await notices(source, []);
         return;
       }
       observedAt = listing.observedAt;
@@ -330,11 +338,14 @@ export function createPoller(deps: {
       for (const ref of listing.candidates) {
         if (waitSeconds !== undefined) { candidates.push({ ticket: ref, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'Jira asked to wait; evaluated on a later poll.' }); continue; }
         const outcome = await jiraEntry(source, ref, attemptId, catalogue);
+        if (outcome.evaluated) evaluatedCards.push(outcome.evaluated);
         if (outcome.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, outcome.waitSeconds);
         failed ||= Boolean(outcome.failed);
         candidates.push(outcome.view);
       }
     }
+    // Ticket 05: impediment notices of this round's evaluated Cards, after the admissions (one pass at a time, never overlapping).
+    await notices(source, evaluatedCards);
     // Pending Works of this source: a FRESH visible-blockers evaluation of this round (tracking continues while paused or with discovery off).
     for (const work of await deps.pendingJira?.(source) ?? []) {
       if (waitSeconds !== undefined) break;
