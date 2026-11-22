@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#22](https://github.com/Sanmoo/software-factory-durable/issues/22) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Ticket #10 do repositório de apoio (Trabalho `0e0d892b`): 13 commits na branch; os dois revisores apontaram "um commit só / log feito à mão", o que era falso. O Builder não acolheu os achados sem autorização e a publicação ficou `not-publishable` (`REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED:1/spec/S1`).

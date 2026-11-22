@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#27](https://github.com/Sanmoo/software-factory-durable/issues/27) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Janela 5, 04:37:35–04:38:29 UTC: `kill -KILL` em sequência no lançador, no supervisor e no dono. Depois dos dois primeiros o dono continuou respondendo; só o terceiro deixou `CONTROLLER_UNAVAILABLE`.

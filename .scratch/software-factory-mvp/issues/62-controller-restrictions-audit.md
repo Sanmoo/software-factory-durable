@@ -8,8 +8,7 @@ restrições parecem rígidas demais. Auditar cada restrição do Controller e p
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#21](https://github.com/Sanmoo/software-factory-durable/issues/21) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Inventário das restrições do Controller (limites, recusas, bloqueios, regras de verificação e publicação), cada uma com: o que protege,

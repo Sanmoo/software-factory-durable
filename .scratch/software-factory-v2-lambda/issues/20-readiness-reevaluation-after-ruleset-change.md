@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#25](https://github.com/Sanmoo/software-factory-durable/issues/25) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Repositório real, PRs #136 e #137: regra `update` removida às 12:44 UTC; em cerca de 3 minutos nenhuma reavaliação; o humano marcou como pronto (`readiness-human-flag ready-not-placed-by-factory`) e mesclou.

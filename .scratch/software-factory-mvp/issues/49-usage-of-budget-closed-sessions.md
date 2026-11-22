@@ -10,8 +10,7 @@ operador (regra de parada do piloto) não podia ser controlado pelo produto; o s
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#17](https://github.com/Sanmoo/software-factory-durable/issues/17) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Uma Execução interrompida cuja sessão existe registra a referência da sessão (como as que terminam normalmente), e `usage` a mede.

@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#28](https://github.com/Sanmoo/software-factory-durable/issues/28) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Sonda da janela 8: vários processos `timeout` e `sleep` órfãos sob o processo 1 depois da varredura.

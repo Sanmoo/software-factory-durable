@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#31](https://github.com/Sanmoo/software-factory-durable/issues/31) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Trabalhos `67f6c34e` e `8019ed17` do repositório de apoio, cancelados com Pergunta pendente: `factory answer` → `not-applied WORK_NOT_OPEN`; `factory cleanup <trabalho> --select environment` → `PROTECTED QUESTION_OPEN`; `forget` → `PROTECTED` e `RESOURCES_PENDING`.

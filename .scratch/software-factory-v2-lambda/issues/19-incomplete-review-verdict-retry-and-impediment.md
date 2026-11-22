@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#24](https://github.com/Sanmoo/software-factory-durable/issues/24) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Ticket #135 do repositório real (Trabalho `0da1c800`): quatro pareceres `incomplete` nas rodadas r2 a r4, `review-verified not-verified:REVIEW_INCOMPLETE`, publicação `not-publishable`, nenhum Bloqueio. `resume --new-review-round` recusou com `REVIEWER_RETRY_LIMIT_NOT_PENDING`.

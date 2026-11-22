@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#26](https://github.com/Sanmoo/software-factory-durable/issues/26) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Ticket #10 do repositório de apoio (Trabalho `0e0d892b`), PR #36: `correction-opened` automático às 13:58:05 UTC; `review-verified not-verified:GATE_NOT_RUN:ticket-validation-13-steps`; `preservation-refused ci-wait:HEAD_NOT_PUBLISHED` (HEAD `562dc90` não é a ponta da branch na origem); 43 s depois `preservation-accepted` na ponta antiga (`7b83a36`); `correction-closed not-publishable`. Nenhum Bloqueio até o cancelamento.

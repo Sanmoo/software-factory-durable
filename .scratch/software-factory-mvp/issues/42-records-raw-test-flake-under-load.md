@@ -11,8 +11,7 @@ de recurso que só aparece sob carga, mas a causa não foi confirmada.
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#15](https://github.com/Sanmoo/software-factory-durable/issues/15) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Reproduzir a falha sob carga, sem sleep, por exemplo com `npm run test:fast -- records/raw` repetido com a máquina carregada,

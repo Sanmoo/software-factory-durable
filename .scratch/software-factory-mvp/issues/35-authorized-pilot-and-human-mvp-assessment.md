@@ -4,8 +4,7 @@
 
 **Blocked by:** [34: Qualificar a composição candidata contra a matriz de aceite](34-candidate-qualification-and-acceptance-coverage.md)
 
-**Status:** ready-for-agent
-
+**Status:** migrado para [#14](https://github.com/Sanmoo/software-factory-durable/issues/14) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Antes de executar, operador aprova máquina/conta/storage/preparo, repos/issues/PRs/branches/workflows/relações, App/instalações/operadores, modelos/custos, injeção de falhas/cleanup e quem revisa/faz merge humano.

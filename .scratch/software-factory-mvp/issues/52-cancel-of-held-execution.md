@@ -13,8 +13,7 @@ Além disso, o primeiro observador do supervisor contava Vagas ocupadas como "Bu
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#18](https://github.com/Sanmoo/software-factory-durable/issues/18) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] `cancel` de um Trabalho com Execução retida para o boot/worker próprios (com a parada limpa do ticket 47), confirma a cessação e libera a

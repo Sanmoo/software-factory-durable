@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#30](https://github.com/Sanmoo/software-factory-durable/issues/30) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Janela 1: `execution-held START_MICROVM_START_UNCONFIRMED` às 23:12:34 UTC; `blocked-start-retried` e `recovery-requested operator-retry` às 23:36:21, depois da release v2-acc-2.
