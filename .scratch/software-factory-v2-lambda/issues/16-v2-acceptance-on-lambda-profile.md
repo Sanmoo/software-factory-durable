@@ -11,28 +11,28 @@ Requisitos da [spec da v2](../../software-factory-v2/spec.md): Seção 11 (matri
 
 **Type:** task
 
-**Status:** ready-for-human
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Rubrica por propriedade aprovada pelo Operador antes de consumir orçamento; plano com teto de consumo e cleanup.
-- [ ] Critérios de aceite do MVP reexecutados no perfil Lambda com um repositório real.
-- [ ] V2-03, V2-04: repositório que exige capacidade ausente recebe diagnóstico.
-- [ ] V2-05 a V2-07: gate recusando com agente real; três recusas encerram o boot como perda e a substituta retoma pela fila. (Decisão do Operador em 2026-11-21; antes: "três recusas geram Bloqueio".)
-- [ ] V2-09: espera humana e de CI encerram a MicroVM antes de liberar o Slot.
-- [ ] V2-10, V2-11: mesma sessão após troca; retomada com commits de terceiros; histórico reescrito segue o remoto com sessão substituta e branch ausente abre Pergunta. (Os dois últimos: decisão do Operador em 2026-11-21.)
-- [ ] V2-12, V2-13: troca sob margem real; chamada interrompida na metade da margem; boot acima de uma hora.
-- [ ] V2-14: dois boots sem commit novo geram Bloqueio.
-- [ ] V2-15 (obrigatório): nenhum pedido de modelo nem chamada depois da cessação confirmada.
-- [ ] V2-16: ref de marcador criada, informada à substituta e removida no cleanup.
-- [ ] V2-17 a V2-19 (obrigatório): substituta conclui, publica e pergunta sobre o efeito incerto.
-- [ ] V2-20 a V2-22: canal caído com reconexão, órfão encerrado e resultado indeterminado.
-- [ ] V2-23: revisores reais do harness no Lambda.
-- [ ] V2-24, V2-25: token não persiste no guest; guest sem credenciais AWS.
-- [ ] V2-27, V2-28: ambiente declarado de um repositório real; causa da falha de build visível.
-- [ ] V2-30, V2-31: `validate` com quota excedida e com permissão faltante.
-- [ ] V2-32 a V2-34: consumo por boot e por Trabalho; reconciliação encerra órfãs por tag.
-- [ ] Resultados registrados com o que ficou não coberto (coluna "Não coberto" da matriz), sem promover a provado o que não foi observado; recursos removidos e cleanup confirmado.
+- [x] Rubrica por propriedade aprovada pelo Operador antes de consumir orçamento; plano com teto de consumo e cleanup.
+- [ ] Critérios de aceite do MVP reexecutados no perfil Lambda com um repositório real. — **Parcial: a maioria aprovada; C05, C07, C10 e C12 ficaram parciais.**
+- [ ] V2-03, V2-04: repositório que exige capacidade ausente recebe diagnóstico. — **Não coberto: o V2-04 (capacidade ausente) não é observável em conta real e fica com os testes compostos; o relatório não traz veredito próprio para o V2-03.**
+- [x] V2-05 a V2-07: gate recusando com agente real; três recusas encerram o boot como perda e a substituta retoma pela fila. (Decisão do Operador em 2026-11-21; antes: "três recusas geram Bloqueio".)
+- [x] V2-09: espera humana e de CI encerram a MicroVM antes de liberar o Slot.
+- [ ] V2-10, V2-11: mesma sessão após troca; retomada com commits de terceiros; histórico reescrito segue o remoto com sessão substituta e branch ausente abre Pergunta. (Os dois últimos: decisão do Operador em 2026-11-21.) — **Parcial: V2-10 aprovado; no V2-11 o commit de terceiro foi incorporado, mas não na mesma sessão.**
+- [x] V2-12, V2-13: troca sob margem real; chamada interrompida na metade da margem; boot acima de uma hora.
+- [x] V2-14: dois boots sem commit novo geram Bloqueio.
+- [x] V2-15 (obrigatório): nenhum pedido de modelo nem chamada depois da cessação confirmada.
+- [x] V2-16: ref de marcador criada, informada à substituta e removida no cleanup.
+- [x] V2-17 a V2-19 (obrigatório): substituta conclui, publica e pergunta sobre o efeito incerto.
+- [x] V2-20 a V2-22: canal caído com reconexão, órfão encerrado e resultado indeterminado.
+- [x] V2-23: revisores reais do harness no Lambda.
+- [x] V2-24, V2-25: token não persiste no guest; guest sem credenciais AWS.
+- [x] V2-27, V2-28: ambiente declarado de um repositório real; causa da falha de build visível.
+- [ ] V2-30, V2-31: `validate` com quota excedida e com permissão faltante. — **Parcial: quota e permissão acusadas pelo nome; duas verificações do `doctor` saem `unverified` por desenho.**
+- [ ] V2-32 a V2-34: consumo por boot e por Trabalho; reconciliação encerra órfãs por tag. — **Parcial: o consumo confere com o serviço; a reconciliação não é por tag da MicroVM (o serviço não aceita).**
+- [ ] Resultados registrados com o que ficou não coberto (coluna "Não coberto" da matriz), sem promover a provado o que não foi observado; recursos removidos e cleanup confirmado. — **Parcial: resultados registrados com o não coberto; cleanup parcial (A19 aberta e a instalação do GitHub App a conferir pelo Operador).**
 
 ## Answer
 
@@ -103,3 +103,6 @@ três imagens saíram pela CLI da AWS, não pelo produto (A18 e A19). **Pendente
 anteriores eram de ambiente (limite de uso do `/tmp`). Nenhum veredito muda.
 Os itens de limpeza listados acima como pendentes do Operador (stack, usuário IAM e chave, perfis AWS locais e `lb1/credentials`) foram
 feitos e verificados no mesmo dia, a pedido do Operador. X2 continua parcial pela A19 e por três itens sem registro de verificação.
+
+**Encerramento (2026-11-22).** O Operador aceitou o ticket como encerrado neste estado: doze critérios marcados e seis deixados
+desmarcados, cada um com o que faltou. Os itens em aberto seguem nos tickets 17 a 26.
