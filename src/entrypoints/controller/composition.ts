@@ -98,7 +98,8 @@ export function composeProductionAccess(input: { github: GitHubAccess; root?: st
   const configured = effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
   const sources: TicketSource[] = configured.map(source => source.tracker === 'github' ? { tracker: 'github', repository: source.repository, discover: source.discover }
     : { tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label, discover: source.discover,
-      routes: source.routes.map(route => ({ componentId: route.componentId, repository: route.repository })) });
+      routes: source.routes.map(route => ({ componentId: route.componentId, repository: route.repository })),
+      linkTypes: source.linkTypes.map(item => ({ id: item.id, blocks: item.blocks })) });
   const jiraSources = configured.filter(source => source.tracker === 'jira');
   const root = input.root;
   const send = input.jira?.send;

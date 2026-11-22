@@ -107,7 +107,7 @@ test('YAML v2 composes the Jira adapter beside GitHub, reads the token only on a
     assert.deepEqual(access.sources, [
       { tracker: 'github', repository: 'equipe/payments-api', discover: true },
       { tracker: 'jira', siteId: 'site-A', url: 'https://equipe.atlassian.net', projectId: '10010', label: 'factory-ready', discover: true,
-        routes: [{ componentId: '10022', repository: 'equipe/payments-api' }] }], 'Jira discovery is composed as configured (ticket 10)');
+        routes: [{ componentId: '10022', repository: 'equipe/payments-api' }], linkTypes: [] }], 'Jira discovery is composed as configured (ticket 10)');
     assert.deepEqual(access.repositories.map(item => item.repository), ['equipe/checkout-web', 'equipe/payments-api'], 'destinations are unchanged');
     assert.ok(access.trackers?.jira);
     assert.equal(jira.sites.length, 0, 'no Jira client before a Jira request');

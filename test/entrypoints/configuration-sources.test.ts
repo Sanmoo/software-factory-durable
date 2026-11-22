@@ -68,7 +68,7 @@ test('YAML v2 keeps sources and destinations independent', async () => {
   assert.deepEqual(configuration.effective.ticketSources, [
     { tracker: 'github', repository: 'equipe/payments-api', discover: true },
     { tracker: 'jira', discover: true, siteId: 'site-A', url: 'https://equipe.atlassian.net', email: 'fabrica@example.org', tokenFile: 'credentials/jira-token',
-      projectId: '10010', label: 'factory-ready', routes: [{ componentId: '10021', repository: 'equipe/checkout-web' }, { componentId: '10022', repository: 'equipe/payments-api' }] }]);
+      projectId: '10010', label: 'factory-ready', routes: [{ componentId: '10021', repository: 'equipe/checkout-web' }, { componentId: '10022', repository: 'equipe/payments-api' }], linkTypes: [] }]);
 });
 
 test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming the path and echoing nothing', async () => {
@@ -115,4 +115,19 @@ test('YAML v2 accepts sources with discovery off', async () => {
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) return;
   assert.deepEqual(configuration.effective.ticketSources.map(source => [source.tracker, source.discover]), [['github', false], ['jira', false]]);
+});
+
+test('YAML v2 takes the operator\'s indication of custom link types by ID; a bad, repeated or site-inconsistent indication is refused', async () => {
+  const indicated = v2.replace('    routes:\n', "    linkTypes:\n      - {id: '10500', blocks: inward}\n      - {id: '10501', blocks: none}\n    routes:\n");
+  const configuration = await read(indicated);
+  assert.equal(configuration.valid, true, JSON.stringify(configuration));
+  if (!configuration.valid) return;
+  const source = configuration.effective.ticketSources.find(item => item.tracker === 'jira');
+  assert.deepEqual(source?.tracker === 'jira' && source.linkTypes, [{ id: '10500', blocks: 'inward' }, { id: '10501', blocks: 'none' }]);
+  const refused = async (yaml: string) => { const result = await read(yaml); return result.valid ? [] : result.errors.map(error => error.path); };
+  assert.ok((await refused(indicated.replace('blocks: inward', 'blocks: both'))).includes('ticketSources.1.linkTypes.0.blocks'));
+  assert.ok((await refused(indicated.replace("id: '10500'", "id: 'Depends'"))).includes('ticketSources.1.linkTypes.0.id'));
+  assert.ok((await refused(indicated.replace("id: '10501'", "id: '10500'"))).includes('ticketSources.1.linkTypes'));
+  const second = jira.replace("projectId: '10010'", "projectId: '10011'").replace(/routes:\n.*\n.*\n/, "routes:\n      - {componentId: '10031', repository: equipe/checkout-web}\n");
+  assert.ok((await refused(`${indicated}${second}`)).includes('ticketSources.2.linkTypes'), 'two sources of one site disagree on the catalogue meaning');
 });

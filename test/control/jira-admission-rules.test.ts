@@ -73,7 +73,7 @@ test('zero or divergent destinations and links needing the operator block; parti
   const divergent = evaluateJiraCandidate({ labelPresent: true, route: { kind: 'divergent', repositories: ['equipe/checkout-web', 'equipe/payments-api'] }, links: [], blockers: visible([]) });
   assert.equal(divergent.decision, 'blocked');
   assert.deepEqual(codes(divergent), ['JIRA_ROUTE_DIVERGENT']);
-  const custom = evaluateJiraCandidate({ labelPresent: true, route: single, links: [{ kind: 'needs-operator', code: 'JIRA_LINK_TYPE_CUSTOM', linkId: '811' }], blockers: visible([]) });
+  const custom = evaluateJiraCandidate({ labelPresent: true, route: single, links: [{ kind: 'needs-operator', code: 'JIRA_LINK_TYPE_CUSTOM', linkId: '811', typeId: '10200' }], blockers: visible([]) });
   assert.equal(custom.decision, 'blocked');
   assert.deepEqual(codes(custom), ['JIRA_LINK_TYPE_CUSTOM']);
 
@@ -93,4 +93,27 @@ test('zero or divergent destinations and links needing the operator block; parti
 test('a removed label is not a candidate: no reason to communicate, whatever else was observed', () => {
   assert.deepEqual(evaluateJiraCandidate({ labelPresent: false, route: { kind: 'none' }, links: [], blockers: { kind: 'unavailable', code: 'JIRA_TIMEOUT', nextStep: 'x' } }),
     { decision: 'not-candidate', reasons: [] });
+});
+
+test('the operator indication by link type ID resolves a custom or ambiguous type; an unindicated one keeps blocking and names the key', () => {
+  const custom = { id: '10500', name: 'Depends', inward: 'depends on', outward: 'is depended on by' };
+  const all = [...catalogue, custom];
+  const inward = [{ id: '10500', blocks: 'inward' as const }];
+  assert.deepEqual(blockerDirection({ catalogue: all, link: link(custom, 'inward'), linkTypes: inward }), { kind: 'blocker', issueId: '70202', key: 'OPS-9' });
+  assert.deepEqual(blockerDirection({ catalogue: all, link: link(custom, 'outward'), linkTypes: inward }), { kind: 'not-blocker' });
+  assert.deepEqual(blockerDirection({ catalogue: all, link: link(custom, 'outward'), linkTypes: [{ id: '10500', blocks: 'outward' }] }),
+    { kind: 'blocker', issueId: '70202', key: 'OPS-9' }, 'the outward neighbour blocks the root');
+  assert.deepEqual(blockerDirection({ catalogue: all, link: link(custom, 'inward'), linkTypes: [{ id: '10500', blocks: 'none' }] }), { kind: 'not-blocker' });
+  const swapped = { ...blocks, inward: 'blocks', outward: 'is blocked by' };
+  assert.deepEqual(blockerDirection({ catalogue: [swapped, relates], link: link(swapped, 'outward'), linkTypes: [{ id: '10000', blocks: 'outward' }] }),
+    { kind: 'blocker', issueId: '70202', key: 'OPS-9' }, 'an edited Blocks type follows the indication');
+  assert.deepEqual(blockerDirection({ catalogue, link: link(blocks, 'inward'), linkTypes: [{ id: '10000', blocks: 'none' }] }),
+    { kind: 'blocker', issueId: '70202', key: 'OPS-9' }, 'the unambiguous Blocks type is never overridden');
+  assert.equal(blockerDirection({ catalogue: [relates], link: link(custom, 'inward'), linkTypes: inward }).kind, 'unverifiable', 'an indication never vouches for an inconsistent link');
+  const unindicated = blockerDirection({ catalogue: all, link: link(custom, 'inward'), linkTypes: [{ id: '10999', blocks: 'none' }] });
+  assert.deepEqual(unindicated, { kind: 'needs-operator', code: 'JIRA_LINK_TYPE_CUSTOM', linkId: '811', typeId: '10500' });
+  const evaluation = evaluateJiraCandidate({ labelPresent: true, route: { kind: 'single', repository: 'equipe/payments-api' }, links: [unindicated], blockers: { kind: 'observed', blockers: [] } });
+  assert.equal(evaluation.decision, 'blocked');
+  assert.match(evaluation.reasons[0]!.nextStep, /linkTypes/);
+  assert.match(evaluation.reasons[0]!.nextStep, /10500/);
 });

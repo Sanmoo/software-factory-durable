@@ -52,6 +52,9 @@ ticketSources:
     routes:                              # componente (por ID) -> repositório de destino
       - {componentId: '10021', repository: equipe/checkout-web}
       - {componentId: '10022', repository: equipe/payments-api}
+    linkTypes:                           # opcional: sentido de tipos de vínculo customizados (por ID)
+      - {id: '10500', blocks: inward}    # o vizinho em inwardIssue bloqueia o Card
+      - {id: '10501', blocks: none}      # nunca bloqueia
 ```
 
 - No v2, um repositório só é origem GitHub se aparecer em `ticketSources` com `tracker: github`.
@@ -60,6 +63,13 @@ ticketSources:
   destino e os bloqueadores visíveis (`is blocked by`) estão em *Done*. Rota ausente, destinos
   divergentes ou bloqueador aberto viram um aviso no Card; leitura incompleta fica só no diagnóstico
   local. A Factory só enxerga o que a conta enxerga: ausência visível não prova ausência global.
+- O tipo `Blocks` padrão do site (nome e rótulos originais, único) é interpretado sozinho. Um tipo de
+  vínculo customizado (`JIRA_LINK_TYPE_CUSTOM`) ou um `Blocks` editado/duplicado
+  (`JIRA_LINK_DIRECTION_AMBIGUOUS`) **impede a admissão** até você indicar o sentido em `linkTypes`, pelo
+  ID do tipo (`GET /rest/api/3/issueLinkType`; o diagnóstico mostra o ID): `inward` = o vizinho que vem
+  como `inwardIssue` bloqueia o Card, `outward` = o que vem como `outwardIssue` bloqueia, `none` = o tipo
+  nunca bloqueia. A indicação nunca substitui o `Blocks` padrão nem os tipos padrão que não bloqueiam.
+  Como o catálogo é do site, todas as fontes de um mesmo `siteId` precisam da mesma lista.
 - A configuração é lida no início do controlador: depois de editar, reinicie o serviço.
 
 ## 3. Conferir o acesso

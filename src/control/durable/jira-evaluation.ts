@@ -4,7 +4,7 @@ import type { AccessDependencies, DependencyEvaluation, JiraOriginTracker, Ticke
 import { jiraAuthorizationFacts } from '../rules/cycles.js';
 import type { WorkRecord } from './admission.js';
 import { blockerDirection, evaluateJiraCandidate, jiraBlockersConclusion, routeTicket, ticketUnverifiable, type JiraEvaluation, type JiraReason, type LinkDirection,
-  type RouteDecision } from '../rules/jira-admission.js';
+  type JiraLinkTypeIndication, type RouteDecision } from '../rules/jira-admission.js';
 
 type JiraSource = Extract<TicketSource, { tracker: 'jira' }>;
 /** One evaluated candidate: the fresh identity read by ID (key/url may have changed), the decision and the facts behind it. */
@@ -39,14 +39,15 @@ export async function evaluateJiraTicket(input: { tracker: JiraOriginTracker; so
     return { ticket, evaluation: { decision: 'not-candidate', reasons: [] }, observedAt: observation.observedAt, route: null, blockers: null };
   }
   const route = routeTicket({ components: observation.components?.map(item => item.id) ?? null, routes: source.routes, authorizedRepositories: input.authorizedRepositories });
-  const { links, blockers } = await visibleBlockers(tracker, ticket, observation.links, observation.observedAt, input.catalogue ?? (() => tracker.readLinkTypes(ticket.siteId)));
+  const { links, blockers } = await visibleBlockers(tracker, ticket, observation.links, observation.observedAt, input.catalogue ?? (() => tracker.readLinkTypes(ticket.siteId)),
+    source.linkTypes ?? []);
   const evaluation = evaluateJiraCandidate({ labelPresent: true, route, links,
     blockers: blockers.kind === 'observed' ? { kind: 'observed', blockers: blockers.blockers } : blockers });
   return { ticket, evaluation, observedAt: observation.observedAt, route, blockers, components: observation.components?.map(item => item.id) ?? null };
 }
 
 async function visibleBlockers(tracker: JiraOriginTracker, root: JiraTicketRef, observed: Parameters<typeof blockerDirection>[0]['link'][] | null, readAt: string,
-  catalogue: () => Promise<JiraLinkTypesObservation>): Promise<{ links: LinkDirection[]; blockers: JiraBlockersObservation }> {
+  catalogue: () => Promise<JiraLinkTypesObservation>, linkTypes: readonly JiraLinkTypeIndication[]): Promise<{ links: LinkDirection[]; blockers: JiraBlockersObservation }> {
   const unavailable = (code: string, nextStep: string, observedAt: string, waitSeconds?: number): JiraUnavailable => ({ kind: 'unavailable', source: 'jira-rest', observedAt,
     siteId: root.siteId, completeness: 'incomplete', code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep });
   const limitations = ['Visible to the configured account only: an empty list is not global absence of blockers, nor an atomic snapshot.'];
@@ -54,7 +55,7 @@ async function visibleBlockers(tracker: JiraOriginTracker, root: JiraTicketRef, 
   if (!observed.length) return { links: [], blockers: { kind: 'observed', source: 'jira-rest', observedAt: readAt, root, coverage: 'visible', blockers: [], limitations } };
   const types = await catalogue();
   if (types.kind === 'unavailable') return { links: [], blockers: types };
-  const links = observed.map(link => blockerDirection({ catalogue: types.types, link }));
+  const links = observed.map(link => blockerDirection({ catalogue: types.types, link, linkTypes }));
   const neighbours = [...new Set(links.flatMap(link => link.kind === 'blocker' ? [link.issueId] : []))];
   if (neighbours.length > maxBlockerReads) {
     return { links, blockers: unavailable('JIRA_BLOCKERS_TOO_MANY', `More than ${maxBlockerReads} visible blockers; nothing is concluded.`, types.observedAt) };
@@ -108,7 +109,9 @@ export function admittedJiraEvaluation(blockers: Extract<JiraBlockersObservation
  * round or dispatch attempt). The destination is never recomputed; the fresh observation also carries the current key (presentation)
  * and the entry label (authorization, judged by the caller). An unreadable Card is inconclusive, never released.
  */
-export async function evaluateJiraWork(input: { tracker: JiraOriginTracker; ticket: JiraTicketRef; attemptId: string; catalogue?: () => Promise<JiraLinkTypesObservation> }):
+export async function evaluateJiraWork(input: { tracker: JiraOriginTracker; ticket: JiraTicketRef; attemptId: string; catalogue?: () => Promise<JiraLinkTypesObservation>;
+  /** The operator's link type indications of the Card's site (spec §3.2); none = custom/ambiguous types need the operator. */
+  linkTypes?: readonly JiraLinkTypeIndication[] }):
   Promise<{ observation: JiraTicketObservation; evaluation: DependencyEvaluation }> {
   const { tracker, ticket, attemptId } = input;
   const base = { evaluationId: randomUUID(), attemptId, source: 'jira-rest' as const, principals: [], blockers: [], cycles: [], shared: [], limitations: [visibleLimitation] };
@@ -123,13 +126,19 @@ export async function evaluateJiraWork(input: { tracker: JiraOriginTracker; tick
   }
   const fresh = observation.ticket;
   let links: LinkDirection[], blockers: JiraBlockersObservation;
-  try { ({ links, blockers } = await visibleBlockers(tracker, fresh, observation.links, observation.observedAt, input.catalogue ?? (() => tracker.readLinkTypes(fresh.siteId)))); } catch {
+  try { ({ links, blockers } = await visibleBlockers(tracker, fresh, observation.links, observation.observedAt, input.catalogue ?? (() => tracker.readLinkTypes(fresh.siteId)),
+    input.linkTypes ?? [])); } catch {
     links = []; blockers = { kind: 'unavailable', source: 'jira-rest', observedAt: new Date().toISOString(), siteId: fresh.siteId, completeness: 'incomplete', code: 'POLLING_QUERY_FAILED',
       nextStep: 'Unexpected failure while reading the visible blockers; nothing is concluded.' };
   }
   const result = jiraBlockersConclusion({ links, blockers: blockers.kind === 'observed' ? { kind: 'observed', blockers: blockers.blockers } : blockers });
   return { observation, evaluation: { ...base, observedAt: blockers.observedAt, evaluatedAt: new Date().toISOString(), completeness: result.completeness, conclusion: result.conclusion,
     reasons: result.reasons.map(reasonOf(fresh)), ...(blockers.kind === 'observed' ? { jira: { blockers: structuredClone(blockers.blockers) } } : {}) } };
+}
+
+/** The operator's link type indications of a site (validated identical on every source of the site); none when no source names it. */
+export function jiraLinkTypesOf(access: Pick<AccessDependencies, 'sources'>, siteId: string): readonly JiraLinkTypeIndication[] {
+  return access.sources?.find((source): source is JiraSource => source.tracker === 'jira' && source.siteId === siteId)?.linkTypes ?? [];
 }
 
 /** Jira ticket 04: the ORIGIN source of a Jira Work (site + project recorded at admission) in the configuration in force; undefined when gone. */
@@ -153,9 +162,9 @@ export async function observeJiraAuthorization(access: Pick<AccessDependencies, 
 }
 
 /** Jira ticket 04: {@link evaluateJiraWork} through the composed adapter; without one the evaluation is inconclusive (never released). */
-export async function evaluateJiraWorkOf(access: Pick<AccessDependencies, 'trackers'>, ticket: JiraTicketRef, attemptId: string) {
+export async function evaluateJiraWorkOf(access: Pick<AccessDependencies, 'trackers' | 'sources'>, ticket: JiraTicketRef, attemptId: string) {
   const tracker = access.trackers?.jira;
-  if (tracker) return evaluateJiraWork({ tracker, ticket, attemptId });
+  if (tracker) return evaluateJiraWork({ tracker, ticket, attemptId, linkTypes: jiraLinkTypesOf(access, ticket.siteId) });
   const observation = notComposed(ticket.siteId);
   const evaluation: DependencyEvaluation = { evaluationId: randomUUID(), attemptId, source: 'jira-rest', observedAt: observation.observedAt, evaluatedAt: new Date().toISOString(),
     principals: [], completeness: 'incomplete', conclusion: 'inconclusive', blockers: [], cycles: [], shared: [], limitations: [visibleLimitation],

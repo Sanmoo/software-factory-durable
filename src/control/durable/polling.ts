@@ -357,7 +357,7 @@ export function createPoller(deps: {
         if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
         if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
       }
-      const { observation, evaluation } = await evaluateJiraWork({ tracker, ticket: work.ticket, attemptId, catalogue });
+      const { observation, evaluation } = await evaluateJiraWork({ tracker, ticket: work.ticket, attemptId, catalogue, linkTypes: source.linkTypes ?? [] });
       if (observation.kind === 'observed') await deps.presentation?.(work.work_id, observation.ticket);
       await deps.record(work.work_id, evaluation);
       const wait = waitOf(evaluation.reasons);

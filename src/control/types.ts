@@ -35,7 +35,9 @@ export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlo
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
  */
 export type TicketSource = { tracker: 'github'; repository: string; discover: boolean } |
-  { tracker: 'jira'; siteId: string; url: string; projectId: string; label: string; discover: boolean; routes: { componentId: string; repository: string }[] };
+  { tracker: 'jira'; siteId: string; url: string; projectId: string; label: string; discover: boolean; routes: { componentId: string; repository: string }[];
+    /** The operator's blocking meaning of custom or ambiguous link types, by link type ID (spec §3.2); the same on every source of a site. */
+    linkTypes?: { id: string; blocks: 'inward' | 'outward' | 'none' }[] };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };

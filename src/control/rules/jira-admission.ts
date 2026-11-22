@@ -26,10 +26,16 @@ export type JiraLinkType = { id: string; name: string; inward: string; outward: 
 /** A link observed on the root Ticket: `end: 'inward'` = the neighbour came as `inwardIssue` (read with `type.inward`). */
 export type JiraLinkFact = { linkId: string; type: JiraLinkType; end: 'inward' | 'outward'; issue: { issueId: string; key: string } };
 export type LinkDirection = { kind: 'blocker'; issueId: string; key: string } | { kind: 'not-blocker' } |
-  { kind: 'needs-operator'; code: 'JIRA_LINK_TYPE_CUSTOM' | 'JIRA_LINK_DIRECTION_AMBIGUOUS'; linkId: string } |
+  { kind: 'needs-operator'; code: 'JIRA_LINK_TYPE_CUSTOM' | 'JIRA_LINK_DIRECTION_AMBIGUOUS'; linkId: string; typeId: string } |
   { kind: 'unverifiable'; code: 'JIRA_LINK_TYPE_INCONSISTENT'; linkId: string };
 
 const standardBlocks = { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
+/**
+ * The operator's indication of a link type's blocking meaning, by link type ID (source configuration `linkTypes`): `inward` = the
+ * neighbour that comes as `inwardIssue` blocks the root, `outward` = the `outwardIssue` neighbour blocks it, `none` = never blocking.
+ */
+export type JiraLinkTypeIndication = { id: string; blocks: 'inward' | 'outward' | 'none' };
+
 /** Jira's built-in link types that never mean blocking, with their default labels (an edited label makes them custom). */
 const standardNonBlocking = [{ name: 'Relates', inward: 'relates to', outward: 'relates to' }, { name: 'Duplicate', inward: 'is duplicated by', outward: 'duplicates' },
   { name: 'Cloners', inward: 'is cloned by', outward: 'clones' }, { name: 'Issue split', inward: 'split from', outward: 'split to' },
@@ -41,19 +47,26 @@ const same = (a: { name: string; inward: string; outward: string }, b: { name: s
  * Meaning of one observed link for the root Ticket, judged by the site catalogue, never by searching the word "blocks": the type must be
  * the catalogue's single `Blocks` with its default labels; then the `inwardIssue` neighbour ("is blocked by") blocks the root and the
  * `outwardIssue` one is blocked by it. A custom type, a second `Blocks` or edited labels need the operator; a link whose type is absent
- * from the catalogue or differs from it is unverifiable.
+ * from the catalogue or differs from it is unverifiable. A type that would need the operator follows the operator's `linkTypes` indication
+ * for its ID, when there is one; an indication never overrides the unambiguous `Blocks` or a built-in non-blocking type.
  */
-export function blockerDirection(input: { catalogue: readonly JiraLinkType[]; link: JiraLinkFact }): LinkDirection {
+export function blockerDirection(input: { catalogue: readonly JiraLinkType[]; link: JiraLinkFact; linkTypes?: readonly JiraLinkTypeIndication[] }): LinkDirection {
   const { link } = input;
   const listed = input.catalogue.find(type => type.id === link.type.id);
   if (!listed || !same(listed, link.type)) return { kind: 'unverifiable', code: 'JIRA_LINK_TYPE_INCONSISTENT', linkId: link.linkId };
+  const blocker: LinkDirection = { kind: 'blocker', issueId: link.issue.issueId, key: link.issue.key };
+  const needsOperator = (code: 'JIRA_LINK_TYPE_CUSTOM' | 'JIRA_LINK_DIRECTION_AMBIGUOUS'): LinkDirection => {
+    const indicated = input.linkTypes?.find(item => item.id === listed.id);
+    if (!indicated) return { kind: 'needs-operator', code, linkId: link.linkId, typeId: listed.id };
+    return indicated.blocks === link.end ? blocker : { kind: 'not-blocker' };
+  };
   const blockLike = (type: JiraLinkType) => type.name === standardBlocks.name || [type.name, type.inward, type.outward].some(text => /block|bloque/i.test(text));
   if (blockLike(listed)) {
     const blocksTypes = input.catalogue.filter(blockLike);
-    if (blocksTypes.length !== 1 || !same(listed, standardBlocks)) return { kind: 'needs-operator', code: 'JIRA_LINK_DIRECTION_AMBIGUOUS', linkId: link.linkId };
-    return link.end === 'inward' ? { kind: 'blocker', issueId: link.issue.issueId, key: link.issue.key } : { kind: 'not-blocker' };
+    if (blocksTypes.length !== 1 || !same(listed, standardBlocks)) return needsOperator('JIRA_LINK_DIRECTION_AMBIGUOUS');
+    return link.end === 'inward' ? blocker : { kind: 'not-blocker' };
   }
-  return standardNonBlocking.some(type => same(type, listed)) ? { kind: 'not-blocker' } : { kind: 'needs-operator', code: 'JIRA_LINK_TYPE_CUSTOM', linkId: link.linkId };
+  return standardNonBlocking.some(type => same(type, listed)) ? { kind: 'not-blocker' } : needsOperator('JIRA_LINK_TYPE_CUSTOM');
 }
 
 /** Status category of each neighbour classified as blocker, read by ID; or why that could not be done (never an empty list). */
@@ -87,9 +100,10 @@ export function evaluateJiraCandidate(input: { labelPresent: boolean; route: Rou
     nextStep: `The Card's components route to different repositories (${route.repositories.join(', ')}); keep components that route to one repository.` });
   if (route.kind === 'unverifiable') reasons.push({ code: 'JIRA_COMPONENTS_UNVERIFIABLE', nextStep: 'The component list could not be read completely; nothing is concluded, the next poll reads it again.' });
   for (const link of input.links) {
-    if (link.kind === 'needs-operator') reasons.push({ code: link.code, linkId: link.linkId, nextStep: link.code === 'JIRA_LINK_TYPE_CUSTOM'
-      ? 'The Card has a custom link type whose blocking meaning is unknown; the operator must remove the link or confirm it does not block.'
-      : 'The site\'s Blocks link type is edited or duplicated, so its direction is ambiguous; the operator must restore the Blocks type or remove the link.' });
+    if (link.kind === 'needs-operator') reasons.push({ code: link.code, linkId: link.linkId, nextStep: (link.code === 'JIRA_LINK_TYPE_CUSTOM'
+      ? `The Card has a custom link type (ID ${link.typeId}) whose blocking meaning is unknown`
+      : `The site's Blocks link type (ID ${link.typeId}) is edited or duplicated, so its direction is ambiguous`)
+      + `; the operator must declare it in the Jira source's linkTypes ({ id: '${link.typeId}', blocks: inward | outward | none }) or remove the link.` });
     if (link.kind === 'unverifiable') reasons.push({ code: link.code, linkId: link.linkId,
       nextStep: 'A link of the Card disagrees with the site\'s link type catalogue; nothing is concluded, the next poll reads it again.' });
   }

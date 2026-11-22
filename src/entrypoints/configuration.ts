@@ -91,6 +91,10 @@ const jiraSource = z.strictObject({
   label: text.regex(/^\S+$/),
   routes: z.array(z.strictObject({ componentId: numericId, repository: repository.shape.repository })).min(1)
     .refine(values => new Set(values.map(value => value.componentId)).size === values.length, 'Each componentId routes once'),
+  // Spec §3.2: the operator's indication for a custom or ambiguous link type, by link type ID (`inward`: the inwardIssue neighbour blocks
+  // the Card; `outward`: the outwardIssue neighbour does; `none`: never blocking). It never overrides the unambiguous Blocks type.
+  linkTypes: z.array(z.strictObject({ id: numericId, blocks: z.enum(['inward', 'outward', 'none']) })).default([])
+    .refine(values => new Set(values.map(value => value.id)).size === values.length, 'Each link type ID is indicated once'),
 });
 const schemaV1 = z.strictObject({ schemaVersion: z.literal(1), ...common }).refine(exclusive, exclusiveIssue);
 const schemaV2 = z.strictObject({ schemaVersion: z.literal(2), ...common, ticketSources: z.array(z.discriminatedUnion('tracker', [githubSource, jiraSource])) })
@@ -100,7 +104,7 @@ const schemaV2 = z.strictObject({ schemaVersion: z.literal(2), ...common, ticket
     const destination = (name: string, path: (string | number)[]) => {
       if (!executable.has(name.toLowerCase())) context.addIssue({ code: 'custom', path, message: 'Only an executable repository is a Ticket source or route destination' });
     };
-    const github = new Set<string>(), projects = new Set<string>(), origins = new Map<string, string>();
+    const github = new Set<string>(), projects = new Set<string>(), origins = new Map<string, string>(), linkTypesOf = new Map<string, string>();
     value.ticketSources.forEach((source, index) => {
       if (source.tracker === 'github') {
         destination(source.repository, ['ticketSources', index, 'repository']);
@@ -117,6 +121,11 @@ const schemaV2 = z.strictObject({ schemaVersion: z.literal(2), ...common, ticket
       const known = origins.get(source.siteId);
       if (known !== undefined && known !== account) context.addIssue({ code: 'custom', path: ['ticketSources'], message: 'A siteId names one origin and one account' });
       origins.set(source.siteId, account);
+      // The link type catalogue belongs to the site: every source of a site indicates the same meanings.
+      const indications = JSON.stringify([...source.linkTypes].sort((a, b) => a.id.localeCompare(b.id)));
+      const knownIndications = linkTypesOf.get(source.siteId);
+      if (knownIndications !== undefined && knownIndications !== indications) context.addIssue({ code: 'custom', path: ['ticketSources', index, 'linkTypes'], message: 'Every source of a site indicates the same link types' });
+      linkTypesOf.set(source.siteId, indications);
     });
   });
 const schema = z.union([schemaV1, schemaV2]);

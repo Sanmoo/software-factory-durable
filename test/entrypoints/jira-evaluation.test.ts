@@ -92,12 +92,12 @@ function recordingGitHub() {
   return { github, calls };
 }
 
-async function composed(send: (exchange: JiraHttpExchange) => Promise<JiraHttpResult>) {
+async function composed(send: (exchange: JiraHttpExchange) => Promise<JiraHttpResult>, config = yaml) {
   const root = await mkdtemp(join(tmpdir(), 'factory-jira-evaluation-'));
   await chmod(root, 0o700);
   await mkdir(join(root, 'credentials'), { mode: 0o700 });
   await writeFile(join(root, 'credentials', 'jira-token'), `${sentinel}\n`, { mode: 0o600 });
-  await writeFile(join(root, 'config.yaml'), yaml);
+  await writeFile(join(root, 'config.yaml'), config);
   const configuration = (await readConfiguration(root)).configuration;
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) throw new Error('unreachable');
@@ -159,4 +159,34 @@ test('a listing that cannot reach its last page evaluates nothing and re-reads n
     assert.equal(result.kind === 'unavailable' && result.listing.code, 'JIRA_TIMEOUT');
     assert.deepEqual(world.exchanges.map(exchange => exchange.method), ['POST', 'POST'], 'no re-read after an incomplete listing');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a custom link type blocks until the operator indicates it in the source\'s linkTypes; then its direction decides', async () => {
+  const depends = { id: '10500', name: 'Depends', inward: 'depends on', outward: 'is depended on by' };
+  const world = jiraWorld();
+  const send = async (exchange: JiraHttpExchange): Promise<JiraHttpResult> => {
+    const url = new URL(exchange.url);
+    const json = (body: unknown): JiraHttpResult => ({ kind: 'response', status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (url.pathname === '/rest/api/3/issueLinkType') { world.exchanges.push(exchange); return json({ issueLinkTypes: [blocks, depends] }); }
+    if (url.pathname === '/rest/api/3/issue/81018' && url.searchParams.get('fields') !== 'status') {
+      world.exchanges.push(exchange);
+      return json(issue('81018', 'PAG-43', { issuelinks: [{ id: '9900', type: depends, inwardIssue: { id: '70301', key: 'OPS-10' } }] }));
+    }
+    return world.send(exchange);
+  };
+  const decide = async (config: string) => {
+    const { root, access, source } = await composed(send, config);
+    try {
+      const result = await evaluateJiraSource({ tracker: access.trackers!.jira!, source, authorizedRepositories: access.repositories.map(item => item.repository) });
+      assert.equal(result.kind, 'evaluated');
+      return result.kind === 'evaluated' ? result.candidates.find(item => item.ticket.key === 'PAG-43')!.evaluation : undefined;
+    } finally { await rm(root, { recursive: true, force: true }); }
+  };
+  const unindicated = await decide(yaml);
+  assert.deepEqual(unindicated?.reasons.map(reason => reason.code), ['JIRA_LINK_TYPE_CUSTOM']);
+  assert.match(unindicated?.reasons[0]?.nextStep ?? '', /linkTypes.*10500/);
+  const inward = await decide(yaml.replace('    routes:\n', "    linkTypes: [{id: '10500', blocks: inward}]\n    routes:\n"));
+  assert.deepEqual(inward?.reasons.map(reason => reason.code), ['JIRA_BLOCKER_NOT_DONE'], 'the indicated neighbour is read and blocks');
+  const none = await decide(yaml.replace('    routes:\n', "    linkTypes: [{id: '10500', blocks: none}]\n    routes:\n"));
+  assert.deepEqual(none?.decision, 'eligible');
 });
