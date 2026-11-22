@@ -6,6 +6,7 @@ import { dirname, join, relative } from 'node:path';
 import { impureUnits, readCruise } from './architecture.ts';
 import { changedSet, gitIn } from './changes.ts';
 import { avoidedTerms, findAvoided } from './avoided-terms.ts';
+import { directivesOf, matchSuppressions, parseTolerance as parseLintTolerance } from './lint-suppressions.ts';
 import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
 import { acquireMachineLock, machineLockPath } from './lock.ts';
@@ -68,6 +69,7 @@ export interface StaticParts {
   depcruise(): Promise<StepResult[]>;
   pointers(): Promise<StepResult>;
   avoided(): Promise<StepResult>;
+  suppressions(): Promise<StepResult>;
 }
 
 /**
@@ -76,9 +78,9 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed, avoided] = await Promise.all([compiling, parts.lint(),
-    compiling.then(() => parts.depcruise()), parts.pointers(), parts.avoided()]);
-  return [...compiled, linted, ...cruised, pointed, avoided];
+  const [compiled, linted, cruised, pointed, avoided, suppressed] = await Promise.all([compiling, parts.lint(),
+    compiling.then(() => parts.depcruise()), parts.pointers(), parts.avoided(), parts.suppressions()]);
+  return [...compiled, linted, ...cruised, pointed, avoided, suppressed];
 }
 
 /** The files a changed-set step analyzed, named in its report line so a Gate Proof can record them. */
@@ -189,8 +191,15 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         return { name: 'avoided-terms', ms: Date.now() - started, ok: !findings.length, check: 'avoided-terms', findings,
           output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
       };
+      // Every ESLint suppression is a tolerated Lint finding, matched against its policy over the whole tree in both Entry Points.
+      const suppressions = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const findings = await scanSuppressions(root).catch(error => [{ rule: 'lint-tolerance-unreadable', location: String((error as Error).message) }]);
+        return { name: 'lint-suppressions', ms: Date.now() - started, ok: !findings.length, check: 'lint', findings,
+          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
+      };
       return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
-        compile: compiled, lint, depcruise, pointers, avoided });
+        compile: compiled, lint, depcruise, pointers, avoided, suppressions });
     },
     audit: async signal => {
       const step = await execute('npm', ['audit', '--audit-level=high', '--json'], root, childEnv, signal)
@@ -271,6 +280,16 @@ export async function readLevels(root: string): Promise<{ unit: string[] }> {
   if (value.schemaVersion !== 1 || !Array.isArray(value.unit) || !value.unit.every(file => typeof file === 'string' && /^test\/.+\.test\.ts$/.test(file)))
     throw new Error('LEVELS_INVALID: test/levels.json needs schemaVersion 1 and a unit list of test/**/*.test.ts files');
   return { unit: value.unit as string[] };
+}
+
+/** The ESLint suppression directives of the code under src/, test/ and scripts/ against scripts/test-runner/lint-tolerated.json. */
+export async function scanSuppressions(root: string): Promise<{ rule: string; location: string }[]> {
+  const entries = parseLintTolerance(JSON.parse(await readFile(join(root, 'scripts/test-runner/lint-tolerated.json'), 'utf8')));
+  const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', 'src', 'test', 'scripts', 'eslint.config.mjs'], { cwd: root, encoding: 'utf8' }).split('\0');
+  const files = listed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file)));
+  const directives = [];
+  for (const file of files) directives.push(...directivesOf(file, await readFile(join(root, file), 'utf8')));
+  return matchSuppressions(directives, entries);
 }
 
 /** npm audit's JSON: one finding per vulnerable package at high or critical severity, or undefined when it is not an audit report. */

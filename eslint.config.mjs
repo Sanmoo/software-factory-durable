@@ -19,6 +19,8 @@ const capabilitiesOnly = [`Identifier[name=${sandboxNames}]`, `Literal[value=${s
 
 export default [
   { ignores: ['node_modules/**', 'dist/**', '.git/**', '.worktrees/**', '.scratch/**'] },
+  // A suppression that no longer suppresses anything fails: its entry in scripts/test-runner/lint-tolerated.json is void.
+  { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   // The ecosystem's rule set (adopted in S2 of ADOPTION-PLAN.md); the architecture rules below stay as they were.
   ...tseslint.configs.recommended.map(config => ({ ...config, files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'] })),
   {

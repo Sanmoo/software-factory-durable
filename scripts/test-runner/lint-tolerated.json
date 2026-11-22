@@ -1,0 +1,62 @@
+{
+ "$comment": "Tolerance policy of the Lint quality gate: each ESLint suppression directive in the code is a tolerated finding (file, rule, the code it targets). Changed only by a reviewed change approved as ADOPTION-PLAN.md; a run never rewrites it. Read by scripts/test-runner/lint-suppressions.ts.",
+ "schemaVersion": 1,
+ "entries": [
+  {
+   "file": "src/sandbox/gondolin-sdk-runtime.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const sdk: RuntimeExports = await import(entry);",
+   "reason": "Closed canonical profile entry, verified immediately above; no caller URL.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-diagnostics-fixture.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const hooksModule: { createHttpHooks: typeof CreateHttpHooks } = await import(new URL('../../../node_modules/@earendil-works/gondolin/dist/src/http/hooks.js', import.meta.url).href);",
+   "reason": "Test-only fixed installed SDK HTTP hooks entry, evaluated before the deny-all guard.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-diagnostics-fixture.ts",
+   "rule": "no-restricted-syntax",
+   "target": "await assert.rejects(import(pathToFileURL(auditedVfsManifest.root + '/' + path).href), /SDK_EVALUATION_FORBIDDEN/);",
+   "reason": "Test-only pre-evaluation denial of exact forbidden SDK targets.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-diagnostics-fixture.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const providerModule = await import(pathToFileURL(auditedVfsManifest.root + '/dist/src/vfs/node/vendored-node-vfs/lib/internal/vfs/providers/real.js').href);",
+   "reason": "Test-only fixed audited canonical entry under closed hooks.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-diagnostics-fixture.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const rpcModule = await import(pathToFileURL(auditedVfsManifest.root + '/dist/src/vfs/rpc-service.js').href);",
+   "reason": "Test-only fixed audited canonical entry under closed hooks.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-diagnostics-fixture.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const fromFixture = Module.createRequire(import.meta.url);",
+   "reason": "Public loader used only for pre-dispatch negative cached-CJS checks against already approved code.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/adapter-fixture-network-guard.test.ts",
+   "rule": "no-restricted-syntax",
+   "target": "await assert.rejects(import(specifier), /SDK_EVALUATION_FORBIDDEN/);",
+   "reason": "Test-only negative imports; deny hook rejects before resolution/evaluation.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  },
+  {
+   "file": "test/sandbox/gondolin-sdk-runtime.test.ts",
+   "rule": "no-restricted-syntax",
+   "target": "const fixtureLoader: typeof import('../../src/sandbox/gondolin-sdk-runtime.js') = await import(pathToFileURL(join(app, 'gondolin-sdk-runtime.js')).href);",
+   "reason": "Test-only owned copy of authored compiled module, not an SDK module URL.",
+   "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
+  }
+ ]
+}

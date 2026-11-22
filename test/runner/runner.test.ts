@@ -198,11 +198,12 @@ test('static stage: depcruise waits for compile (staged SDK, build output), the 
       lint: async () => { events.push('lint'); return { name: 'eslint', ms: 1, ok: true }; },
       depcruise: async () => { events.push('depcruise'); return [{ name: 'depcruise', ms: 1, ok: true }]; },
       pointers: async () => { events.push('pointers'); return { name: 'guide-pointers', ms: 1, ok: true }; },
-      avoided: async () => { events.push('avoided'); return { name: 'avoided-terms', ms: 1, ok: true }; } });
+      avoided: async () => { events.push('avoided'); return { name: 'avoided-terms', ms: 1, ok: true }; },
+      suppressions: async () => { events.push('suppressions'); return { name: 'lint-suppressions', ms: 1, ok: true }; } });
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(!events.includes('depcruise') && events.includes('lint') && events.includes('pointers'), `staged=${staged}`);
     finishCompile();
-    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise', 'guide-pointers', 'avoided-terms']);
+    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise', 'guide-pointers', 'avoided-terms', 'lint-suppressions']);
     assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
   }
 });
