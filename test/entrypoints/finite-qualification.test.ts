@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { mock, test } from 'node:test';
+import { beforeEach, mock, test } from 'node:test';
 
 // Install BEFORE evaluating recipe/application modules. No TCP, SDK or R access.
 let forbidden = 0;
@@ -125,10 +125,21 @@ mock.module('../../src/workers/index.js', { namedExports: { createWorkers: (conf
 } } });
 const recipe = await import('./finite-qualification.js');
 const provider = await import('./finite-qualification-provider.js');
+// What importing the recipe and provider did, taken before any test runs: the inert-import assertion does not depend on test order.
+const atImport = { files: files.size, dirs: dirs.size, fileAttempts, effects: sandboxCalls + workerCalls + forbidden };
+// Every test starts from the same doubles, whatever ran before it (a randomized order included). `forbidden` is never reset: a
+// forbidden effect anywhere in the file must still fail the tests that check it.
+beforeEach(() => {
+  files.clear(); dirs.clear(); activations.length = 0;
+  sandboxCalls = 0; workerCalls = 0; listenAttempts = 0; closeRequests = 0;
+  workerMode = 'reject'; freezeDuringEvidence = false; receiptProfileOverride = undefined;
+});
 
 test('plan and import are inert; no actual R, auth, assets, capacity, SDK, manager or network', () => {
+  assert.deepEqual(atImport, { files: 0, dirs: 0, fileAttempts: 0, effects: 0 });
+  const before = fileAttempts;
   assert.equal(recipe.plan().root, '/home/sanmoo/software-factory-test/y5');
-  assert.equal(files.size, 0); assert.equal(dirs.size, 0); assert.equal(fileAttempts, 0);
+  assert.equal(files.size, 0); assert.equal(dirs.size, 0); assert.equal(fileAttempts, before);
   assert.equal(sandboxCalls + workerCalls + forbidden, 0);
   assert.equal(recipe.plan().nativeCalls, 11);
   assert.equal(recipe.plan().providerPosts, 15);
