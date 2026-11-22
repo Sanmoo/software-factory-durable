@@ -162,18 +162,28 @@ export type DiscoveryDecision = { outcome: 'linked'; pullRequest: CandidateFacts
  * Control requested, attempted (recorded at the activation commit, before any launch) or linked as its own PR head. Plain data from Control
  * state; never inferred from the remote.
  */
-export type OtherPublication = { workId: string; branch: string; heads: readonly string[] };
-type ListedWork = { work_id: string; repository: { repositoryId: number };
-  publication?: (Pick<PublicationView, 'branch' | 'state' | 'verified'> & Partial<Pick<PublicationView, 'attempts' | 'linkedHeads'>>) | null };
-/** Ticket 61: the other Works' own publication expectations (same repository, not `self`, with at least one recorded head). */
+export type OtherPublication = { workId: string; branch: string; heads: readonly string[];
+  /** Acceptance finding A13: that Work's Execution holds its Slot, so its Builder may still be pushing work in progress Control has not recorded yet. */
+  live?: true };
+type ListedWork = { work_id: string; repository: { repositoryId: number }; branch?: string | null;
+  publication?: (Pick<PublicationView, 'branch' | 'state' | 'verified'> & Partial<Pick<PublicationView, 'attempts' | 'linkedHeads'>>) | null;
+  preservation?: { branch: string; heads: readonly string[] } | undefined; execution?: { state: string; slot: { held: boolean } } | null | undefined };
+/**
+ * Ticket 61: the other Works' own publication expectations (same repository, not `self`, with at least one recorded head). Acceptance
+ * finding A13: the heads a preservation gate confirmed on that Work's own branch are its own pushes too (a sandbox without a persistent
+ * disk publishes work in progress before any pull request), and a Work whose Execution holds its Slot is listed even without a head.
+ */
 export function otherPublications(works: readonly ListedWork[], self: { workId: string; repositoryId: number }): OtherPublication[] {
   const result: OtherPublication[] = [];
   for (const work of works) {
     const publication = work.publication;
-    if (work.work_id === self.workId || work.repository.repositoryId !== self.repositoryId || !publication?.branch) continue;
-    const heads = [...new Set([...(publication.attempts ?? []).map(item => item.head), ...(publication.linkedHeads ?? []),
-      ...(publication.state === 'requested' && publication.verified ? [publication.verified.head] : [])])];
-    if (heads.length) result.push({ workId: work.work_id, branch: publication.branch, heads });
+    const branch = publication?.branch ?? work.preservation?.branch ?? work.branch;
+    if (work.work_id === self.workId || work.repository.repositoryId !== self.repositoryId || !branch) continue;
+    const heads = [...new Set([...(publication?.attempts ?? []).map(item => item.head), ...(publication?.linkedHeads ?? []),
+      ...(publication?.state === 'requested' && publication.verified ? [publication.verified.head] : []),
+      ...(work.preservation?.branch === branch ? work.preservation.heads : [])])];
+    const live = work.execution?.state === 'started' && work.execution.slot.held;
+    if (heads.length || live) result.push({ workId: work.work_id, branch, heads, ...(live ? { live: true as const } : {}) });
   }
   return result;
 }
@@ -194,6 +204,15 @@ export function unexpectedRefChanges(before: Record<string, string>, now: Record
   }
   const attributable = (ref: string) => now[ref] !== undefined && concurrent.get(ref)?.has(now[ref]) === true;
   return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter(ref => ref !== own && before[ref] !== now[ref] && !attributable(ref)).sort().slice(0, 16);
+}
+/**
+ * Acceptance finding A13: whether every one of `changed` (the result of `unexpectedRefChanges`) is the own branch of another Work whose
+ * Execution is still running, created or moved (never deleted). Such a push may be work in progress its preservation gate has not confirmed
+ * yet: nothing is decided on this read. Once Control records the head it is attributed; once that Execution ends without it, it is unexpected.
+ */
+export function unsettledConcurrentPushes(changed: readonly string[], now: Record<string, string>, others: readonly OtherPublication[]): boolean {
+  const live = new Set(others.filter(other => other.live).map(other => `refs/heads/${other.branch}`));
+  return changed.length > 0 && changed.every(ref => live.has(ref) && now[ref] !== undefined);
 }
 
 const refChange = /^UNEXPECTED_REF_CHANGE:/;
@@ -254,6 +273,8 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
   if (input.attempted && input.refsBefore) {
     if (observation.refs.state !== 'complete') return { outcome: 'incomplete', reasons: [`REFS_UNKNOWN:${observation.refs.code}`], candidates };
     const changed = unexpectedRefChanges(input.refsBefore, observation.refs.refs, expect.branch, input.others ?? []);
+    if (input.wipPushes === true && unsettledConcurrentPushes(changed, observation.refs.refs, input.others ?? []))
+      return { outcome: 'incomplete', reasons: [`CONCURRENT_WORK_PUSH_UNSETTLED:${changed.join(',')}`], candidates };
     if (changed.length) return blocked([`UNEXPECTED_REF_CHANGE:${changed.join(',')}`], own[0] ?? null);
   }
   if (unknownPulls.length) return { outcome: 'held', reasons: unknownPulls, candidates };

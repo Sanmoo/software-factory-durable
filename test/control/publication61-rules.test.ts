@@ -81,3 +81,45 @@ test('ticket 61: only a publication blocked ONLY by unexpected ref changes after
   assert.deepEqual(publicationStep(work(blocked({ reevaluation: { request_id: 'r1', reason: 'x', requestedAt: 'x', state: 'still-blocked', settledAt: 'y', outcome: 'blocked', reasons: [] } }))),
     { kind: 'none' });
 });
+
+// Acceptance finding A13 (v2, sandbox without a persistent disk): another Work's Builder publishes work in progress on ITS OWN branch under
+// a preservation gate. That push is not a publication attempt, so the ticket 61 rule did not attribute it and blocked the observer.
+const preserved = (side: Side, heads: string[]) => ({ commit: heads.at(-1)!, branch: side.branch, confirmedAt: 'x', executionId: 'e', boot: 'boot', occasion: 'ci-wait', heads });
+const live = { executionId: 'e-live', state: 'started', slot: { held: true } };
+test('A13: a head a preservation gate confirmed on another Work\'s own branch is that Work\'s own push', () => {
+  const wip = '7'.repeat(40);
+  const works = [record(a, attempted(a)), { ...record(b, { state: 'not-publishable', verified: null }), preservation: preserved(b, [wip]) }];
+  const others = otherPublications(works, { workId: a.workId, repositoryId: 3 });
+  assert.deepEqual(others, [{ workId: b.workId, branch: b.branch, heads: [wip] }]);
+  const now = { ...main, [`refs/heads/${a.branch}`]: a.head, [`refs/heads/${b.branch}`]: wip };
+  const decision = decideDiscovery({ expect: expectOf(a), attempted: true, refsBefore: main, others, wipPushes: true, observation: observed(a, now) });
+  assert.deepEqual([decision.outcome, decision.reasons], ['linked', []]);
+  // Without any publication record the preservation names the branch.
+  assert.deepEqual(otherPublications([{ ...record(b, null), preservation: preserved(b, [wip]) }], { workId: a.workId, repositoryId: 3 }), [{ workId: b.workId, branch: b.branch, heads: [wip] }]);
+  // Another head on that branch, with that Work stopped, is still unexpected.
+  const moved = decideDiscovery({ expect: expectOf(a), attempted: true, refsBefore: main, others, wipPushes: true,
+    observation: observed(a, { ...now, [`refs/heads/${b.branch}`]: 'e'.repeat(40) }) });
+  assert.deepEqual([moved.outcome, moved.reasons], ['blocked', [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`]]);
+});
+
+test('A13: a push on the own branch of a Work whose Execution is still running decides nothing until Control records it or that Execution ends', () => {
+  const wip = '7'.repeat(40);
+  const running = { ...record(b, null), branch: b.branch, execution: live };
+  const others = otherPublications([record(a, attempted(a)), running], { workId: a.workId, repositoryId: 3 });
+  assert.deepEqual(others, [{ workId: b.workId, branch: b.branch, heads: [], live: true }]);
+  const now = { ...main, [`refs/heads/${a.branch}`]: a.head, [`refs/heads/${b.branch}`]: wip };
+  const decide = (input: { wipPushes?: boolean; refs?: Record<string, string>; others?: typeof others }) => {
+    const decision = decideDiscovery({ expect: expectOf(a), attempted: true, refsBefore: main, others: input.others ?? others,
+      ...(input.wipPushes === undefined ? { wipPushes: true } : { wipPushes: input.wipPushes }), observation: observed(a, input.refs ?? now) });
+    return [decision.outcome, decision.reasons];
+  };
+  assert.deepEqual(decide({}), ['incomplete', [`CONCURRENT_WORK_PUSH_UNSETTLED:refs/heads/${b.branch}`]], 'the gate has not confirmed it yet: read again');
+  assert.deepEqual(decide({ wipPushes: false }), ['blocked', [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`]], 'with a persistent disk no Builder pushes work in progress');
+  assert.deepEqual(decide({ refs: { ...now, 'refs/tags/v9': a.head } }), ['blocked', [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch},refs/tags/v9`]], 'a real change is never held back');
+  assert.deepEqual(decideDiscovery({ expect: expectOf(a), attempted: true, refsBefore: { ...main, [`refs/heads/${b.branch}`]: wip }, others, wipPushes: true,
+    observation: observed(a, { ...main, [`refs/heads/${a.branch}`]: a.head }) }).outcome, 'blocked', 'a deletion is not a push');
+  // That Execution ended (slot released) without Control recording the head: unexpected.
+  const ended = otherPublications([{ ...running, execution: { ...live, state: 'ended', slot: { held: false } } }], { workId: a.workId, repositoryId: 3 });
+  assert.deepEqual(ended, []);
+  assert.deepEqual(decide({ others: ended }), ['blocked', [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`]]);
+});
