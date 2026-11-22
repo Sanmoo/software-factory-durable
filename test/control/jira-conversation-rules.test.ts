@@ -84,16 +84,21 @@ test('published texts: the Question carries its reserved header and every answer
 
 // Jira ticket 07 (spec §4 `/factory cancel`): exact syntax, the Work of THIS Card only; nothing is inferred from free text or misspellings.
 test('exactly /factory cancel cancels the Work of this Card; free text, extra words, another Card and misspellings never cancel nor answer', () => {
-  for (const exact of ['/factory cancel', '/factory   cancel  ', '/factory cancel\n', '/factory CANCEL', '/factory Cancel']) {
+  for (const exact of ['/factory cancel', '/factory   cancel  ', '/factory cancel\n']) {
     assert.deepEqual(parseJiraCommand(exact), { kind: 'cancel' }, JSON.stringify(exact));
   }
   assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel'), questions: [q17] }), { kind: 'cancel' });
   assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel'), questions: [] }), { kind: 'cancel' });
   // A known command with anything else (another Card, a reason, a misspelling the Factory will not correct): guidance, never an answer.
-  for (const near of ['/factory cancel please', '/factory cancel PAG-43', '/factory cancel T-17', '/factory cancelar', '/factory cancela', '/factory cancel\nporque sim']) {
+  for (const near of ['/factory cancel please', '/factory cancel PAG-43', '/factory cancel T-17', '/factory cancel\nporque sim']) {
     assert.deepEqual(parseJiraCommand(near), { kind: 'guide', code: 'JIRA_CANCEL_INVALID' }, JSON.stringify(near));
     assert.deepEqual(jiraCommentDecision({ comment: comment(near), questions: [q17] }), { kind: 'guide', code: 'JIRA_CANCEL_INVALID', refs: ['Q-17'] }, near);
   }
+  // Only the exact, lower-case command word is the command: any other word (other case, a longer word) is a free answer, never a cancellation.
+  for (const answer of ['/factory cancelado não, siga', '/factory cancelar', '/factory cancela', '/factory CANCEL', '/factory Cancel', '/factory cancel:x']) {
+    assert.deepEqual(parseJiraCommand(answer), { kind: 'free', text: answer.slice('/factory '.length) }, JSON.stringify(answer));
+  }
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancelado não, siga'), questions: [q17] }), { kind: 'accept', questionId: 'qid-17', text: 'cancelado não, siga' });
   // Free text that talks about cancelling is an ordinary answer (or guidance), never a cancellation.
   assert.deepEqual(jiraCommentDecision({ comment: comment('/factory acho melhor cancelar'), questions: [q17] }), { kind: 'accept', questionId: 'qid-17', text: 'acho melhor cancelar' });
   assert.deepEqual(jiraCommentDecision({ comment: comment('/factory acho melhor cancelar'), questions: [] }), { kind: 'guide', code: 'JIRA_NO_OPEN_QUESTION', refs: [] });

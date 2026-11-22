@@ -33,9 +33,10 @@ const refOf = (digits: string) => `Q-${Number(digits)}`;
  * EXACTLY with `/factory` (then whitespace or end) is conversation. Known commands have exact syntax (`/factory q17: <text>`,
  * `/factory answer Q-17 <text>`); a known command with missing parts asks for guidance and never becomes an answer; otherwise the rest
  * is a free answer (multi-line allowed, trimmed).
- * Jira ticket 07: `/factory cancel` alone (the word in any case, surrounding whitespace ignored) cancels the Work of THIS Card. The word with
- * anything else (`/factory cancel PAG-43`, a reason) or any other word starting with `cancel` (`cancelar`: spelling is never corrected into an
- * order) asks for guidance; it is neither a cancellation nor an answer.
+ * Jira ticket 07: `/factory cancel` alone (exactly the lower-case word, surrounding whitespace ignored) cancels the Work of THIS Card. The
+ * word with anything after it (`/factory cancel PAG-43`, a reason) asks for guidance; it is neither a cancellation nor an answer. Any other
+ * word (`cancelado não, siga`, `cancelar`, `CANCEL`) is not the command: it is free text like any answer (spelling is never corrected into
+ * an order).
  */
 export function parseJiraCommand(body: string): JiraCommand {
   const text = body.replace(/\r\n?/g, '\n');
@@ -52,8 +53,8 @@ export function parseJiraCommand(body: string): JiraCommand {
   const short = /^q-?(\d{1,9}):([\s\S]*)$/i.exec(rest);
   if (short) return withRef(refOf(short[1]!), short[2]!);
   if (/^q-?\d{1,9}(?=\s|$)/i.test(rest)) return { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
-  if (word === 'cancel' && rest.toLowerCase() === 'cancel') return { kind: 'cancel' };
-  if (word.startsWith('cancel')) return { kind: 'guide', code: 'JIRA_CANCEL_INVALID' };
+  // Exact syntax: only the lower-case word `cancel` is the command (alone: cancel; with anything after it: guidance).
+  if (/^cancel(?=\s|$)/.test(rest)) return rest === 'cancel' ? { kind: 'cancel' } : { kind: 'guide', code: 'JIRA_CANCEL_INVALID' };
   if (unsupported.has(word)) return { kind: 'guide', code: 'JIRA_COMMAND_UNSUPPORTED' };
   return answerText(rest);
 }

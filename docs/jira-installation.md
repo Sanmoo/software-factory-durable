@@ -93,7 +93,14 @@ pede nem amplia acesso por conta própria.
 - **Pergunta**: a Factory comenta `[Software Factory · Pergunta Q-n]`. Responda num comentário **novo**
   que comece por `/factory <resposta>` (se for a única pergunta aberta do Card), `/factory qN: <resposta>`
   ou `/factory answer Q-N <resposta>`. Comentário editado, restrito ou sem o prefixo não é instrução.
-- **Cancelar**: exatamente `/factory cancel` cancela o Trabalho daquele Card (resposta no próprio Card).
+  Comentário sem autor observado pela API, ou cujo corpo não é um documento ADF válido, também não:
+  fica registrado localmente como entrada ignorada (`JIRA_COMMENT_AUTHOR_UNOBSERVED`,
+  `JIRA_COMMENT_ADF_INVALID`), sem resposta no Card; para valer, publique um comentário novo.
+- **Cancelar**: exatamente `/factory cancel` (a palavra `cancel` em minúsculas, sozinha) cancela o
+  Trabalho daquele Card (resposta no próprio Card). `cancel` seguido de qualquer coisa
+  (`/factory cancel PAG-43`) recebe orientação e não cancela nada. Outra palavra, mesmo parecida
+  (`/factory cancelado não, siga`, `/factory CANCEL`), é texto livre: vale como resposta à pergunta
+  aberta, nunca como cancelamento.
   Comandos globais (`pause`, `resume`, `forget`, `cleanup`, `new`…) continuam só na CLI local.
 - **PR**: a descrição do PR leva `Jira Card <CHAVE>: <url>` e nenhuma palavra de fechamento do GitHub.
   O Card recebe o *remote link* `Trabalho T-n · …` (atualizado na entrega ou no fechamento sem merge) e,

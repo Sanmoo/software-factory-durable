@@ -56,7 +56,7 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   const pag42 = (await h.byKey('PAG-42')).work_id;
   const pag43 = (await h.byKey('PAG-43')).work_id;
   assert.equal((await h.show(pag42)).work.execution, null, 'no Execution yet');
-  // Nothing of these cancels: a reason, another Card, a misspelling, an edited command, a claim of authorship in prose, a reserved header.
+  // Nothing of these cancels: a reason, another Card, another word (a free answer; no open question here), an edited command, a claim of authorship in prose, a reserved header.
   const please = h.jira.write('81017', '/factory cancel please', { accountId: 'acc-human' });
   const other = h.jira.write('81017', '/factory cancel PAG-43', { accountId: 'acc-human' });
   const spelled = h.jira.write('81017', '/factory cancelar', { accountId: 'acc-human' });
@@ -66,7 +66,7 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   await h.settle('four guidance replies', async () => h.posts().length === 4);
   const receipt = async (id: string) => (await h.request(requestId('81017', id))).receipt;
   assert.deepEqual([(await receipt(please))?.reason, (await receipt(other))?.reason, (await receipt(spelled))?.reason, (await receipt(edited))?.reason],
-    ['JIRA_CANCEL_INVALID', 'JIRA_CANCEL_INVALID', 'JIRA_CANCEL_INVALID', 'JIRA_COMMENT_EDITED']);
+    ['JIRA_CANCEL_INVALID', 'JIRA_CANCEL_INVALID', 'JIRA_NO_OPEN_QUESTION', 'JIRA_COMMENT_EDITED']);
   assert.deepEqual((await h.works()).map(work => work.result), ['open', 'open', 'open']);
   // The exact command, from any account that can comment on the Card (the Factory's shared one included).
   const cancel = h.jira.write('81017', '/factory cancel');
@@ -105,12 +105,16 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   } finally { await opened.close(); }
 });
 
-test('the command word in any case from a human account cancels; the Work leaves its queue with the cancellation impediment', async t => {
+test('only the exact lower-case command word cancels, from a human account too; the Work leaves its queue with the cancellation impediment', async t => {
   const remote: JiraRemote = { cards: [card('81017', 'PAG-42')] };
   const h = await harness(t, remote);
   await h.start();
   await h.settle('admitted', async () => (await h.works()).length === 2);
-  h.jira.write('81017', '/factory CANCEL', { accountId: 'acc-human' });
+  const upper = h.jira.write('81017', '/factory CANCEL', { accountId: 'acc-human' });
+  await h.settle('the other case is a free answer', async () => Boolean((await h.request(requestId('81017', upper))).receipt));
+  assert.equal((await h.request(requestId('81017', upper))).receipt?.reason, 'JIRA_NO_OPEN_QUESTION');
+  assert.equal((await h.byKey('PAG-42')).result, 'open');
+  h.jira.write('81017', '/factory cancel', { accountId: 'acc-human' });
   await h.settle('cancelled', async () => (await h.byKey('PAG-42')).result === 'cancelled');
   const work = await h.byKey('PAG-42');
   assert.ok(work.impediments.some(item => item.code === 'WORK_CANCELLED'));
