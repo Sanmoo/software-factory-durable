@@ -6,7 +6,8 @@ export { createSecretPublisher, createOwnerSecretReceiver, deliverSchema, secret
 export { secretChannelEndCode, sessionRequestBudget } from './worker-launch.js';
 // Same fixed child channel: one ask_user notification per Builder activation and its Control ACK.
 // Ticket 11: confined Host reads of preserved Builder sessions (runtime tree, never guest paths).
-export { copyPreservedSession, launchToolNames, observePreservedSession, readConfinedFile, readSessionFile, sessionRefSchema, sessionFileLimits, type HostSessionRef } from './worker-session-file.js';
+export { copyPreservedSession, launchToolNames, observePreservedSession, readConfinedFile, readSessionFile, recordWorkerLaunch, sessionRefOfInvocation, sessionRefSchema, sessionFileLimits,
+  type HostSessionRef, type WorkerLaunchRecord } from './worker-session-file.js';
 export { createQuestionSender, serveQuestionRelay, workerQuestionSchema, type WorkerQuestionRequest, type QuestionRelayAck } from './worker-question-ipc.js';
 import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';

@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { builderBudgetV1, qualificationRequestsV1, reviewerBudgetV1 } from '../../contracts/index.js';
 import { createOwnerSecretReceiver, secretSyncLimit, type SecretChannelFailure } from './worker-secret-ipc.js';
 import { serveQuestionRelay, workerQuestionSchema, type QuestionRelayAck, type WorkerQuestionRequest } from './worker-question-ipc.js';
-import { copyPreservedSession, observePreservedSession } from './worker-session-file.js';
+import { copyPreservedSession, observePreservedSession, recordWorkerLaunch } from './worker-session-file.js';
 
 const run = promisify(execFile);
 
@@ -205,6 +205,8 @@ export async function launchWorker(host: WorkerBootHost | HostedWorkerBoot, inpu
   const profileDirectory = join(directory, 'profile');
   const sessionsDirectory = join(profileDirectory, 'sessions');
   for (const path of [profileDirectory, sessionsDirectory, join(directory, 't'), join(directory, 'c')]) await mkdir(path, { mode: 0o700 });
+  // Acceptance finding A7: the directory names its invocation, so the session of a worker that never returns (a lost boot) stays attributable.
+  await recordWorkerLaunch(directory, { workId: request.context.workId, executionId: request.context.executionId, invocationId: request.context.invocationId, role: request.context.role });
   const { continueSession, ...launched } = request;
   // Ticket 11: the EXACT observed preserved session, copied into this worker's own private sessions directory before it exists.
   const continuedSession = continueSession ? await copyPreservedSession(root, sessionsDirectory, continueSession) : undefined;

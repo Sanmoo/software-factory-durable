@@ -116,7 +116,8 @@ export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefi
     let removal: 'expired' | 'removed' | null = null;
     if (locator && ports?.workers.observeUsage) {
       // The Workers facet reads each unchanged hash-verified session once (its own bounded cache keyed by the file identity).
-      const boot = executions.find(item => item.executionId === subject.executionId)?.dispatch.boot ?? null;
+      // Finding A7: the session of a lost Execution is looked up in the boot that was lost.
+      const boot = subject.lost?.boot ?? executions.find(item => item.executionId === subject.executionId)?.dispatch.boot ?? null;
       const observe = async (session: Parameters<NonNullable<ExecutionPorts['workers']['observeUsage']>>[0]['session']): Promise<UsageObservation> => {
         try { return await ports.workers.observeUsage!({ workId: work.work_id, boot, session }); }
         catch { return { state: 'unavailable' as const, code: 'USAGE_OBSERVATION_FAILED' }; }

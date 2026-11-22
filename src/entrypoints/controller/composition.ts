@@ -7,7 +7,7 @@ import { createPreparationVm, createSandbox, inventoryRuntime, reconcileInterrup
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
-import { readConfinedFile, readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
+import { readConfinedFile, readSessionFile, sessionRefOfInvocation, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
@@ -109,6 +109,14 @@ export function detailPorts(root: string): DetailPorts {
         }
       }
       return found;
+    },
+    // Finding A7: the session of an invocation whose boot was lost, found by the launch record of its worker directory (never guessed).
+    async lostSession({ workId, boot, executionId, invocationId }) {
+      const canonical = await realpath(root);
+      const found = await sessionRefOfInvocation(canonical, workerRuntimeDirectory(canonical, boot), { workId, executionId, invocationId });
+      if (found.state !== 'found') return null;
+      const read = await readSessionFile(canonical, found.ref);
+      return read.state === 'read' ? { ref: found.ref, sha256: read.sha256, bytes: read.data.length } : null;
     },
     async preserveSession({ workId, executionId, name, session }) {
       // The recorded Builder session must keep its header; another agent's session (named copy) is copied as opaque bytes at its hash.

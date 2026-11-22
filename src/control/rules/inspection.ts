@@ -210,7 +210,12 @@ const add = (a: TokenUsage, b: TokenUsage): TokenUsage => ({ input: a.input + b.
 export type UsageSubject = { executionId: string; role: InspectionRole; round: number | null; attempt: number | null; invocationId: string | null; outcome: string | null;
   session: { sessionId: string | null; mode: string | null } | null;
   /** Why no session can be read (never recorded, removed by an own cleanup...), or null when it should be read. */
-  missing: { state: EvidenceState; code: string } | null };
+  missing: { state: EvidenceState; code: string } | null;
+  /** Acceptance finding A7: the Builder of an Execution whose boot was LOST. It returned no session, so none was recorded; the session it
+   * left in the lost `boot` is looked up by its invocation and, when found, measured as partial (it ended by loss, with no recorded hash). */
+  lost?: { boot: string } };
+/** The code of a measured session that ended by the loss of its boot (finding A7): counted, never complete. */
+export const sessionEndedByLossCode = 'SESSION_ENDED_BY_LOSS';
 
 /**
  * Usage of one activity from its session observation. `counted` holds `sessionId:entryId` of entries already attributed to an earlier
@@ -247,9 +252,11 @@ export function usageActivity(subject: UsageSubject, observation: UsageObservati
     models.set(`${entry.provider}:${entry.model}`, { provider: entry.provider, model: entry.model });
   }
   // Entries the SDK wrote but we cannot read, or a session whose integrity cannot be verified (no recorded hash): partial, never complete.
-  const partial = observation.malformed > 0 || observation.integrity === 'unverified';
-  return { ...base, session: { sessionId: observation.sessionId, mode: subject.session?.mode ?? null, state: 'complete' }, models: [...models.values()],
-    measurement: partial ? 'partial' : 'complete', code: observation.malformed > 0 ? 'USAGE_ENTRIES_UNREADABLE' : partial ? 'SESSION_INTEGRITY_UNVERIFIED' : null, carriedEntries: carried, entries, failedOrAborted: failed,
+  // A session that ended by the loss of its boot (finding A7) is what was written until then: counted, and partial too.
+  const partial = observation.malformed > 0 || observation.integrity === 'unverified' || Boolean(subject.lost);
+  return { ...base, session: { sessionId: observation.sessionId, mode: subject.session?.mode ?? null, state: subject.lost ? 'partial' : 'complete' }, models: [...models.values()],
+    measurement: partial ? 'partial' : 'complete', code: observation.malformed > 0 ? 'USAGE_ENTRIES_UNREADABLE' : subject.lost ? sessionEndedByLossCode : partial ? 'SESSION_INTEGRITY_UNVERIFIED' : null,
+    carriedEntries: carried, entries, failedOrAborted: failed,
     tokens, cost: costKnown && entries > 0 ? { total: round(cost), unit: 'sdk-catalog-estimate', currency: null } : entries === 0 ? { total: 0, unit: 'sdk-catalog-estimate', currency: null } : null };
 }
 
@@ -286,9 +293,11 @@ export function usageSubjects(work: Work): UsageSubject[] {
   for (const execution of executionsOf(work)) {
     const session = execution.end?.session ?? null;
     const started = execution.start !== null;
+    // Finding A7: a started Execution that ended by a recorded loss returned no session; the one it left in the lost boot is looked up.
+    const loss = started && !session && execution.end ? (work.losses ?? []).findLast(item => item.executionId === execution.executionId) : undefined;
     subjects.push({ executionId: execution.executionId, role: 'builder', round: null, attempt: null, invocationId: execution.invocationId, outcome: execution.end?.outcome ?? execution.state,
-      session: session ? { sessionId: session.sessionId, mode: execution.request.session?.mode ?? 'new' } : null,
-      missing: !started ? { state: 'absent', code: 'NOT_STARTED' } : !session ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' } : null });
+      session: session ? { sessionId: session.sessionId, mode: execution.request.session?.mode ?? 'new' } : loss ? { sessionId: null, mode: execution.request.session?.mode ?? 'new' } : null,
+      missing: !started ? { state: 'absent', code: 'NOT_STARTED' } : !session && !loss ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' } : null, ...(loss ? { lost: { boot: loss.boot } } : {}) });
     for (const reviewRound of execution.review?.rounds ?? []) for (const role of ['standards', 'spec'] as const) {
       const reviewer = reviewRound.reviewers?.[role];
       if (!reviewer || reviewer.state === 'not-required' || reviewer.source === 'carried') continue;
@@ -303,11 +312,12 @@ export function usageSubjects(work: Work): UsageSubject[] {
 }
 
 /** Session `file` of a subject (reviewers) or the Builder ref, for the usage port; null when nothing can be read. */
-export function sessionLocator(work: Work, subject: UsageSubject): { ref: string; sha256: string } | { file: string } | null {
+export function sessionLocator(work: Work, subject: UsageSubject): { ref: string; sha256: string } | { file: string } | { invocation: { executionId: string; invocationId: string } } | null {
   if (subject.missing) return null;
   const execution = executionsOf(work).find(item => item.executionId === subject.executionId);
   if (!execution) return null;
-  if (subject.role === 'builder') return execution.end?.session ? { ref: execution.end.session.ref, sha256: execution.end.session.sha256 } : null;
+  if (subject.role === 'builder') return execution.end?.session ? { ref: execution.end.session.ref, sha256: execution.end.session.sha256 }
+    : subject.lost ? { invocation: { executionId: execution.executionId, invocationId: execution.invocationId } } : null;
   for (const reviewRound of execution.review?.rounds ?? []) {
     const reviewer = reviewRound.round === subject.round ? reviewRound.reviewers?.[subject.role as 'standards' | 'spec'] : undefined;
     if (reviewer?.invocationId === subject.invocationId && reviewer.opinion?.session.file) return { file: reviewer.opinion.session.file };
@@ -320,7 +330,7 @@ export function sessionLocator(work: Work, subject: UsageSubject): { ref: string
  * source is the recorded file), preserved before its environment was removed; and whether that copy was itself removed afterwards
  * (`expired` by a retention sweep, `removed` by an explicit cleanup).
  */
-export function sessionCopy(work: Work, subject: UsageSubject, locator: { ref: string; sha256: string } | { file: string } | null):
+export function sessionCopy(work: Work, subject: UsageSubject, locator: { ref: string; sha256: string } | { file: string } | { invocation: object } | null):
   { copy: { name: string; sha256: string } | null; removal: 'expired' | 'removed' | null } {
   const sessions = work.retention?.sessions ?? [];
   const preserved = sessions.find(item => item.executionId === subject.executionId && item.state === 'preserved' &&

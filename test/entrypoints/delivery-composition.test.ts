@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
+import { recordWorkerLaunch } from '../../src/platform/host/index.js';
 import type { GitHubAccess } from '../../src/platform/github/index.js';
 
 // Ticket 17: the production composition hands Control the REAL Sandbox removal and the Sandbox export -> Records preservation chain
@@ -61,6 +62,13 @@ test('ticket 30: production composition copies a recorded Builder session out of
   await writeFile(join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl'), data, { mode: 0o600 });
   assert.deepEqual(await details.runtimeSessions!({ boot }), [{ ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length }]);
   assert.deepEqual(await details.runtimeSessions!({ boot: 'boot-99999999-2222-4333-8444-555555555555' }), []);
+  // Finding A7: the session of an invocation that never returned is attributed by the launch record of its worker directory, never guessed.
+  const invocation = { workId: 'work-r', boot, executionId: 'e-lost', invocationId: 'builder-lost' };
+  assert.equal(await details.lostSession!(invocation), null, 'no launch record names that invocation');
+  await recordWorkerLaunch(join(runtime, 'w-rev'), { workId: 'work-r', executionId: 'e-lost', invocationId: 'builder-lost', role: 'builder' });
+  assert.deepEqual(await details.lostSession!(invocation), { ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length });
+  assert.equal(await details.lostSession!({ ...invocation, workId: 'other-work' }), null);
+  assert.equal(await details.lostSession!({ ...invocation, boot: 'boot-99999999-2222-4333-8444-555555555555' }), null);
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', name: 'e-1--rv-0123456789abcdef',
     session: { ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length } }), { status: 'preserved', sha256, bytes: data.length });
   // Review LOW: an empty or non-session file is an opaque hashed copy (never blocking); only an unsafe file is reported with its code.

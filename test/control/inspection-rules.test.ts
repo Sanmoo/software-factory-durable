@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { aggregateUsage, captureState, trimEntry, chainOf, combineAggregates, entryRole, fitPage, historyEntries, page, pageArguments, pageState, phaseOf, usageActivity,
-  usageSubjects, type UsageSubject } from '../../src/control/rules/inspection.js';
+  sessionLocator, usageSubjects, type UsageSubject } from '../../src/control/rules/inspection.js';
 import type { UsageObservation, WorkView } from '../../src/control/types.js';
 import { basisExecution } from './readiness-seed.js';
 
@@ -140,4 +140,32 @@ test('review LOW: freshness is `complete` only with a completeness proof; otherw
 test('review MED: a reviewer session without a recorded hash is measured but never complete', () => {
   const unverified = usageActivity(subject({ role: 'standards' }), { ...read(['a']), integrity: 'unverified' } as UsageObservation, new Set());
   assert.deepEqual([unverified.measurement, unverified.code], ['partial', 'SESSION_INTEGRITY_UNVERIFIED']);
+});
+
+// Acceptance finding A7: a lost Execution never returned its session, so nothing was recorded on its end; the tokens it spent were dropped.
+test('A7: the Builder of a LOST Execution is measured from the session its invocation left in the lost boot: partial, with a code that says how it ended', () => {
+  const lostExecution = { ...basisExecution('e-lost'), start: { receiptId: 'r', confirmedAt: at }, end: { at, outcome: 'failure' as const, code: 'SANDBOX_ENVIRONMENT_ENDED', cessation: 'confirmed' as const, session: null } };
+  lostExecution.dispatch = { ...lostExecution.dispatch, boot: 'boot-current' };
+  const failed = { ...basisExecution('e-failed'), start: { receiptId: 'r', confirmedAt: at }, end: { at, outcome: 'failure' as const, code: 'WORKER_SKILL_PACK_DRIFT', cessation: 'confirmed' as const, session: null } };
+  const loss = { at, executionId: 'e-lost', boot: 'boot-lost', environment: null, reason: 'Terminated', terminatedAt: null,
+    confirmed: { commit: null, source: 'none' as const, branch: 'b', origin: { state: 'unknown' as const, code: 'X' } }, consumption: { executionMs: 1 },
+    session: { invocationId: lostExecution.invocationId, disposition: 'conserved-as-evidence' as const }, marker: { state: 'absent' as const } } as unknown as NonNullable<Work['losses']>[number];
+  const subjects = usageSubjects(work({ previousExecutions: [lostExecution, failed], losses: [loss] }));
+  assert.deepEqual(subjects.map(item => [item.executionId, item.missing?.code ?? null, item.lost ?? null]), [['e-lost', null, { boot: 'boot-lost' }], ['e-failed', 'SESSION_NOT_RECORDED', null]],
+    'only a recorded loss is searched; any other unrecorded session stays unrecorded');
+  const lost = subjects[0]!;
+  assert.deepEqual(sessionLocator(work({ previousExecutions: [lostExecution, failed], losses: [loss] }), lost), { invocation: { executionId: 'e-lost', invocationId: lostExecution.invocationId } });
+  const counted = new Set<string>();
+  const unverified = (observation: UsageObservation): UsageObservation => observation.state === 'read' ? { ...observation, integrity: 'unverified' } : observation;
+  const measured = usageActivity(lost, unverified(read(['a', 'b'], { outcome: 'aborted' })), counted);
+  assert.deepEqual([measured.measurement, measured.code, measured.entries, measured.tokens?.total, measured.failedOrAborted, measured.session.sessionId, measured.session.state],
+    ['partial', 'SESSION_ENDED_BY_LOSS', 2, 32, 2, 's', 'partial']);
+  assert.deepEqual([aggregateUsage([measured]).measurement, aggregateUsage([measured]).tokens?.total], ['partial', 32], 'its tokens enter the total, which stays partial');
+  // Entries the SDK wrote but that cannot be read are still the stronger reason.
+  assert.equal(usageActivity(lost, unverified(read(['c'], { malformed: 1 })), new Set()).code, 'USAGE_ENTRIES_UNREADABLE');
+  // Nothing found for the invocation (a boot launched before the launch record existed, or a worker that wrote no session): unavailable, never zero.
+  const unfound = usageActivity(lost, { state: 'unavailable', code: 'SESSION_NOT_RECORDED' }, new Set());
+  assert.deepEqual([unfound.measurement, unfound.code, unfound.tokens, unfound.session.state], ['unavailable', 'SESSION_NOT_RECORDED', null, 'unknown']);
+  const removed = usageActivity(lost, { state: 'lost', code: 'SESSION_FILE_MISSING' }, new Set(), true);
+  assert.deepEqual([removed.measurement, removed.code], ['unavailable', 'SESSION_REMOVED_BY_CLEANUP']);
 });

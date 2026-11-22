@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative, sep } from 'node:path';
-import { readSessionFile, sessionFileLimits, workerRuntimeDirectory } from '../platform/host/index.js';
+import { readSessionFile, sessionFileLimits, sessionRefOfInvocation, workerRuntimeDirectory } from '../platform/host/index.js';
 
 export type SessionTokens = { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 export type SessionUsageEntry = { id: string; provider: string | null; model: string | null; outcome: 'ok' | 'error' | 'aborted' | 'other'; tokens: SessionTokens; cost: number | null };
@@ -117,4 +117,20 @@ export async function observeSessionUsage(root: string, session: { ref: string; 
     cache.set(key, result);
   }
   return result;
+}
+
+/**
+ * Acceptance finding A7: usage of the session a Builder invocation left in the runtime tree of `boot` although it never returned it (its
+ * boot was lost), found by the launch record of its worker directory. No hash was ever recorded for it: read `unverified`, never complete.
+ */
+export async function observeInvocationSessionUsage(root: string, invocation: { workId: string; executionId: string; invocationId: string }, boot: string | null): Promise<SessionUsage> {
+  let runtime: string;
+  try { if (!boot) throw new Error('NO_BOOT'); runtime = workerRuntimeDirectory(root, boot); }
+  catch { return { state: 'unavailable', code: 'SESSION_BOOT_UNKNOWN' }; }
+  const found = await sessionRefOfInvocation(root, runtime, invocation);
+  if (found.state !== 'found') return found;
+  const read = await readSessionFile(root, found.ref);
+  if (read.state === 'lost') return { state: 'lost', code: read.code };
+  if (read.state !== 'read') return { state: 'unavailable', code: read.code };
+  return { ...sessionUsage(read.data, read.sessionId), integrity: 'unverified' };
 }

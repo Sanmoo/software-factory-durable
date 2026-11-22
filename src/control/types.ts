@@ -220,7 +220,9 @@ export type ExecutionPorts = {
      * session `file`), read-only and confined; absent = usage is `unavailable` (never zero). Not an invoice. */
     observeUsage?(input: { workId: string; /** The boot of the Execution the session belongs to (the session must lie in its runtime tree). */ boot: string | null;
       /** Ticket 30: `copy` = the Work's Records session copy `sessions/<name>.jsonl`, verified against `sha256`. */
-      session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } }): Promise<UsageObservation> };
+      session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } |
+        /** Acceptance finding A7: the session a Builder invocation left in `boot` without returning it (a lost boot); read unverified. */
+        { invocation: { executionId: string; invocationId: string } } }): Promise<UsageObservation> };
   /** Ticket 29 — `Records.read(selection)` for inspection: listing of a Work's protected captures and one bounded page of one of them.
    * Absent = logs are `unavailable` (never an empty list). Read-only. */
   records?: RecordsInspectionPort;
@@ -1331,6 +1333,9 @@ export type DetailPorts = {
   list(input: { workId: string }): Promise<DetailInventory>;
   /** Every agent session file in one boot's runtime tree (every `w-<id>/profile/sessions/<file>.jsonl` under `r/<boot>`), read confined, with its current hash. */
   runtimeSessions?(input: { boot: string }): Promise<({ ref: string; sha256: string; bytes: number } | { ref: string; code: string })[]>;
+  /** Acceptance finding A7: the session a Builder invocation left in `boot` without returning it (its boot was lost), with its current hash;
+   * null when none can be attributed to that invocation. Preserved as the Execution's Builder session copy, like a recorded one. */
+  lostSession?(input: { workId: string; boot: string; executionId: string; invocationId: string }): Promise<{ ref: string; sha256: string; bytes: number } | null>;
   /** Copies a session (verified by its hash) into the Work's Records `sessions/<name ?? executionId>.jsonl` BEFORE its environment is removed. */
   preserveSession(input: { workId: string; executionId: string; name?: string; session: Pick<WorkerSessionRef, 'ref' | 'sha256' | 'bytes'> }): Promise<{ status: 'preserved' | 'already'; sha256: string; bytes: number } |
     { status: 'lost' | 'failed'; code: string }>;

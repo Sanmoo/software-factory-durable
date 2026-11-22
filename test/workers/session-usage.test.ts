@@ -1,10 +1,11 @@
 // Ticket 29: usage entries of a Pi JSONL v3 session as the SDK recorded them (assistant messages, usage/compaction entries), gaps counted.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorkers, sessionUsage } from '../../src/workers/index.js';
+import { recordWorkerLaunch } from '../../src/platform/host/index.js';
 
 const line = (value: unknown) => JSON.stringify(value);
 const usage = { input: 3, output: 2, cacheRead: 1, cacheWrite: 0, totalTokens: 6, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 } };
@@ -54,4 +55,51 @@ test('review MED: a session is measured only inside its Execution\'s boot runtim
   const ref = own.slice(root.length + 1);
   const mismatch = await workers.observeUsage({ workId: 'w', boot, session: { ref, sha256: '0'.repeat(64) } });
   assert.deepEqual(mismatch, { state: 'altered', code: 'SESSION_HASH_MISMATCH' });
+});
+
+// Acceptance finding A7: an activation that never returned (its boot was lost) leaves no session reference in Control. The owner names
+// each worker directory after the invocation it launched there, so the session that worker wrote can still be found and measured.
+test('A7: the session of an invocation that never returned is found by the launch record of its worker directory, in its own boot only, and read unverified', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'usage-invocation-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const boot = 'boot-11111111-2222-4333-8444-555555555555', other = 'boot-99999999-2222-4333-8444-555555555555';
+  const dir = (value: string) => Buffer.from(value.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
+  const launch = async (bootRef: string, worker: string, identity: { workId: string; executionId: string; invocationId: string; role: 'builder' | 'standards' | 'spec' } | null, sessions: string[]) => {
+    const directory = join(root, 'r', dir(bootRef), worker);
+    await mkdir(join(directory, 'profile', 'sessions'), { recursive: true, mode: 0o700 });
+    if (identity) await recordWorkerLaunch(directory, identity);
+    for (const name of sessions) await writeFile(join(directory, 'profile', 'sessions', name), [line({ type: 'session', version: 3, id: `id-${worker}`, timestamp: 't', cwd: '/workspace' }),
+      line({ type: 'message', id: 'a1', message: { role: 'assistant', stopReason: 'stop', usage } }),
+      line({ type: 'message', id: 'a2', message: { role: 'assistant', stopReason: 'aborted', usage } })].join('\n'), { mode: 0o600 });
+    return directory;
+  };
+  const builder = { workId: 'w', executionId: 'e-1', invocationId: 'builder-1', role: 'builder' as const };
+  await launch(boot, 'w-builder', builder, ['s.jsonl']);
+  await launch(boot, 'w-reviewer', { ...builder, invocationId: 'standards-1', role: 'standards' }, ['s.jsonl']);
+  await launch(boot, 'w-legacy', null, ['s.jsonl']);
+  await launch(other, 'w-builder', { ...builder, executionId: 'e-2', invocationId: 'builder-2' }, ['s.jsonl']);
+  assert.deepEqual(await readdir(join(root, 'r', dir(boot), 'w-builder')), ['launch.json', 'profile']);
+  await assert.rejects(recordWorkerLaunch(join(root, 'r', dir(boot), 'w-builder'), builder), 'a launch record is written once, never replaced');
+  const workers = createWorkers({ root, knownSecrets: [], profile: { id: 'p' } as never });
+  const observe = (bootRef: string | null, invocation: { executionId: string; invocationId: string }, workId = 'w') => workers.observeUsage({ workId, boot: bootRef, session: { invocation } });
+  const found = await observe(boot, builder);
+  assert.deepEqual([found.state, found.state === 'read' && found.sessionId, found.state === 'read' && found.integrity, found.state === 'read' && found.entries.map(item => [item.id, item.outcome, item.tokens.total])],
+    ['read', 'id-w-builder', 'unverified', [['a1', 'ok', 6], ['a2', 'aborted', 6]]]);
+  // Another Work, Execution, invocation or boot, a reviewer's directory and a directory without a launch record are never this session.
+  assert.deepEqual(await observe(boot, builder, 'other-work'), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
+  assert.deepEqual(await observe(boot, { ...builder, executionId: 'e-2' }), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
+  assert.deepEqual(await observe(boot, { executionId: 'e-1', invocationId: 'standards-1' }), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
+  assert.deepEqual(await observe(other, builder), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
+  assert.deepEqual(await observe(null, builder), { state: 'unavailable', code: 'SESSION_BOOT_UNKNOWN' });
+  // The runtime tree of the boot is gone (environment removed): lost, like any removed session file.
+  assert.deepEqual(await observe('boot-77777777-2222-4333-8444-555555555555', builder), { state: 'lost', code: 'SESSION_FILE_MISSING' });
+  // A worker that wrote no session, or more than one, is never guessed.
+  await launch(boot, 'w-empty', { ...builder, executionId: 'e-3', invocationId: 'builder-3' }, []);
+  await launch(boot, 'w-two', { ...builder, executionId: 'e-4', invocationId: 'builder-4' }, ['a.jsonl', 'b.jsonl']);
+  assert.deepEqual(await observe(boot, { executionId: 'e-3', invocationId: 'builder-3' }), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
+  assert.deepEqual(await observe(boot, { executionId: 'e-4', invocationId: 'builder-4' }), { state: 'unavailable', code: 'SESSION_AMBIGUOUS' });
+  // A launch record that is not a private regular file of this installation (here: a symbolic link to a valid one) names nothing.
+  const forged = await launch(boot, 'w-forged', null, ['s.jsonl']);
+  await symlink(join(root, 'r', dir(other), 'w-builder', 'launch.json'), join(forged, 'launch.json'));
+  assert.deepEqual(await observe(boot, { executionId: 'e-2', invocationId: 'builder-2' }), { state: 'unavailable', code: 'SESSION_NOT_RECORDED' });
 });

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { until } from '../runner/budget.js';
 import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { openControl, type ExecutionPorts, type ListView, type WorkView } from '../../src/control/index.js';
+import type { UsageView } from '../../src/control/types.js';
+import { recordWorkerLaunch, workerRuntimeDirectory } from '../../src/platform/host/index.js';
 import { composeProductionAccess, composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
 import { productionProfile } from '../../src/entrypoints/release.js';
 import { createSandbox, type LambdaServiceFactory, type LambdaWorkerLauncher, type ReadResult, type ToolCall } from '../../src/sandbox/index.js';
@@ -73,6 +75,15 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const launcher: LambdaWorkerLauncher = async (request, endpoint, signal) => {
     const context = request.context;
     launched.push({ role: context.role, phaseId: context.phaseId, boot: context.bootRef });
+    // Finding A7: the substituted worker process leaves what the real launch and the SDK leave on the Host: its private directory, named
+    // after the invocation by the launch record, and the session file with the usage of the requests made before the environment died.
+    const workerDirectory = join(workerRuntimeDirectory(world.root, context.bootRef), `w-scripted${launched.length}`);
+    await mkdir(join(workerDirectory, 'profile', 'sessions'), { recursive: true, mode: 0o700 });
+    await recordWorkerLaunch(workerDirectory, { workId: context.workId, executionId: context.executionId, invocationId: context.invocationId, role: context.role });
+    await writeFile(join(workerDirectory, 'profile', 'sessions', 'session.jsonl'), [{ type: 'session', version: 3, id: `scripted-${launched.length}`, timestamp: 't', cwd: '/workspace' },
+      { type: 'message', id: 'a1', message: { role: 'assistant', provider: 'p', model: 'm', stopReason: 'stop', usage: { input: 30, output: 20, cacheRead: 10, cacheWrite: 0, totalTokens: 60 } } },
+      { type: 'message', id: 'a2', message: { role: 'assistant', provider: 'p', model: 'm', stopReason: 'aborted', usage: { input: 3, output: 2, cacheRead: 1, cacheWrite: 0, totalTokens: 6 } } }]
+      .map(entry => JSON.stringify(entry)).join('\n'), { mode: 0o600 });
     signal.addEventListener('abort', () => { aborted = true; log.push('worker-aborted'); }, { once: true });
     const tools = createSandbox({ root: world.root, toolEndpoint: endpoint });
     let calls = 0;
@@ -199,6 +210,13 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   assert.equal(typeof loss!.consumption.executionMs, 'number');
   // The old session's host directory (the boot's worker runtime) is still there: evidence, removed only by the Work's cleanup.
   assert.equal(await stat(join(world.root, 'r')).then(entry => entry.isDirectory(), () => false), true);
+  // Finding A7: the lost activation never returned its session, yet what it spent is counted: `factory usage` measures the session its
+  // invocation left in the lost boot, as partial (it ended by loss; no hash was recorded), instead of dropping it as not recorded.
+  const usage = (await control.inspect({ kind: 'usage', work_id: lostWork.work_id }) as UsageView).works[0]!;
+  const spent = usage.activities.find(item => item.executionId === started.executionId && item.role === 'builder')!;
+  assert.deepEqual([spent.measurement, spent.code, spent.entries, spent.failedOrAborted, spent.tokens, spent.session.state],
+    ['partial', 'SESSION_ENDED_BY_LOSS', 2, 1, { input: 33, output: 22, cacheRead: 11, cacheWrite: 0, total: 66 }, 'partial']);
+  assert.ok(usage.total.tokens!.total >= 66 && usage.total.measurement === 'partial', JSON.stringify(usage.total));
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
 });

@@ -86,7 +86,12 @@ export async function preserveSessions(session: Session, details: DetailPorts, w
     return result.status === 'failed' ? 'failed' as const : 'preserved' as const;
   };
   for (const execution of executions) {
-    const recorded = execution.end?.session;
+    let recorded: { ref: string; sha256: string; bytes: number } | null = execution.end?.session ?? null;
+    // Acceptance finding A7: a lost Execution returned no session; the one its invocation left in the lost boot is its Builder session copy.
+    const loss = recorded ? undefined : (work.losses ?? []).findLast(item => item.executionId === execution.executionId);
+    if (loss && details.lostSession) {
+      try { recorded = await details.lostSession({ workId: work.work_id, boot: loss.boot, executionId: execution.executionId, invocationId: execution.invocationId }); } catch { return 'failed'; }
+    }
     if (recorded && await preserve(execution, 'builder', execution.executionId, recorded) === 'failed') return 'failed';
     // Supervisor decision (ticket 30): the other agent sessions of the same boot (reviewers) are retained details too, copied first as well.
     if (!execution.dispatch.boot || !details.runtimeSessions) continue;

@@ -13,7 +13,7 @@ import { observeOpinionRecord, type OpinionObservation } from './opinion-observa
 export type { OpinionObservation } from './opinion-observation.js';
 import { observeQuestionRecord, type QuestionObservation } from './question-observation.js';
 export type { QuestionObservation } from './question-observation.js';
-import { observeSessionCopyUsage, observeSessionUsage, type SessionUsage, type SessionUsageCache } from './session-usage.js';
+import { observeInvocationSessionUsage, observeSessionCopyUsage, observeSessionUsage, type SessionUsage, type SessionUsageCache } from './session-usage.js';
 export { sessionUsage, type SessionUsage, type SessionUsageEntry } from './session-usage.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
@@ -195,8 +195,13 @@ export function createWorkers(configuration?: Configuration) {
       return observeQuestionRecord(records, input);
     },
     /** Ticket 29 — Q6 `observe`, usage facet: model usage of one preserved session, read-only and confined (never an invoice). */
-    async observeUsage(input: { workId: string; boot: string | null; session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } }): Promise<SessionUsage> {
+    async observeUsage(input: { workId: string; boot: string | null; session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } |
+      /** Acceptance finding A7: the session a Builder invocation of THIS Work left in `boot` without returning it (a lost boot). */
+      { invocation: { executionId: string; invocationId: string } } }): Promise<SessionUsage> {
       if (!configuration) return { state: 'unavailable', code: 'WORKER_EXECUTION_NOT_ENABLED' };
+      if ('invocation' in input.session) return observeInvocationSessionUsage(configuration.root,
+        { workId: input.workId, executionId: input.session.invocation.executionId, invocationId: input.session.invocation.invocationId }, input.boot)
+        .catch(() => ({ state: 'unavailable' as const, code: 'SESSION_USAGE_UNREADABLE' }));
       // Ticket 30: a Records session copy of THIS Work only.
       if ('copy' in input.session) return input.session.copy.workId === input.workId ? observeSessionCopyUsage(configuration.root, input.session.copy).catch(() => ({ state: 'unavailable' as const, code: 'SESSION_USAGE_UNREADABLE' }))
         : { state: 'unavailable', code: 'SESSION_COPY_NOT_OF_WORK' };

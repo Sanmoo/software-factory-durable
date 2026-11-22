@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
+import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 
@@ -132,4 +132,58 @@ export async function copyPreservedSession(root: string, sessionsDirectory: stri
   const handle = await open(copy, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(read.data); await handle.sync(); } finally { await handle.close(); }
   return { file: copy, sha256: read.sha256, sessionId: read.sessionId };
+}
+
+/**
+ * Acceptance finding A7: which invocation a worker directory `w-<id>` was created for. Only a worker that RETURNS reports its session
+ * file (the owner then observes it); one whose boot was lost never does, and its session would be attributable to nobody. The owner
+ * writes this record in the private worker directory before the worker process exists; it is written once and never replaced.
+ */
+const launchRecordName = 'launch.json';
+const launchRecordSchema = z.strictObject({ version: z.literal(1), workId: z.string().min(1).max(128), executionId: z.string().min(1).max(128),
+  invocationId: z.string().min(1).max(128), role: z.enum(['builder', 'standards', 'spec']) });
+export type WorkerLaunchRecord = Omit<z.infer<typeof launchRecordSchema>, 'version'>;
+export async function recordWorkerLaunch(directory: string, launch: WorkerLaunchRecord) {
+  const data = JSON.stringify(launchRecordSchema.parse({ version: 1, workId: launch.workId, executionId: launch.executionId, invocationId: launch.invocationId, role: launch.role }));
+  const handle = await open(join(directory, launchRecordName), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
+}
+/** The launch record of one worker directory, read no-follow (a private regular single-link file of this uid, bounded), or null. */
+async function readWorkerLaunch(directory: string): Promise<WorkerLaunchRecord | null> {
+  let file;
+  try {
+    await privateDirectory(directory);
+    file = await open(join(directory, launchRecordName), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch { return null; }
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o022) || info.size === 0 || info.size > 4096) return null;
+    const parsed = launchRecordSchema.safeParse(JSON.parse((await file.readFile()).toString('utf8')));
+    return parsed.success ? parsed.data : null;
+  } catch { return null; } finally { await file.close().catch(() => {}); }
+}
+/**
+ * The `ref` of the ONE session file a Builder invocation wrote in the runtime tree of its boot (`runtime`, under `root`), found by the
+ * launch record of its worker directory. Never a guess: no record of that invocation, no session file or more than one names nothing.
+ * `lost` = the runtime tree of the boot no longer exists.
+ */
+export async function sessionRefOfInvocation(root: string, runtime: string, invocation: { workId: string; executionId: string; invocationId: string }):
+  Promise<{ state: 'found'; ref: string } | { state: 'lost' | 'unavailable'; code: string }> {
+  let workers: string[];
+  try { workers = (await readdir(runtime)).filter(name => /^w-[A-Za-z0-9]{1,64}$/.test(name)).sort(); }
+  catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'ENOENT' ? { state: 'lost', code: 'SESSION_FILE_MISSING' } : { state: 'unavailable', code: 'SESSION_PATH_UNSAFE' };
+  }
+  const refs: string[] = [];
+  for (const worker of workers) {
+    const launch = await readWorkerLaunch(join(runtime, worker));
+    if (!launch || launch.role !== 'builder' || launch.workId !== invocation.workId || launch.executionId !== invocation.executionId || launch.invocationId !== invocation.invocationId) continue;
+    const sessions = join(runtime, worker, 'profile', 'sessions');
+    for (const name of (await readdir(sessions).catch(() => [] as string[])).filter(file => fileName.test(file)).sort()) {
+      const ref = sessionRefOf(root, sessions, join(sessions, name));
+      if (ref) refs.push(ref);
+    }
+  }
+  if (refs.length > 1) return { state: 'unavailable', code: 'SESSION_AMBIGUOUS' };
+  return refs.length ? { state: 'found', ref: refs[0]! } : { state: 'unavailable', code: 'SESSION_NOT_RECORDED' };
 }

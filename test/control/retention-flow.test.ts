@@ -11,6 +11,7 @@ import { readWork, readWorks, works, type WorkRecord } from '../../src/control/d
 import { readQuestions } from '../../src/control/durable/questions.js';
 import { planCleanup } from '../../src/control/rules/delivery.js';
 import { retentionProtections, type PlanFacts } from '../../src/control/rules/retention.js';
+import { sessionCopy, sessionLocator, usageSubjects } from '../../src/control/rules/inspection.js';
 import type { DetailPorts, ExplicitCleanupSelection } from '../../src/control/types.js';
 import { createRecords, listDetails, preserveSessionCopy, removeRecordsDetail } from '../../src/records/index.js';
 import { scope } from './doubles.js';
@@ -385,4 +386,33 @@ test('review LOW: an unsafe agent session file in the runtime keeps the environm
   assert.equal(h.log.filter(item => item.startsWith('remove:')).length, 0, 'environment kept');
   assert.ok(await exists(h.own.runtime));
   assert.ok(work.retention?.sessions.some(item => item.state === 'failed' && item.code === 'SESSION_PATH_UNSAFE'), JSON.stringify(work.retention?.sessions));
+});
+
+test('finding A7: the session a LOST Execution left in its boot is preserved as its Builder session copy before the environment goes, and usage reads that copy', async t => {
+  const h = await harness(t);
+  const data = await readFile(join(h.sessions, 'one.jsonl'));
+  const lost = { ref: relative(h.root, join(h.sessions, 'one.jsonl')), sha256: createHash('sha256').update(data).digest('hex'), bytes: data.length };
+  const asked: unknown[] = [];
+  h.details.lostSession = async input => { asked.push(input); return lost; };
+  // The Execution ended by a loss: nothing returned, so no session was recorded on its end.
+  await h.session.commit(async tx => {
+    const work = (await tx.doc(works, h.work_id, null)).work!;
+    const execution = work.execution!;
+    work.execution = { ...execution, end: { ...execution.end!, outcome: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED', session: null } };
+    work.losses = [{ at: new Date().toISOString(), executionId: execution.executionId, boot: execution.dispatch.boot!, environment: execution.dispatch.environment, reason: 'Terminated', terminatedAt: null,
+      confirmed: { commit: null, source: 'none', branch: execution.request.branch, origin: { state: 'unknown', code: 'ORIGIN_NOT_READ' } }, consumption: { executionMs: 1 },
+      session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' }, marker: { state: 'unknown', code: 'LOST_MARKER_READ_NOT_COMPOSED' } } as NonNullable<WorkRecord['losses']>[number]];
+  }, BACKGROUND_CONTEXT);
+  const before = await h.work();
+  await deliver(h);
+  const work = await h.work();
+  assert.deepEqual(asked, [{ workId: h.work_id, boot: before.execution!.dispatch.boot, executionId: before.execution!.executionId, invocationId: before.execution!.invocationId }]);
+  const kept = work.retention!.sessions.filter(item => item.state === 'preserved');
+  assert.deepEqual(kept.map(item => [item.role, item.id === `session:${before.execution!.executionId}`, item.sourceRef === lost.ref]).sort(), [['builder', true, true], ['reviewer', false, false]],
+    'the lost session is the Builder copy of its Execution, not one more unnamed agent session');
+  assert.ok(await exists(h.copy) && !await exists(h.own.runtime), 'the copy survives the removal of the runtime tree');
+  // Usage then reads the copy: the subject is still the lost Builder, located by its invocation.
+  const subject = usageSubjects(work).find(item => item.role === 'builder' && item.executionId === before.execution!.executionId)!;
+  assert.deepEqual(subject.lost, { boot: before.execution!.dispatch.boot });
+  assert.deepEqual(sessionCopy(work, subject, sessionLocator(work, subject)), { copy: { name: before.execution!.executionId, sha256: lost.sha256 }, removal: null });
 });
