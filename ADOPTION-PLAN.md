@@ -670,3 +670,26 @@ O mantenedor decidiu tolerar os 11, cada um com a sua decisão ao lado da entrad
 - **Integração**: pelo PR #34, conforme o ADR 0003, que entrou no `main` durante a etapa: o merge é humano, por rebase.
 - **Adotados**: Secrets; todos os quality gates já adotados provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
 - **Continuam pendentes**: Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
+
+### Emenda aprovada (2026-11-22): 64 funções de `src/` corrigidas antes de ligar o Static metrics
+
+A re-medição do S6 no `main` depois do S5 achou 435 funções acima de 10, contra as 412 do apêndice C. O trabalho escrito depois do início da adoção (Jira, correções do v2, Lambda) trouxe 25 funções novas acima do limite e fez 39 funções da herança subirem acima do valor aprovado: 64 em 36 arquivos. Duas delas são funções anônimas extraídas e renomeadas (`acceptCancel > arrow#1` virou `cancelIn`, `acceptAnswer > arrow#1` virou `answerIn`) e foram re-identificadas no valor aprovado. O contrato não permite tolerar uma violação posterior ao início da adoção nem subir uma entrada, e o mantenedor decidiu corrigir as 64 nesta etapa, em vez de ligar o gate com elas pendentes.
+
+### S6 — concluída em 2026-11-22
+
+- **Mudou**:
+  - O quality gate Static metrics sobre `src/`, nos dois Entry Points:
+    - complexidade até 10 por função, pela regra `complexity` do ESLint 10.14.0 com uma config própria, para que a config do Lint não mude o que ele mede;
+    - duplicação até 3%, pelo jscpd 5.4.2 fixado;
+    - zero ciclos, que continua vindo do `no-cycles` do cruise, já reportado sob este gate.
+  - `test/` e `scripts/` ficam fora do escopo, porque não são código de produção; o motivo está na config.
+  - `scripts/test-runner/static-metrics.ts` e `complexity.ts`, com testes do nível unit. A política de seleção ganhou o check `static-metrics`, e a Gate Proof foi adicionada. Ponteiro em `coding-standards.md`.
+  - As Gate Proofs passam a compartilhar uma cópia descartável já compilada (portada de #24), restaurada entre as provas; a prova de vulnerabilidades continua com cópia própria. Cada prova do tier fast deixou de pagar a compilação inicial e o preparo do SDK.
+- **Identidade de um achado**: arquivo e a cadeia de declarações nomeadas que contêm a função (`createDispatcher > discover`); uma função anônima, pelo tipo e pela ordem entre as anônimas do seu contêiner (`admitTicket > arrow#1`). Nenhuma identidade depende de linha, então o reformat do S4 e edições em outro ponto do arquivo não mexem nelas. Foi assim que as 412 entradas do apêndice C foram re-identificadas.
+- **Refactors** (emenda acima): as 64 funções voltaram ao limite ou ao valor aprovado, com refactors que preservam o comportamento, feitos em quatro frentes (Jira, dois grupos do Control durable, regras com entrypoints). Cada mudança extrai lógica para helpers privados do mesmo arquivo (cada um até 10), troca cadeias de ramos por tabelas ou usa retornos antecipados. Entradas, saídas, códigos de erro, ordem de efeitos e fronteiras de transação ficam iguais, e nenhum teste foi alterado.
+- **Achados tolerados**: 404 funções, cada uma no seu valor. Em relação ao apêndice C, 8 entradas saíram porque as funções ficaram em 10 ou menos, e 28 baixaram para o valor medido. Nenhuma foi acrescentada nem subiu. Duplicação: 1,49% (97 clones), dentro do limite, sem tolerância. Ciclos: zero.
+- **Regra de aperto**: uma função que baixa de complexidade baixa ou remove a sua entrada na mesma mudança revisada; uma que sobe falha; uma função nova acima de 10 falha.
+- **Regressão**: `test:ci` verde (2348 testes, 314 s de 900 s).
+- **Integração**: pelo PR #39 (ADR 0003).
+- **Adotados**: Static metrics; todos os quality gates já adotados provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
+- **Continuam pendentes**: Mutation. **Bloqueado**: E2E tests. Com isso as etapas S1–S6 do plano terminam, e o engineering harness **não está estabelecido**, como a expectativa de estabelecimento previa.
