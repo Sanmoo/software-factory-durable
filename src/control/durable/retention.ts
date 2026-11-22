@@ -120,6 +120,28 @@ export async function recordSessionPreservation(session: Session, work_id: strin
   });
 }
 
+/** The Builder session an Execution left, if any; `failed` when the copy a lost Execution left in its boot could not be read. */
+async function builderSessionOf(
+  details: DetailPorts,
+  work: WorkRecord,
+  execution: WorkRecord['previousExecutions'][number],
+): Promise<{ ref: string; sha256: string; bytes: number } | null | 'failed'> {
+  const recorded: { ref: string; sha256: string; bytes: number } | null = execution.end?.session ?? null;
+  // Acceptance finding A7: a lost Execution returned no session; the one its invocation left in the lost boot is its Builder session copy.
+  const loss = recorded ? undefined : (work.losses ?? []).findLast(item => item.executionId === execution.executionId);
+  if (!loss || !details.lostSession) return recorded;
+  try {
+    return await details.lostSession({
+      workId: work.work_id,
+      boot: loss.boot,
+      executionId: execution.executionId,
+      invocationId: execution.invocationId,
+    });
+  } catch {
+    return 'failed';
+  }
+}
+
 /**
  * Before an environment is removed (spec §12.1 "antes de remover ambiente preservar o que sustenta registros retidos"): every recorded Builder
  * session of the Work's Executions in that environment is copied to the Records area. `lost` (already gone) is recorded and does not block;
@@ -151,21 +173,8 @@ export async function preserveSessions(session: Session, details: DetailPorts, w
     return result.status === 'failed' ? ('failed' as const) : ('preserved' as const);
   };
   for (const execution of executions) {
-    let recorded: { ref: string; sha256: string; bytes: number } | null = execution.end?.session ?? null;
-    // Acceptance finding A7: a lost Execution returned no session; the one its invocation left in the lost boot is its Builder session copy.
-    const loss = recorded ? undefined : (work.losses ?? []).findLast(item => item.executionId === execution.executionId);
-    if (loss && details.lostSession) {
-      try {
-        recorded = await details.lostSession({
-          workId: work.work_id,
-          boot: loss.boot,
-          executionId: execution.executionId,
-          invocationId: execution.invocationId,
-        });
-      } catch {
-        return 'failed';
-      }
-    }
+    const recorded = await builderSessionOf(details, work, execution);
+    if (recorded === 'failed') return 'failed';
     if (recorded && (await preserve(execution, 'builder', execution.executionId, recorded)) === 'failed') return 'failed';
     // Supervisor decision (ticket 30): the other agent sessions of the same boot (reviewers) are retained details too, copied first as well.
     if (!execution.dispatch.boot || !details.runtimeSessions) continue;

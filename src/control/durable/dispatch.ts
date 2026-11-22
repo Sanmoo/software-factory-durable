@@ -394,6 +394,55 @@ function credentialLifecycle(deps: {
   };
 }
 
+/** The policies of the next session a recorded session is checked against (only those the request sets). */
+function observedSessionPolicies(policies: ExecutionView['request']['policies']) {
+  return {
+    ...(policies.skillPack ? { skillPack: policies.skillPack } : {}),
+    ...(policies.copyOutput === undefined ? {} : { copyOutput: policies.copyOutput }),
+    ...(policies.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: policies.editSourceMaxBytes }),
+  };
+}
+/** v2 ticket 13 (Operator decision 8): a branch that no longer continues what the recorded session knew. */
+const originChangeOf = (continuity: string | undefined) =>
+  continuity === 'rewritten' ? 'ORIGIN_HISTORY_REWRITTEN' : continuity === 'restarted' ? 'ORIGIN_BRANCH_ABSENT' : null;
+
+type PublicationRead = Awaited<ReturnType<AccessDependencies['repository']['findPublication']>>;
+type ObservedPublicationRead = Extract<PublicationRead, { kind: 'observed' }>;
+
+/**
+ * The discovery observation of one publication read. Jira ticket 08: a Jira Work's own PR candidates are those of its own branch only;
+ * a GitHub Work's, those of its issue.
+ */
+function discoveryObservation(read: PublicationRead, ticket: WorkRecord['ticket'], branch: string, jira: boolean): DiscoveryObservation {
+  if (read.kind !== 'observed') return { kind: 'incomplete', code: read.code };
+  const branchCandidates = jira ? read.branchCandidates?.[branch] : undefined;
+  const issue = jira
+    ? branchCandidates
+      ? { completeness: 'complete' as const, candidates: branchCandidates }
+      : undefined
+    : read.issues[String(githubOnly(ticket).number)];
+  if (!issue) return { kind: 'incomplete', code: 'PUBLICATION_NOT_REPORTED' };
+  if (issue.completeness === 'incomplete') return { kind: 'incomplete', code: issue.code };
+  return { kind: 'observed', repositoryId: read.repositoryId, candidates: issue.candidates, ...observedRemoteFacts(read, branch) };
+}
+
+/** The own branch tip, refs, base protection and comparisons a complete publication read reported (unknown, never absent, when not). */
+function observedRemoteFacts(read: ObservedPublicationRead, branch: string) {
+  const tip = read.branches[branch];
+  return {
+    branch: !tip ? { state: 'unknown' as const, code: 'BRANCH_NOT_REPORTED' } : tip.state === 'unknown' ? { state: 'unknown' as const, code: tip.code } : tip,
+    refs: !read.refs
+      ? { state: 'unknown' as const, code: 'REFS_NOT_REPORTED' }
+      : read.refs.state === 'complete'
+        ? read.refs
+        : { state: 'unknown' as const, code: read.refs.code },
+    baseProtection: !read.baseProtection ? { state: 'unknown' as const, code: 'BASE_PROTECTION_NOT_REPORTED' } : read.baseProtection,
+    ...(read.comparison ? { comparison: read.comparison } : {}),
+    ...(read.activity ? { activity: read.activity } : {}),
+    ...(read.ancestry ? { ancestry: read.ancestry } : {}),
+  };
+}
+
 /**
  * Dispatch inside the existing owner loop (no scheduler/broker): after a polling iteration, while a Slot is free, the FIFO-selected Work is
  * revalidated (current Ticket authorization + a FRESH native dependency evaluation of this dispatch attempt), reserved durably, and only then
@@ -462,13 +511,7 @@ export function createDispatcher(deps: {
 
   async function revalidateAuthorization(work: WorkRecord): Promise<{ ok: true; observedAt: string } | { ok: false; reasons: string[] }> {
     // Jira ticket 04: a Jira Work is revalidated at its ORIGIN (the Card re-read by ID against its source label), never by GitHub rules.
-    if (work.ticket.tracker === 'jira') {
-      const observed = await observeJiraAuthorization(deps.access, work);
-      if (observed.observation?.kind === 'observed')
-        await recordTicketPresentation(session, work.work_id, observed.observation.ticket, 'controller-dispatch').catch(() => 'unchanged');
-      if (observed.facts.kind === 'authorized') return { ok: true, observedAt: observed.observation?.observedAt ?? new Date().toISOString() };
-      return { ok: false, reasons: observed.facts.kind === 'withdrawn' ? observed.facts.codes : [observed.facts.code] };
-    }
+    if (work.ticket.tracker === 'jira') return revalidateJiraAuthorization(work);
     const ticket = work.ticket;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     let facts;
@@ -480,6 +523,14 @@ export function createDispatcher(deps: {
     const decision = evaluateEntry({ configuredLabel: configured?.label, listed: ticket, facts });
     if (!decision.authorized) return { ok: false, reasons: decision.holds.map(hold => hold.code) };
     return { ok: true, observedAt: facts.kind === 'observed' ? facts.observedAt : new Date().toISOString() };
+  }
+  /** Jira ticket 04: the Card re-read by ID against its source label (its presentation is updated from the same read). */
+  async function revalidateJiraAuthorization(work: WorkRecord): Promise<{ ok: true; observedAt: string } | { ok: false; reasons: string[] }> {
+    const observed = await observeJiraAuthorization(deps.access, work);
+    if (observed.observation?.kind === 'observed')
+      await recordTicketPresentation(session, work.work_id, observed.observation.ticket, 'controller-dispatch').catch(() => 'unchanged');
+    if (observed.facts.kind === 'authorized') return { ok: true, observedAt: observed.observation?.observedAt ?? new Date().toISOString() };
+    return { ok: false, reasons: observed.facts.kind === 'withdrawn' ? observed.facts.codes : [observed.facts.code] };
   }
   async function freshEvaluation(work: WorkRecord) {
     const attemptId = randomUUID();
@@ -1162,12 +1213,7 @@ export function createDispatcher(deps: {
             executionId: previous.executionId,
             invocationId: previous.invocationId,
             session: recorded,
-            next: {
-              ...(execution.request.policies.skillPack ? { skillPack: execution.request.policies.skillPack } : {}),
-              ...(execution.request.policies.copyOutput === undefined ? {} : { copyOutput: execution.request.policies.copyOutput }),
-              ...(execution.request.policies.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: execution.request.policies.editSourceMaxBytes }),
-              handoff: Boolean(ports.reviews),
-            },
+            next: { ...observedSessionPolicies(execution.request.policies), handoff: Boolean(ports.reviews) },
           })
           .catch(() => ({ session: { state: 'unavailable' as const, code: 'SESSION_OBSERVATION_FAILED', differences: [] }, limitations: [] }))
       ).session;
@@ -1179,12 +1225,7 @@ export function createDispatcher(deps: {
         policies: previous.request.policies,
         environmentLost: Boolean(previous.environmentEnd) || Boolean(current?.losses?.some(loss => loss.executionId === previous.executionId)),
         // v2 ticket 13 (Operator decision 8): the branch no longer continues what that session knew; a substitute session takes over.
-        originChanged:
-          prepared.recreated?.continuity === 'rewritten'
-            ? 'ORIGIN_HISTORY_REWRITTEN'
-            : prepared.recreated?.continuity === 'restarted'
-              ? 'ORIGIN_BRANCH_ABSENT'
-              : null,
+        originChanged: originChangeOf(prepared.recreated?.continuity),
       },
       next: { skillPack: pack, policies: execution.request.policies },
       observation,
@@ -1610,38 +1651,7 @@ export function createDispatcher(deps: {
           preserve: preservationTips(known),
         });
         observedAt = read.observedAt;
-        const branchCandidates = read.kind === 'observed' && jira ? read.branchCandidates?.[publication.branch] : undefined;
-        const issue =
-          read.kind !== 'observed'
-            ? undefined
-            : jira
-              ? branchCandidates
-                ? { completeness: 'complete' as const, candidates: branchCandidates }
-                : undefined
-              : read.issues[String(githubOnly(work.ticket).number)];
-        const tip = read.kind === 'observed' ? read.branches[publication.branch] : undefined;
-        observation =
-          read.kind !== 'observed'
-            ? { kind: 'incomplete', code: read.code }
-            : !issue
-              ? { kind: 'incomplete', code: 'PUBLICATION_NOT_REPORTED' }
-              : issue.completeness === 'incomplete'
-                ? { kind: 'incomplete', code: issue.code }
-                : {
-                    kind: 'observed',
-                    repositoryId: read.repositoryId,
-                    candidates: issue.candidates,
-                    branch: !tip ? { state: 'unknown', code: 'BRANCH_NOT_REPORTED' } : tip.state === 'unknown' ? { state: 'unknown', code: tip.code } : tip,
-                    refs: !read.refs
-                      ? { state: 'unknown', code: 'REFS_NOT_REPORTED' }
-                      : read.refs.state === 'complete'
-                        ? read.refs
-                        : { state: 'unknown', code: read.refs.code },
-                    baseProtection: !read.baseProtection ? { state: 'unknown', code: 'BASE_PROTECTION_NOT_REPORTED' } : read.baseProtection,
-                    ...(read.comparison ? { comparison: read.comparison } : {}),
-                    ...(read.activity ? { activity: read.activity } : {}),
-                    ...(read.ancestry ? { ancestry: read.ancestry } : {}),
-                  };
+        observation = discoveryObservation(read, work.ticket, publication.branch, jira);
       } catch {
         observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' };
       }
@@ -3758,6 +3768,14 @@ export function createDispatcher(deps: {
   };
 
   /** One candidate of the pass: false when none is left. A refused attempt is recorded in `tried` and observed, never retried in this pass. */
+  /** Ticket 48: the repository's Builder budget adjustment, under the `builder-v1` model budget only (throws above the maximum). */
+  function builderBudgetOf(configuredScope: AccessDependencies['repositories'][number] | undefined) {
+    return ports.builder.modelBudget === 'builder-v1' ? builderBudgetPolicy(configuredScope?.builderBudget) : null;
+  }
+  /** The Builder policies of an Execution: publish-only for a publication activation, with the repository's budget adjustment. */
+  function executionPolicies(publication: ExecutionView['request']['publication'] | undefined, builderBudget: ReturnType<typeof builderBudgetPolicy>) {
+    return { ...(publication ? publishOnly(ports.builder) : ports.builder), ...(builderBudget ? { builderBudget } : {}) };
+  }
   async function dispatchOne(tried: Set<string>, pass: string): Promise<boolean> {
     const works = await deps.readWorks();
     // Ticket 22 (spec §4.3): repairs before normal Works, FIFO in each category, no preemption of a running activity.
@@ -3930,12 +3948,12 @@ export function createDispatcher(deps: {
     // Ticket 48: the repository's Builder budget adjustment (validated by the configuration: at most 2x) travels with the Execution's policies.
     let builderBudget: ReturnType<typeof builderBudgetPolicy>;
     try {
-      builderBudget = ports.builder.modelBudget === 'builder-v1' ? builderBudgetPolicy(configuredScope?.builderBudget) : null;
+      builderBudget = builderBudgetOf(configuredScope);
     } catch {
       observe(work.work_id, 'refused', ['BUILDER_BUDGET_ABOVE_MAXIMUM']);
       return true;
     }
-    const policies = { ...(publication ? publishOnly(ports.builder) : ports.builder), ...(builderBudget ? { builderBudget } : {}) };
+    const policies = executionPolicies(publication, builderBudget);
     // v2 ticket 06 (decision 1A): without a persistent disk the Execution publishes its verified commit in its own boot.
     const publishInBoot = ports.sandbox.capabilities?.persistentDisk === false && !publication && Boolean(ports.reviews?.rounds);
     const admission = await admitExecution(session, {

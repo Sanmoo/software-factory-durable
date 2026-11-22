@@ -113,6 +113,25 @@ const jiraSourceKey = (source: { siteId: string; projectId: string }) => `jira:$
 /** Jira failures that count as a failed round for backoff (transient), like GitHub's. */
 const jiraTransient = new Set(['POLLING_QUERY_FAILED', 'JIRA_UNAVAILABLE', 'JIRA_TIMEOUT', 'JIRA_TRANSPORT_UNAVAILABLE', 'JIRA_RATE_LIMITED']);
 
+/** The larger of two service-indicated waits; an absent one neither shortens nor opens a wait. */
+const widerWait = (current: number | undefined, next: number | undefined) => (next === undefined ? current : Math.max(current ?? 0, next));
+/** Whether a Jira evaluation failed on a transient observation (a failed round for backoff). */
+const jiraTransientIn = (reasons: readonly { observedCode?: string | undefined }[]) =>
+  reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode));
+/** What an unread observation contributes to its round: the service-indicated wait and, for a transient code, a failed round (backoff). */
+function unavailableSignals(
+  facts: { kind: 'observed' } | { kind: 'unavailable'; code: string; waitSeconds?: number | undefined },
+  transientCodes: ReadonlySet<string>,
+): { waitSeconds?: number; failed?: true } {
+  if (facts.kind !== 'unavailable') return {};
+  return {
+    ...(facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
+    ...(transientCodes.has(facts.code) ? { failed: true as const } : {}),
+  };
+}
+type JiraTracker = NonNullable<NonNullable<AccessDependencies['trackers']>['jira']>;
+type ObservedBlockers = Extract<NonNullable<JiraCandidateEvaluation['blockers']>, { kind: 'observed' }>;
+
 /**
  * Single sequential polling loop in the existing owner (no scheduler/broker). Each cycle visits due repositories one at a time, so
  * queries never overlap; the next wait honours service-indicated waits and backoff. Admission itself is the durable commit in admission.ts.
@@ -244,11 +263,7 @@ export function createPoller(deps: {
     const decision = evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
     if (decision.authorized && facts.kind === 'observed')
       return { pending: { ref, configured, ticket: facts.ticket, observedAt: facts.observedAt, label: decision.label } };
-    return {
-      view: held(ref, decision.authorized ? [] : decision.holds, facts.observedAt),
-      ...(facts.kind === 'unavailable' && facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
-      ...(facts.kind === 'unavailable' && transient.has(facts.code) ? { failed: true } : {}),
-    };
+    return { view: held(ref, decision.authorized ? [] : decision.holds, facts.observedAt), ...unavailableSignals(facts, transient) };
   }
 
   /**
@@ -333,6 +348,22 @@ export function createPoller(deps: {
   }
 
   /**
+   * Ticket 44: a pending Work whose declaration is missing/invalid/unread is re-read each round until it is pinned (then never again).
+   * Returns what that read contributes to the round (a service-indicated wait, a transient failure).
+   */
+  async function refreshEnvironment(
+    work: { work_id: string; environment?: WorkEnvironment | undefined },
+    configured: ConfiguredRepository | undefined,
+    attemptId: string,
+  ): Promise<{ waitSeconds: number | undefined; failed: boolean }> {
+    if (!configured || !deps.recordEnvironment || !work.environment || work.environment.state === 'pinned') return { waitSeconds: undefined, failed: false };
+    const observation = await readEnvironment(configured, attemptId);
+    await deps.recordEnvironment(work.work_id, observation);
+    if (observation.kind !== 'unavailable') return { waitSeconds: undefined, failed: false };
+    return { waitSeconds: observation.waitSeconds, failed: transient.has(observation.code) };
+  }
+
+  /**
    * Phase 3: fresh native dependency evaluation of every open pending Work of the repository, in FIFO order, recorded durably with the
    * round's attempt id. Tracking continues while paused. A wait window stops the round; the rest stay not current (held).
    */
@@ -344,17 +375,13 @@ export function createPoller(deps: {
       // The GitHub round evaluates only Works whose Ticket ORIGIN is GitHub; a Work of another origin in this destination is never judged here.
       if (work.ticket.tracker !== 'github') continue;
       const ticket = work.ticket;
-      // Ticket 44: a Work whose declaration is missing/invalid/unread is re-read each round until it is pinned (then never again).
-      if (deps.recordEnvironment && work.environment && work.environment.state !== 'pinned') {
-        const observation = await readEnvironment(configured, attemptId);
-        await deps.recordEnvironment(work.work_id, observation);
-        if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
-        if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
-      }
+      const refreshed = await refreshEnvironment(work, configured, attemptId);
+      waitSeconds = widerWait(waitSeconds, refreshed.waitSeconds);
+      if (refreshed.failed) failed = true;
       const { evaluation, graph } = await evaluateWorkDependencies(tracker, deps.ownCycles, ticket, attemptId);
       await deps.record(work.work_id, evaluation);
       for (const problem of graph.problems) {
-        if (problem.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, problem.waitSeconds);
+        waitSeconds = widerWait(waitSeconds, problem.waitSeconds);
         if (problem.observedCode && transient.has(problem.observedCode)) failed = true;
       }
     }
@@ -460,6 +487,11 @@ export function createPoller(deps: {
   const executable = () => deps.access.repositories.map(scope => scope.repository);
   const waitOf = (reasons: readonly { waitSeconds?: number }[]) =>
     reasons.reduce<number | undefined>((max, reason) => (reason.waitSeconds === undefined ? max : Math.max(max ?? 0, reason.waitSeconds)), undefined);
+  /** What a Jira evaluation's reasons contribute to the Card's outcome: the longest wait and a transient failure. */
+  const jiraSignals = (reasons: readonly { waitSeconds?: number; observedCode?: string | undefined }[]) => {
+    const waitSeconds = waitOf(reasons);
+    return { ...(waitSeconds !== undefined ? { waitSeconds } : {}), ...(jiraTransientIn(reasons) ? { failed: true } : {}) };
+  };
 
   /**
    * Jira ticket 04, one listed Card: index -> pause -> FRESH re-read by ID with the CURRENT source configuration (label, components ->
@@ -512,8 +544,7 @@ export function createPoller(deps: {
           observedAt,
         ),
       };
-    if (evaluation.decision !== 'eligible') {
-      const waitSeconds = waitOf(evaluation.reasons);
+    if (evaluation.decision !== 'eligible')
       return {
         evaluated,
         view: held(
@@ -521,10 +552,8 @@ export function createPoller(deps: {
           evaluation.reasons.map(reason => ({ ...reason })),
           observedAt,
         ),
-        ...(waitSeconds !== undefined ? { waitSeconds } : {}),
-        ...(evaluation.reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode)) ? { failed: true } : {}),
+        ...jiraSignals(evaluation.reasons),
       };
-    }
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === evaluation.repository.toLowerCase())!;
     const repositoryId = repositoryIds.get(configured.repository.toLowerCase());
     const blockers = evaluated.blockers;
@@ -541,6 +570,19 @@ export function createPoller(deps: {
           observedAt,
         ),
       };
+    return admitJiraCard(source, evaluated, configured, repositoryId, blockers, attemptId);
+  }
+
+  /** Jira ticket 04: admission of an eligible Card to its revalidated destination, with the round's environment read and visible blockers. */
+  async function admitJiraCard(
+    source: JiraSource,
+    evaluated: JiraCandidateEvaluation,
+    configured: ConfiguredRepository,
+    repositoryId: number,
+    blockers: ObservedBlockers,
+    attemptId: string,
+  ): Promise<Outcome & { evaluated?: JiraCandidateEvaluation }> {
+    const { ticket, observedAt } = evaluated;
     const environment = await readEnvironment(configured, attemptId);
     const admitted = await deps.admit({
       ticket,
@@ -631,65 +673,106 @@ export function createPoller(deps: {
         code: 'POLLING_QUERY_FAILED',
         nextStep: 'Unexpected failure while reading the link types.',
       })));
-    let waitSeconds: number | undefined;
-    let failed = false;
-    let candidates: CandidateView[] | null = null;
-    let observedAt: string | null = null;
-    const evaluatedCards: JiraCandidateEvaluation[] = [];
-    if (source.discover) {
-      const listing = await guarded(source.siteId, () =>
-        tracker.listCandidates({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }),
+    const discovered = source.discover
+      ? await jiraDiscovery(source, tracker, attemptId, catalogue)
+      : { kind: 'observed' as const, observedAt: null, candidates: null, evaluatedCards: [], waitSeconds: undefined, failed: false };
+    if (discovered.kind !== 'observed') {
+      const { listing } = discovered;
+      unavailable(
+        listing.code,
+        `Listing unavailable; absence of Cards or labels is not concluded. ${listing.nextStep}`,
+        listing.observedAt,
+        listing.waitSeconds,
       );
-      if (listing.kind !== 'observed') {
-        unavailable(
-          listing.code,
-          `Listing unavailable; absence of Cards or labels is not concluded. ${listing.nextStep}`,
-          listing.observedAt,
-          listing.waitSeconds,
-        );
-        // Reconciliation of earlier notices still runs (a safe read); nothing new is evaluated.
-        await notices(source, []);
-        return;
-      }
-      observedAt = listing.observedAt;
-      candidates = [];
-      for (const ref of listing.candidates) {
-        if (waitSeconds !== undefined) {
-          candidates.push({
-            ticket: ref,
-            observedAt: new Date().toISOString(),
-            outcome: 'not-evaluated',
-            reason: 'Jira asked to wait; evaluated on a later poll.',
-          });
-          continue;
-        }
-        const outcome = await jiraEntry(source, ref, attemptId, catalogue);
-        if (outcome.evaluated) evaluatedCards.push(outcome.evaluated);
-        if (outcome.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, outcome.waitSeconds);
-        failed ||= Boolean(outcome.failed);
-        candidates.push(outcome.view);
-      }
+      // Reconciliation of earlier notices still runs (a safe read); nothing new is evaluated.
+      await notices(source, []);
+      return;
     }
     // Ticket 05: impediment notices of this round's evaluated Cards, after the admissions (one pass at a time, never overlapping).
-    await notices(source, evaluatedCards);
-    // Pending Works of this source: a FRESH visible-blockers evaluation of this round (tracking continues while paused or with discovery off).
+    await notices(source, discovered.evaluatedCards);
+    const pending = await jiraPending(source, tracker, attemptId, catalogue, discovered.waitSeconds);
+    settleJiraRound(entry_, base, {
+      ...pending,
+      failed: discovered.failed || pending.failed,
+      observedAt: discovered.observedAt,
+      candidates: discovered.candidates,
+    });
+  }
+
+  /** Jira ticket 04: the listing of a discovering source and the admission of its Cards, one at a time until Jira asks to wait. */
+  async function jiraDiscovery(source: JiraSource, tracker: JiraTracker, attemptId: string, catalogue: () => Promise<JiraLinkTypesObservation>) {
+    const listing = await guarded(source.siteId, () =>
+      tracker.listCandidates({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }),
+    );
+    if (listing.kind !== 'observed') return { kind: 'unavailable' as const, listing };
+    let waitSeconds: number | undefined;
+    let failed = false;
+    const candidates: CandidateView[] = [];
+    const evaluatedCards: JiraCandidateEvaluation[] = [];
+    for (const ref of listing.candidates) {
+      if (waitSeconds !== undefined) {
+        candidates.push({
+          ticket: ref,
+          observedAt: new Date().toISOString(),
+          outcome: 'not-evaluated',
+          reason: 'Jira asked to wait; evaluated on a later poll.',
+        });
+        continue;
+      }
+      const outcome = await jiraEntry(source, ref, attemptId, catalogue);
+      if (outcome.evaluated) evaluatedCards.push(outcome.evaluated);
+      waitSeconds = widerWait(waitSeconds, outcome.waitSeconds);
+      failed ||= Boolean(outcome.failed);
+      candidates.push(outcome.view);
+    }
+    return { kind: 'observed' as const, observedAt: listing.observedAt, candidates, evaluatedCards, waitSeconds, failed };
+  }
+
+  /** Pending Works of a Jira source: a FRESH visible-blockers evaluation of this round (tracking continues while paused or with discovery off). */
+  async function jiraPending(
+    source: JiraSource,
+    tracker: JiraTracker,
+    attemptId: string,
+    catalogue: () => Promise<JiraLinkTypesObservation>,
+    waitSeconds: number | undefined,
+  ): Promise<{ waitSeconds: number | undefined; failed: boolean }> {
+    let failed = false;
     for (const work of (await deps.pendingJira?.(source)) ?? []) {
       if (waitSeconds !== undefined) break;
       if (work.ticket.tracker !== 'jira') continue;
       const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
-      if (configured && deps.recordEnvironment && work.environment && work.environment.state !== 'pinned') {
-        const observation = await readEnvironment(configured, attemptId);
-        await deps.recordEnvironment(work.work_id, observation);
-        if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
-        if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
-      }
-      const { observation, evaluation } = await evaluateJiraWork({ tracker, ticket: work.ticket, attemptId, catalogue, linkTypes: source.linkTypes ?? [] });
-      if (observation.kind === 'observed') await deps.presentation?.(work.work_id, observation.ticket);
-      await deps.record(work.work_id, evaluation);
-      const wait = waitOf(evaluation.reasons);
-      if (wait !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, wait);
-      if (evaluation.reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode))) failed = true;
+      const refreshed = await refreshEnvironment(work, configured, attemptId);
+      waitSeconds = widerWait(waitSeconds, refreshed.waitSeconds);
+      if (refreshed.failed) failed = true;
+      const evaluation = await reevaluateJiraWork(source, tracker, work.work_id, work.ticket, attemptId, catalogue);
+      waitSeconds = widerWait(waitSeconds, waitOf(evaluation.reasons));
+      if (jiraTransientIn(evaluation.reasons)) failed = true;
     }
+    return { waitSeconds, failed };
+  }
+
+  /** One pending Jira Work: its fresh evaluation, the presentation update of a Card re-read, and the durable record of the evaluation. */
+  async function reevaluateJiraWork(
+    source: JiraSource,
+    tracker: JiraTracker,
+    work_id: string,
+    ticket: JiraTicketRef,
+    attemptId: string,
+    catalogue: () => Promise<JiraLinkTypesObservation>,
+  ) {
+    const { observation, evaluation } = await evaluateJiraWork({ tracker, ticket, attemptId, catalogue, linkTypes: source.linkTypes ?? [] });
+    if (observation.kind === 'observed') await deps.presentation?.(work_id, observation.ticket);
+    await deps.record(work_id, evaluation);
+    return evaluation;
+  }
+
+  /** The observed view of a completed Jira source round and its next due time (backoff on a failed round, a service-indicated wait). */
+  function settleJiraRound(
+    entry_: SourceState,
+    base: Pick<JiraSourcePollView, 'tracker' | 'siteId' | 'projectId' | 'label' | 'discover' | 'absenceProven'>,
+    round: { waitSeconds: number | undefined; failed: boolean; observedAt: string | null; candidates: CandidateView[] | null },
+  ) {
+    const { waitSeconds, failed } = round;
     entry_.failures = failed ? entry_.failures + 1 : 0;
     const delay = pollDelaySeconds({
       intervalSeconds: interval,
@@ -700,14 +783,22 @@ export function createPoller(deps: {
     entry_.view = {
       ...base,
       state: 'observed',
-      observedAt,
-      completeness: source.discover ? 'complete' : null,
+      observedAt: round.observedAt,
+      completeness: entry_.source.discover ? 'complete' : null,
       ...(waitSeconds !== undefined ? { code: 'JIRA_WAIT_WINDOW', waitSeconds } : failed ? { code: 'CANDIDATE_EVALUATION_FAILED' } : {}),
       consecutiveFailures: entry_.failures,
       nextPollInSeconds: delay,
-      candidates,
+      candidates: round.candidates,
     };
     entry_.dueAt = deps.clock.monotonic() + delay * 1000;
+  }
+
+  /** One pass over repositories or sources: each due one polls in turn, stopping at a signal. */
+  async function pollDue<T extends { dueAt: number }>(entries: T[], signal: AbortSignal, poll: (entry: T) => Promise<void>) {
+    for (const entry of entries) {
+      if (signal.aborted) break;
+      if (entry.dueAt <= deps.clock.monotonic()) await poll(entry);
+    }
   }
 
   return {
@@ -740,15 +831,9 @@ export function createPoller(deps: {
       try {
         while (!signal.aborted) {
           state = 'polling';
-          for (const entry of repositories) {
-            if (signal.aborted) break;
-            if (entry.dueAt <= deps.clock.monotonic()) await cycle(entry);
-          }
+          await pollDue(repositories, signal, cycle);
           // Jira sources after the GitHub repositories: a destination's GitHub identity is then observed in this iteration.
-          for (const entry of sources) {
-            if (signal.aborted) break;
-            if (entry.dueAt <= deps.clock.monotonic()) await jiraCycle(entry);
-          }
+          await pollDue(sources, signal, jiraCycle);
           cycles++;
           lastCycleAt = new Date().toISOString();
           if (!signal.aborted && deps.afterCycle) await deps.afterCycle();

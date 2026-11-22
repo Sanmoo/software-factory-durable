@@ -221,6 +221,14 @@ export async function beginForget(
   }, BACKGROUND_CONTEXT);
 }
 
+/** The request receipt of an answer, by its origin (none for an origin that carries no receipt). */
+function answerRequestId(origin: { kind: string; request_id?: string; commentId?: number | string }): string | undefined {
+  if (origin.kind === 'local-cli' && origin.request_id) return origin.request_id;
+  if (origin.kind === 'github-comment' && origin.commentId !== undefined) return `github-comment-${origin.commentId}`;
+  if (origin.kind === 'jira-comment' && origin.request_id) return origin.request_id;
+  return undefined;
+}
+
 /** Request receipts of this Work whose input carries operator text (answers, scope updates, readiness authorizations). */
 export function contentRequestIds(
   work: WorkRecord,
@@ -234,10 +242,8 @@ export function contentRequestIds(
     if (kind === 'github-comment' && /^\d+$/.test(id)) ids.add(`github-comment-${id}`);
   };
   for (const question of questionViews) {
-    const origin = question.answer?.origin;
-    if (origin?.kind === 'local-cli' && origin.request_id) ids.add(origin.request_id);
-    if (origin?.kind === 'github-comment' && origin.commentId !== undefined) ids.add(`github-comment-${origin.commentId}`);
-    if (origin?.kind === 'jira-comment' && origin.request_id) ids.add(origin.request_id);
+    const answered = question.answer ? answerRequestId(question.answer.origin) : undefined;
+    if (answered) ids.add(answered);
     for (const item of question.ignored) fromLabel(item.origin);
   }
   for (const update of work.scopeUpdates ?? []) if (update.origin.kind === 'local-cli') ids.add(update.origin.request_id);
