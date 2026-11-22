@@ -1,0 +1,2478 @@
+{
+ "$comment": "Tolerance policy of the Static metrics quality gate: one entry per function of src/ above complexity 10 at adoption, identified by file and function (the chain of named declarations that contain it; anonymous functions by kind and ordinal in their container), at the recorded value. Changed only by a reviewed change approved as ADOPTION-PLAN.md: a function that lowers its complexity lowers or removes its entry in the same change; a run never rewrites the policy. Duplication and cycles tolerate nothing. Read by scripts/test-runner/static-metrics.ts.",
+ "schemaVersion": 1,
+ "complexity": [
+  {
+   "file": "src/code-repository/delivery.ts",
+   "function": "deliveryOperations > cleanupBranch",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/code-repository/delivery.ts",
+   "function": "deliveryOperations > cleanupBranch > arrow#1",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/code-repository/delivery.ts",
+   "function": "deliveryOperations > readOwnMerge",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/code-repository/index.ts",
+   "function": "createCodeRepository > associate",
+   "complexity": 28,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 31."
+  },
+  {
+   "file": "src/code-repository/index.ts",
+   "function": "createCodeRepository > findPublication",
+   "complexity": 27,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 27."
+  },
+  {
+   "file": "src/code-repository/index.ts",
+   "function": "createCodeRepository > protection > arrow#1",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/code-repository/loss-markers.ts",
+   "function": "lossMarkerOperations > cleanupLostMarkers",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/code-repository/pull-request.ts",
+   "function": "createPullRequestReader > readPullRequest",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/code-repository/pull-request.ts",
+   "function": "createPullRequestReader > requirements",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/code-repository/pull-request.ts",
+   "function": "rule",
+   "complexity": 28,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 28."
+  },
+  {
+   "file": "src/code-repository/pull-request.ts",
+   "function": "run",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/contracts/environment.ts",
+   "function": "validateEnvironmentDeclaration",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/contracts/environment.ts",
+   "function": "validateEnvironmentDeclaration > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/admission.ts",
+   "function": "admitTicket > arrow#1",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/durable/admission.ts",
+   "function": "normalize",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/admission.ts",
+   "function": "ownCycles",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/control/durable/admission.ts",
+   "function": "recordDependencies > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/boot-swap.ts",
+   "function": "completeSwap > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/boot-swap.ts",
+   "function": "recordSwapContinuation > arrow#1",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/durable/boot-swap.ts",
+   "function": "recordSwapNotice > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/boot-swap.ts",
+   "function": "recordSwapStartWait > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/checks.ts",
+   "function": "createChecksTracker > pass",
+   "complexity": 27,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 27."
+  },
+  {
+   "file": "src/control/durable/checks.ts",
+   "function": "recordChecks > arrow#1",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl",
+   "complexity": 42,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 42."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > accept",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > afterCycle",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > consumptionOf",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > inspect",
+   "complexity": 55,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 55."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > limitsOf",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > present",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > run",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/control/durable/control.ts",
+   "function": "openControl > run > decide",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptBlockedRecoveryOverride > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptBlockedStartRetry > arrow#1",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptNewCycle",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptNewCycle > arrow#3",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptNewReviewRound > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "acceptResume > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "cancelIn",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16, como `acceptCancel > arrow#1`; a mesma função, extraída com o nome `cancelIn`."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "createCycleDesk > reopen",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/cycles.ts",
+   "function": "recordReopen > arrow#1",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/delivery-desk.ts",
+   "function": "createDeliveryDesk > cycle",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/delivery-desk.ts",
+   "function": "createDeliveryDesk > sweep",
+   "complexity": 37,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 37."
+  },
+  {
+   "file": "src/control/durable/delivery.ts",
+   "function": "recordMergeObservation > arrow#1",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > activationPlan",
+   "complexity": 124,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 124."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > authorizedChangesOf",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > discover",
+   "complexity": 27,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 27."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > dispatchOne",
+   "complexity": 91,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 91."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute",
+   "complexity": 312,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 312."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > administrativeStop",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > arrow#11",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > checkBeforeStop",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > endAsLoss",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > plannedSwap",
+   "complexity": 67,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 67."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > preservationGate",
+   "complexity": 34,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 34."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > publishInBoot",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > execute > refused",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > publicationPlan",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reconcileOne",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reconciliationPlan",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > revalidateRepair",
+   "complexity": 39,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 39."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reviewRound",
+   "complexity": 72,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 72."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reviewRound > attemptReviewer",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reviewRound > deliver",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > reviewRound > retryOnce",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "createDispatcher > substituteInstruction",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/dispatch.ts",
+   "function": "credentialLifecycle > renew",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "admitExecution > arrow#1",
+   "complexity": 183,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 183."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "applyConfirmedCessation",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "beginRenewal > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "confirmActivation > arrow#1",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "confirmStart > arrow#1",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "consumeReservation",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "holdExecution > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "interruptionBasis",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "reconcileDurations > arrow#1",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "reconcileLostCredentials > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "recordActivity > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "recordTimeout > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/execution.ts",
+   "function": "releaseAfterCessation > arrow#1",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/control/durable/feedback.ts",
+   "function": "acceptRepairRequest > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/feedback.ts",
+   "function": "observeFeedback",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/feedback.ts",
+   "function": "recordReplyPublication > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/feedback.ts",
+   "function": "recordReviewFeedback > arrow#1",
+   "complexity": 39,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 39."
+  },
+  {
+   "file": "src/control/durable/forget.ts",
+   "function": "acceptForgetConfirm > arrow#1",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/durable/forget.ts",
+   "function": "acceptForgetPlan > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/forget.ts",
+   "function": "contentRequestIds",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/forget.ts",
+   "function": "finishForget > arrow#1",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/durable/forget.ts",
+   "function": "recordForgottenMerge > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/format.ts",
+   "function": "examine",
+   "complexity": 43,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 53."
+  },
+  {
+   "file": "src/control/durable/inspection.ts",
+   "function": "inspectLog",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/durable/inspection.ts",
+   "function": "inspectLogs",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/durable/inspection.ts",
+   "function": "inspectUsage",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/inspection.ts",
+   "function": "workUsage",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/control/durable/loss.ts",
+   "function": "recordLoss > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/migration.ts",
+   "function": "migrateStorage",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/origin-divergence.ts",
+   "function": "followRewrittenHistory > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/origin-divergence.ts",
+   "function": "settleBranchAbsent > arrow#1",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/origin-read.ts",
+   "function": "readOriginOf",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/polling.ts",
+   "function": "createPoller > cycle",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/durable/polling.ts",
+   "function": "createPoller > dependencies",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/polling.ts",
+   "function": "createPoller > entry",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/polling.ts",
+   "function": "createPoller > publish",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/durable/preservation.ts",
+   "function": "recordGateCheck > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/preservation.ts",
+   "function": "recordGateCorrection > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "acceptPublicationReevaluation > arrow#1",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "beginLivePublication > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "blockLivePublication > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "evaluateLivePublication > arrow#1",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "evaluatePublication > arrow#1",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "onWork > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "recordDiscovery > arrow#1",
+   "complexity": 88,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 89."
+  },
+  {
+   "file": "src/control/durable/publication.ts",
+   "function": "resolveDivergence > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/durable/question-desk.ts",
+   "function": "createQuestionDesk > ingestAnswers",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/question-desk.ts",
+   "function": "createQuestionDesk > publishPending",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/durable/question-desk.ts",
+   "function": "createQuestionDesk > publishReplies",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/durable/questions.ts",
+   "function": "answerIn",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19, como `acceptAnswer > arrow#1`; a mesma função, extraída com o nome `answerIn`."
+  },
+  {
+   "file": "src/control/durable/questions.ts",
+   "function": "recordPublication > arrow#1",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/durable/questions.ts",
+   "function": "registerOnce > arrow#1",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/readiness.ts",
+   "function": "acceptReadinessAuthorization > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/readiness.ts",
+   "function": "createReadinessDesk > pass",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/control/durable/readiness.ts",
+   "function": "intendConversion > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/readiness.ts",
+   "function": "recordReadiness > arrow#1",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/control/durable/readiness.ts",
+   "function": "settleConversion > arrow#1",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/control/durable/recovery-request.ts",
+   "function": "applyRecoveryRequest",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "boundDiscoveredDuration",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "reconcileBoot",
+   "complexity": 48,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 48."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "reconcileExecution",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "recordUninspectedLoss",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "settleInterruptedReviews",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "settleInterruption > arrow#1",
+   "complexity": 108,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 108."
+  },
+  {
+   "file": "src/control/durable/recovery.ts",
+   "function": "unconfirmedBoot",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/durable/repair.ts",
+   "function": "createRepairDesk > pass",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/durable/repair.ts",
+   "function": "observeRepair > arrow#1",
+   "complexity": 75,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 75."
+  },
+  {
+   "file": "src/control/durable/retention-desk.ts",
+   "function": "createRetentionDesk > cycle",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/retention-desk.ts",
+   "function": "createRetentionDesk > executeForgets",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/durable/retention-desk.ts",
+   "function": "createRetentionDesk > executePlans",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/durable/retention.ts",
+   "function": "acceptCleanupConfirm > arrow#1",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/durable/retention.ts",
+   "function": "dropExplicitResources > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/durable/retention.ts",
+   "function": "preserveSessions",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/retention.ts",
+   "function": "recordDetailResults > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/retention.ts",
+   "function": "recordRetentionSweep > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/review-recovery.ts",
+   "function": "recordReviewerRetry > arrow#1",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/control/durable/review-recovery.ts",
+   "function": "releaseReviewerRetry > arrow#1",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/durable/review.ts",
+   "function": "recordHandoff > arrow#1",
+   "complexity": 47,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 47."
+  },
+  {
+   "file": "src/control/durable/review.ts",
+   "function": "recordHandoff > arrow#1 > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/durable/review.ts",
+   "function": "recordReviewerEnd > arrow#1",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/durable/review.ts",
+   "function": "recordVerification > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/durable/scope.ts",
+   "function": "acceptScopeUpdate > arrow#1",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/durable/store.ts",
+   "function": "openStore",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/rules/admission.ts",
+   "function": "evaluateEntry",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/boot-notice.ts",
+   "function": "originContinuity",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/budget-continuation.ts",
+   "function": "budgetEndProgress",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/budget-continuation.ts",
+   "function": "builderBudgetPolicy",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/budget-continuation.ts",
+   "function": "stateSummary",
+   "complexity": 31,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 31."
+  },
+  {
+   "file": "src/control/rules/budget.ts",
+   "function": "durationView",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/rules/checks.ts",
+   "function": "evaluateChecks",
+   "complexity": 93,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 93."
+  },
+  {
+   "file": "src/control/rules/checks.ts",
+   "function": "evaluateChecks > base",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/checks.ts",
+   "function": "interpretBaseRules > arrow#2",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/control/rules/continuation.ts",
+   "function": "recoveryContext",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/rules/continuation.ts",
+   "function": "scopeUpdateDecision",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/continuation.ts",
+   "function": "sessionDecision",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/cycles.ts",
+   "function": "authorizationChange",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/rules/cycles.ts",
+   "function": "newCycleDecision",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/rules/cycles.ts",
+   "function": "reopenDecision",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/delivery.ts",
+   "function": "cleanupEligibility",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/rules/delivery.ts",
+   "function": "decideMerge",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/rules/delivery.ts",
+   "function": "ownPullRequestOf",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/delivery.ts",
+   "function": "planCleanup",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/rules/dependencies.ts",
+   "function": "evaluateDependencies",
+   "complexity": 27,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 27."
+  },
+  {
+   "file": "src/control/rules/divergence.ts",
+   "function": "divergenceQuestion",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/rules/divergence.ts",
+   "function": "knownRemote",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/rules/environment.ts",
+   "function": "environmentOutcome",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/feedback.ts",
+   "function": "reviewRequests",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/rules/forget.ts",
+   "function": "forgetRefusals",
+   "complexity": 31,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 31."
+  },
+  {
+   "file": "src/control/rules/forget.ts",
+   "function": "minimalMemoryOf",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "bootConsumption",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "chainExecution",
+   "complexity": 29,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 29."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "chainOf",
+   "complexity": 72,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 72."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "phaseOf",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "sessionLocator",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "usageActivity",
+   "complexity": 37,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 37."
+  },
+  {
+   "file": "src/control/rules/inspection.ts",
+   "function": "usageSubjects",
+   "complexity": 31,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 31."
+  },
+  {
+   "file": "src/control/rules/preservation.ts",
+   "function": "gateDecision",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "decideDiscovery",
+   "complexity": 107,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 107."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "descriptionCheck",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "otherPublications",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "preservationCheck",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "publicationPrompt",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "publicationStep",
+   "complexity": 39,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 39."
+  },
+  {
+   "file": "src/control/rules/publication.ts",
+   "function": "publishableContent",
+   "complexity": 37,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 37."
+  },
+  {
+   "file": "src/control/rules/questions.ts",
+   "function": "parseFactoryCommand",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/rules/questions.ts",
+   "function": "recoveredQuestionDecision",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/control/rules/questions.ts",
+   "function": "recoveryPrompt",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/questions.ts",
+   "function": "recoveryPrompt > build",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/rules/questions.ts",
+   "function": "validateQuestionRequest",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/quiescence.ts",
+   "function": "unsettledExecutions > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/readiness.ts",
+   "function": "evaluateReadiness",
+   "complexity": 69,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 69."
+  },
+  {
+   "file": "src/control/rules/readiness.ts",
+   "function": "readinessAction",
+   "complexity": 33,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 33."
+  },
+  {
+   "file": "src/control/rules/readiness.ts",
+   "function": "readinessBasis",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/control/rules/readiness.ts",
+   "function": "readinessNextStep",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/recovery.ts",
+   "function": "newReviewRoundDecision",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/control/rules/recovery.ts",
+   "function": "overrideBlockedRecoveryDecision",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/control/rules/recovery.ts",
+   "function": "retryBlockedStartDecision",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/control/rules/repair.ts",
+   "function": "correctionClosure",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/control/rules/repair.ts",
+   "function": "repairDecision",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/control/rules/repair.ts",
+   "function": "repairTriggers",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/control/rules/retention.ts",
+   "function": "planExplicitCleanup",
+   "complexity": 52,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 52."
+  },
+  {
+   "file": "src/control/rules/retention.ts",
+   "function": "retentionProtections",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/control/rules/retention.ts",
+   "function": "revalidateItem",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/review-recovery.ts",
+   "function": "carryPlan",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/rules/review-recovery.ts",
+   "function": "preservedReviewContext",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/rules/review-recovery.ts",
+   "function": "sameReviewProfile",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "classifyCapture",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "concludeRound",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "inheritedRounds",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "opinionCorrelated",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "planReviews > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "sameProposal",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "verifyExecution",
+   "complexity": 44,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 44."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "verifyExecution > arrow#1",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/control/rules/review.ts",
+   "function": "verifyExecution > arrow#5",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/control/rules/substitute.ts",
+   "function": "substitutePackage",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/control/rules/substitute.ts",
+   "function": "substituteVersions",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/cli.ts",
+   "function": "inspectionOptions",
+   "complexity": 50,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 50."
+  },
+  {
+   "file": "src/entrypoints/cli.ts",
+   "function": "inspectionQuery",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/entrypoints/cli.ts",
+   "function": "main",
+   "complexity": 255,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 255."
+  },
+  {
+   "file": "src/entrypoints/cli.ts",
+   "function": "operational",
+   "complexity": 90,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 90."
+  },
+  {
+   "file": "src/entrypoints/cli.ts",
+   "function": "operational > arrow#1",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/entrypoints/configuration.ts",
+   "function": "readConfiguration",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/entrypoints/controller/composition.ts",
+   "function": "composeProductionExecution",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/entrypoints/controller/inspection.ts",
+   "function": "answerInspection",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/controller/owner.ts",
+   "function": "own",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/entrypoints/controller/serve.ts",
+   "function": "serveControl > message",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "compatibility",
+   "complexity": 70,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 71."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "finish",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "main",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "readJournal",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "selectedRelease",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/entrypoints/controller/upgrade.ts",
+   "function": "upgrade",
+   "complexity": 55,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 55."
+  },
+  {
+   "file": "src/entrypoints/doctor.ts",
+   "function": "doctor",
+   "complexity": 45,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 45."
+  },
+  {
+   "file": "src/entrypoints/release-build.ts",
+   "function": "buildRelease",
+   "complexity": 50,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 50."
+  },
+  {
+   "file": "src/entrypoints/release-build.ts",
+   "function": "copyTree",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/release-build.ts",
+   "function": "main",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/entrypoints/release-build.ts",
+   "function": "runtimeClosure > visit",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/release-build.ts",
+   "function": "unaccountedShippedPaths",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/entrypoints/release.ts",
+   "function": "inspectRelease",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/entrypoints/release.ts",
+   "function": "inventoryTree > visit > arrow#4",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/entrypoints/release.ts",
+   "function": "productionBuilderPrompt",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/entrypoints/release.ts",
+   "function": "verifyReleaseTree",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/entrypoints/setup.ts",
+   "function": "setup",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/entrypoints/setup.ts",
+   "function": "setupService",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/issue-tracker/index.ts",
+   "function": "createIssueTracker > postComment",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/issue-tracker/index.ts",
+   "function": "createIssueTracker > readDependencyGraph",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > cleanup",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > cleanup > deleteRefIfAt",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > comment",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > issue",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > issue > appRequest",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > issue > appRequest > arrow#1 > arrow#1 > arrow#2",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > parseResponse",
+   "complexity": 58,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 58."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > pullMutation",
+   "complexity": 44,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 44."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > read",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > revokeToken",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > session > list",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/platform/github/index.ts",
+   "function": "createGitHubAccess > validate",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/platform/host/index.ts",
+   "function": "controllerPaths",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/platform/host/index.ts",
+   "function": "verifyControllerLock",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/platform/host/worker-bootstrap.ts",
+   "function": "rolePolicies",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "launchWorker",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "planWorkerLaunch",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "prepareReviewerContinuation",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "privateJson",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "superviseWorker > arrow#9",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/platform/host/worker-launch.ts",
+   "function": "superviseWorker > arrow#9 > arrow#1",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/platform/host/worker-secret-ipc.ts",
+   "function": "createOwnerSecretReceiver > message",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/platform/host/worker-secret-ipc.ts",
+   "function": "createSecretPublisher > acknowledgeSecrets",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/platform/host/worker-secret-ipc.ts",
+   "function": "createSecretPublisher > message",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/platform/host/worker-session-file.ts",
+   "function": "readConfinedFile",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/protocol/index.ts",
+   "function": "channel > pump",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/records/forget.ts",
+   "function": "forgetWorkRecords",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/records/forget.ts",
+   "function": "scan",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "boundedEvent > visit",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "createRecords > find",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "createRecords > openCapture",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "createRecords > openCapture > write",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "createRecords > projectText > stream",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "createRecords > readPage",
+   "complexity": 43,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 43."
+  },
+  {
+   "file": "src/records/index.ts",
+   "function": "privateDirectory",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/records/retention.ts",
+   "function": "captureClass",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/records/retention.ts",
+   "function": "listEvidence",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/records/retention.ts",
+   "function": "listSessions",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/records/retention.ts",
+   "function": "preserveSessionCopy",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/records/retention.ts",
+   "function": "removeRecordsDetail",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/sandbox/adapter.ts",
+   "function": "runSandboxAdapter",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/sandbox/adapter.ts",
+   "function": "runSandboxAdapter > arrow#2",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/sandbox/artifact-seeds.ts",
+   "function": "seedArtifacts",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/bash-tools.ts",
+   "function": "boundBashTools > arrow#1",
+   "complexity": 48,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 48."
+  },
+  {
+   "file": "src/sandbox/boot-markers.ts",
+   "function": "createBootMarkers > observe",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/capacity.ts",
+   "function": "capacityDiagnostic",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/sandbox/checkout-fingerprint.ts",
+   "function": "fingerprintCheckout",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/sandbox/checkout-fingerprint.ts",
+   "function": "fingerprintCheckout > walk",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/sandbox/checkout-inspection.ts",
+   "function": "inspectCheckout",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/sandbox/checkout.ts",
+   "function": "createCheckouts > prepare",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/sandbox/checkout.ts",
+   "function": "reconcileInterruptedCaches",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/sandbox/cleanup-publication.ts",
+   "function": "publishCleanupRecord",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/cleanup-publication.ts",
+   "function": "recoverLinkedPublication",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/sandbox/confined.ts",
+   "function": "components",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/environment-base.ts",
+   "function": "parseResolvedManifest",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/sandbox/environment-base.ts",
+   "function": "prepareBase",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/sandbox/evidence-export.ts",
+   "function": "exportEvidence",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/sandbox/filesystem.ts",
+   "function": "checkDiskFilesystem",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/sandbox/filesystem.ts",
+   "function": "copyBaseDisk",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/filesystem.ts",
+   "function": "ownDisk",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/sandbox/filesystem.ts",
+   "function": "replacePreservedDisk",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/gondolin-sdk-profile.ts",
+   "function": "context",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/sandbox/gondolin-sdk-profile.ts",
+   "function": "prepareDevelopmentGondolinSdk",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/sandbox/gondolin-sdk-profile.ts",
+   "function": "verifyPrepared",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/sandbox/guest-assets.ts",
+   "function": "inspectGuestAssets",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/guest-assets.ts",
+   "function": "readAsset",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/guest-journal.ts",
+   "function": "deriveJournaledGuestAssets",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/sandbox/index.ts",
+   "function": "createSandbox > prepare",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/index.ts",
+   "function": "createSandbox > start",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/sandbox/index.ts",
+   "function": "createSandbox > validate",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/inventory.ts",
+   "function": "inventoryRuntime",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/lambda/artifacts.ts",
+   "function": "collectLambdaArtifacts",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/sandbox/lambda/artifacts.ts",
+   "function": "restoreLambdaArtifacts",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/sandbox/lambda/boot.ts",
+   "function": "ended",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/lambda/boot.ts",
+   "function": "observeLambdaBoot",
+   "complexity": 20,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 20."
+  },
+  {
+   "file": "src/sandbox/lambda/boot.ts",
+   "function": "startLambdaBoot",
+   "complexity": 51,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 51."
+  },
+  {
+   "file": "src/sandbox/lambda/boot.ts",
+   "function": "stopLambdaBoot",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/sandbox/lambda/cli-service.ts",
+   "function": "classify",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/lambda/cli-service.ts",
+   "function": "listedMicrovms",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/lambda/image-cleanup.ts",
+   "function": "cleanupInstallationImages",
+   "complexity": 29,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/sandbox/lambda/image.ts",
+   "function": "prepareLambdaImage",
+   "complexity": 42,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 46."
+  },
+  {
+   "file": "src/sandbox/lambda/owner.ts",
+   "function": "removeLambdaEnvironment",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/lambda/reconciliation.ts",
+   "function": "planLambdaReconciliation",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/sandbox/lambda/reconciliation.ts",
+   "function": "reconcileLambdaInstallation",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/sandbox/lambda/ssh-transport.ts",
+   "function": "createSshTransport > connect",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/sandbox/lambda/tools.ts",
+   "function": "lambdaGuestOwner > exec > arrow#1",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/lambda/tools.ts",
+   "function": "recovered",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/lambda/tools.ts",
+   "function": "serveLambdaTools > bind",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/sandbox/lambda/transport.ts",
+   "function": "openChannel > exec",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/sandbox/lambda/usage.ts",
+   "function": "lambdaBootUsage",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/sandbox/lambda/usage.ts",
+   "function": "lambdaImageBuilds",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/sandbox/lambda/validate.ts",
+   "function": "accountChecks",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/sandbox/lifecycle.ts",
+   "function": "metadata",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/sandbox/lifecycle.ts",
+   "function": "observeBootEnvironment",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/sandbox/lifecycle.ts",
+   "function": "observeEnvironment",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/sandbox/owner-registration.ts",
+   "function": "serveBootOwner > message",
+   "complexity": 75,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 75."
+  },
+  {
+   "file": "src/sandbox/preparation-vm.ts",
+   "function": "createPreparationVm > run",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/sandbox/preparation-vm.ts",
+   "function": "runEnvironmentPreparation",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/sandbox/prepare.ts",
+   "function": "prepareEnvironment",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/sandbox/prepare.ts",
+   "function": "prepareEnvironment > existing",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/sandbox/proposal-identity.ts",
+   "function": "observeProposal",
+   "complexity": 33,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 33."
+  },
+  {
+   "file": "src/sandbox/read-tools.ts",
+   "function": "connectReadTools > executeTool",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/sandbox/read-tools.ts",
+   "function": "serveReadTools",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/sandbox/read-tools.ts",
+   "function": "serveReadTools > executeBoundTool",
+   "complexity": 111,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 111."
+  },
+  {
+   "file": "src/sandbox/read-tools.ts",
+   "function": "serveReadTools > executeBoundTool > routePrefix",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/sandbox/remove.ts",
+   "function": "deleteResource",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/sandbox/remove.ts",
+   "function": "removeEnvironment",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/sandbox/start.ts",
+   "function": "startEnvironment",
+   "complexity": 58,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 58."
+  },
+  {
+   "file": "src/sandbox/stop.ts",
+   "function": "stopEnvironment",
+   "complexity": 30,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
+  },
+  {
+   "file": "src/sandbox/storage-observation.ts",
+   "function": "diskUsage",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/sandbox/storage-observation.ts",
+   "function": "treeUsage > walk",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/sandbox/write-tools.ts",
+   "function": "boundMutation > execute",
+   "complexity": 45,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 45."
+  },
+  {
+   "file": "src/sandbox/write-tools.ts",
+   "function": "boundStreamCopyTools > arrow#1",
+   "complexity": 25,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+  },
+  {
+   "file": "src/workers/ask-user.ts",
+   "function": "builderAskUser > execute",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/workers/bash.ts",
+   "function": "builderBash > execute",
+   "complexity": 40,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 40."
+  },
+  {
+   "file": "src/workers/bash.ts",
+   "function": "builderBash > native > exec",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/workers/bash.ts",
+   "function": "guestPresentation",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 23."
+  },
+  {
+   "file": "src/workers/builder-handoff.ts",
+   "function": "builderHandoff > execute (2)",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/workers/edit.ts",
+   "function": "builderEdit > execute",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/workers/edit.ts",
+   "function": "builderEdit > execute > access",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/workers/edit.ts",
+   "function": "builderEdit > execute > readFile",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/workers/edit.ts",
+   "function": "builderEdit > execute > writeFile",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "credential",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "firstFactoryOAuthLogin",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "firstFactoryOAuthLogin > notify",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "openFactoryOAuth > getRuntime > arrow#1",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "privateSetupDirectory",
+   "complexity": 13,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "validatePath",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/workers/factory-oauth.ts",
+   "function": "verifySelectedModules",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/workers/gates.ts",
+   "function": "createToolLedger > resolve > evidence",
+   "complexity": 17,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 17."
+  },
+  {
+   "file": "src/workers/handoff.ts",
+   "function": "command",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/workers/handoff.ts",
+   "function": "parseHandoffSummary",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/workers/index.ts",
+   "function": "createWorkers > activate",
+   "complexity": 62,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 62."
+  },
+  {
+   "file": "src/workers/index.ts",
+   "function": "createWorkers > activate > arrow#7",
+   "complexity": 46,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 46."
+  },
+  {
+   "file": "src/workers/index.ts",
+   "function": "createWorkers > deliver",
+   "complexity": 29,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 29."
+  },
+  {
+   "file": "src/workers/index.ts",
+   "function": "createWorkers > observe",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/workers/index.ts",
+   "function": "createWorkers > observeStart",
+   "complexity": 15,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 15."
+  },
+  {
+   "file": "src/workers/oauth-qualification.ts",
+   "function": "budgetFor",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/workers/oauth-qualification.ts",
+   "function": "qualifyOAuth > arrow#1",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/workers/opinion-observation.ts",
+   "function": "observeOpinionRecord",
+   "complexity": 21,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
+  },
+  {
+   "file": "src/workers/push-policy.ts",
+   "function": "pushDenied",
+   "complexity": 18,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 18."
+  },
+  {
+   "file": "src/workers/question-observation.ts",
+   "function": "observeQuestionRecord",
+   "complexity": 26,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
+  },
+  {
+   "file": "src/workers/read.ts",
+   "function": "reviewerRead > execute > access",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/workers/read.ts",
+   "function": "reviewerRead > execute > page",
+   "complexity": 19,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 19."
+  },
+  {
+   "file": "src/workers/review.ts",
+   "function": "composeOpinion",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/workers/review.ts",
+   "function": "createReadObserver > observe",
+   "complexity": 32,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 32."
+  },
+  {
+   "file": "src/workers/sdk-profile.ts",
+   "function": "ownedTree",
+   "complexity": 12,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 12."
+  },
+  {
+   "file": "src/workers/sdk-profile.ts",
+   "function": "prepareDevelopmentSdk",
+   "complexity": 31,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 31."
+  },
+  {
+   "file": "src/workers/sdk-profile.ts",
+   "function": "prepareDevelopmentSdk > verify",
+   "complexity": 16,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
+  },
+  {
+   "file": "src/workers/session-usage.ts",
+   "function": "observeSessionCopyUsage",
+   "complexity": 24,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
+  },
+  {
+   "file": "src/workers/session-usage.ts",
+   "function": "observeSessionUsage",
+   "complexity": 22,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 22."
+  },
+  {
+   "file": "src/workers/session-usage.ts",
+   "function": "sessionUsage",
+   "complexity": 35,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 35."
+  },
+  {
+   "file": "src/workers/skill-pack.ts",
+   "function": "loadSkillPack",
+   "complexity": 11,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 11."
+  },
+  {
+   "file": "src/workers/worker-process.ts",
+   "function": "run",
+   "complexity": 42,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 42."
+  },
+  {
+   "file": "src/workers/worker-process.ts",
+   "function": "toolProjection > executeTool",
+   "complexity": 36,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 36."
+  },
+  {
+   "file": "src/workers/worker-session.ts",
+   "function": "executeSession",
+   "complexity": 127,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 127."
+  },
+  {
+   "file": "src/workers/worker-session.ts",
+   "function": "reopenSession",
+   "complexity": 14,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 14."
+  },
+  {
+   "file": "src/workers/worker-start.ts",
+   "function": "startWorker",
+   "complexity": 44,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 44."
+  }
+ ]
+}
