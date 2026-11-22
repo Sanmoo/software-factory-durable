@@ -98,3 +98,6 @@ repositório de apoio apagado, repositório real sem PR aberto nem refs da Facto
 três imagens saíram pela CLI da AWS, não pelo produto (A18 e A19). **Pendente do Operador:** apagar a stack `factory-sfv2acc`
 (roles e o bucket vazio), o usuário IAM `factory-sfv2acc-operator` e sua chave, os perfis AWS locais `factory-sfv2acc` e
 `factory-sfv2acc-source`, e `lb1/credentials`. Por isso o critério X2 ficou `inconclusive` (parcial).
+
+**Atualização de 2026-11-22.** A correção A18 foi integrada na `main` (`350663ac`) depois de uma rodada verde de `npm run test:ci`; as falhas
+anteriores eram de ambiente (limite de uso do `/tmp`). Nenhum veredito muda.

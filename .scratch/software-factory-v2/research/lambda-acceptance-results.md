@@ -213,3 +213,10 @@ Local:
 ## 7. Resposta do ticket 16
 
 O texto da seção `## Answer` está em `ticket-16-answer.md`.
+
+## 8. Atualização de 2026-11-22 (depois do fechamento)
+
+A correção A18 foi integrada na `main` (`350663ac`) depois de uma rodada verde de `npm run test:ci` (validação por mudança, 508 arquivos
+afetados). As falhas anteriores dessa validação eram de ambiente: o limite de uso do `/tmp` da máquina, e não o código alterado. Onde
+este documento diz que a A18 está "pendente de integração" ou "fora da `main`", vale esta atualização; o worktree `lambda-concurrent-wip-push`
+foi removido. Nenhum veredito muda: X2 continua `inconclusive` (parcial) pelos itens pendentes do Operador e pela A19.
