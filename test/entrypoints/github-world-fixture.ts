@@ -2,7 +2,9 @@
 // (and, through installNativeAppFixture, for the App HTTPS endpoints). Never used with real
 // credentials, never connects to a network, and is not evidence of the real GitHub boundary.
 import { generateKeyPairSync } from 'node:crypto';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -148,8 +150,24 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const issuedFile = join(root, 'issued.jsonl');
   const revokedFile = join(root, 'revoked.jsonl');
   const executable = join(root, 'gh');
+  // Every read-modify-write of world.json (each gh request, and the test's update) runs under this lock, and every write is an
+  // atomic rename: otherwise a gh process that read the world before the test's update and saved after it loses the update
+  // (observed: the operator's /factory answer vanished under load and the journey waited forever). App (JWT) requests only read
+  // the world and are issued by the in-process native fixture through spawnSync, so they never wait for the lock (no deadlock
+  // with an update that holds it across the event loop).
+  const worldLock = join(root, 'world.lock');
+  const standIn = join(root, 'gh-world-stand-in');
   await writeFile(executable, `#!${process.execPath}
-  import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+const args = process.argv.slice(2);
+const run = process.env.NATIVE_FIXTURE === '1' ? [process.execPath, ${JSON.stringify(standIn)}, ...args]
+  : ['/usr/bin/flock', '--exclusive', ${JSON.stringify(worldLock)}, process.execPath, ${JSON.stringify(standIn)}, ...args];
+const result = spawnSync(run[0], run.slice(1), { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`, { mode: 0o700 });
+  await writeFile(standIn, `#!${process.execPath}
+  import { readFileSync, appendFileSync, writeFileSync, renameSync } from 'node:fs';
+  const saveWorld = value => { const temporary = ${JSON.stringify(worldFile)} + '.' + process.pid; writeFileSync(temporary, JSON.stringify(value)); renameSync(temporary, ${JSON.stringify(worldFile)}); };
   const args = process.argv.slice(2);
   const endpoint = args.at(-1);
   const method = args[args.indexOf('--method') + 1];
@@ -253,7 +271,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const granted = known?.permissions ?? {};
   const fault = world.graphqlFault;
   const draft = field === 'convertPullRequestToDraft';
-  const apply = () => { target.draft = draft; const detail = world.checks?.details?.[target.number]; if (detail) detail.draft = draft; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); };
+  const apply = () => { target.draft = draft; const detail = world.checks?.details?.[target.number]; if (detail) detail.draft = draft; saveWorld(world); };
   if (!target) { graphqlErrors = true; body = { data: { [field]: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to a node' }] }; }
   else if (granted.pull_requests !== 'write') { graphqlErrors = true; body = { data: { [field]: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
   else if (fault) {
@@ -280,7 +298,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   if (!target) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to a node' }] }; }
   else if (granted.contents !== 'write') { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
   else if (refs[branch] !== update.beforeOid) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'UNPROCESSABLE', message: 'A ref was not at its expected beforeOid' }] }; }
-  else { delete refs[branch]; if (marker) world.factoryRefs = refs; else world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); body = { data: { updateRefs: { clientMutationId: null } } }; }
+  else { delete refs[branch]; if (marker) world.factoryRefs = refs; else world.refs = refs; saveWorld(world); body = { data: { updateRefs: { clientMutationId: null } } }; }
   } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
   else if (!repo) process.exit(11);
   else if (rest === '') body = { id: repo.id, node_id: 'R_' + repo.id, full_name: repo.name, default_branch: 'main', owner: { login: repo.name.split('/')[0] } };
@@ -310,7 +328,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const comments = world.comments ?? [];
   const comment = { id: 60000 + comments.length + 1, issue: number, repository: repo.name, node_id: 'IC_' + (comments.length + 1), body: request.body,
     user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-  if (created) { world.comments = [...comments, comment]; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); }
+  if (created) { world.comments = [...comments, comment]; saveWorld(world); }
   trace.body = request.body;
   if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }
   else { status = 201; body = { ...comment, html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + comment.id }; }
@@ -326,7 +344,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     if (granted.contents !== 'write') { status = 403; body = { message: 'Resource not accessible by integration' }; }
     else if (Object.keys(request).sort().join() !== 'ref,sha' || !/^refs\\/heads\\//.test(request.ref) || !/^[0-9a-f]{40}$/.test(request.sha)) process.exit(20);
     else if (refs[request.ref.slice(11)] !== undefined) { status = 422; body = { message: 'Reference already exists' }; }
-    else { refs[request.ref.slice(11)] = request.sha; world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+    else { refs[request.ref.slice(11)] = request.sha; world.refs = refs; saveWorld(world);
       status = 201; body = { ref: request.ref, object: { sha: request.sha, type: 'commit' } }; }
   } else if (granted.pull_requests !== 'write') { status = 403; body = { message: 'Resource not accessible by integration' }; }
   else if (refs[request.head] === undefined) { status = 422; body = { message: 'Validation Failed: head does not exist' }; }
@@ -335,7 +353,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     const created = { id: 9000 + number, node_id: 'PR_node' + number, number, title: request.title, body: request.body ?? null, state: 'open', merged_at: null, draft: request.draft === true,
       head: { ref: request.head, sha: refs[request.head], repo: { id: repo.id } }, base: { ref: request.base }, user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' } };
     const fault = world.pullFault;
-    if (!fault || fault.created) { world.pulls = [...world.pulls, created]; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); }
+    if (!fault || fault.created) { world.pulls = [...world.pulls, created]; saveWorld(world); }
     if (fault) { status = fault.status; body = { message: 'synthetic' }; }
     else { status = 201; body = { ...created, html_url: 'https://github.com/' + repo.name + '/pull/' + number }; }
   }
@@ -377,7 +395,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     if (!found || !detail) notFound();
     else {
       const reads = (checks.reads ??= {})[number] = (checks.reads[number] ?? 0) + 1;
-      writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+      saveWorld(world);
       const head = detail.change && reads >= detail.change.afterReads ? detail.change.head_sha : detail.head_sha;
       body = { ...found, html_url: 'https://github.com/acme/project/pull/' + number, draft: detail.draft ?? true, merged: detail.merged ?? Boolean(found.merged_at),
         mergeable: detail.mergeable === undefined ? true : detail.mergeable, mergeable_state: detail.mergeable_state ?? 'clean', merge_commit_sha: detail.merge_commit_sha ?? 'e'.repeat(40),
@@ -386,7 +404,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   } else if (/^\\/rules\\/branches\\/.+$/.test(rest)) {
     const name = decodeURIComponent(url.pathname.split('/rules/branches/')[1]);
     const reads = (checks.reads ??= {})['rules:' + name] = (checks.reads['rules:' + name] ?? 0) + (url.searchParams.get('page') === '1' ? 1 : 0);
-    writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+    saveWorld(world);
     body = page((checks.rulesChange && reads >= checks.rulesChange.afterReads ? checks.rulesChange.rules : checks.rules ?? world.branchRules)?.[name] ?? []);
   } else if (/^\\/branches\\/.+\\/protection\\/required_status_checks$/.test(rest)) {
     const name = decodeURIComponent(url.pathname.split('/branches/')[1].replace(/\\/protection\\/required_status_checks$/, ''));
@@ -450,9 +468,13 @@ child.on('exit',code=>{process.exitCode=code??1;});
   return {
     root, executable, native: restore.observation,
     async update(change: (world: World) => void) {
-      const world = JSON.parse(await readFile(worldFile, 'utf8')) as World;
-      change(world);
-      await writeFile(worldFile, JSON.stringify(world));
+      await underWorldLock(worldLock, () => {
+        const world = JSON.parse(readFileSync(worldFile, 'utf8')) as World;
+        change(world);
+        const temporary = `${worldFile}.update`;
+        writeFileSync(temporary, JSON.stringify(world));
+        renameSync(temporary, worldFile);
+      });
     },
     /** Tokens revoked through DELETE /installation/token (synthetic values only). */
     async revoked(): Promise<string[]> {
@@ -472,4 +494,17 @@ export function crossReferenced(pullNumber: number, repository = 'acme/project')
 }
 export function connected(pullNumber?: number, event: 'connected' | 'disconnected' = 'connected') {
   return pullNumber === undefined ? { event } : { ...crossReferenced(pullNumber), event };
+}
+
+/** Runs `critical` (synchronous) while holding the world's flock, coordinated by events: the holder reports the lock, then holds it until its stdin closes. */
+async function underWorldLock(lock: string, critical: () => void): Promise<void> {
+  const holder = spawn('/usr/bin/flock', ['--exclusive', lock, '/bin/sh', '-c', 'echo locked; exec cat'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const exited = new Promise<number | null>(resolve => holder.once('exit', code => resolve(code)));
+  const acquired = await new Promise<boolean>(resolve => {
+    holder.stdout.once('data', (data: Buffer) => resolve(data.toString().startsWith('locked')));
+    holder.once('exit', () => resolve(false));
+    holder.once('error', () => resolve(false));
+  });
+  if (!acquired) throw new Error('WORLD_LOCK_UNAVAILABLE');
+  try { critical(); } finally { holder.stdin.end(); await exited; }
 }
