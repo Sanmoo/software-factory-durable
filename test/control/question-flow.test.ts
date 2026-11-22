@@ -69,7 +69,7 @@ function executionDoubles(control: () => Control, scripts: Script[], options: { 
       async issue() {
         calls.push({ kind: 'issue' });
         return {
-          delivery: { token: 'ghs_syntheticQuestionGrant0123' },
+          delivery: { token: 'ghs_' + 'syntheticQuestionGrant0123' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',

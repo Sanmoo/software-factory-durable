@@ -79,6 +79,16 @@
       "costSeconds": 10
     },
     {
+      "$comment": "gitleaks (pinned in mise.toml) over the history reachable from HEAD and the uncommitted files, matched to scripts/test-runner/secrets-tolerated.json. Any file can carry a secret, so every change applies it.",
+      "id": "secrets",
+      "gate": "Secrets",
+      "tier": "fast",
+      "appliesTo": ["**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 8
+    },
+    {
       "$comment": "Reads GLOSSARY.md's _Avoid_ lines (shared configuration: a change to them widens validation).",
       "id": "avoided-terms",
       "gate": "Avoided terms",

@@ -33,6 +33,7 @@
     "test/runner/avoided-terms.test.ts",
     "test/runner/lint-suppressions.test.ts",
     "test/runner/proof-attribution.test.ts",
+    "test/runner/secrets.test.ts",
     "test/runner/selection.test.ts",
     "test/runner/tiers.test.ts",
     "test/sandbox/lambda-guest-image.test.ts",

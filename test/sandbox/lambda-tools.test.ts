@@ -756,7 +756,7 @@ test('a reconnection accepts only the host key pinned at the boot; a call that n
 
 test("MVP §12.2: the command text of an uncertain effect passes the Records secret filter before it reaches the boot's host record; a write names its path only", async t => {
   const { guests, sandbox, environment, boot, records, invocation } = await activeBoot(t);
-  const secret = 'ghs_synthetic0123456789abcdefSECRET';
+  const secret = 'ghs_' + 'synthetic0123456789abcdefSECRET';
   records.registerSecret(secret);
   const command = `curl -H "Authorization: Bearer ${secret}" https://deploy.example/release`;
   guests.world.commands[command] = async (_guest, run) => {

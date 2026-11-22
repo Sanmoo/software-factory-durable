@@ -93,6 +93,18 @@ export const proofs: Proof[] = [
       ),
   },
   {
+    id: 'secrets',
+    gate: 'Secrets',
+    tier: 'fast',
+    location: 'docs/proof-credentials.txt',
+    violation: 'add a file holding a well-formed fake AWS access key id and secret',
+    apply: copy =>
+      copy.write(
+        'docs/proof-credentials.txt',
+        `aws_access_key_id = ${'AKIA' + 'Z7QX4L2M3N5P6R7S'}\naws_secret_access_key = ${'q8Vt2LmX9pR4sN7w' + 'K1zB6yH3cJ0dF5gA2eU8iO4t'}\n`,
+      ),
+  },
+  {
     id: 'avoided-terms',
     gate: 'Avoided terms',
     tier: 'fast',

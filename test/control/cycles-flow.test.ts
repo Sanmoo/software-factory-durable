@@ -53,7 +53,7 @@ function ports(calls: string[], options: { stopConfirmed: () => boolean; startGa
       async issue() {
         calls.push('issue');
         return {
-          delivery: { token: 'ghs_syntheticDelivery0123456789' },
+          delivery: { token: 'ghs_' + 'syntheticDelivery0123456789' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',

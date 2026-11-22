@@ -133,7 +133,7 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
     credentials: {
       async issue() {
         return {
-          delivery: { token: 'ghs_synthetic13' },
+          delivery: { token: 'ghs_' + 'synthetic13' },
           metadata: {
             role: 'builder',
             purpose: 'builder-start',
