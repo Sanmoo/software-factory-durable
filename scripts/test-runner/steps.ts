@@ -13,6 +13,7 @@ import { acquireMachineLock, machineLockPath } from './lock.ts';
 import type { FileRun, Steps } from './runner.ts';
 import { matchSecrets, parseTolerance as parseSecretsTolerance, readGitleaks, type SecretFinding } from './secrets.ts';
 import { parsePolicy, type IntegralRecord } from './selection.ts';
+import { scanStaticMetrics } from './static-metrics.ts';
 
 /** The handoff's Node prefix, applied to every child: no inherited NODE_OPTIONS/compile cache. */
 export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -94,6 +95,7 @@ export interface StaticParts {
   suppressions(): Promise<StepResult>;
   format(): Promise<StepResult>;
   secrets(): Promise<StepResult>;
+  metrics(): Promise<StepResult>;
 }
 
 /**
@@ -102,7 +104,7 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed, avoided, suppressed, formatted, scanned] = await Promise.all([
+  const [compiled, linted, cruised, pointed, avoided, suppressed, formatted, scanned, measured] = await Promise.all([
     compiling,
     parts.lint(),
     compiling.then(() => parts.depcruise()),
@@ -111,8 +113,9 @@ export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
     parts.suppressions(),
     parts.format(),
     parts.secrets(),
+    parts.metrics(),
   ]);
-  return [...compiled, linted, ...cruised, pointed, avoided, suppressed, formatted, scanned];
+  return [...compiled, linted, ...cruised, pointed, avoided, suppressed, formatted, scanned, measured];
 }
 
 /** The files the Format quality gate checks; .prettierignore holds its traversal exclusions. */
@@ -307,6 +310,23 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
           output: [result.summary, ...result.findings.map(f => `${f.rule}: ${f.location}`)].join('\n'),
         };
       };
+      // The Static metrics quality gate over src/: complexity by function against its tolerance policy, and duplication; cycles come
+      // with the cruise (no-cycles, reported under Static metrics).
+      const metrics = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const result = await scanStaticMetrics(root).catch(error => ({
+          findings: [{ rule: 'static-metrics-unreadable', location: String((error as Error).message) }],
+          summary: 'static metrics not measured',
+        }));
+        return {
+          name: 'static-metrics',
+          ms: Date.now() - started,
+          ok: !result.findings.length,
+          check: 'static-metrics',
+          findings: result.findings,
+          output: [result.summary, ...result.findings.map(f => `${f.rule}: ${f.location}`)].join('\n'),
+        };
+      };
       return composeStatic({
         staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
         compile: compiled,
@@ -317,6 +337,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         suppressions,
         format,
         secrets,
+        metrics,
       });
     },
     audit: async signal => {

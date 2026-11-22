@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { disposableCopy, type Copy } from './disposable.ts';
+import { disposableCopy, restore, warm, type Copy } from './disposable.ts';
 import { analyzedExactly, attribute, type Verdict } from './proof-attribution.ts';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -22,6 +22,8 @@ export interface Proof {
   location: string;
   /** A changed-set gate's declared input: the step that analyzes it and the files, which must be exactly what it analyzed. */
   declared?: { step: string; files: string[] };
+  /** A proof whose violation changes installed dependencies runs in a fresh copy of its own, not the shared warm one. */
+  isolated?: boolean;
 }
 
 const append = (line: string) => (text: string) => `${text}${line}\n`;
@@ -105,6 +107,20 @@ export const proofs: Proof[] = [
       ),
   },
   {
+    id: 'static-metrics',
+    gate: 'Static metrics',
+    tier: 'fast',
+    location: 'src/control/rules/budget.ts proofBranches',
+    violation: 'add a function with eleven independent branches to src/control/rules/budget.ts',
+    apply: copy =>
+      copy.edit(
+        'src/control/rules/budget.ts',
+        append(
+          `export function proofBranches(n: number): number {\n${Array.from({ length: 11 }, (_, i) => `  if (n === ${i}) return ${i};\n`).join('')}  return -1;\n}`,
+        ),
+      ),
+  },
+  {
     id: 'avoided-terms',
     gate: 'Avoided terms',
     tier: 'fast',
@@ -136,6 +152,7 @@ export const proofs: Proof[] = [
   },
   {
     id: 'vulnerabilities',
+    isolated: true,
     gate: 'Dependency vulnerabilities',
     tier: 'ci',
     location: 'minimist',
@@ -160,8 +177,8 @@ export interface Evidence {
   analyzed: string;
 }
 
-function run(proof: Proof): Evidence {
-  const copy = disposableCopy(project, `proof-${proof.id}`);
+function run(proof: Proof, shared: Copy): Evidence {
+  const copy = proof.isolated ? disposableCopy(project, `proof-${proof.id}`) : shared;
   try {
     proof.apply(copy);
     const entryPoint = `scripts/test-runner/run ${proof.tier}`;
@@ -196,7 +213,9 @@ function run(proof: Proof): Evidence {
       analyzed: staticLine || 'unavailable',
     };
   } finally {
-    copy.remove();
+    // The violation is bound to its run: restored (or its copy removed) even after a failure.
+    if (proof.isolated) copy.remove();
+    else restore(copy);
   }
 }
 
@@ -210,12 +229,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(2);
   }
   const evidence: Evidence[] = [];
+  // One warm template per run: every proof starts from the same built tree, as a working checkout would.
+  const template = warm(disposableCopy(project, 'proof-template'));
   for (const proof of selected) {
-    const item = run(proof);
+    const item = run(proof, template);
     evidence.push(item);
     console.log(`${item.verdict.proved ? 'PROVED' : 'NOT PROVED'} ${item.gate} (${item.entryPoint}, exit ${item.exitCode}): ${item.verdict.reason}`);
     for (const failure of item.failures) console.log(`  ${failure}`);
   }
+  template.remove();
   if (evidencePath) {
     mkdirSync(dirname(resolve(evidencePath)), { recursive: true });
     writeFileSync(evidencePath, JSON.stringify(evidence, null, 1) + '\n');

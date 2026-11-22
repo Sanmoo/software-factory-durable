@@ -89,6 +89,16 @@
       "costSeconds": 8
     },
     {
+      "$comment": "Complexity at most 10 per function (tolerance policy scripts/test-runner/static-metrics-tolerated.json) and duplication at most 3%, over src/: production code; test/ and scripts/ are not production and stay out of this scope. Zero cycles comes with the cruise (no-cycles under boundaries).",
+      "id": "static-metrics",
+      "gate": "Static metrics",
+      "tier": "fast",
+      "appliesTo": ["src/**", "scripts/test-runner/static-metrics-tolerated.json"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 8
+    },
+    {
       "$comment": "Reads GLOSSARY.md's _Avoid_ lines (shared configuration: a change to them widens validation).",
       "id": "avoided-terms",
       "gate": "Avoided terms",
