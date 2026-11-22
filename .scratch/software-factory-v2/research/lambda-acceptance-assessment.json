@@ -1,0 +1,510 @@
+{
+  "shape": "assessment = formato do assessment.json de scripts/agent-checks/finalize.mjs ({status, criteria: {id: approved|rejected|inconclusive}}); details = {id, verdict, observed, evidence} com campos extras kind, mandatory, coverage, missing e changed (quando o veredito mudou em relação ao rascunho). Caminhos relativos ao diretório local da campanha.",
+  "rubric": {
+    "id": "v2-acceptance-on-lambda-profile",
+    "version": 1
+  },
+  "assessment": {
+    "status": "completed",
+    "criteria": {
+      "X0-perfil": "inconclusive",
+      "C01-jornada": "approved",
+      "C02-dependencia": "approved",
+      "C03-concorrencia": "approved",
+      "C04-reparos": "approved",
+      "C05-pergunta": "inconclusive",
+      "C06-crash": "approved",
+      "C07-cancelamento-limites": "inconclusive",
+      "C08-containers": "approved",
+      "C09-mudanca-humana": "approved",
+      "C10-elegibilidade": "inconclusive",
+      "C11-tempo": "approved",
+      "C12-cli": "inconclusive",
+      "G05-gate": "approved",
+      "G09-espera": "approved",
+      "G10-mesma-sessao": "approved",
+      "G11-divergencia": "inconclusive",
+      "G12-troca": "approved",
+      "G14-sem-progresso": "approved",
+      "G15-cessacao": "approved",
+      "G16-marcador": "approved",
+      "G17-substituta": "approved",
+      "G20-canal": "approved",
+      "G23-revisores": "approved",
+      "G24-credenciais": "approved",
+      "G27-ambiente": "approved",
+      "G30-validate": "inconclusive",
+      "G30b-espera-capacidade": "inconclusive",
+      "G32-consumo": "inconclusive",
+      "X1-custo": "approved",
+      "X2-cleanup": "inconclusive"
+    }
+  },
+  "details": [
+    {
+      "id": "X0-perfil",
+      "kind": "auxiliary",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Registrados: SHA e identificador de cada release (v2-acc-1 a v2-acc-7), Node 24.21.0, modelo por papel, região, quota e limite de boot lidos pelo doctor.",
+      "missing": "Versões e caminhos de aws-cli, ssh e websocat não gravados; o doctor anterior ao primeiro boot é anterior às credenciais; as saídas brutas do doctor contêm o identificador da conta e não entram no conjunto publicado.",
+      "evidence": [
+        "release-v2-acc-1/build-report.json",
+        "release-v2-acc-7/build-report.json",
+        "doctor-1.json",
+        "final-works/doctor-final.raw.json",
+        "config-campaign.json"
+      ]
+    },
+    {
+      "id": "C01-jornada",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Ticket #133 do repositório real: implementação, dois reviews de papéis distintos, PR #134 publicado pelo Builder no mesmo boot com a ponta igual ao commit verificado, pronto, merge humano, entrega, limpeza; MicroVM TERMINATED e marcadores ausentes.",
+      "missing": "",
+      "evidence": [
+        "final-works/a23f433b-2e61-4e36-a1cc-770757201a19.history.json",
+        "w133/microvm-boot2.json",
+        "lambda-acceptance-human-steps.log"
+      ]
+    },
+    {
+      "id": "C02-dependencia",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Ticket #25 bloqueado pelo #24: Bloqueio DEPENDENCY_PENDING, nenhuma reserva nem boot por ~9 min; reserva e boot só depois do merge do PR do #24.",
+      "missing": "Sem listagem de MicroVMs separada do intervalo; a ausência de boot vem do histórico.",
+      "evidence": [
+        "wf14/show-blocked.json",
+        "final-works/827d6617-c521-48cd-84ab-8b14e151204a.history.json"
+      ]
+    },
+    {
+      "id": "C03-concorrencia",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Tickets #135 e #127 em MicroVMs distintas iniciadas às 10:01:01 e 10:01:03 UTC, vivas ao mesmo tempo, branches distintas; o #128 esperou na fila até o #127 liberar o Slot (10:30). Pico de 2 MicroVMs simultâneas em toda a campanha.",
+      "missing": "",
+      "evidence": [
+        "final-works/efc54451-96d5-4fce-9fda-fea0091a04b8.history.json",
+        "final-works/0da1c800-8766-4317-a68d-caf10257e6df.history.json",
+        "final-works/9436bb22-344b-4a10-be99-7f68e28a8f2e.history.json",
+        "probes/x1-microvms-final.jsonl"
+      ]
+    },
+    {
+      "id": "C04-reparos",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Conflito com a base (PR #3) e check obrigatório factory-gate em falha (PRs #27 e #29) geraram correção e Execução de reparo; uma única correção para a falha repetida do PR #27; no teste de ordem o reparo foi reservado às 09:01:44.946 e o Ticket novo (#30) às 09:02:15.377; conflito mais check viraram um único reparo. Reparo explícito do #135 no repositório real.",
+      "missing": "",
+      "evidence": [
+        "final-works/eae39394-2a5b-420e-ae90-8467be93b052.history.json",
+        "final-works/827d6617-c521-48cd-84ab-8b14e151204a.history.json",
+        "final-works/8019ed17-3e55-45d0-b77f-552b0d9f5b07.history.json",
+        "final-works/c475093e-dc80-4200-b927-935304599b70.history.json",
+        "final-works/0da1c800-8766-4317-a68d-caf10257e6df.history.json"
+      ]
+    },
+    {
+      "id": "C05-pergunta",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Em oito Trabalhos a Pergunta foi publicada, o Slot foi liberado e a resposta do Operador retomou o mesmo Trabalho.",
+      "missing": "Não há evidência de outro Trabalho iniciado durante a espera de uma Pergunta (conferidos os 23 históricos finais).",
+      "evidence": [
+        "final-works/1707fc5a-e888-4503-b48a-1b48ba3b8288.history.json",
+        "final-works/eae39394-2a5b-420e-ae90-8467be93b052.history.json",
+        "final-works/e4e15994-9f85-4768-9df9-b6fa8152dfeb.history.json",
+        "final-works/907c00d4-05cd-409d-8526-f73ca52999cc.history.json",
+        "final-works/dd8abb72-db36-479a-ae6a-3c42eda41d81.history.json",
+        "final-works/67f6c34e-f14e-4c99-a5b3-66e700aade5e.history.json"
+      ]
+    },
+    {
+      "id": "C06-crash",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "SIGKILL no processo dono do controller com Builder ativo; no reinício: reconciliação com cessação confirmada, Slot liberado, perda com ref de marcador, substituta pela fila com uma recuperação consumida; nenhuma Pergunta duplicada. Um único PR (#12), entregue.",
+      "missing": "A órfã foi localizada por registro de boot, não por tag (A2).",
+      "evidence": [
+        "final-works/6acadbcb-ebb0-4653-bfd6-885d0affbbfa.history.json",
+        "final-works/6acadbcb-ebb0-4653-bfd6-885d0affbbfa.usage.json",
+        "lambda-acceptance-human-steps.log"
+      ]
+    },
+    {
+      "id": "C07-cancelamento-limites",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Cancelamento com boot ativo: WORK_CANCELLED, Slot liberado e cessação registrada, Bloqueio WORK_CANCELLED com próximo passo, MicroVM TERMINATED. Orçamento mínimo: budget-exhausted corrections:0/0, Bloqueio CORRECTION_LIMIT_REACHED com próximo passo, branch e PR #35 na origem.",
+      "missing": "No cancelamento não há evidência de que a branch de trabalho ficou na origem (ausente no início do boot, sem portão de preservação nem listagem de refs depois).",
+      "evidence": [
+        "final-works/93c9b301-3120-4a88-bf0f-8e1e8382b6ae.history.json",
+        "final-works/93c9b301-3120-4a88-bf0f-8e1e8382b6ae.show.json",
+        "final-works/86384365-0849-4f6c-9303-525a97f3fb63.history.json",
+        "wf19/show.json"
+      ]
+    },
+    {
+      "id": "C08-containers",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Nos dois Trabalhos simultâneos do repositório real (#127 e #135) apareceram containers do Testcontainers em cada MicroVM e os gates passaram (check-and-acceptance e ticket-validation).",
+      "missing": "Não confirmado em arquivo que o gate ticket-validation do #135 roda exatamente ./gradlew check acceptanceTest.",
+      "evidence": [
+        "probes/c08-containers.txt",
+        "final-works/efc54451-96d5-4fce-9fda-fea0091a04b8.show.json",
+        "wfr2/show-1.json"
+      ]
+    },
+    {
+      "id": "C09-mudanca-humana",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Commit de terceiro (3662912) empurrado durante a espera: a retomada partiu dele, ele virou o commit verificado e é a ponta do PR #37, mesclado e entregue. Não foi sobrescrito.",
+      "missing": "",
+      "evidence": [
+        "final-works/1707fc5a-e888-4503-b48a-1b48ba3b8288.history.json",
+        "wf1/show-blocked.json",
+        "lambda-acceptance-human-steps.log"
+      ],
+      "changed": "Era inconclusive (parcial) no rascunho: faltava o commit no histórico de um PR; o Trabalho ganhou o PR #37 com a verificação do A6."
+    },
+    {
+      "id": "C10-elegibilidade",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Rótulo retirado com boot ativo: authorization-withdrawn, Bloqueio AUTHORIZATION_WITHDRAWN, nenhuma ativação nova; a atividade em curso publicou o PR #15 em rascunho. Depois de Ticket e PR fechados, quase duas horas de polling sem Execução nova. Um só Trabalho por Ticket.",
+      "missing": "Não exercitado: rótulo retirado de um Ticket ainda na fila.",
+      "evidence": [
+        "final-works/0ec12177-5ce6-41c3-ac35-483b4c00a1da.history.json",
+        "final-works/0ec12177-5ce6-41c3-ac35-483b4c00a1da.show.json"
+      ]
+    },
+    {
+      "id": "C11-tempo",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Uma Execução de 4669 s atravessou seis trocas planejadas sem corte por tempo (sem timeout configurado); Slot liberado nas esperas humanas.",
+      "missing": "",
+      "evidence": [
+        "wf5/history.json",
+        "wf5/usage.json",
+        "wf5/show.json"
+      ]
+    },
+    {
+      "id": "C12-cli",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "A maioria dos Bloqueios apareceu no CLI com código, causa e próximo passo, nunca como sucesso (falha de build, falta de progresso, limite de correções, dependência, autorização retirada, merge bloqueado).",
+      "missing": "Casos em que o CLI não ajudou: Trabalho parado sem Bloqueio (A9, corrigido), próximo passo que falha e causa ausente com PR fechado por exclusão da branch (A12), Trabalho aberto sem Bloqueio depois de revisão incomplete (A15) e de reparo perdido (A17).",
+      "evidence": [
+        "wf12/show.json",
+        "wf10/show.json",
+        "wf19/show.json",
+        "wf14/show-blocked.json",
+        "wf4/show-stuck.json",
+        "final-works/8019ed17-3e55-45d0-b77f-552b0d9f5b07.show.json",
+        "final-works/0e0d892b-d452-4c98-9e96-7694d1a57f40.history.json"
+      ]
+    },
+    {
+      "id": "G05-gate",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Em seis Trabalhos o gate recusou a parada com commit não publicado, o Builder real publicou e só então o boot terminou. Três recusas seguidas (WORKSPACE_UNTRACKED) encerraram o boot como perda, com ref de marcador e substituta com uma recuperação consumida. Uma vez com arquivo modificado sem commit (WORKSPACE_MODIFIED), corrigido antes do fim.",
+      "missing": "Desvio do roteiro: o arquivo não rastreado foi deixado pelo Builder a pedido do Ticket, não recriado por processo injetado pelo canal.",
+      "evidence": [
+        "final-works/67f6c34e-f14e-4c99-a5b3-66e700aade5e.history.json",
+        "final-works/67f6c34e-f14e-4c99-a5b3-66e700aade5e.show.json",
+        "final-works/1707fc5a-e888-4503-b48a-1b48ba3b8288.history.json",
+        "final-works/0e0d892b-d452-4c98-9e96-7694d1a57f40.history.json"
+      ]
+    },
+    {
+      "id": "G09-espera",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Espera humana: MicroVM terminada 00:12:29.820, Slot liberado 00:12:32.221. Espera de CI: terminada 23:43:24.599, Slot liberado 23:43:28.065.",
+      "missing": "",
+      "evidence": [
+        "wf1/microvm-boot1.json",
+        "final-works/1707fc5a-e888-4503-b48a-1b48ba3b8288.history.json",
+        "w133/microvm-boot2.json",
+        "final-works/a23f433b-2e61-4e36-a1cc-770757201a19.history.json"
+      ]
+    },
+    {
+      "id": "G10-mesma-sessao",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Depois da resposta à Pergunta o boot novo continuou a mesma sessão (SESSION_COMPATIBLE, mesmo identificador), com aviso de boot e spec e instructions restaurados; repetido no Ticket #16 e numa sessão única ao longo de sete boots no Ticket #10.",
+      "missing": "O texto do aviso dentro da sessão não foi aberto; vale o registro bootNotice.",
+      "evidence": [
+        "wf2/show-1.json",
+        "wf2/show-repair.json",
+        "wf9/usage.json",
+        "wf5/usage.json"
+      ]
+    },
+    {
+      "id": "G11-divergencia",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "(b) Histórico reescrito: origin-rewrite-followed, sessão nova (replace, ORIGIN_HISTORY_REWRITTEN), aviso com os dois commits, uma recuperação consumida. (c) Branch ausente: nenhum boot e Pergunta com restart ou end.",
+      "missing": "(a) O commit de terceiro foi incorporado, mas não na mesma sessão (sessão substituída por SESSION_INCOMPATIBLE, defeito A5 da época); não repetido depois da correção.",
+      "evidence": [
+        "wf1/show-blocked.json",
+        "final-works/827d6617-c521-48cd-84ab-8b14e151204a.history.json",
+        "wf14/show.json",
+        "wf14/usage.json",
+        "wf14/g11b-substitute-session-notice.txt",
+        "final-works/dd8abb72-db36-479a-ae6a-3c42eda41d81.history.json"
+      ]
+    },
+    {
+      "id": "G12-troca",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Limite 900 s e margem 300 s: seis trocas planejadas com preservação aceita antes do fim; chamada longa interrompida aos ~750 s e encerrada no guest; boot único de 4150,3 s com limite de 4500 s.",
+      "missing": "",
+      "evidence": [
+        "wf5/history.json",
+        "wf5/usage.json",
+        "wf10/history.json",
+        "wf10/channels.jsonl",
+        "wf11/usage.json",
+        "final-works/f702100c-fd53-4212-be58-d9d7fe733259.history.json"
+      ]
+    },
+    {
+      "id": "G14-sem-progresso",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Dois boots seguidos sem commit novo: boot-loop-blocked, NO_PROGRESS_BETWEEN_BOOTS, Bloqueio com causa e próximo passo; nenhum terceiro boot.",
+      "missing": "",
+      "evidence": [
+        "wf10/history.json",
+        "wf10/show.json",
+        "wf10/usage.json"
+      ]
+    },
+    {
+      "id": "G15-cessacao",
+      "kind": "contract",
+      "mandatory": true,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "MicroVM encerrada por fora no meio de uma chamada (terminatedAt 01:34:16.913). Na sessão do boot perdido o último pedido ao modelo é de 01:33:15.207; depois da cessação há só dois registros do host (resultado abortado e fecho WORKER_SESSION_CLOSED_BY_HOST, 0 tokens). Nenhum pedido de modelo nem chamada nova.",
+      "missing": "Ressalva: o uso de tokens daquela Execução estava unavailable (SESSION_NOT_RECORDED, A7); a prova apoia-se na sessão e no uso em MicroVM-segundos do boot. O horário do encerramento externo vem do registro de passos humanos.",
+      "evidence": [
+        "wf3/lost-session.jsonl",
+        "wf3/microvm-lost.json",
+        "final-works/e4e15994-9f85-4768-9df9-b6fa8152dfeb.history.json",
+        "wf3/usage-final.json",
+        "lambda-acceptance-human-steps.log"
+      ]
+    },
+    {
+      "id": "G16-marcador",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Ref refs/factory/lost/<trabalho>/<boot> presente na origem no commit não publicado; a substituta recuperou o commit a partir do marcador; na limpeza do Trabalho, lost-markers:removed.",
+      "missing": "A leitura da origem confirmando a ausência da ref depois da remoção está só no registro corrido.",
+      "evidence": [
+        "wf3/refs-after-substitute.txt",
+        "wf3/show-question.json",
+        "final-works/e4e15994-9f85-4768-9df9-b6fa8152dfeb.history.json",
+        "final-works/6acadbcb-ebb0-4653-bfd6-885d0affbbfa.history.json"
+      ]
+    },
+    {
+      "id": "G17-substituta",
+      "kind": "contract",
+      "mandatory": true,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "MicroVM morta durante o efeito não idempotente. A substituta não repetiu o efeito, publicou o commit recuperado, abriu Pergunta sobre o efeito incerto e, depois da resposta, concluiu: PR #7, merge, entrega. Uma única branch effects/* na origem no momento da Pergunta.",
+      "missing": "A contagem de um efeito ao fim do Trabalho está só no registro corrido. Uma execução só.",
+      "evidence": [
+        "final-works/e4e15994-9f85-4768-9df9-b6fa8152dfeb.history.json",
+        "wf3/show-question.json",
+        "wf3/refs-before-kill.txt",
+        "wf3/refs-after-substitute.txt"
+      ]
+    },
+    {
+      "id": "G20-canal",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "v2-acc-6: túnel morto durante chamada longa; a recuperação encerrou a órfã no guest, registrou orphan-ended e a ativação seguiu no mesmo boot. v2-acc-5: cinco tentativas, SANDBOX_CHANNEL_UNRECOVERABLE, perda e substituta com uma recuperação consumida.",
+      "missing": "O esgotamento foi alcançado por causa do defeito A11, não por túnel bloqueado além do limite, e não foi repetido depois da correção; o texto indeterminado recebido pela sessão está só no registro corrido.",
+      "evidence": [
+        "wf9/channel.jsonl",
+        "final-works/907c00d4-05cd-409d-8526-f73ca52999cc.history.json",
+        "final-works/6acadbcb-ebb0-4653-bfd6-885d0affbbfa.history.json",
+        "wf6/show.json"
+      ]
+    },
+    {
+      "id": "G23-revisores",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Sonda como usuário reviewer em dois boots: escrita em /workspace recusada, socket do Docker inacessível, sem sudo; vereditos reais dos dois revisores produzidos em MicroVM.",
+      "missing": "",
+      "evidence": [
+        "probes/g23-g24-run1.txt",
+        "probes/g23-g24-run2.txt",
+        "final-works/f702100c-fd53-4212-be58-d9d7fe733259.history.json",
+        "final-works/efc54451-96d5-4fce-9fda-fea0091a04b8.history.json"
+      ]
+    },
+    {
+      "id": "G24-credenciais",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Varredura como builder com sentinela encontrado: nenhum token em arquivo, linha de comando ou configuração do Git; nenhuma credencial AWS em ambiente, arquivos ou metadados.",
+      "missing": "Dentro da exclusão da rubrica: token no ambiente do processo residente do marcador. Limites da sonda: 9 processos de root não lidos; /var/lib/docker fora.",
+      "evidence": [
+        "probes/g24-run3.txt",
+        "probes/g23-g24-run2.txt"
+      ]
+    },
+    {
+      "id": "G27-ambiente",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Imagem construída do ambiente declarado do repositório real e reusada sem build; JDK no guest igual ao declarado (openjdk25-jdk 25.0.5.1_p2-r0). Versão inexistente: Execução retida sem boot, Bloqueio com a mensagem do apk.",
+      "missing": "",
+      "evidence": [
+        "final-works/a23f433b-2e61-4e36-a1cc-770757201a19.history.json",
+        "final-works/efc54451-96d5-4fce-9fda-fea0091a04b8.history.json",
+        "probes/c08-containers.txt",
+        "wf12/show.json",
+        "final-works/usage-all.json"
+      ]
+    },
+    {
+      "id": "G30-validate",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Concurrency 3: bloqueio lambda-quota citando a quota. Ação retirada da role: bloqueio citando lambda:DeleteMicrovmImageVersion e o próximo passo. doctor final (v2-acc-7): 30 checks aprovados, nenhum bloqueado.",
+      "missing": "Só a letra da testemunha: dois checks do Lambda saem unverified por desenho (lambda:PassNetworkConnector, A1, e lambda-runtime), não aprovados.",
+      "evidence": [
+        "doctor-concurrency3.json",
+        "doctor-missing-permission.json",
+        "final-works/doctor-final.raw.json",
+        "lambda-acceptance-human-steps.log"
+      ]
+    },
+    {
+      "id": "G30b-espera-capacidade",
+      "kind": "auxiliary",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "não coberto",
+      "observed": "Não tentado: nenhuma recusa de capacidade foi provocada.",
+      "missing": "Tudo.",
+      "evidence": []
+    },
+    {
+      "id": "G32-consumo",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "factory usage registra MicroVM-segundos por boot e por Trabalho iguais aos do serviço; a reconciliação encerrou a órfã do C06; depois da correção A7 as Execuções perdidas aparecem como partial.",
+      "missing": "A reconciliação não é por tag (A2) e uma órfã sem registro de boot não foi exercitada; não há declaração explícita de evidência do guest perdida no boot morto do G15.",
+      "evidence": [
+        "w133/usage-final.json",
+        "w133/microvm-boot2.json",
+        "wf5/usage.json",
+        "final-works/6acadbcb-ebb0-4653-bfd6-885d0affbbfa.usage.json",
+        "wf3/usage-final.json"
+      ]
+    },
+    {
+      "id": "X1-custo",
+      "kind": "auxiliary",
+      "mandatory": false,
+      "verdict": "approved",
+      "coverage": "completo",
+      "observed": "Leitura final: 51 MicroVMs, todas TERMINATED, 30030 s = 8,34 MicroVM-horas (teto 40); pico de 2 simultâneas; 3 builds de imagem (teto 30); 32995685 tokens (teto 150 M); estimativa do catálogo do SDK US$ 2,31. Uso lido às 14:21 UTC de 2026-11-22.",
+      "missing": "A estimativa em dólares é do catálogo do SDK, não uma fatura; a cobrança da AWS não foi lida (fora da rubrica).",
+      "evidence": [
+        "probes/x1-microvms-final.jsonl",
+        "final-works/usage-all.json",
+        "final-works/status.json"
+      ],
+      "changed": "Era inconclusive (parcial) no rascunho: faltavam a leitura final, os builds, os tokens e a estimativa."
+    },
+    {
+      "id": "X2-cleanup",
+      "kind": "contract",
+      "mandatory": false,
+      "verdict": "inconclusive",
+      "coverage": "parcial",
+      "observed": "Feito e verificado por leitura: nenhuma MicroVM viva; 3 imagens para 0; bucket de build com 0 objetos; 3 log groups de build ausentes; repositório real sem PR aberto e sem refs da Factory, ruleset igual ao anterior. Repositório de apoio apagado.",
+      "missing": "Pendentes do Operador: stack factory-sfv2acc (roles e bucket vazio), usuário IAM factory-sfv2acc-operator e sua chave, perfis AWS locais factory-sfv2acc e factory-sfv2acc-source, e lb1/credentials. A limpeza do produto não removeu tudo sozinha: A18 (corrigido e verificado com release local v2-acc-8, ainda fora da main) e A19 (aberto); duas das três imagens saíram pela CLI da AWS.",
+      "evidence": [
+        "cleanup-images-failed.json",
+        "cleanup-images-acc8.json",
+        "cleanup-images-final.json",
+        "cleanup-environments.jsonl",
+        "fixture-refs-before-delete.txt",
+        "lambda-acceptance-human-steps.log"
+      ]
+    }
+  ]
+}

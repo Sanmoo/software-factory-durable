@@ -1,0 +1,93 @@
+2026-11-21T23:09:41Z human-step: created label factory-acc, issue T1 on real repo, repo sfv2acc-fixture
+2026-11-21T23:36:21Z operator-step: resume --retry-blocked-start after release v2-acc-2 (RunMicrovm tags fix)
+2026-11-21T23:44:26Z human-step: ruleset 26435808 rule update removed for the merge window (before: ruleset-before.json)
+2026-11-21T23:54:26Z human-step: approve and squash-merge PR #134 with the operator account
+2026-11-21T23:54:42Z human-step: ruleset 26435808 restored
+2026-11-22T00:02:58Z human-step: fixture seeded, label, issue F1 created (repo private, base unprotected)
+2026-11-22T00:25:53Z human-step: third-party commit 3662912 pushed to factory/1-1707fc5a during the Question wait
+2026-11-22T00:25:55Z human-step: answered question bb30fbfb via issue comment
+2026-11-22T00:34:21Z human-step: fixture made public (Operator decision) and ruleset created
+2026-11-22T01:00:31Z human-step: issue F2 (planned Question after a commit) created; release v2-acc-3
+2026-11-22T01:04:22Z human-step: answered question dcf6b3c3 (F2)
+2026-11-22T01:11:43Z human-step: merged an operator PR into fixture main that conflicts with PR #3 (CA-04 conflict)
+2026-11-22T01:27:47Z human-step: squash-merged fixture PR #3
+2026-11-22T01:30:45Z human-step: effect script merged into fixture main (PR), issue F3 created
+2026-11-22T01:34:14.683Z fault-injection: terminate-microvm microvm-56f25b5c-6779-39bd-beb7-45c429136cbc (external, mid Bash call, after the effect appeared on origin)
+2026-11-22T01:39:45Z human-step: answered question eb8c78ea (F3): treat the effect as done
+2026-11-22T01:46:00Z human-step: squash-merged fixture PR #7
+2026-11-22T01:49:17Z iam-change: operation role without lambda:DeleteMicrovmImageVersion (V2-31 probe)
+2026-11-22T01:51:19Z iam-change: operation role restored from the release template
+2026-11-22T01:53:50Z human-step: slow-step script merged (PR #8); config maxBootSeconds=900 margin=300; issue F4 created
+2026-11-22T02:28:35Z operator-step: cancelled Work 2e34640c (limbo after WORKER_SECRET_SYNC_SCHEMA), closed #9, created F5 with the same body on release v2-acc-4
+2026-11-22T04:16:14Z janela 5 aberta (release v2-acc-5); Ticket fixture 'Task in three slow steps' criado para G20/C06
+2026-11-22T04:20:14Z G20: kill -KILL no websocat do tunel da Factory (Trabalho 6acadbcb-ebb0-4653-bfd6-885d0affbbfa, passo 101 em curso)
+2026-11-22T04:37:35Z C06: kill -KILL no processo principal do controlador (180528) com boot ativo do Trabalho 6acadbcb-ebb0-4653-bfd6-885d0affbbfa
+2026-11-22T04:37:58Z C06: o primeiro kill atingiu so o lancador 'factory run' (controlador seguiu vivo e respondendo); kill -KILL no controlador (controller.js, 180576)
+2026-11-22T04:38:29Z C06: kill -KILL no processo dono (owner.js, 180587); os dois anteriores eram supervisores
+2026-11-22T04:51:39Z merge do PR #12 (Ticket fixture #11) pela conta do Operador
+2026-11-22T04:56:02Z C07: factory cancel no Trabalho 93c9b301-3120-4a88-bf0f-8e1e8382b6ae (Ticket fixture #13) com boot ativo
+2026-11-22T05:00:17Z C10: rotulo factory-acc removido do Ticket fixture #14 com boot ativo (Trabalho 0ec12177-5ce6-41c3-ac35-483b4c00a1da)
+2026-11-22T05:26:31Z janela 6 (release v2-acc-6): issue 14 e PR 15 fechados; Ticket fixture #16 criado para repetir G20
+2026-11-22T05:29:55Z G20 (repeticao, v2-acc-6): kill -KILL no websocat da chamada longa (Trabalho 907c00d4-05cd-409d-8526-f73ca52999cc)
+2026-11-22T05:31:50Z resposta do Operador a Pergunta 5f170dc3 (Ticket fixture #16): sem push por passo; repetir o 401
+2026-11-22T05:55:17Z merge do PR #17 (Ticket fixture #16)
+2026-11-22T05:59:23Z janela 7: config com maxBootSeconds 900/margem 300; Ticket fixture #18 (chamada unica de 1500 s) para V2-13 metade da margem e V2-14
+2026-11-22T06:40:41Z cancel do Trabalho 8d73bc58-d0e9-4e71-9818-a64e0af3d9fd e issue 18 fechada (V2-14 observado)
+2026-11-22T06:43:00Z janela 8: maxBootSeconds 4500 (margem padrao); Ticket fixture #19 (13 passos) para boot unico > 1 h
+2026-11-22T07:53:42Z sondas G23/G24 pelo canal no boot vivo do Trabalho f702100c-fd53-4212-be58-d9d7fe733259 (token de porta novo pela role de operacao; nada impresso)
+2026-11-22T07:58:13Z merge do PR #20 (Ticket fixture #19)
+2026-11-22T07:58:57Z janela 8 fechada: Ticket #19 entregue (PR #20); config de campanha restaurada (sem maxBootSeconds)
+2026-11-22T07:59:25Z janela 9: fixture main com environment.yaml de versao inexistente (jq 0.0.0-r0); issue criada para G27 negativo
+2026-11-22T07:59:58Z merge do PR #22 (declaracao negativa) pela conta do Operador; issue #21
+2026-11-22T08:30:58Z G27 negativo observado; Trabalho do Ticket #21 cancelado, issue fechada; declaracao restaurada por PR (merge pelo Operador)
+2026-11-22T08:31:23Z C02: issues #24 (A) e #25 (B bloqueada por A, dependencia nativa); rotulo em B primeiro
+2026-11-22T08:33:38Z C02: rotulo no Ticket #24 (A)
+2026-11-22T08:39:44Z merge do PR #26 (Ticket #24, C02 A)
+2026-11-22T08:41:47Z C04: regra required_status_checks (factory-gate) adicionada ao ruleset 27817337 do fixture (antes: fixture-ruleset-before-c04.json)
+2026-11-22T08:46:12Z C04: status factory-gate=failure no head do PR #27 (Ticket #25); Ticket novo elegivel https://github.com/Sanmoo/sfv2acc-fixture/issues/28 criado em seguida
+2026-11-22T08:50:02Z C04: status factory-gate=failure repetido no mesmo head do PR #27
+2026-11-22T08:51:39Z G11b: branch factory/25-827d6617 reescrita (amend + push forcado com lease) pela conta do Operador, novo head 805114576a987d42ef413ebbf9dfc857882c7d58; factory-gate=success no novo head
+2026-11-22T08:51:40Z resposta a Pergunta 9aa31c36 (Ticket #25)
+2026-11-22T08:58:13Z C04 ordem: despacho pausado; factory-gate=failure no head do PR #29 (Ticket #28); Ticket novo https://github.com/Sanmoo/sfv2acc-fixture/issues/30
+2026-11-22T09:01:03Z merge do PR #27 (Ticket #25); unpause para o teste de ordem do C04
+2026-11-22T09:07:01Z G11c preparo: factory-gate=failure no head 78ac0af do PR #29 para obter um ponto de retomada (Pergunta)
+2026-11-22T09:12:31Z G11c: branch factory/28-8019ed17 apagada no origin pela conta do Operador, com o Trabalho em Pergunta
+2026-11-22T09:12:32Z resposta a Pergunta 70d31e3b (Ticket #28)
+2026-11-22T09:22:59Z factory reopen no Trabalho 8019ed17-3e55-45d0-b77f-552b0d9f5b07 (Ticket #28) apos PR fechado pela exclusao da branch
+2026-11-22T09:24:53Z Trabalho do Ticket #28 cancelado e issue fechada (G11c primeira tentativa)
+2026-11-22T09:24:54Z G11c: Ticket https://github.com/Sanmoo/sfv2acc-fixture/issues/32 (Pergunta antes de PR)
+2026-11-22T09:30:18Z G11c: branch factory/32-dd8abb72 apagada pela conta do Operador (Trabalho em Pergunta, sem PR); resposta a Pergunta 735e9963 em seguida
+2026-11-22T09:31:01Z G11c: resposta 'end' a Pergunta 70c0c553; merge do PR #31 (Ticket #30)
+2026-11-22T09:33:03Z G05 tres recusas: Ticket https://github.com/Sanmoo/sfv2acc-fixture/issues/33
+2026-11-22T09:36:12Z G05: resposta a Pergunta 27ffd56e (Ticket #33) confirmando o experimento
+2026-11-22T09:40:29Z G05: resposta a Pergunta a257e95c (fim do experimento)
+2026-11-22T09:44:02Z Trabalho do Ticket #33 cancelado, issue fechada
+2026-11-22T09:44:49Z janela 10: controlador reiniciado com correctionLimit=0 no fixture (C07 orcamento minimo)
+2026-11-22T09:45:43Z C07 orcamento minimo: Ticket https://github.com/Sanmoo/sfv2acc-fixture/issues/34
+2026-11-22T09:53:29Z C07: factory-gate=failure no head d5993f74eecdd5974b74d21691eddfb2b31ac61a
+2026-11-22T09:56:40Z janela 10 fechada: Trabalho #34 cancelado, PR #35 e issue fechados; ruleset do fixture restaurado; config de campanha restaurada; controlador parado
+2026-11-22T09:58:18Z janela 11 (repo real, decisao do Operador): Ticket novo https://github.com/Sanmoo/java-springboot-event-sourcing/issues/135 e rotulo factory-acc na issue #127; #128 sera rotulada depois que os dois ocuparem os Slots
+2026-11-22T10:00:56Z rotulo factory-acc na issue #128 com os 2 Slots ocupados
+2026-11-22T11:37:45Z operator: factory reevaluate-publication 9436bb22 (request acc-reeval-r3-1) on v2-acc-6 — block by UNEXPECTED_REF_CHANGE on Work #135's own branch
+2026-11-22T11:38:35Z window 11 paused: controller stopped (SIGINT)
+2026-11-22T12:41:35Z v2-acc-7 up (controller-16.log); operator: reevaluate-publication 9436bb22 (acc-reeval-r3-2) and efc54451 (acc-reeval-r1-1, before fixing PR #136 body)
+2026-11-22T12:42:32Z human: PR #136 body, marker line corrected (one mistyped character); then reevaluate-publication efc54451 (acc-reeval-r1-2)
+2026-11-22T12:43:36Z operator: factory update-scope 0da1c800 (acc-scope-r2-1): new verified Execution after REVIEW_INCOMPLETE (A15), no finding waived
+2026-11-22T12:44:06Z human: ruleset 26435808 rule 'update' removed temporarily for the merges of PRs #136/#137 (before-state in real-ruleset-before-w11.json)
+2026-11-22T12:47:51Z human: PR #137 marked ready, approved and squash-merged (Ticket #128)
+2026-11-22T12:49:11Z human: PR #136 marked ready, approved and squash-merged (Ticket #127)
+2026-11-22T12:49:13Z human: ruleset 26435808 restored (rule 'update' back); compared equal to before
+2026-11-22T12:58:13Z operator: factory repair 0da1c800 (acc-repair-r2-1): incorporate moved base and re-run the gate before the merge of PR #138
+2026-11-22T13:20:51Z human: ruleset 26435808 rule 'update' removed temporarily for the merge of PR #138
+2026-11-22T13:20:59Z human: PR #138 marked ready, approved and squash-merged (Ticket #135)
+2026-11-22T13:21:00Z human: ruleset 26435808 restored; compared equal to before
+2026-11-22T13:51:57Z operator (explicitly requested by the user in chat): factory update-scope 0e0d892b (acc-scope-f5-1), Ticket fixture #10
+2026-11-22T14:02:45Z operator: answered Question 9798bd37-c36f-4e0f-a529-acfac58ad46a on fixture issue #10 (keep base log lines, append the thirteen lines of Ticket #10)
+2026-11-22T14:14:33Z operator: factory reevaluate-publication 1707fc5a (acc-reeval-f1-1), fixture Ticket #1 blocked since window 2 (A6)
+2026-11-22T14:18:56Z human: fixture PR #37 approved and squash-merged (Ticket #1, after A6 re-evaluation)
+2026-11-22T14:19:47Z operator: factory cancel 0e0d892b (fixture Ticket #10; repair of the conflict not concluded, A17)
+2026-11-22T14:24:35Z window 11 closed: dispatch paused, controller stopped (SIGINT), zero MicroVMs alive
+2026-11-22T14:29:58Z cleanup: aws delete-microvm-image on the CREATE_FAILED image (service fact check for A18: whole-image delete works with its last version present)
+2026-11-22T15:09:17Z cleanup: controller up paused (controller-17.log); factory cancel 0ec12177 (closed-unmerged) and factory cleanup --select environment --yes for the 9 Works holding the image
+2026-11-22T15:14:24Z cleanup: last image deleted via aws (product cleanup blocked by A19); 2 build artifacts deleted from the bucket; build log groups deleted; controller stopped
+2026-11-22T15:14:45Z cleanup: fixture repository Sanmoo/sfv2acc-fixture deleted (refs, issues and PR lists saved before)
