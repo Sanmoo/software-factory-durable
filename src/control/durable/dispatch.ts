@@ -10,7 +10,7 @@ import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, rec
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
 import type { AccessDependencies, CredentialWithdrawal, LossRecord, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity, OriginObservation, PreservationOccasion, PublicationView } from '../types.js';
-import { evaluateEntry } from '../rules/admission.js';
+import { evaluateEntry, githubOnly } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import { readWork, type WorkRecord } from './admission.js';
@@ -255,16 +255,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const observe = (work_id: string | null, outcome: string, reasons: string[] = []) => { last = { at: new Date().toISOString(), work_id, outcome, reasons }; };
 
   async function revalidateAuthorization(work: WorkRecord): Promise<{ ok: true; observedAt: string } | { ok: false; reasons: string[] }> {
+    // Fail closed: only GitHub-origin Works are dispatchable by this release (a Jira Work's revalidation is its origin's, never GitHub's).
+    if (work.ticket.tracker !== 'github') return { ok: false, reasons: ['TICKET_ORIGIN_NOT_DISPATCHABLE'] };
+    const ticket = work.ticket;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     let facts;
-    try { facts = await deps.access.tracker.readTicket(work.ticket); } catch { return { ok: false, reasons: ['TICKET_READ_UNAVAILABLE'] }; }
-    const decision = evaluateEntry({ configuredLabel: configured?.label, listed: work.ticket, facts });
+    try { facts = await deps.access.tracker.readTicket(ticket); } catch { return { ok: false, reasons: ['TICKET_READ_UNAVAILABLE'] }; }
+    const decision = evaluateEntry({ configuredLabel: configured?.label, listed: ticket, facts });
     if (!decision.authorized) return { ok: false, reasons: decision.holds.map(hold => hold.code) };
     return { ok: true, observedAt: facts.kind === 'observed' ? facts.observedAt : new Date().toISOString() };
   }
   async function freshEvaluation(work: WorkRecord) {
     const attemptId = randomUUID();
-    const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.ownCycles, work.ticket, attemptId);
+    const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.ownCycles, githubOnly(work.ticket), attemptId);
     await deps.record(work.work_id, evaluation);
     return { attemptId, evaluation };
   }
@@ -754,7 +757,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       decidedAt: new Date().toISOString() };
     const prompt = publicationPrompt({ reason: decision.reason, executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
       repository: work.repository.repository, base: request.base, branch: request.branch, head: request.head, marker: request.marker,
-      ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: prepared.checkout.path, expectedRemote: request.expectedRemote,
+      ticket: { number: githubOnly(work.ticket).number, url: work.ticket.url }, workId: work.work_id, checkout: prepared.checkout.path, expectedRemote: request.expectedRemote,
       pullRequest: request.pullRequest ?? null, remote: publicationRemote(work.repository.repository),
       verified: { reviewedRound: requested.verified.reviewedRound, gates: requested.verified.gates, requiredChecks: requested.verified.requiredChecks },
       recreated: prepared.recreated?.notice ?? null });
@@ -845,11 +848,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (!configured) observation = { kind: 'incomplete', code: 'REPOSITORY_NOT_CONFIGURED' };
     else {
       try {
-        const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [publication.branch],
+        const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [githubOnly(work.ticket).number], knownBranches: [publication.branch],
           refs: true, base: publication.base, ...(compareFrom ? { compareFrom } : {}),
           preserve: preservationTips(known) });
         observedAt = read.observedAt;
-        const issue = read.kind === 'observed' ? read.issues[String(work.ticket.number)] : undefined;
+        const issue = read.kind === 'observed' ? read.issues[String(githubOnly(work.ticket).number)] : undefined;
         const tip = read.kind === 'observed' ? read.branches[publication.branch] : undefined;
         observation = read.kind !== 'observed' ? { kind: 'incomplete', code: read.code }
           : !issue ? { kind: 'incomplete', code: 'PUBLICATION_NOT_REPORTED' }
@@ -862,7 +865,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             ...(read.ancestry ? { ancestry: read.ancestry } : {}) };
       } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
     }
-    const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
+    const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: githubOnly(work.ticket).number, branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: [...(publication.linkedHeads ?? []), ...preserved],
       prOnlyRecovery: prOnlyRecovery(publication), known, preservedHeads: preserved, wipPushes: ports.sandbox.capabilities?.persistentDisk === false,
       refsBefore: publication.refsBefore ?? null, observation,
@@ -894,7 +897,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const verifiedPublication = { ...publication, verified: publication.verified };
     const { observation, observedAt, decision } = await discover(work, verifiedPublication, step.attempted, listing);
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
-      trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
+      trigger: step.trigger, observedAt, ticketNumber: githubOnly(work.ticket).number, decision,
       branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
     observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
     return true;
@@ -1072,7 +1075,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const fresh = await readWork(session, work.work_id);
       if (!fresh?.publication?.verified || !environment || !boot) return;
       const { observation, observedAt, decision } = await discover(fresh, { ...fresh.publication, verified: fresh.publication.verified }, false, await deps.readWorks());
-      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: executionId, executionId, trigger: 'verified', observedAt, ticketNumber: work.ticket.number, decision, live: true,
+      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: executionId, executionId, trigger: 'verified', observedAt, ticketNumber: githubOnly(work.ticket).number, decision, live: true,
         branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
       observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
       if (recorded === 'stale') return;
@@ -1083,7 +1086,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       }
       const prompt = publicationPrompt({ reason: 'SAME_BOOT_PUBLICATION', executionId, previousExecutionId: executionId,
         skillDirectory: `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`, repository: work.repository.repository, base: recorded.base,
-        branch: recorded.branch, head: recorded.verified.head, marker: recorded.marker, ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: checkoutPath,
+        branch: recorded.branch, head: recorded.verified.head, marker: recorded.marker, ticket: { number: githubOnly(work.ticket).number, url: work.ticket.url }, workId: work.work_id, checkout: checkoutPath,
         expectedRemote: recorded.expectedRemote, pullRequest: recorded.update ?? null, remote: publicationRemote(work.repository.repository),
         verified: { reviewedRound: recorded.verified.reviewedRound, gates: recorded.verified.gates, requiredChecks: recorded.verified.requiredChecks } });
       const grant = lifecycle?.current;
@@ -2204,7 +2207,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const publishInBoot = ports.sandbox.capabilities?.persistentDisk === false && !publication && Boolean(ports.reviews?.rounds);
     const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
       request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-        branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies, ...(publication ? { publication } : {}),
+        branch: `factory/${githubOnly(work.ticket).number}-${work.work_id.slice(0, 8)}`, policies, ...(publication ? { publication } : {}),
         ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}), ...(publishInBoot ? { publishInBoot: true as const } : {}) }, ...(resume ? { resume } : {}),
       limits: configuredScope ?? {} });
     if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return true; }

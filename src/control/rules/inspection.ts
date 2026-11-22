@@ -179,7 +179,7 @@ export function chainOf(work: Work, questions: QuestionView[], input: { timeoutS
     completeness: work.feedback.observedAt ? 'unproven' : 'not-observed' });
   const feedback = work.feedback?.requests ?? [];
   return {
-    ticket: { repository: work.ticket.repository, number: work.ticket.number, url: work.ticket.url },
+    ticket: work.ticket.tracker === 'github' ? { repository: work.ticket.repository, number: work.ticket.number, url: work.ticket.url } : { key: work.ticket.key, url: work.ticket.url },
     work: { work_id: work.work_id, cycle: work.cycle, predecessor: work.predecessor, result: work.result, admittedAt: work.admittedAt, branch: work.branch },
     phase: phaseOf(work, questions),
     lastActivity: last ? { at: last.at, event: last.event } : null,

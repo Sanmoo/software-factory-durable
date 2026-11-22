@@ -401,7 +401,7 @@ test('q28 recipe world: issue #3 (labeled, with the ticket 14 draft PR attached)
   assert.deepEqual([held.outcome, held.outcome === 'held' && held.holds[0]!.code], ['held', 'FOREIGN_PULL_REQUEST']);
   assert.deepEqual([h.work.execution!.state, h.work.execution!.slot.held, h.work.execution!.review!.rounds[0]!.reviewers.spec.attempt], ['ended', false, 2]);
   // The recipe selects ITS Ticket by number and repository id; another Work (or none) never feeds the verdict.
-  const mine = recipeWork(h.list.works.map(item => ({ ...item, ticket: { ...item.ticket, number: item.ticket.number, repositoryId: 1256893534 } })));
+  const mine = recipeWork(h.list.works.map(item => ({ ...item, ticket: { ...item.ticket, repositoryId: 1256893534 } })));
   assert.equal(mine?.ticket.number, 6);
   assert.equal(recipeWork([{ ...h.work, ticket: { ...h.work.ticket, number: 3, repositoryId: 1256893534 } }]), undefined);
   assert.equal(verdict(h.work.execution!, h.shown!.budget).checks.find(item => item.name === 'execution-ended')!.ok, true);

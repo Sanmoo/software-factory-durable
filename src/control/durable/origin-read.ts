@@ -12,6 +12,8 @@ export async function readOriginOf(access: Pick<AccessDependencies, 'repositorie
   compareFrom?: string): Promise<{ kind: 'observed'; base: string; branch: BranchObservation; comparison: OriginComparison | null } | { kind: 'unavailable'; code: string }> {
   const configured = access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
   if (!configured) return { kind: 'unavailable', code: 'REPOSITORY_NOT_CONFIGURED' };
+  // The refs read is still correlated by the GitHub issue number; a Work of another origin concludes nothing here (fail closed).
+  if (work.ticket.tracker !== 'github') return { kind: 'unavailable', code: 'ORIGIN_READ_NOT_SUPPORTED' };
   try {
     const read = await access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [branch, work.repository.base],
       ...(compareFrom ? { compareFrom } : {}) });

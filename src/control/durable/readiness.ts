@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { AccessDependencies, ChecksEvaluation, ControlInput, ControlReceipt, ReadinessEffect, ReadinessEvaluation, ReadinessView } from '../types.js';
-import { ticketKey } from '../rules/admission.js';
+import { githubOnly, ticketKey } from '../rules/admission.js';
 import { evaluateChecks, type ChecksObservation } from '../rules/checks.js';
 import { evaluateReadiness, humanFlag, internalReadiness, readinessAction, readinessFingerprint, readinessNextStep, sameBasis } from '../rules/readiness.js';
 import { checksTarget, recordChecks, type ChecksTarget } from './checks.js';
@@ -267,7 +267,7 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
         const dependencyAttempt = randomUUID();
         let dependenciesRead = false;
         try {
-          const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, work.ticket, dependencyAttempt);
+          const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, githubOnly(work.ticket), dependencyAttempt);
           await deps.dependencies.record(work.work_id, evaluation);
           dependenciesRead = true;
         } catch { dependenciesRead = false; }

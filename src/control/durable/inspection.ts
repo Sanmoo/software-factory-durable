@@ -7,6 +7,7 @@ import { aggregateUsage, bootConsumption, captureState, combineAggregates, execu
   usageActivity, usageSubjects } from '../rules/inspection.js';
 import { counterView, defaultLimits } from '../rules/budget.js';
 import type { WorkRecord } from './admission.js';
+import { ticketLabel } from '../rules/admission.js';
 
 /** Serialized size budget of one view (the local protocol frame is 64 KiB, envelope included). */
 export const viewBudgetBytes = 56 * 1024;
@@ -147,7 +148,7 @@ export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefi
   if (report) for (const environment of new Set(executions.flatMap(item => item.dispatch.environment ? [item.dispatch.environment] : []))) {
     reports.push(await report({ environment: environment as Parameters<typeof report>[0]['environment'] }).catch(() => null));
   }
-  return { work_id: work.work_id, ticket: `${work.ticket.repository}#${work.ticket.number}`, activities, byRole, total: aggregateUsage(activities),
+  return { work_id: work.work_id, ticket: ticketLabel(work.ticket), activities, byRole, total: aggregateUsage(activities),
     budget: { corrections: counter('corrections'), recoveries: counter('recoveries'),
       continuations: work.budget ? counterView(work.budget.continuations ?? { limit: defaultLimits.continuations, granted: 0, consumed: 0, reserved: null }) : null,
       grants: work.budget?.grants.length ?? 0 },

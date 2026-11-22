@@ -326,9 +326,9 @@ type BootTarget = { environment: string; boot: string; ticket: number | null; ex
 /** Boots of the pinned Works as the stored view records them. */
 async function bootsOf(works: readonly WorkView[]): Promise<BootTarget[]> {
   const { needsStop } = await import('./builder09-qualification.js');
-  return works.filter(item => numbers().includes(item.ticket.number)).flatMap(work => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]
+  return works.filter(item => numbers().includes(item.ticket.number ?? -1)).flatMap(work => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]
     .flatMap(execution => execution.dispatch.environment && execution.dispatch.boot ? [{ environment: execution.dispatch.environment, boot: execution.dispatch.boot,
-      ticket: work.ticket.number, executionId: execution.executionId, needsStop: needsStop(execution) }] : []));
+      ticket: work.ticket.number ?? null, executionId: execution.executionId, needsStop: needsStop(execution) }] : []));
 }
 /** Pure: boots the recipe itself saw started (its own start log), the fallback when the Control view cannot be read. */
 export function startedBoots(events: readonly unknown[]): BootTarget[] {
@@ -398,7 +398,7 @@ async function runControl(save: (name: string, data: unknown) => Promise<void>) 
   const stop = new AbortController();
   const pinnedWork = async (workId: string) => {
     const shown = await control.inspect({ kind: 'show', work_id: workId });
-    return 'work' in shown && numbers().includes(shown.work.ticket.number) && shown.work.ticket.repositoryId === repositoryId;
+    return 'work' in shown && numbers().includes(shown.work.ticket.number ?? -1) && shown.work.ticket.repositoryId === repositoryId;
   };
   const ports: ExecutionPorts = { configuration, capacity, builder: { skillPack, modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     reviews: { reviewer, rounds },
@@ -465,7 +465,7 @@ async function runControl(save: (name: string, data: unknown) => Promise<void>) 
       slots.push({ at: new Date().toISOString(), slots: (list as { slots?: unknown }).slots ?? null, queues: (list as { queues?: unknown }).queues ?? null,
         states: works.map(work => ({ ticket: work.ticket.number, state: work.execution?.state ?? null, phase: work.execution?.dispatch.phase ?? null })) });
       hosts.push(await sampleHost());
-      const active = works.filter(work => numbers().includes(work.ticket.number) && work.execution?.dispatch.boot && work.execution.state !== 'released');
+      const active = works.filter(work => numbers().includes(work.ticket.number ?? -1) && work.execution?.dispatch.boot && work.execution.state !== 'released');
       for (const work of active) samples.push(await sampleBoot({ boot: work.execution!.dispatch.boot! }));
       if (Date.now() - lastStorage >= storageEveryMs) {
         lastStorage = Date.now();
@@ -563,7 +563,7 @@ export async function runPhase(phase: Phase) {
     const list = await stored.inspect({ kind: 'list' });
     const halted = new AbortController(); halted.abort();
     await stored.run(halted.signal);
-    const works = worksOf(list).filter(work => numbers().includes(work.ticket.number));
+    const works = worksOf(list).filter(work => numbers().includes(work.ticket.number ?? -1));
     if (phase === 'stop-environment') {
       const runEvents = ((await load('run-result')) as { events?: unknown[] } | null)?.events ?? [];
       const fromView = await bootsOf(works);

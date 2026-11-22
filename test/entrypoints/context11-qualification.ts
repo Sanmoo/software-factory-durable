@@ -1,3 +1,4 @@
+import { githubOnly } from '../../src/control/rules/admission.js';
 import type { ExecutionPorts, ExecutionView, ListView, QuestionView, ShowView } from '../../src/control/index.js';
 
 // TEST ONLY. Ticket 11 one-shot real qualification recipe: inaccessible private source -> durable Question (incomplete capture), answer while
@@ -382,7 +383,7 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name:
     const { readSessionFile, workerRuntimeDirectory } = await import('../../src/platform/host/index.js');
     const { inspectEnvironment } = await import('./builder09-qualification.js');
     const { tracker, github } = await compose([]);
-    const comments = await tracker.readInputs(work.ticket, null);
+    const comments = await tracker.readInputs(githubOnly(work.ticket), null);
     const executions = [...work.previousExecutions, work.execution];
     const receipts: Record<string, string | null | { error: string }> = {};
     for (const execution of executions) {

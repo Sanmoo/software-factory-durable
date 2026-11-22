@@ -13,6 +13,7 @@ import { currentFormat } from './format.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readForgotten, readForgottenWork, readInstallation, readRequest, readWork, readWorks,
   recordDependencies, recordEnvironment, type WorkRecord } from './admission.js';
 import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
+import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
@@ -372,7 +373,7 @@ export async function openControl(options: { storagePath: string;
         if (forgotten) return { kind: 'work-forgotten', work_id: query.work_id, memory: forgotten, notRecoverable: [...forgottenNotRecoverable], nextStep: forgottenNextStep(forgotten) };
         if (!work) return { kind: 'work-not-found', work_id: query.work_id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
         const lastPolled = pollingView().repositories.flatMap(repo => repo.candidates ?? [])
-          .find(candidate => candidate.ticket.issueId === work.ticket.issueId && candidate.ticket.repositoryId === work.ticket.repositoryId) ?? null;
+          .find(candidate => ticketKey(candidate.ticket) === ticketKey(work.ticket)) ?? null;
         const questions = await readQuestions(state, work);
         const polled = pollingView().repositories.find(repo => repo.repository.toLowerCase() === work.repository.repository.toLowerCase());
         const chain = chainOf(work, questions, { ageSeconds: at => { const time = at ? Date.parse(at) : Number.NaN; return Number.isFinite(time) ? Math.max(0, Math.round((calendar.now() - time) / 1000)) : null; },

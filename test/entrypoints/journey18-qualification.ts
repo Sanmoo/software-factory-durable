@@ -1,3 +1,4 @@
+import { githubOnly } from '../../src/control/rules/admission.js';
 import type { ExecutionPorts, ListView, QuestionView, RuntimeInventory, ShowView, WorkView } from '../../src/control/index.js';
 import type { AccessDependencies } from '../../src/control/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';
@@ -693,7 +694,7 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', issue: numbe
     const own = work?.publication?.pullRequest ?? null;
     const facts = own && access.repository.readOwnMerge ? await access.repository.readOwnMerge({ repo: repository, repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId }) : null;
     const remote = await access.repository.findPublication({ repo: repository, issueNumbers: [issue], knownBranches: work?.branch ? [work.branch] : [], refs: true, base: repository.base });
-    const issueState = work ? await access.tracker.readTicket(work.ticket) : null;
+    const issueState = work ? await access.tracker.readTicket(githubOnly(work.ticket)) : null;
     return { facts, remote, issueState };
   })().catch((error: Error) => ({ error: error.message.slice(0, 160) })) : { error: 'NO_CONFIGURATION (preflight held before writing it)' };
   const preflight = await fs.readFile(`${observations}/preflight-result.json`, 'utf8').then(text => JSON.parse(text) as { refs?: Record<string, string> | null }, () => null);

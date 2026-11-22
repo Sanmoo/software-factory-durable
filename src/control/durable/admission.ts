@@ -229,7 +229,7 @@ export async function recordEnvironment(session: Session, work_id: string, obser
   }, BACKGROUND_CONTEXT);
 }
 
-export async function indexedWork(session: Session, ticket: Pick<TicketRef, 'repositoryId' | 'issueId'>): Promise<string | undefined> {
+export async function indexedWork(session: Session, ticket: TicketRef): Promise<string | undefined> {
   return (await session.snapshot(ticketIndex, BACKGROUND_CONTEXT))?.tickets[ticketKey(ticket)]?.current;
 }
 export async function readWorks(session: Session): Promise<WorkRecord[]> {

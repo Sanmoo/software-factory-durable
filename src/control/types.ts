@@ -1270,7 +1270,8 @@ export type ObservationView = { source: 'polling' | 'dependencies' | 'checks' | 
   observedAt: string | null; ageSeconds: number | null; completeness: string };
 /** Ticket 29: the correlated chain of one Work (Ticket → Work → cycle → Executions → reviews → publication/readiness/delivery/cleanup → references). */
 export type ChainView = {
-  ticket: { repository: string; number: number; url: string };
+  /** GitHub `{repository, number, url}` (unchanged) or Jira `{key, url}` (presentation only). */
+  ticket: { repository: string; number: number; url: string } | { key: string; url: string };
   work: { work_id: string; cycle: number; predecessor: string | null; result: WorkView['result']; admittedAt: string; branch: string | null };
   /** Phase/wait derived from the dimensions (presentation only; never authority): what the Work is doing or waiting for, and the next step. */
   phase: { code: string; waitingFor: string | null; nextStep: string | null };

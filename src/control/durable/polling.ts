@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { DependencyGraphObservation, TicketRef } from '../../issue-tracker/index.js';
+import type { DependencyGraphObservation, GitHubTicketRef, TicketRef } from '../../issue-tracker/index.js';
 import type { EnvironmentDeclarationObservation } from '../../contracts/index.js';
 import type { WorkEnvironment } from '../types.js';
 import type { AccessDependencies, CandidateView, ConfiguredRepository, DependencyEvaluation, PollingClock, PollingView, RepositoryPollView } from '../types.js';
@@ -9,9 +9,10 @@ import type { AdmissionEvidence, AdmissionResult } from './admission.js';
 
 const maxTimer = 2 ** 31 - 1;
 
-/** One FRESH native dependency read + evaluation of a Ticket for the given attempt (polling round or dispatch attempt). */
+/** One FRESH native dependency read + evaluation of a GitHub Ticket for the given attempt (polling round or dispatch attempt). GitHub only:
+ * another origin's blockers are never judged by the native blocked_by graph. */
 export async function evaluateWorkDependencies(tracker: AccessDependencies['tracker'], ownCycles: (issueIds: number[]) => Promise<Record<number, OwnCycleFacts>>,
-  ticket: TicketRef, attemptId: string): Promise<{ evaluation: DependencyEvaluation; graph: DependencyGraphObservation }> {
+  ticket: GitHubTicketRef, attemptId: string): Promise<{ evaluation: DependencyEvaluation; graph: DependencyGraphObservation }> {
   let graph: DependencyGraphObservation;
   try { graph = await tracker.readDependencyGraph(ticket); } catch {
     graph = { kind: 'observed', source: 'github-rest', observedAt: new Date().toISOString(), root: ticket, completeness: 'incomplete', principals: [], nodes: [],
@@ -72,12 +73,12 @@ export function createPoller(deps: {
 
   // Transient/unexpected failures of per-candidate reads count as a failed cycle for backoff, like a failed listing.
   const transient = new Set(['POLLING_QUERY_FAILED', 'GITHUB_TRANSPORT_UNAVAILABLE', 'GITHUB_QUERY_FAILED', 'GITHUB_READ_FAILED']);
-  type Pending = { ref: TicketRef; configured: ConfiguredRepository; ticket: TicketRef; observedAt: string; label: { id: number; name: string } };
+  type Pending = { ref: GitHubTicketRef; configured: ConfiguredRepository; ticket: GitHubTicketRef; observedAt: string; label: { id: number; name: string } };
   type Outcome = { view: CandidateView; waitSeconds?: number; failed?: boolean };
   const held = (ref: TicketRef, holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
 
   /** Phase 1: index, pause, configured repository and current Ticket facts. Authorized candidates wait for the shared publication read. */
-  async function entry(ref: TicketRef): Promise<Outcome | { pending: Pending }> {
+  async function entry(ref: GitHubTicketRef): Promise<Outcome | { pending: Pending }> {
     const existing = await deps.indexed(ref);
     if (existing) return { view: { ticket: ref, observedAt: new Date().toISOString(), outcome: 'existing', work_id: existing } };
     if (await deps.paused()) return { view: held(ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Global pause holds new admissions; tracking continues. Unpause to admit on the next poll.' }]) };
@@ -155,6 +156,9 @@ export function createPoller(deps: {
     let failed = false;
     for (const work of await deps.pending(repositoryId)) {
       if (waitSeconds !== undefined) break;
+      // The GitHub round evaluates only Works whose Ticket ORIGIN is GitHub; a Work of another origin in this destination is never judged here.
+      if (work.ticket.tracker !== 'github') continue;
+      const ticket = work.ticket;
       // Ticket 44: a Work whose declaration is missing/invalid/unread is re-read each round until it is pinned (then never again).
       if (deps.recordEnvironment && work.environment && work.environment.state !== 'pinned') {
         const observation = await readEnvironment(configured, attemptId);
@@ -162,7 +166,7 @@ export function createPoller(deps: {
         if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
         if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
       }
-      const { evaluation, graph } = await evaluateWorkDependencies(tracker, deps.ownCycles, work.ticket, attemptId);
+      const { evaluation, graph } = await evaluateWorkDependencies(tracker, deps.ownCycles, ticket, attemptId);
       await deps.record(work.work_id, evaluation);
       for (const problem of graph.problems) {
         if (problem.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, problem.waitSeconds);

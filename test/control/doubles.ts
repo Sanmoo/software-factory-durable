@@ -1,6 +1,6 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
-import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
+import type { IssueTracker, GitHubTicketRef as TicketRef, CandidateObservation, TicketObservation, GitHubTrackerScope as TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
 import type { BranchComparison, CodeRepository, ConversationCommentFact, FeedbackObservation, PublicationObservation, PullRequestCandidate, PullRequestObservation, ReviewCommentFact,
   ReviewFact } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';

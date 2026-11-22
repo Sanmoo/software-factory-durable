@@ -28,6 +28,8 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
       for (const question of await readQuestions(session, work)) {
         if (deps.stopped()) return;
         if (question.state !== 'open' || question.destination.kind !== 'issue') continue;
+        // The GitHub desk publishes only on GitHub origins; another origin's Questions wait for its own publisher (never redirected).
+        if (question.destination.ticket.tracker !== 'github') continue;
         if (!open && !questionNeedsDiscovery(question.publication.state)) continue;
         let state = question.publication.state;
         const ticket = question.destination.ticket;
@@ -58,19 +60,21 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
   /** Ticket 23: the replies to `/factory` commands, on the Work's Ticket, with the same effect discipline as Questions. */
   async function publishReplies() {
     for (const work of await deps.readWorks()) {
+      if (work.ticket.tracker !== 'github') continue;
+      const ticket = work.ticket;
       for (const reply of work.feedback?.replies ?? []) {
         if (deps.stopped()) return;
         let state: string = reply.publication.state;
         if (state === 'attempting' || state === 'ambiguous') {
           if (!tracker.findReply) continue; // no discovery composed: never republish blindly
-          const search = await tracker.findReply(work.ticket, reply.replyId).catch(unexpected);
+          const search = await tracker.findReply(ticket, reply.replyId).catch(unexpected);
           state = await recordReplyPublication(session, work.work_id, reply.replyId, !search || search.kind !== 'observed' ? { kind: 'undetermined', code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' }
             : search.candidates.length === 1 ? { kind: 'discovered', comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url } }
             : search.candidates.length === 0 ? { kind: 'absent' } : { kind: 'undetermined', code: 'REPLY_MULTIPLE_CANDIDATES' });
         }
         if (!(state === 'intended' || (state === 'failed' && reply.publication.failures < maxKnownFailures)) || deps.stopped()) continue;
         if (await recordReplyPublication(session, work.work_id, reply.replyId, { kind: 'begin' }) !== 'attempting') continue;
-        const result = await tracker.postComment(work.ticket, { kind: 'reply', replyId: reply.replyId, body: reply.body }, { effectId: reply.publication.effectId, replyId: reply.replyId })
+        const result = await tracker.postComment(ticket, { kind: 'reply', replyId: reply.replyId, body: reply.body }, { effectId: reply.publication.effectId, replyId: reply.replyId })
           .catch(unexpected);
         await recordReplyPublication(session, work.work_id, reply.replyId, !result ? { kind: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE' }
           : result.kind === 'published' ? { kind: 'published', comment: { commentId: result.commentId, url: result.url } } : { kind: result.kind, code: result.code });
@@ -81,7 +85,7 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
   async function ingestAnswers() {
     for (const work of await deps.readWorks()) {
       if (deps.stopped()) return;
-      if (work.result !== 'open') continue;
+      if (work.result !== 'open' || work.ticket.tracker !== 'github') continue;
       // Ticket 23: the Ticket also carries `/factory repair` once the Work has run at least once (answered, refused with its next step when
       // there is no own PR yet). A Work only admitted reads no comments (admission stays read-minimal); its later command is still eligible.
       const open = (await readQuestions(session, work)).some(question => question.state === 'open');

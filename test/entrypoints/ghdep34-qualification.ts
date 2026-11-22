@@ -356,7 +356,7 @@ async function owner<T>(input: { access: Record<string, unknown>; execution: Exe
 }
 const planOf = (receipt: unknown) => (receipt as { plan?: { planId?: string; state?: string } | null } | null)?.plan ?? null;
 const worksByIssue = (view: ListView) => Object.fromEntries((['a1', 'a2', 'a3'] as const).map(key =>
-  [key, view.works.find(work => work.ticket.repository.toLowerCase() === repositoryA.repository.toLowerCase() && work.ticket.number === pinned[key]) ?? null])) as Record<'a1' | 'a2' | 'a3', WorkView | null>;
+  [key, view.works.find(work => work.ticket.repository?.toLowerCase() === repositoryA.repository.toLowerCase() && work.ticket.number === pinned[key]) ?? null])) as Record<'a1' | 'a2' | 'a3', WorkView | null>;
 const evaluated = (view: ListView, attempt: Set<string>) => Object.values(worksByIssue(view)).every(work => {
   const latest = work?.dependencies.latest;
   return Boolean(latest) && !attempt.has(latest!.attemptId);

@@ -2,7 +2,7 @@ import { environmentNotEvaluated } from '../rules/environment.js';
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { AccessDependencies, ConfiguredRepository, ControlInput, ControlReceipt, CycleEvent, ForgottenWork, Impediment, WorkView } from '../types.js';
-import type { IssueTracker } from '../../issue-tracker/index.js';
+import type { IssueTracker, TicketRef } from '../../issue-tracker/index.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
@@ -258,7 +258,7 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
   deps: { configured(repository: string): ConfiguredRepository | undefined; tracker: Pick<IssueTracker, 'readTicket'> }) {
   // Supervisor decision: a FRESH complete read of the Ticket when the command is accepted (outside the commit); a replay of the same
   // request returns its recorded receipt whatever this read says.
-  const sameTicket = (ticket: { repository: string; number: number }) => ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
+  const sameTicket = (ticket: TicketRef) => ticket.tracker === 'github' && ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
   // The Ticket's CURRENT cycle (as the commit finds it). Ticket 31: a forgotten current cycle is known by its minimal memory only.
   const snapshot = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
   let current: (Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> & { result: WorkRecord['result'] }) | null = null;
@@ -270,10 +270,11 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
   let authorization: ReturnType<typeof authorizationFacts> = { kind: 'unknown', code: 'TICKET_NOT_READ' };
   // Review LOW: the new cycle's authorization basis is the FRESH read (its label as observed now), never one copied or invented.
   let freshLabel: { id: number; name: string } | null = null;
-  if (current) {
-    const facts = await deps.tracker.readTicket(current.ticket).catch(() => ({ kind: 'unavailable' as const, code: 'TICKET_READ_FAILED', nextStep: '' }));
+  if (current && current.ticket.tracker === 'github') {
+    const ticket = current.ticket;
+    const facts = await deps.tracker.readTicket(ticket).catch(() => ({ kind: 'unavailable' as const, code: 'TICKET_READ_FAILED', nextStep: '' }));
     const configuredLabel = deps.configured(current.repository.repository)?.label;
-    authorization = authorizationFacts({ configuredLabel, ticket: current.ticket, facts });
+    authorization = authorizationFacts({ configuredLabel, ticket, facts });
     if (facts.kind === 'observed') freshLabel = facts.labels.find(item => item.name === configuredLabel) ?? null;
   }
   const observedAt = new Date().toISOString();
@@ -431,11 +432,14 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
 
   /** One read; returns the decision that was recorded (null when nothing could be concluded). */
   async function observeAuthorization(work: WorkRecord) {
+    // Authorization of a Work is observed at its Ticket's ORIGIN: a non-GitHub Work concludes nothing from the GitHub label here.
+    if (work.ticket.tracker !== 'github') return null;
+    const ticket = work.ticket;
     const scope = configured(work.repository.repository);
     let facts;
     const startedAt = new Date().toISOString();
-    try { facts = await deps.access.tracker.readTicket(work.ticket); } catch { return null; }
-    const observed = authorizationFacts({ configuredLabel: scope?.label, ticket: work.ticket, facts });
+    try { facts = await deps.access.tracker.readTicket(ticket); } catch { return null; }
+    const observed = authorizationFacts({ configuredLabel: scope?.label, ticket, facts });
     if (observed.kind === 'unknown') return null;
     await recordAuthorization(deps.session, work.work_id, observed, startedAt);
     return observed;

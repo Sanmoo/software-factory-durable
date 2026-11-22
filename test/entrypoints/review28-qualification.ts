@@ -170,7 +170,7 @@ export function ticketPrecondition(issue: { title?: unknown; body?: unknown }): 
   return { ok: true };
 }
 /** The recipe's own Work (its Ticket by number AND repository id); never another Work of the storage. */
-export function recipeWork<T extends { ticket: { number: number; repositoryId: number } }>(works: readonly T[]): T | undefined {
+export function recipeWork<T extends { ticket: { number?: number | undefined; repositoryId?: number | undefined } }>(works: readonly T[]): T | undefined {
   return works.find(item => item.ticket.number === expectedTicket.number && item.ticket.repositoryId === expectedTicket.repositoryId);
 }
 

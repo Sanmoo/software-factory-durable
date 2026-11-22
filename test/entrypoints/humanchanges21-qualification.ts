@@ -1,3 +1,4 @@
+import { githubOnly } from '../../src/control/rules/admission.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
@@ -599,7 +600,7 @@ export async function runPhase(phase: Phase) {
         human.push({ step: item.step, sha, compareToHead: sha ? await compare(sha) : null, file: await contents(humanSteps[item.step].file) });
       }
       const remote = await codeRepository.findPublication({ repo: repository, issueNumbers: [ticket.number], knownBranches: work.branch ? [work.branch] : [], refs: true, base: repository.base });
-      const issue = await tracker.readTicket(work.ticket);
+      const issue = await tracker.readTicket(githubOnly(work.ticket));
       const violations = pushViolations(pushes, [...work.previousExecutions, work.execution].flatMap(item => item.request.publication ? [{ branch: item.request.publication.branch,
         head: item.request.publication.head, expected: item.request.publication.expectedRemote.state === 'present' ? item.request.publication.expectedRemote.sha : null }] : []));
       const verdict = verdictOf({ pushViolations: violations, human: human as never, work: { publication: work.publication as never }, sessions: sessions as never });

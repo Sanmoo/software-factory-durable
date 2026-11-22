@@ -1,6 +1,7 @@
 import type { ForgetPlan, ForgetTree, ForgottenWork, QuestionView, WorkView } from '../types.js';
 import { concluded, ownPullRequestOf, planCleanup } from './delivery.js';
 import { retentionProtections } from './retention.js';
+import { ticketLabel } from './admission.js';
 
 // Ticket 31 pure rules (spec §12.4 `forget`, §4.2, §12.1): which ended Work may have its history deleted, the plan of losses, and the minimal
 // cycle memory kept instead. No I/O, storage or clock: callers pass the facts and the instant.
@@ -92,7 +93,7 @@ export function forgetLosses(work: Work, facts: ForgetFacts): Pick<ForgetPlan, '
     'This Work stops counting in installation totals and aggregates (status says how many Works are forgotten).',
   ];
   const keeps = [
-    `Minimal memory: Ticket ${work.ticket.repository}#${work.ticket.number} (issue ${work.ticket.issueId}), Work ${work.work_id}, cycle ${work.cycle}` +
+    `Minimal memory: Ticket ${ticketLabel(work.ticket)} (issue ${work.ticket.issueId}), Work ${work.work_id}, cycle ${work.cycle}` +
       `${work.predecessor ? ` after ${work.predecessor}` : ''}, result ${memory.result}${memory.pullRequest ? `, pull request #${memory.pullRequest.number} with its merge confirmed at ${memory.mergeConfirmedAt}` : ''}.`,
     'The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.',
     memory.result === 'delivered' ? 'As a native blocker it stays an OWN Ticket satisfied by this delivered cycle (until a new cycle exists); never re-evaluated as external.'
@@ -120,6 +121,6 @@ export const forgetPlanNextStep = (plan: Pick<ForgetPlan, 'state' | 'planId' | '
 export const forgottenNotRecoverable = ['history', 'logs', 'sessions', 'reviews and opinions', 'decisions and gates', 'Questions and answers', 'request content', 'preserved evidence', 'budget/usage of this Work'];
 export const forgottenNextStep = (memory: ForgottenWork) => `History deleted by \`forget\` at ${memory.forgottenAt} (request ${memory.request_id}). This is not an expired or missing ` +
   'record: only the minimal cycle memory remains, and nothing else of this Work can be shown or recovered. ' +
-  `The Ticket stays known (never re-admitted automatically); \`factory new ${memory.ticket.repository}#${memory.ticket.number}\` starts another cycle when wanted.` +
+  `The Ticket stays known (never re-admitted automatically); \`factory new ${ticketLabel(memory.ticket)}\` starts another cycle when wanted.` +
   (memory.scrub?.state === 'scrubbed' ? ` Controller storage scrubbed at ${memory.scrub.scrubbedAt}.`
     : ` Controller storage scrub PENDING${memory.scrub?.code ? ` (last attempt ${memory.scrub.lastAttemptAt}: ${memory.scrub.code})` : ''}: until it completes, the deleted controller records may remain in SQLite free pages/WAL; the running owner re-attempts it.`);

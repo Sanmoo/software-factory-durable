@@ -11,9 +11,30 @@ export type TicketFacts = { kind: 'observed'; ticket: Ref; state: 'open' | 'clos
 export type PublicationFacts = { kind: 'observed'; repositoryId: number;
   candidates: { pullRequestId: number; number: number; url: string; state: 'open' | 'closed'; merged: boolean; headRef: string; headRepositoryId: number | null; association: string[] }[] } | Unavailable;
 
-/** Durable index key: tracker + immutable repository id + immutable issue id, never number/title/url. */
-export function ticketKey(ref: Pick<Ref, 'repositoryId' | 'issueId'>): string {
+/** Identity part of a GitHub Ticket reference (untagged = GitHub: persisted format-2 shapes carry no other tracker). */
+type GitHubKeyRef = Pick<Ref, 'repositoryId' | 'issueId'> & { tracker?: 'github' };
+/** Identity part of a Jira Ticket reference: (siteId, issueId). The visible key (PAG-42) never takes part. */
+type JiraKeyRef = { tracker: 'jira'; siteId: string; issueId: string };
+
+/**
+ * Durable index key: tracker + immutable ids, never number/key/title/url. GitHub keeps exactly `github:repository:<id>:issue:<id>`; Jira is
+ * `jira:site:<siteId>:issue:<issueId>` with each part percent-encoded (`:` included), so no two tuples share a key and no Jira key matches
+ * the GitHub form.
+ */
+export function ticketKey(ref: GitHubKeyRef | JiraKeyRef): string {
+  if (ref.tracker === 'jira') return `jira:site:${encodeURIComponent(ref.siteId)}:issue:${encodeURIComponent(ref.issueId)}`;
   return `github:repository:${ref.repositoryId}:issue:${ref.issueId}`;
+}
+
+/** Narrows a Ticket reference to GitHub on a path that only GitHub origins reach (Jira Works are refused before it); throws otherwise. */
+export function githubOnly<T extends { tracker: string }>(ref: T): Extract<T, { tracker: 'github' }> {
+  if (ref.tracker !== 'github') throw new Error('TICKET_ORIGIN_NOT_GITHUB');
+  return ref as Extract<T, { tracker: 'github' }>;
+}
+
+/** Presentation of a Ticket for views, CLI, history and prompts: `owner/repo#n` (GitHub) or the Jira key (`PAG-42`). Never an identity. */
+export function ticketLabel(ref: { tracker: 'github'; repository: string; number: number } | { tracker: 'jira'; key: string }): string {
+  return ref.tracker === 'jira' ? ref.key : `${ref.repository}#${ref.number}`;
 }
 
 const unavailable = (code: 'TICKET_READ_UNAVAILABLE' | 'PUBLICATION_UNKNOWN', facts: Unavailable, what: string): Hold => ({
