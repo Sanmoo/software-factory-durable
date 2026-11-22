@@ -263,22 +263,27 @@ type ListedWork = {
 export function otherPublications(works: readonly ListedWork[], self: { workId: string; repositoryId: number }): OtherPublication[] {
   const result: OtherPublication[] = [];
   for (const work of works) {
-    const publication = work.publication;
-    const branch = publication?.branch ?? work.preservation?.branch ?? work.branch;
+    const branch = ownBranchOf(work);
     if (work.work_id === self.workId || work.repository.repositoryId !== self.repositoryId || !branch) continue;
-    const heads = [
-      ...new Set([
-        ...(publication?.attempts ?? []).map(item => item.head),
-        ...(publication?.linkedHeads ?? []),
-        ...(publication?.state === 'requested' && publication.verified ? [publication.verified.head] : []),
-        ...(work.preservation?.branch === branch ? work.preservation.heads : []),
-      ]),
-    ];
-    const live = work.execution?.state === 'started' && work.execution.slot.held;
+    const heads = ownHeadsOf(work, branch);
+    const live = holdsSlot(work);
     if (heads.length || live) result.push({ workId: work.work_id, branch, heads, ...(live ? { live: true as const } : {}) });
   }
   return result;
 }
+
+const ownBranchOf = (work: ListedWork) => work.publication?.branch ?? work.preservation?.branch ?? work.branch;
+/** The heads Control recorded for a Work's publication: attempted, linked, and the verified head it requested. */
+const recordedHeads = (publication: ListedWork['publication']) => [
+  ...(publication?.attempts ?? []).map(item => item.head),
+  ...(publication?.linkedHeads ?? []),
+  ...(publication?.state === 'requested' && publication.verified ? [publication.verified.head] : []),
+];
+/** A Work's own heads: the recorded ones and those a preservation gate confirmed on its own branch. */
+const ownHeadsOf = (work: ListedWork, branch: string) => [
+  ...new Set([...recordedHeads(work.publication), ...(work.preservation?.branch === branch ? work.preservation.heads : [])]),
+];
+const holdsSlot = (work: ListedWork) => work.execution?.state === 'started' && work.execution.slot.held;
 
 /**
  * Refs that changed between the snapshot of the request and now, other than the Work's own branch (bounded list). Ticket 61: a ref that is
@@ -511,25 +516,12 @@ export function decideDiscovery(input: {
       const divergent = !attributable(current) ? current : pull.headSha;
       const expected = known?.expected ?? { state: 'present' as const, sha: [...heads].at(-1) ?? pull.headSha };
       const comparison = observation.comparison ?? { state: 'unknown' as const, code: 'COMPARISON_NOT_READ' };
-      const uncertainties: string[] = [];
-      if (comparison.state !== 'complete') uncertainties.push(`DIFFERENCES_UNKNOWN:${comparison.code}`);
-      else {
-        if (comparison.to !== divergent) uncertainties.push('COMPARISON_OF_ANOTHER_TIP');
-        if (comparison.truncated) uncertainties.push('COMPARISON_TRUNCATED');
-        if (comparison.behindBy > 0) uncertainties.push(`FACTORY_COMMITS_MISSING_ON_REMOTE:${comparison.behindBy}`);
-        if (comparison.commits.some(commit => !commit.author)) uncertainties.push('AUTHORSHIP_NOT_PROVEN_FOR_SOME_COMMITS');
-      }
+      const uncertainties = comparisonUncertainties(comparison, divergent);
       if (pull.headSha !== current) uncertainties.push(`PULL_REQUEST_HEAD_DIFFERS_FROM_BRANCH:${pull.headSha}`);
       // After an attempt: the verified head among the new commits = our push landed and someone pushed after it; absent from a COMPLETE
       // comparison = the lease failed; otherwise unknown.
       const landed = comparison.state === 'complete' && comparison.commits.some(commit => commit.sha === expect.head);
-      const trigger = !input.attempted
-        ? 'update'
-        : landed
-          ? 'after-publication'
-          : comparison.state === 'complete' && !comparison.truncated && comparison.to === divergent
-            ? 'lease-failed'
-            : 'after-publication';
+      const trigger = divergenceTrigger(input.attempted, landed, comparison, divergent);
       if (input.attempted && trigger === 'after-publication' && !landed) uncertainties.push('LEASE_OUTCOME_UNKNOWN');
       return {
         outcome: 'diverged',
@@ -609,6 +601,29 @@ export function decideDiscovery(input: {
   return request(tip.state === 'absent' ? { state: 'absent' } : { state: 'present', sha: tip.sha }, null);
 }
 
+/** What a comparison of the divergent tip leaves unproven (a comparison not read proves nothing). */
+function comparisonUncertainties(comparison: DivergenceComparison, divergent: string): string[] {
+  if (comparison.state !== 'complete') return [`DIFFERENCES_UNKNOWN:${comparison.code}`];
+  return [
+    ...(comparison.to !== divergent ? ['COMPARISON_OF_ANOTHER_TIP'] : []),
+    ...(comparison.truncated ? ['COMPARISON_TRUNCATED'] : []),
+    ...(comparison.behindBy > 0 ? [`FACTORY_COMMITS_MISSING_ON_REMOTE:${comparison.behindBy}`] : []),
+    ...(comparison.commits.some(commit => !commit.author) ? ['AUTHORSHIP_NOT_PROVEN_FOR_SOME_COMMITS'] : []),
+  ];
+}
+
+/** Before any attempt, an update; after one, `after-publication` unless a COMPLETE comparison of the divergent tip shows the lease failed. */
+function divergenceTrigger(
+  attempted: boolean,
+  landed: boolean,
+  comparison: DivergenceComparison,
+  divergent: string,
+): 'update' | 'lease-failed' | 'after-publication' {
+  if (!attempted) return 'update';
+  if (landed) return 'after-publication';
+  return comparison.state === 'complete' && !comparison.truncated && comparison.to === divergent ? 'lease-failed' : 'after-publication';
+}
+
 /** Whether the complete push activity of the branch shows that the pinned Factory App is who moved it to `sha` (latest such entry). Anything unread proves nothing. */
 function pushedByApp(activity: Extract<DiscoveryObservation, { kind: 'observed' }>['activity'], sha: string, app: FactoryAppIdentity): boolean {
   if (!activity || activity.state !== 'complete' || activity.truncated) return false;
@@ -631,20 +646,33 @@ export function descriptionCheck(body: string | null, input: { workId: string } 
   if (!heading('Summary|Resumo')) reasons.push('SUMMARY_SECTION_MISSING');
   if (!heading('Validation|Valida[çc][ãa]o')) reasons.push('VALIDATION_SECTION_MISSING');
   if (!heading('Risk|Risco')) reasons.push('RISK_SECTION_MISSING');
-  if (input.card) {
-    // Jira ticket 08: a readable reference to the Card on its own site (any well-formed key: the key is presentation and may change after
-    // opening; the marker is the identity) and never a GitHub closing keyword (it would close an unrelated GitHub issue).
-    const origin = /^https:\/\/[^/]+/.exec(input.card.url)?.[0] ?? null;
-    if (!origin || !new RegExp(`Jira Card ([A-Z][A-Z0-9_]*-\\d+): ${escapeRegExp(origin)}/browse/\\1(?![\\w-])`).test(body))
-      reasons.push('TICKET_LINK_MISSING');
-    if (
-      /(?:^|[^A-Za-z0-9_])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+|(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+https:\/\/github\.com\/[^\s]+\/issues\/\d+/i.test(
-        body,
-      )
-    )
-      reasons.push('GITHUB_CLOSING_KEYWORD');
-  } else if (!new RegExp(`(?:^|[^\\w/])#${input.ticketNumber}(?!\\d)|/issues/${input.ticketNumber}(?!\\d)`).test(body)) reasons.push('TICKET_LINK_MISSING');
+  if (input.card) reasons.push(...cardReferenceReasons(body, input.card));
+  else if (!new RegExp(`(?:^|[^\\w/])#${input.ticketNumber}(?!\\d)|/issues/${input.ticketNumber}(?!\\d)`).test(body)) reasons.push('TICKET_LINK_MISSING');
   if (/\]\(\s*(?!https:\/\/|#)[^)]*\)|\bfile:\/\/|href\s*=\s*["']\s*\//i.test(body)) reasons.push('LOCAL_PATH_AS_LINK');
+  if (longestFence(lines) > descriptionLimits.fencedLines) reasons.push('TRANSCRIPT_LIKE');
+  if (body.length > descriptionLimits.chars) reasons.push('DESCRIPTION_TOO_LONG');
+  return { conformant: reasons.length === 0, reasons };
+}
+
+/**
+ * Jira ticket 08: a readable reference to the Card on its own site (any well-formed key: the key is presentation and may change after
+ * opening; the marker is the identity) and never a GitHub closing keyword (it would close an unrelated GitHub issue).
+ */
+function cardReferenceReasons(body: string, card: { key: string; url: string }): string[] {
+  const reasons: string[] = [];
+  const origin = /^https:\/\/[^/]+/.exec(card.url)?.[0] ?? null;
+  if (!origin || !new RegExp(`Jira Card ([A-Z][A-Z0-9_]*-\\d+): ${escapeRegExp(origin)}/browse/\\1(?![\\w-])`).test(body)) reasons.push('TICKET_LINK_MISSING');
+  if (
+    /(?:^|[^A-Za-z0-9_])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+|(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+https:\/\/github\.com\/[^\s]+\/issues\/\d+/i.test(
+      body,
+    )
+  )
+    reasons.push('GITHUB_CLOSING_KEYWORD');
+  return reasons;
+}
+
+/** The line count of the longest fenced block of a body (an unclosed fence counts to its end). */
+function longestFence(lines: readonly string[]): number {
   let fence = 0,
     inFence = false,
     longest = 0;
@@ -657,9 +685,7 @@ export function descriptionCheck(body: string | null, input: { workId: string } 
     }
     if (inFence) fence++;
   }
-  if (Math.max(longest, inFence ? fence : 0) > descriptionLimits.fencedLines) reasons.push('TRANSCRIPT_LIKE');
-  if (body.length > descriptionLimits.chars) reasons.push('DESCRIPTION_TOO_LONG');
-  return { conformant: reasons.length === 0, reasons };
+  return Math.max(longest, inFence ? fence : 0);
 }
 
 export const publicationPromptBudgetBytes = 15000;
@@ -699,21 +725,8 @@ export function publicationPrompt(input: {
   const pushCommand = fenced(
     `git -C ${input.checkout} push --force-with-lease=refs/heads/${input.branch}:${lease} ${remote} ${input.head}:refs/heads/${input.branch}`,
   );
-  const push =
-    input.expectedRemote.state === 'present' && input.expectedRemote.sha === input.head
-      ? [`2. The remote branch ${input.branch} already holds the verified commit ${input.head}: do NOT push.`]
-      : input.expectedRemote.state === 'present'
-        ? [
-            `2. Update your branch to exactly the verified commit with this explicit lease (the remote must still be at ${input.expectedRemote.sha}), once:`,
-            pushCommand,
-          ]
-        : ['2. Push exactly the verified commit with this explicit lease (the remote branch must not exist yet), once:', pushCommand];
-  const ticket = input.ticket;
-  const reference = ticket.tracker === 'jira' ? `Jira Card ${ticket.key} ${ticket.url}` : `Ticket #${ticket.number} ${ticket.url}`;
-  const link =
-    ticket.tracker === 'jira'
-      ? `it must contain the readable Card reference "Jira Card ${ticket.key}: ${ticket.url}" and no GitHub closing keyword (Closes/Fixes/Resolves)`
-      : `it must contain "Closes #${ticket.number}"`;
+  const push = pushStep(input, pushCommand);
+  const { reference, link } = ticketWording(input.ticket);
   const facts = [
     `Factory facts (authoritative): Work ${input.workId}; ${reference}; repository ${input.repository}; base ${input.base}; ` +
       `your branch ${input.branch}; verified commit ${input.head} (content verified at the end of Execution ${input.previousExecutionId}); ` +
@@ -754,6 +767,28 @@ export function publicationPrompt(input: {
   ]).join('\n');
   const bytes = new TextEncoder().encode(prompt).length;
   return bytes <= publicationPromptBudgetBytes ? { kind: 'prompt', prompt } : { kind: 'too-large', bytes };
+}
+
+/** Step 2 of the publication request: no push when the remote already holds the verified commit, else one push with an explicit lease. */
+function pushStep(input: { branch: string; head: string; expectedRemote: BranchObservation }, pushCommand: string): string[] {
+  if (input.expectedRemote.state === 'present' && input.expectedRemote.sha === input.head)
+    return [`2. The remote branch ${input.branch} already holds the verified commit ${input.head}: do NOT push.`];
+  if (input.expectedRemote.state === 'present')
+    return [
+      `2. Update your branch to exactly the verified commit with this explicit lease (the remote must still be at ${input.expectedRemote.sha}), once:`,
+      pushCommand,
+    ];
+  return ['2. Push exactly the verified commit with this explicit lease (the remote branch must not exist yet), once:', pushCommand];
+}
+
+/** How the publication request names the ticket, and the link its description must carry. */
+function ticketWording(ticket: { tracker?: 'github'; number: number; url: string } | { tracker: 'jira'; key: string; url: string }) {
+  if (ticket.tracker === 'jira')
+    return {
+      reference: `Jira Card ${ticket.key} ${ticket.url}`,
+      link: `it must contain the readable Card reference "Jira Card ${ticket.key}: ${ticket.url}" and no GitHub closing keyword (Closes/Fixes/Resolves)`,
+    };
+  return { reference: `Ticket #${ticket.number} ${ticket.url}`, link: `it must contain "Closes #${ticket.number}"` };
 }
 
 type WorkFacts = { result: string; execution: ExecutionView | null; previousExecutions?: ExecutionView[]; publication?: PublicationView | null };

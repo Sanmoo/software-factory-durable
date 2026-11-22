@@ -22,6 +22,9 @@ const cycleCommands = ['cancel', 'resume', 'reopen', 'new'];
 // Ticket 30 (spec §12.4): explicit cleanup — a plan of losses, then its confirmation (`--yes` sends both, with the same verifications).
 // Ticket 31 (spec §12.4): `forget` — explicit history deletion, a plan of losses then its confirmation (`--yes`: same verifications).
 const cleanupCommands = ['cleanup', 'cleanup-confirm', 'forget', 'forget-confirm'];
+// Requests that carry the operator's `--reason`, and every other request that changes state (each one identified before it is sent).
+const reasonCommands = ['update-scope', 'authorize-readiness', 'repair', 'reevaluate-publication'];
+const mutableCommands = ['pause', 'unpause', 'answer', 'grant', ...reasonCommands];
 const cleanupSelection = /^(logs|sessions|environment|remote-branch)(,(logs|sessions|environment|remote-branch)){0,3}$/;
 const ticketReference = /^([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,9})$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -134,17 +137,7 @@ async function operational(
         : command === 'question'
           ? { kind: 'question', question_id: requested! }
           : { kind: 'request', request_id: requested! };
-  const mutable =
-    command === 'pause' ||
-    command === 'unpause' ||
-    command === 'answer' ||
-    command === 'grant' ||
-    command === 'update-scope' ||
-    command === 'authorize-readiness' ||
-    command === 'repair' ||
-    command === 'reevaluate-publication' ||
-    cycleCommands.includes(command) ||
-    cleanupCommands.includes(command);
+  const mutable = mutableCommands.includes(command) || cycleCommands.includes(command) || cleanupCommands.includes(command);
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
   if (mutable) console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: id }));
@@ -162,7 +155,7 @@ async function operational(
                 ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
                 : command === 'grant'
                   ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
-                  : command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' || command === 'reevaluate-publication'
+                  : reasonCommands.includes(command)
                     ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
                     : command === 'resume' && override
                       ? { request_id: id, operation: 'resume', work_id: requested!, override_blocked_recovery: override, origin: 'local-cli' }

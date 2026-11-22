@@ -548,6 +548,43 @@ async function rollbackConfiguration(
   };
 }
 
+type RollbackRefusal = { code: string; message: string; nextStep: string };
+
+/** A rollback needs a storage in the one format the previous release operates (an unknown format proves nothing). */
+function rollbackStorageRefusal(format: number | null, journal: UpgradeJournal, forward: string): RollbackRefusal | null {
+  if (format === null)
+    return {
+      code: 'ROLLBACK_FORMAT_UNKNOWN',
+      message: 'No storage format is established: nothing proves the previous release operates it.',
+      nextStep: `Keep ${journal.to.release} (\`upgrade resume\` if incomplete). A rollback needs a storage in a format the previous release operates.`,
+    };
+  if (format !== journal.from.storageFormat)
+    return {
+      code: 'ROLLBACK_FORMAT_UNSUPPORTED',
+      message: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}.`,
+      nextStep: forward,
+    };
+  return null;
+}
+
+/** Both rollback verdicts, data and configuration, reported whatever the outcome. */
+function rollbackPrechecks(dataRefusal: RollbackRefusal | null, configurationRefusal: RollbackRefusal | null, format: number | null, journal: UpgradeJournal) {
+  return [
+    check(
+      'rollback:storage',
+      dataRefusal === null,
+      dataRefusal?.message ?? `Storage format ${format} is operated by release ${journal.from.release}.`,
+      dataRefusal?.nextStep ?? 'Nothing to do.',
+    ),
+    check(
+      'rollback:configuration',
+      configurationRefusal === null,
+      configurationRefusal?.message ?? `config.yaml declares a schema version release ${journal.from.release} validates.`,
+      configurationRefusal?.nextStep ?? 'Nothing to do.',
+    ),
+  ];
+}
+
 /** The upgrade commands. The caller holds the canonical-storage flock (no controller runs) for the whole call. */
 export async function upgrade(context: UpgradeContext, command: UpgradeCommand, options: { migrate?: string } = {}): Promise<UpgradeReport> {
   const { root, target } = context;
@@ -615,35 +652,9 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     const forward =
       `Keep ${journal.to.release} selected and correct forward with it; there is no reverse migration, and an earlier copy of the storage ` +
       'would not undo or safely replay what GitHub or Jira already received.';
-    const dataRefusal =
-      format === null
-        ? {
-            code: 'ROLLBACK_FORMAT_UNKNOWN',
-            message: 'No storage format is established: nothing proves the previous release operates it.',
-            nextStep: `Keep ${journal.to.release} (\`upgrade resume\` if incomplete). A rollback needs a storage in a format the previous release operates.`,
-          }
-        : format !== journal.from.storageFormat
-          ? {
-              code: 'ROLLBACK_FORMAT_UNSUPPORTED',
-              message: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}.`,
-              nextStep: forward,
-            }
-          : null;
+    const dataRefusal = rollbackStorageRefusal(format, journal, forward);
     const configurationRefusal = await rollbackConfiguration(root, intact.manifest, towardsAssets, journal, forward);
-    const rollbackChecks = [
-      check(
-        'rollback:storage',
-        dataRefusal === null,
-        dataRefusal?.message ?? `Storage format ${format} is operated by release ${journal.from.release}.`,
-        dataRefusal?.nextStep ?? 'Nothing to do.',
-      ),
-      check(
-        'rollback:configuration',
-        configurationRefusal === null,
-        configurationRefusal?.message ?? `config.yaml declares a schema version release ${journal.from.release} validates.`,
-        configurationRefusal?.nextStep ?? 'Nothing to do.',
-      ),
-    ];
+    const rollbackChecks = rollbackPrechecks(dataRefusal, configurationRefusal, format, journal);
     const refusal = dataRefusal ?? configurationRefusal;
     if (refusal) {
       return report(command, refusal.code, context, {

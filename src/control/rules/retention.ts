@@ -85,12 +85,16 @@ export function retentionProtections(work: Work, facts: Facts): string[] {
   if (continuable) for (const item of work.impediments) if (recoveryImpediments.includes(item.code)) reasons.push(`IMPEDIMENT:${item.code}`);
   // A resource cleanup still in progress (spec §12.3): waiting, an automatically retried resource, or an explicit plan not swept yet. A resource
   // left refused/kept for an operator decision does NOT protect the details for ever (review LOW): its decision is `factory cleanup`.
-  if (work.cleanup) {
-    const automatic = work.cleanup.resources.some(item => !concluded(item.state) && retryable(item.state));
-    if (work.cleanup.state === 'waiting' || automatic || (work.cleanup.explicit && !work.cleanup.explicit.consumed)) reasons.push('CLEANUP_PENDING');
-  }
+  if (cleanupPending(work.cleanup)) reasons.push('CLEANUP_PENDING');
   if (work.retention?.removals.some(item => item.outcome === 'intended')) reasons.push('DETAIL_REMOVAL_UNSETTLED');
   return [...new Set(reasons)];
+}
+
+/** A resource cleanup still in progress: waiting, an automatically retried resource, or an explicit plan not swept yet. */
+function cleanupPending(cleanup: Work['cleanup']): boolean {
+  if (!cleanup) return false;
+  const automatic = cleanup.resources.some(item => !concluded(item.state) && retryable(item.state));
+  return cleanup.state === 'waiting' || automatic || Boolean(cleanup.explicit && !cleanup.explicit.consumed);
 }
 
 export type DetailDecision = { item: DetailItem; decision: 'retained' | 'protected' | 'in-use' | 'eligible'; reason: string };

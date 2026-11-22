@@ -194,6 +194,10 @@ function normalized(input: Schema) {
   return { ...input, ticketSources };
 }
 
+/** A top-level field of the parsed YAML, before any schema (undefined when the document is not an object or lacks it). */
+const fieldOf = (input: unknown, key: string): unknown =>
+  input && typeof input === 'object' && key in input ? (input as Record<string, unknown>)[key] : undefined;
+
 /** `guestAssets`: the pin of a verified release (trusted composition data), never read from the YAML. */
 /** `lambdaService` (v2 ticket 02): how a Lambda installation's AWS account is reached; the `aws` CLI by default, a double in tests.
  * `lambdaHostTool`: whether a host tool of the Lambda channel can be run; the real PATH by default, a double in tests. */
@@ -226,14 +230,11 @@ export async function readConfiguration(
       versions: sandbox.versions,
     };
   }
-  const version = input && typeof input === 'object' && 'schemaVersion' in input ? input.schemaVersion : undefined;
+  const version = fieldOf(input, 'schemaVersion');
   // The YAML version selects ONE schema; issues of the other one are never reported.
   const parsed = (version === 2 ? schemaV2 : schemaV1).safeParse(input);
   // V2-30: the sandbox adapter compares the installation's Builder concurrency with its own capacity (unknown when the rest is invalid).
-  const sandbox = await sandboxOf().validate(
-    input && typeof input === 'object' && 'sandbox' in input ? input.sandbox : undefined,
-    parsed.success ? { concurrency: parsed.data.concurrency } : {},
-  );
+  const sandbox = await sandboxOf().validate(fieldOf(input, 'sandbox'), parsed.success ? { concurrency: parsed.data.concurrency } : {});
   const validatedSandbox = sandbox.configuration;
   if (!parsed.success || !validatedSandbox.valid) {
     return {

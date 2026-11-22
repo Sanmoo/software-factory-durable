@@ -223,6 +223,19 @@ const candidateOf = (pull: Pull, association: PullRequestCandidate['association'
   body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null,
 });
 
+/** The comparison of a well-formed `compareFrom` with the own branch's present tip, when they differ (nothing to compare otherwise). */
+function comparedTips(compareFrom: string | undefined, first: BranchRef | undefined): { from: string; to: string } | null {
+  return compareFrom && /^[0-9a-f]{40}$/.test(compareFrom) && first?.state === 'present' && first.sha !== compareFrom
+    ? { from: compareFrom, to: first.sha }
+    : null;
+}
+/** The tips to compare with the own branch's tip: the preserved ones and those of its complete push activity, other than that tip. */
+function preservedTips(preserve: readonly string[], activity: BranchActivity, tip: string): string[] {
+  return [...new Set([...preserve, ...(activity.state === 'complete' ? activity.entries.flatMap(item => [item.after, item.before]) : [])])].filter(
+    item => /^[0-9a-f]{40}$/.test(item) && !/^0{40}$/.test(item) && item !== tip,
+  );
+}
+
 export function createCodeRepository(options: { github: GitHubAccess }): CodeRepository {
   async function associate(repo: GitHubScope, issueNumber: number, pulls: Pull[], repositoryId: number, knownBranches: string[]): Promise<IssuePublication> {
     // GitHub closing keywords referring to THIS repository's issue (#N, owner/repo#N or its URL).
@@ -518,18 +531,14 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
           );
       const refs = correlation.refs ? await refsListing(repo) : undefined;
       const first = correlation.knownBranches[0] !== undefined ? branches[correlation.knownBranches[0]] : undefined;
-      const comparison =
-        correlation.compareFrom && /^[0-9a-f]{40}$/.test(correlation.compareFrom) && first?.state === 'present' && first.sha !== correlation.compareFrom
-          ? await compare(repo, correlation.compareFrom, first.sha)
-          : undefined;
+      const compared = comparedTips(correlation.compareFrom, first);
+      const comparison = compared ? await compare(repo, compared.from, compared.to) : undefined;
       let activity: BranchActivity | undefined;
       let ancestry: Record<string, BranchComparison> | undefined;
       if (correlation.preserve && correlation.knownBranches[0] !== undefined) {
         activity = await activityOf(repo, correlation.knownBranches[0]);
         if (first?.state === 'present') {
-          const tips = [
-            ...new Set([...correlation.preserve, ...(activity.state === 'complete' ? activity.entries.flatMap(item => [item.after, item.before]) : [])]),
-          ].filter(tip => /^[0-9a-f]{40}$/.test(tip) && !/^0{40}$/.test(tip) && tip !== first.sha);
+          const tips = preservedTips(correlation.preserve, activity, first.sha);
           ancestry = {};
           // Bounded: at most 16 comparisons; a tip beyond the bound is absent (unknown to Control, never assumed preserved).
           for (const tip of tips.slice(0, 16)) ancestry[tip] = await compare(repo, tip, first.sha);
