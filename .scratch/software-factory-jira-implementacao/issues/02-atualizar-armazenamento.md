@@ -26,3 +26,5 @@ Referência: [spec aprovada](../../software-factory-jira/spec.md), §6; [matriz 
   chega por comentário (várias leituras e reinício) e pelo mesmo `request_id` local: uma transição, sem novo Trabalho, sem POST, sem chamada Jira.
 - Rollback pré-checa dados **e** configuração (versão real do `config.yaml` contra o que a release anterior declara), reporta os dois
   (`rollback:storage`, `rollback:configuration`), mantém a seleção e orienta correção para a frente, sem prometer migração reversa ou restauração.
+
+Commits: b3b91046 (formato 3, migração e rollback), 3571ab04 (resposta). `npm run test:ci` após merge de integration (41bd1003): PASS (2175 pass, 0 fail).
