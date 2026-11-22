@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadDevelopmentGondolinSdk } from '../../src/sandbox/gondolin-sdk-runtime.js';
 import { gondolinSdkProfile, prepareDevelopmentGondolinSdk } from '../../src/sandbox/gondolin-sdk-profile.js';
+import { sourceShape } from '../architecture/source-text.js';
 
 const project = process.cwd();
 const entry = (root: string) => pathToFileURL(join(root, gondolinSdkProfile.directory, 'sdk/dist/src/index.js')).href;
@@ -118,7 +119,7 @@ test('closed loader verifies every request before exact-entry substitution; synt
 });
 
 test('adapter routes at existing sdk-import gate; backend and lifecycle options stay intact (static, no host boots)', async () => {
-  const source = await readFile(join(project, 'src/sandbox/adapter.ts'), 'utf8');
+  const source = sourceShape(await readFile(join(project, 'src/sandbox/adapter.ts'), 'utf8'));
   const gate = source.indexOf("phase = 'sdk-import'");
   const load = source.indexOf('await loadDevelopmentGondolinSdk()');
   assert.ok(gate > source.indexOf('await inspectGuestAssets('));

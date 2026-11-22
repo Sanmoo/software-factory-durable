@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assess, censusCrossedExpiry, clockDrift, grantAllowed, labelExact, phaseGuard, runOutcome, teardownSteps, walkWorks, type LongInput } from './long34-qualification.js';
 import * as provider from './long34-provider.js';
+import { sourceShape } from '../architecture/source-text.js';
 
 // Recipe safety of the R-LONG real run, on controlled data only (never the real root, GitHub, VM or model).
 
@@ -120,7 +121,7 @@ test('lessons: builder-publish is refused (no GitHub write); inspect requests th
   assert.equal(grantAllowed('builder-publish'), false);
   const steps = teardownSteps(9);
   assert.ok(steps.some(item => /remove the label ready-for-agent from #9/.test(item)) && steps.some(item => /close #9/.test(item)));
-  const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'long34-qualification.ts'), 'utf8');
+  const text = sourceShape(readFileSync(join(process.cwd(), 'test', 'entrypoints', 'long34-qualification.ts'), 'utf8'));
   assert.match(text, /for \(const signal of \['SIGTERM', 'SIGINT'\] as const\) process\.once\(signal/, 'SIGTERM/SIGINT remove the namespace key copy');
   assert.ok(text.indexOf("save('teardown-request'") < text.indexOf('snapshotStorage(observations'), 'the teardown request is saved before any storage/GitHub read');
 });

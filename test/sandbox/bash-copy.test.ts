@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 import { serveReadTools, connectReadTools, type GuestOwner, type ToolContext } from '../../src/sandbox/read-tools.js';
 import { remainingMs } from '../runner/budget.js';
+import { sourceShape } from '../architecture/source-text.js';
 
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder',
   environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
@@ -271,7 +272,7 @@ test('trusted policy is snapshotted, not a mutable caller claim', async () => {
 test('actual adapter SOURCE stamps verified private SDK origin into same VM owner seam only', async () => {
   // Source inspection only. Never imports/evaluates the SDK, invokes adapter boot,
   // or treats the test receipt DOUBLE as native qualification evidence.
-  const source = await readFile(new URL('../../../src/sandbox/adapter.ts', import.meta.url), 'utf8');
+  const source = sourceShape(await readFile(new URL('../../../src/sandbox/adapter.ts', import.meta.url), 'utf8'));
   const selected = source.indexOf('await loadDevelopmentGondolinSdk()');
   const stamped = source.indexOf("const profileOrigin = 'factory-development-gondolin-0.14.0-stdin-capacity-v1' as const");
   const created = source.indexOf('vm = await VM.create(');

@@ -5,6 +5,7 @@ import { createEditTool, type ToolDefinition } from '#factory-pi';
 import { createSandbox, type ToolContext, type ToolProjection } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { builderEdit, captureRefusal } from '../../src/workers/edit.js';
+import { sourceShape } from '../architecture/source-text.js';
 
 const context: ToolContext = { workId: 'edit-work', executionId: 'edit-exec', invocationId: 'edit-invocation',
   role: 'builder', environmentRef: 'edit-env', bootRef: 'edit-boot', phaseId: 'edit-phase' };
@@ -499,7 +500,7 @@ test('fixed lexical native Edit routes host-owned EACCES path to guest double on
 
 test('private fixed typed native adapter has no host implementation backend or bootstrap SDK construction', async () => {
   const { readFile } = await import('node:fs/promises');
-  const source = await readFile('src/workers/edit.ts', 'utf8');
+  const source = sourceShape(await readFile('src/workers/edit.ts', 'utf8'));
   assert.match(source, /type LexicalEditOptions = NonNullable<Parameters<typeof createEditTool>\[1\]> &/);
   assert.match(source, /const options: LexicalEditOptions = \{ mutationQueueMode: 'lexical', operations:/);
   assert.doesNotMatch(source, /\bany\b|process\.env|node:fs|realpath|generateEditDiff|normalizeToLF|Buffer\.concat/);

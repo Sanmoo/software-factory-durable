@@ -8,8 +8,11 @@ export interface Directive { file: string; line: number; kind: string; rules: st
 export interface Entry { file: string; rule: string; target: string; reason: string; decision: string }
 
 /** The comment ranges of a source file, each once: leading and trailing trivia of every node, as the parser sees them. */
-function comments(file: string, text: string): { pos: number; text: string }[] {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, /\.[cm]?jsx?$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+function parse(file: string, text: string): ts.SourceFile {
+  return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, /\.[cm]?jsx?$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+}
+
+function comments(source: ts.SourceFile, text: string): { pos: number; text: string }[] {
   const seen = new Map<number, string>();
   const collect = (ranges: readonly ts.CommentRange[] | undefined) => { for (const range of ranges ?? []) seen.set(range.pos, text.slice(range.pos, range.end)); };
   const visit = (node: ts.Node): void => {
@@ -22,17 +25,36 @@ function comments(file: string, text: string): { pos: number; text: string }[] {
   return [...seen].sort(([a], [b]) => a - b).map(([pos, body]) => ({ pos, text: body }));
 }
 
+/** Code text with what a formatter decides (line breaks, indentation, trailing commas) normalized away. */
+export function codeShape(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/,\s*([)\]}])/g, '$1').replace(/([([{]) /g, '$1').replace(/ ([)\]}])/g, '$1').trim();
+}
+
+/** The whole statement that starts on 0-based `line` (or the line's text when none starts there), in its code shape. */
+function statementAt(source: ts.SourceFile, line: number, fallback: string): string {
+  let found: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isStatement(node) && !ts.isBlock(node) && source.getLineAndCharacterOfPosition(node.getStart(source)).line === line) { found = node; return; }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return codeShape(found ? found.getText(source) : fallback);
+}
+
 /** `eslint-disable-next-line a, b -- reason`, `-line`, block `eslint-disable` (with or without rules), `eslint rule: off` config. */
 const directive = /^(?:\/\/|\/\*)\s*eslint(-disable(?:-next-line|-line)?|-enable)?(?=[\s*]|$)([\s\S]*)/;
 
 /**
- * The directives of one file. `target` identifies what a directive suppresses: the trimmed text of the line it applies to
- * (the next line for `-next-line`, its own code for `-line`); a block or file directive targets the whole file ('*').
+ * The directives of one file. `target` identifies what a directive suppresses: the whole statement starting on the line it applies
+ * to (the next line for `-next-line`, its own line for `-line`) in its code shape, so a reformat never moves the identity; a block
+ * or file directive targets the whole file ('*').
  */
 export function directivesOf(file: string, text: string): Directive[] {
   const lines = text.split('\n');
+  const source = parse(file, text);
   const found: Directive[] = [];
-  for (const comment of comments(file, text)) {
+  for (const comment of comments(source, text)) {
     const match = directive.exec(comment.text);
     if (!match) continue;
     const kind = match[1] ? `eslint${match[1]}` : 'eslint';
@@ -41,8 +63,8 @@ export function directivesOf(file: string, text: string): Directive[] {
     const index = text.slice(0, comment.pos).split('\n').length - 1;
     const body = match[2]!.replace(/\*\/\s*$/, '').split(' -- ')[0]!.trim();
     const rules = body.split(',').map(item => (kind === 'eslint' ? item.split(':')[0]! : item).trim()).filter(Boolean);
-    const target = kind === 'eslint-disable-next-line' ? (lines[index + 1] ?? '').trim()
-      : kind === 'eslint-disable-line' ? lines[index]!.slice(0, comment.pos - text.lastIndexOf('\n', comment.pos - 1) - 1).trim() : '*';
+    const target = kind === 'eslint-disable-next-line' ? statementAt(source, index + 1, lines[index + 1] ?? '')
+      : kind === 'eslint-disable-line' ? statementAt(source, index, lines[index]!.slice(0, comment.pos - text.lastIndexOf('\n', comment.pos - 1) - 1)) : '*';
     found.push({ file, line: index + 1, kind, rules: rules.length ? rules : ['*'], target });
   }
   return found;

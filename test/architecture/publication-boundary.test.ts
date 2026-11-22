@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sourceShape } from './source-text.js';
 
 // Ticket 14 static gate (spec §2/§9.1, Q7): the Builder publishes DIRECTLY in its guest; the controller has no push gateway/publisher, and
 // there is no Git/gh wrapper, shell parser, effect-registration tool or special journal for push/PR creation.
@@ -27,7 +28,8 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
     assert.ok(['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts', 'src/entrypoints/release-build.ts'].includes(file.path), file.path);
   }
   // The controller's GitHub client has exactly one write (the Question comment); no pulls/refs/contents writes.
-  const github = files.find(item => item.path === 'src/platform/github/index.ts')!.text;
+  // Line breaks, indentation and trailing commas are the formatter's, not what this gate asserts (sourceShape).
+  const github = sourceShape(files.find(item => item.path === 'src/platform/github/index.ts')!.text);
   assert.equal((github.match(/JSON\.stringify\(\{ body \}\)/g) ?? []).length, 1, 'the only POST body is the issue comment');
   assert.doesNotMatch(github, /\/pulls['`]|\/git\/refs|PATCH|PUT/, 'no PR creation/update or ref write by the controller');
   // The CodeRepository contract stays read-only for the implementation publication.
@@ -39,14 +41,14 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // The controller's only GraphQL documents are the two fixed draft mutations, (ticket 17) the atomic conditional deletion of the Work's OWN
   // delivered branch and (ticket 25) the operator-requested reopen of the Work's OWN pull request closed without merge; never review,
   // approval, merge or any other mutation.
-  assert.deepEqual([...github.matchAll(/\{ (\w+)\(input:/g)].map(match => match[1]).sort(), ['convertPullRequestToDraft', 'markPullRequestReadyForReview', 'reopenPullRequest', 'updateRefs']);
+  assert.deepEqual([...github.matchAll(/mutation\([^)]*\) \{ (\w+)\(input:/g)].map(match => match[1]).sort(), ['convertPullRequestToDraft', 'markPullRequestReadyForReview', 'reopenPullRequest', 'updateRefs']);
   assert.match(github, /'pull-request-reopen': \{ metadata: 'read', pull_requests: 'write' \}/);
   assert.equal((github.match(/issue\(scope, field === 'reopenPullRequest' \? 'pull-request-reopen' : 'readiness-write'\)/g) ?? []).length, 1, 'one fresh pull request mutation grant site');
   // Ticket 17: updateRefs only deletes ONE ref conditionally (beforeOid, afterOid zero, force false), under the single-use branch-cleanup grant.
   // v2 ticket 12 (V2-02 Remover): the same closed deletion also takes ONE loss marker ref of the Factory's own namespace
   // (`refs/factory/lost/<work>/<boot>`, checked against the contract's pattern); every other name is a validated branch under `refs/heads/`.
   assert.match(github, /refUpdates: \[\{ name, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
-  assert.match(github, /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\)\n\s+: \/[^\n]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/);
+  assert.match(github, /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\) : \/[^ ]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/);
   assert.equal((github.match(/refUpdates: \[\{/g) ?? []).length, 1, 'one ref update site');
   assert.match(github, /'branch-cleanup': \{ metadata: 'read', contents: 'write', pull_requests: 'read' \}/);
   assert.equal((github.match(/issue\(scope, 'branch-cleanup'\)/g) ?? []).length, 1, 'one fresh cleanup grant site');

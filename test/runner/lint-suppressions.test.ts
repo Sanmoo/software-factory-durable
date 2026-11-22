@@ -40,3 +40,10 @@ test('the tolerance policy needs every field of every entry', () => {
   assert.throws(() => parseTolerance({ entries: [] }), /schemaVersion/);
   assert.deepEqual(parseTolerance({ schemaVersion: 1, entries: [] }), []);
 });
+
+test('the target is the whole statement in its code shape: the formatter cannot move the identity', () => {
+  const oneLine = "// eslint-disable-next-line no-restricted-syntax -- r\nconst hooks = await import(new URL('./hooks.js', import.meta.url).href);\n";
+  const broken = "// eslint-disable-next-line no-restricted-syntax -- r\nconst hooks = await import(\n  new URL('./hooks.js', import.meta.url).href,\n);\n";
+  assert.equal(directivesOf('src/a.ts', oneLine)[0]!.target, "const hooks = await import(new URL('./hooks.js', import.meta.url).href);");
+  assert.equal(directivesOf('src/a.ts', broken)[0]!.target, directivesOf('src/a.ts', oneLine)[0]!.target);
+});

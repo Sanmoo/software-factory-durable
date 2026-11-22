@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { builderWrite } from '../../src/workers/write.js';
+import { sourceShape } from '../architecture/source-text.js';
 
 const context: ToolContext = { workId: 'write-work', executionId: 'write-exec', invocationId: 'write-invocation',
   role: 'builder', environmentRef: 'write-env', bootRef: 'write-boot', phaseId: 'write-phase' };
@@ -159,7 +160,7 @@ test('Factory adapter fixed lexical mode routes owned EACCES path only to guest 
 });
 
 test('Builder composition has host-fixed lexical Write and independent host-gated Read/Edit', async () => {
-  const source = await readFile('src/workers/write.ts', 'utf8');
+  const source = sourceShape(await readFile('src/workers/write.ts', 'utf8'));
   assert.match(source, /type LexicalWriteOptions = NonNullable<Parameters<typeof createWriteTool>\[1\]> &/);
   assert.match(source, /const options: LexicalWriteOptions = \{ mutationQueueMode: 'lexical', operations:/);
   assert.match(source, /return createWriteTool\(cwd, options\)/);

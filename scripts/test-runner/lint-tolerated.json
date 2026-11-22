@@ -12,7 +12,7 @@
   {
    "file": "test/sandbox/adapter-diagnostics-fixture.ts",
    "rule": "no-restricted-syntax",
-   "target": "const hooksModule: { createHttpHooks: typeof CreateHttpHooks } = await import(new URL('../../../node_modules/@earendil-works/gondolin/dist/src/http/hooks.js', import.meta.url).href);",
+   "target": "const hooksModule: {createHttpHooks: typeof CreateHttpHooks} = await import(new URL('../../../node_modules/@earendil-works/gondolin/dist/src/http/hooks.js', import.meta.url).href);",
    "reason": "Test-only fixed installed SDK HTTP hooks entry, evaluated before the deny-all guard.",
    "decision": "Tolerada por decisão explícita do mantenedor (2026-11-22, emenda do plano de adoção): supressão anterior à adoção, com motivo no próprio comentário."
   },
