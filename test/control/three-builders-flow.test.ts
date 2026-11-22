@@ -25,7 +25,6 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { i
   const remote: Remote = { pulls: {}, issues: options.issues.map(number => remoteIssue(number)) };
   const github = githubDoubles(remote);
   options.wrap?.(github);
-  let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   const doubles = recoveryDoubles(dir, [], { capacity: options.capacity, ...(options.reviews ? { reviews: true } : {}),
     script: invocation => options.script?.(ticketOf(invocation), invocation),
     onActivate: invocation => options.onActivate?.(invocation, ticketOf(invocation)) });
@@ -33,7 +32,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { i
   const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: doubles.ports,
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
-  current = { control, stop, running: control.run(stop.signal), time };
+  const current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } = { control, stop, running: control.run(stop.signal), time };
   t.after(async () => { if (!current!.stop.signal.aborted) { current!.stop.abort(); await current!.running; } });
   const list = async () => await current!.control.inspect({ kind: 'list' }) as ListView;
   const work = async (number: number) => (await list()).works.find(item => item.ticket.number === number)!;

@@ -15,6 +15,7 @@
     "tsconfig.json",
     "eslint.config.mjs",
     ".dependency-cruiser.cjs",
+    "GLOSSARY.md",
     "test/tiers.json",
     "scripts/**",
     ".github/**"
@@ -63,6 +64,26 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 3
+    },
+    {
+      "$comment": "Reads GLOSSARY.md's _Avoid_ lines (shared configuration: a change to them widens validation).",
+      "id": "avoided-terms",
+      "gate": "Avoided terms",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**", "GLOSSARY.md"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 5
+    },
+    {
+      "$comment": "npm audit with the npm pinned in package.json engines; needs the registry. Integral validation runs it every night, so a new advisory against an unchanged lockfile is caught by the next night.",
+      "id": "vulnerabilities",
+      "gate": "Dependency vulnerabilities",
+      "tier": "full",
+      "appliesTo": ["package.json", "package-lock.json"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 100
     },
     {
       "$comment": "Unit and Integration levels are declared per file in stage S3 of ADOPTION-PLAN.md; until then this is the whole regression suite.",

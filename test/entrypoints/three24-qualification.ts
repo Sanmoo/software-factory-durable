@@ -396,7 +396,6 @@ async function runControl(save: (name: string, data: unknown) => Promise<void>) 
   const prepared = new Set<string>();
   let refusals = 0;
   const stop = new AbortController();
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const pinnedWork = async (workId: string) => {
     const shown = await control.inspect({ kind: 'show', work_id: workId });
     return 'work' in shown && numbers().includes(shown.work.ticket.number) && shown.work.ticket.repositoryId === repositoryId;
@@ -445,7 +444,7 @@ async function runControl(save: (name: string, data: unknown) => Promise<void>) 
           () => log({ call: 'completion-uncertain', role, workId: invocation.context.workId }));
         return handle;
       } } };
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: pollingSeconds }, execution: ports });
   const running = control.run(stop.signal);
   const samples: BootSample[] = [];

@@ -54,9 +54,9 @@ test('review LOW: an opinion record is read across EVERY page (never a single 64
   const root = await mkdtemp(join(tmpdir(), 'factory-opinion28p-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
-  const reference = await records.record(context('spec-e1-r2a1'), composed('spec-e1-r2a1'));
+  await records.record(context('spec-e1-r2a1'), composed('spec-e1-r2a1'));
   // The same real record served in 512-byte pages.
-  const paged = { find: records.find, async read(input: { reference: typeof reference; offset: number; limit: number }) {
+  const paged = { find: records.find, async read(input: { reference: Awaited<ReturnType<typeof records.record>>; offset: number; limit: number }) {
     const page = await records.read({ ...input, limit: 512 });
     return page;
   } } as unknown as Parameters<typeof observeOpinionRecord>[0];

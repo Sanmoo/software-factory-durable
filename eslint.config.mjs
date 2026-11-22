@@ -1,4 +1,5 @@
 import tsParser from '@typescript-eslint/parser';
+import tseslint from 'typescript-eslint';
 
 const loadingRestrictions = [
   { selector: "ImportExpression[source.type!='Literal']",
@@ -18,6 +19,17 @@ const capabilitiesOnly = [`Identifier[name=${sandboxNames}]`, `Literal[value=${s
 
 export default [
   { ignores: ['node_modules/**', 'dist/**', '.git/**', '.worktrees/**', '.scratch/**'] },
+  // The ecosystem's rule set (adopted in S2 of ADOPTION-PLAN.md); the architecture rules below stay as they were.
+  ...tseslint.configs.recommended.map(config => ({ ...config, files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'] })),
+  {
+    files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    rules: {
+      // The project's convention: a leading underscore marks a binding kept on purpose (a field dropped from a rest destructure,
+      // a callback parameter the signature requires).
+      '@typescript-eslint/no-unused-vars': ['error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_', ignoreRestSiblings: true }],
+    },
+  },
   {
     files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     languageOptions: { parser: tsParser, ecmaVersion: 'latest', sourceType: 'module' },

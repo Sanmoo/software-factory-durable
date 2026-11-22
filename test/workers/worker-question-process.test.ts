@@ -10,8 +10,11 @@ import { SessionManager } from '#factory-pi';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import type { WorkerQuestion } from '../../src/workers/index.js';
 import { remainingMs } from '../runner/budget.js';
 
+/** A worker IPC message as this test reads it (`question` only on `worker-question` and a question result). */
+type WorkerMessage = Record<string, unknown> & { question?: WorkerQuestion & { acknowledged?: boolean } };
 // I-local: new Node24 worker entrypoint + real Pi SDK session + real Records/Protocol owner transport; the provider HTTP boundary
 // (offline fixture), the VM (double) and the Control (this test answering the IPC notification) are substituted.
 for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as const) test(`AC1/AC3: Builder ask_user preserves, notifies and ENDS the activation: ${mode}`, { timeout: remainingMs() }, async t => {
@@ -31,15 +34,15 @@ for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as co
     execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL('./fixtures/ask-provider-preload.js', import.meta.url))],
     env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   t.after(() => { if (child.exitCode === null) child.kill(); });
-  const messages: Record<string, any>[] = []; let output = '';
+  const messages: WorkerMessage[] = []; let output = '';
   child.stdout!.on('data', chunk => { output += String(chunk); }); child.stderr!.on('data', chunk => { output += String(chunk); });
   let preservedAtNotification = false;
-  child.on('message', (message: Record<string, any>) => {
+  child.on('message', (message: WorkerMessage) => {
     messages.push(message);
     if (message.kind !== 'worker-question') return;
     // The complete request is already preserved as protected evidence when the notification arrives.
-    preservedAtNotification = existsSync(join(recordsRoot, context.workId, 'evidence', message.question.reference.id, 'complete.json'));
-    child.send({ kind: 'worker-question-ack', version: 1, context, questionId: message.question.questionId,
+    preservedAtNotification = existsSync(join(recordsRoot, context.workId, 'evidence', message.question!.reference.id, 'complete.json'));
+    child.send({ kind: 'worker-question-ack', version: 1, context, questionId: message.question!.questionId,
       ...(mode === 'refused' ? { status: 'refused', code: 'STALE_EXECUTION' } : { status: 'recorded' }) });
   });
   const exited = once(child, 'exit'); child.send(bootstrap);
@@ -53,7 +56,7 @@ for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as co
     return;
   }
   assert.equal(notifications.length, 1);
-  const asked = notifications[0]!.question;
+  const asked = notifications[0]!.question!;
   assert.match(asked.questionId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/, 'stable identity assigned by the worker');
   assert.deepEqual([asked.question, asked.context], ['Which file name should the smoke doc use?', 'The Ticket names no file.']);
   assert.equal(preservedAtNotification, true);
@@ -66,7 +69,7 @@ for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as co
   }
   assert.equal(result.status, 'question');
   assert.deepEqual({ ...result.question, acknowledged: undefined }, { ...asked, acknowledged: undefined });
-  assert.equal(result.question.acknowledged, true);
+  assert.equal(result.question!.acknowledged, true);
   assert.equal(messages.filter(message => message.kind === 'provider-request').length, 1, 'no further model turn: the activation ended');
   assert.equal(guestCalls, 0, 'a tool batched after ask_user is refused before any guest effect');
   const session = SessionManager.open(String(result.sessionFile), join(directory, 'sessions')).buildSessionContext();

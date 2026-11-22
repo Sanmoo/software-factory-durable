@@ -39,7 +39,6 @@ async function installation(t: { after(fn: () => Promise<void>): void }) {
 async function runWorker(t: { after(fn: () => Promise<void>): void }, paths: { directory: string; profile: string }, toolContext: ToolContext, prompt: string,
   options: { extra?: Record<string, unknown>; command?: (child: ReturnType<typeof fork>) => Promise<void> } = {}) {
   const executed: string[] = [];
-  let child!: ReturnType<typeof fork>;
   const f = await nativeOwner(toolContext, { exec(argv: readonly string[]) {
     executed.push(argv.join(' '));
     return { async *output() {}, result: (options.command ? options.command(child) : Promise.resolve()).then(() => ({ exitCode: 0 })) };
@@ -47,12 +46,12 @@ async function runWorker(t: { after(fn: () => Promise<void>): void }, paths: { d
   t.after(() => f.close());
   const bootstrap = { version: 1, context: toolContext, endpoint: f.owner.endpoint, recordsRoot: join(paths.directory, 'records'), knownSecrets: ['synthetic-secret'], prompt, skillPack: 'factory-skills-v4' as const,
     profile: { id: sdkProfile.id, directory: paths.profile, systemPrompt: 'Builder swap fixture.', ...provider }, ...options.extra };
-  child = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
+  const child = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
     execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL('./fixtures/swap-provider-preload.js', import.meta.url))],
     env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(paths.directory, 't'), XDG_CACHE_HOME: join(paths.directory, 'c') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   t.after(async () => { if (child.exitCode === null) child.kill(); });
-  const messages: Record<string, any>[] = [];
-  child.on('message', (message: Record<string, any>) => { messages.push(message); });
+  const messages: Record<string, unknown>[] = [];
+  child.on('message', (message: Record<string, unknown>) => { messages.push(message); });
   const exited = once(child, 'exit');
   child.send(bootstrap);
   await exited;

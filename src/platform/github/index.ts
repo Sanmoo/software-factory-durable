@@ -302,7 +302,6 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       try {
         const output = await new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
           let settled = false;
-          let timer: ReturnType<typeof setTimeout>;
           const fail = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new AccessFailure('GITHUB_TRANSPORT_UNAVAILABLE')); } };
           const payload = input === undefined ? undefined : JSON.stringify(input);
           const req = https.request({ protocol: 'https:', hostname: 'api.github.com', port: 443,
@@ -338,7 +337,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
             });
           });
           req.on('error', fail);
-          timer = setTimeout(() => { fail(); req.destroy(); }, 15000);
+          const timer = setTimeout(() => { fail(); req.destroy(); }, 15000);
           req.end(payload);
         });
         const status = Number(/^HTTP\/1\.1 (\d{3}) /.exec(output.stdout)?.[1]);

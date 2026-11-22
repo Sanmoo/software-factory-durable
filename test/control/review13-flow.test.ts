@@ -118,9 +118,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
   const github = githubDoubles(remote);
-  let control: Control | undefined;
   const execution = doubles(() => control!, script);
-  control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope] }, polling: { intervalSeconds: 60, clock: manualClock().clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);

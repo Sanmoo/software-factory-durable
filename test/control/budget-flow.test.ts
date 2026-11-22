@@ -56,8 +56,7 @@ const budgetEvents = (work: WorkView) => work.history.filter(item => item.event.
 
 test('AC1: configured limits are snapshotted at admission; the initial implementation charges nothing; a correction reserves in the admission commit and is consumed once at the confirmed start', async t => {
   let atPrepare: WorkView | undefined;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => { atPrepare = await h.work(); } });
+  const h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => { atPrepare = await h.work(); } });
   await h.start({ correctionLimit: 2, recoveryLimit: 1 });
   await h.idle();
   let work = await h.work();
@@ -86,8 +85,7 @@ test('AC1: configured limits are snapshotted at admission; the initial implement
 
 test('AC2: proven non-start releases the reservation without consumption; an uncertain start keeps it (and it counts against the limit)', async t => {
   let pauseOnce = true;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }, { kind: 'launch-uncertain' }], { onPrepare: async () => {
+  const h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }, { kind: 'launch-uncertain' }], { onPrepare: async () => {
     // The pause committed during the correction's preparation refuses its activation before any worker request (own boot ceased).
     if (pauseOnce && (await h.work()).correction) { pauseOnce = false; await h.control().accept({ request_id: 'pause-1', operation: 'pause', origin: 'local-cli' }); }
   } });
@@ -256,8 +254,7 @@ test('AC3: touching an already-open correction records the added reason, never a
 
 test('AC2 (ticket 26): an owner stop after preparation but before any start request is a proven non-start: reservation and Slot released, nothing retried', async t => {
   let abortOnPrepare = false, aborted = false;
-  let h!: Awaited<ReturnType<typeof harness>>;
-  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => {
+  const h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => {
     if (abortOnPrepare && !aborted) { aborted = true; h.abort(); }
   } });
   await h.start({ correctionLimit: 1 });

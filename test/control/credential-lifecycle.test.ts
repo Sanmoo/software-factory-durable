@@ -10,10 +10,10 @@ import { openControl } from '../../src/control/index.js';
 import { withdrawActivityCredentials } from '../../src/control/durable/control.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { readWorks } from '../../src/control/durable/admission.js';
-import { reconcileLostCredentials, recordEnd, releaseAfterCessation } from '../../src/control/durable/execution.js';
+import { reconcileLostCredentials } from '../../src/control/durable/execution.js';
 import { works as workDocs } from '../../src/control/durable/admission.js';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { Control, ControlStatus, ListView, WorkView } from '../../src/control/types.js';
+import type { ControlStatus, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { lifecycleDoubles, tokenOf, type LifecycleOptions } from './credential-doubles.js';
 

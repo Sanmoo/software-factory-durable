@@ -47,7 +47,7 @@ test('a surviving real Node subprocess does not inherit the no-fork owner lock d
   const owner = fixture(root, 'lock-probe');
   owner.stderr?.resume();
   const ended = once(owner, 'exit');
-  let survivor: number | undefined;
+  let survivor: number | undefined = undefined;
   t.after(async () => {
     owner.kill('SIGKILL'); await ended;
     if (survivor) { try { process.kill(survivor, 'SIGKILL'); } catch { /* already ceased */ } }

@@ -17,7 +17,7 @@ test('ticket 51: the 48th request and the 160th tool call run; the next one clos
   const model = { provider: 'openai', id: 'gpt-6-luna', api: 'openai-responses' };
   const runtime = { streamSimple: () => ({ push() {}, end() {} }) } as unknown as ModelRuntime;
   let aborted = 0;
-  const gate = qualifyOAuth(runtime, new AbortController().signal, () => true, () => { aborted++; }, reviewerBudget);
+  qualifyOAuth(runtime, new AbortController().signal, () => true, () => { aborted++; }, reviewerBudget);
   const request = () => runtime.streamSimple(model as never, { messages: [] } as never, {});
   for (let i = 0; i < 48; i++) request();
   assert.throws(request, /WORKER_QUALIFICATION_CLOSED/);

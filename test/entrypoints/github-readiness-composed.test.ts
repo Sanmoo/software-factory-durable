@@ -10,7 +10,7 @@ import { createCodeRepository } from '../../src/code-repository/index.js';
 import { openControl, type ListView, type WorkView } from '../../src/control/index.js';
 import { manualClock } from '../control/doubles.js';
 import { executionDoubles, type Activation } from '../control/publication-doubles.js';
-import { checkRun, commitStatus, githubWorld, issue, worldScope } from './github-world-fixture.js';
+import { checkRun, githubWorld, issue, worldScope } from './github-world-fixture.js';
 import { untilHolds } from '../runner/budget.js';
 
 // Ticket 16 composed level (I with a substituted boundary): public Control (owner loop, polling, dispatch, ticket 13 rounds, ticket 14's REAL

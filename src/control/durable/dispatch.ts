@@ -21,7 +21,7 @@ import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
-import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginComparison, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
+import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';

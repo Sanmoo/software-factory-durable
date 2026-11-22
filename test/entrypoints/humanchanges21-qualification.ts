@@ -297,7 +297,6 @@ async function compose() {
 }
 
 const workOf = (list: unknown): WorkView | undefined => (list as { kind?: string; works?: WorkView[] }).kind === 'list' ? (list as { works: WorkView[] }).works[0] : undefined;
-const ended = (execution: ExecutionView | null | undefined) => Boolean(execution && (['held', 'released'].includes(execution.state) || (execution.state === 'ended' && execution.dispatch.phase === 'stopped')));
 const divergences = (work: WorkView | undefined) => work?.publication?.divergences ?? [];
 
 type ControlPhase = 'run' | 'race' | 'reconcile' | 'finish';
@@ -367,7 +366,6 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   const guard = activationGuard(phase);
   const grants = grantGuard(phase);
   let prepared = 0;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
   /** HUMAN step k: save the exact commands, then poll the own branch read-only until the operator's push is observed (or time out). */
   const waitHuman = async (step: 1 | 2, branch: string, expectedTip: string) => {
@@ -387,7 +385,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   };
   let humanTwoDone = false;
   const started: { environment: string; boot: string }[] = [];
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repositories: [repository], dependencyRepositories: [], operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), readPullRequest: query => codeRepository.readPullRequest(query),
         setDraft: async () => ({ kind: 'known-failure' as const, observedAt: new Date().toISOString(), code: 'RECIPE_NO_READINESS', nextStep: 'This recipe never converts draft/ready; nothing was sent.', revocation: 'not-issued' }),

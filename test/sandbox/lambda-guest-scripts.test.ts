@@ -44,7 +44,7 @@ test('end-call ends the group of a dropped call whose members nobody reaps: zomb
   // waits for it. Here that parent is `cat`, which lives until this test closes its input.
   const parent = spawn('/bin/bash', ['-c', 'setsid /bin/bash -c "$1" < "$2" & exec cat > /dev/null', 'guest-init', tool.command, input], { detached: true, stdio: ['pipe', 'pipe', 'inherit'] });
   const parentEnd = ended(parent, () => 'the stand-in of the guest init');
-  let leader: number | undefined;
+  let leader: number | undefined = undefined;
   t.after(() => { if (leader) try { process.kill(-leader, 'SIGKILL'); } catch { /* already gone */ } killTree(parent); });
   const [first] = await once(parent.stdout, 'data') as [Buffer];
   assert.equal(first.toString(), 'started\n');

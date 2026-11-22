@@ -95,7 +95,7 @@ export async function inspectEnvironment(environmentDirectory: string, scratch: 
 
 export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
-  const { fs, save, load, exists } = await io();
+  const { fs, save, exists } = await io();
   if (phase === 'preflight') await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {

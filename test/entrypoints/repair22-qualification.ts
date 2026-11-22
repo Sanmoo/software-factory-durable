@@ -324,9 +324,8 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   const grants = grantGuard(phase);
   let prepared = 0;
   let activations = 0;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repositories: [repository], dependencyRepositories: [], operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base),
         async readPullRequest(query) { const result = await codeRepository.readPullRequest(query); log({ call: 'read-pull-request', unless: Boolean(query.unless), kind: result.kind,

@@ -51,7 +51,7 @@ export async function inspectLogs(work: WorkRecord, query: LogsQuery, ports: Exe
 
 /** Largest prefix of `data` that ends on a UTF-8 character boundary (a page never splits a character). */
 function utf8Prefix(data: Uint8Array): number {
-  let end = data.length;
+  const end = data.length;
   for (let back = 1; back <= 3 && end - back >= 0; back++) {
     const byte = data[end - back]!;
     if ((byte & 0xc0) === 0x80) continue;

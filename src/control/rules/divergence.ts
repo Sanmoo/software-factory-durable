@@ -9,7 +9,6 @@ import { questionLimits } from './questions.js';
 // divergence, the reading of the answer (an authorization of exactly that divergence, or nothing) and the reconciliation instruction to
 // the Builder. No I/O, clock or randomness: callers supply every fact.
 
-const commitId = /^[0-9a-f]{40}$/;
 const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 /** Data quoted from GitHub (commit subjects, author names, paths): single line, no control characters, bounded. */
 const line = (text: string, max: number) => text.replace(control, ' ').replace(/\s+/g, ' ').trim().slice(0, max);

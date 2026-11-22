@@ -2,12 +2,12 @@
 // over it, and the red result attributed by scripts/test-runner/proof-attribution.ts. Kept out of both Entry Points; run it with
 // the pinned Node: `node scripts/test-runner/gate-proofs.ts [gate id...] [--evidence <file>]`. The evidence it writes is
 // run output, not committed; GATE-PROOFS.md records each proof's row.
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { disposableCopy, type Copy } from './disposable.ts';
-import { attribute, type Verdict } from './proof-attribution.ts';
+import { analyzedExactly, attribute, type Verdict } from './proof-attribution.ts';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -17,6 +17,8 @@ export interface Proof {
   violation: string; apply(copy: Copy): void;
   /** Where the gate must report it. */
   location: string;
+  /** A changed-set gate's declared input: the step that analyzes it and the files, which must be exactly what it analyzed. */
+  declared?: { step: string; files: string[] };
 }
 
 const append = (line: string) => (text: string) => `${text}${line}\n`;
@@ -35,10 +37,22 @@ export const proofs: Proof[] = [
   { id: 'guide-pointers', gate: 'Guide pointers', tier: 'fast', location: 'docs/guides/architecture.md',
     violation: 'point a link in docs/guides/architecture.md at a file that does not exist',
     apply: copy => copy.edit('docs/guides/architecture.md', append('- [Removido](../../src/control/removed.ts).')) },
+  { id: 'lint', gate: 'Lint', tier: 'fast', location: 'src/control/rules/budget.ts',
+    declared: { step: 'eslint', files: ['src/control/rules/budget.ts'] },
+    violation: 'add an unused variable to src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', append('function proofLint() {\n  const unused = 1;\n}\nexport const proofLintUsed = proofLint;')) },
+  { id: 'avoided-terms', gate: 'Avoided terms', tier: 'fast', location: 'src/control/rules/budget.ts',
+    violation: 'name a Slot identifier with the avoided synonym seat in src/control/rules/budget.ts',
+    apply: copy => copy.edit('src/control/rules/budget.ts', append('export const seatLimit = 1;')) },
+  { id: 'vulnerabilities', gate: 'Dependency vulnerabilities', tier: 'ci', location: 'minimist',
+    violation: 'lock minimist 0.0.8 (critical advisory GHSA-xvch-5gv4-984h, prototype pollution) as a dependency',
+    apply: copy => { execFileSync('npm', ['install', '--save-exact', '--no-audit', '--no-fund', 'minimist@0.0.8'], { cwd: copy.dir, stdio: 'ignore' }); } },
 ];
 
 export interface Evidence { id: string; gate: string; tier: string; entryPoint: string; violation: string; exitCode: number | null; verdict: Verdict;
-  failures: string[]; commit: string }
+  failures: string[]; commit: string;
+  /** The report's static line: the steps that ran and, for a changed-set step, the files it analyzed ('unavailable' when absent). */
+  analyzed: string }
 
 function run(proof: Proof): Evidence {
   const copy = disposableCopy(project, `proof-${proof.id}`);
@@ -48,10 +62,16 @@ function run(proof: Proof): Evidence {
     const result = spawnSync(join(copy.dir, 'scripts/test-runner/run'), [proof.tier], { cwd: copy.dir, encoding: 'utf8',
       env: { ...process.env, FACTORY_INTEGRAL_RECORD: join(copy.dir, '.integral-result.json'), VALIDATION_BASE: 'main' } });
     const report = `${result.stdout}${result.stderr}`;
-    const verdict = attribute({ exitCode: result.status, report }, proof.gate, proof.location);
+    let verdict = attribute({ exitCode: result.status, report }, proof.gate, proof.location);
+    const staticLine = report.split('\n').find(line => line.startsWith('static: ')) ?? '';
+    if (proof.declared && verdict.proved) {
+      const scope = analyzedExactly(staticLine, proof.declared.step, proof.declared.files);
+      if (!scope.ok) verdict = { ...verdict, proved: false,
+        reason: `${proof.gate} analyzed ${JSON.stringify(scope.analyzed)}, not the declared ${JSON.stringify(proof.declared.files)}` };
+    }
     const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: project, encoding: 'utf8' }).stdout.trim();
     return { id: proof.id, gate: proof.gate, tier: proof.tier, entryPoint, violation: proof.violation, exitCode: result.status, verdict, commit,
-      failures: report.split('\n').filter(line => line.startsWith('FAILURE: ')) };
+      failures: report.split('\n').filter(line => line.startsWith('FAILURE: ')), analyzed: staticLine || 'unavailable' };
   } finally { copy.remove(); }
 }
 

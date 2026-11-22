@@ -363,8 +363,6 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
   // The ONE tolerated re-waiver Question (asked by a later Execution, answered by scripted step 6): its id is a valid waiver authorization too.
   const rewaiver = ((saved.repair ?? saved.review) as { rewaiver?: { questionId?: string; answered?: boolean } | null } | undefined)?.rewaiver ?? null;
   const waiverQuestions = [q1, ...(rewaiver?.answered && rewaiver.questionId ? [rewaiver.questionId] : [])];
-  const verification = executions.map(item => item.review?.verification).filter(Boolean).at(-1) ?? null;
-  const rounds = executions.flatMap(item => item.review?.rounds ?? []);
   const gates = executions.flatMap(item => item.review?.rounds ?? []).flatMap(round => round.declarations?.gates ?? []);
   const docsWaived = gates.filter(gate => gate.id === 'docs-check' && gate.declared === 'waived');
   const repairRequest = requestsOf(work, 'EXPLICIT_REPAIR')[0];

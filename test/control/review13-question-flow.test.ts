@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
-import type { Control, ControlReceipt, ExecutionPorts, ListView, WorkView } from '../../src/control/types.js';
+import type { ControlReceipt, ExecutionPorts, ListView, WorkView } from '../../src/control/types.js';
 import type { ProposalHandoff, ReviewOpinion } from '../../src/contracts/index.js';
 import type { BuilderDirective, HandoffEvent, Invocation, WorkerQuestion } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
@@ -43,7 +43,6 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
       { round: 4, status: 'captured', summary: summary(4, '1'), closing: true }] }];
   const allCaptures = activations.flatMap(item => item.captures);
   let delivered: ((directive: BuilderDirective) => void) | undefined;
-  let control: Control | undefined;
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true },
     reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 }, ...(partialRecovery ? { partialRecovery: true } : {}) },
@@ -110,7 +109,7 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
     },
   };
   const time = manualClock();
-  control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: ports,
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: ports,
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);

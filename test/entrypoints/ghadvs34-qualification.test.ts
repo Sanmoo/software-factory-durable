@@ -118,9 +118,24 @@ test('human scripts: exact, fail-fast, operator-only; the ONE merge relaxes the 
   assert.match(recipe.cleanupScript(), /--remove-label ready-for-agent/);
 });
 
-type Json = Record<string, any>;
+/** The saved results of one run, as this test builds, reads and alters them (the recipe's verdict input). */
+type Code = { code: string };
+type HistoryEntry = { event: string; detail?: string };
+type PhaseEvent = { call: string; at?: string; role?: string; executionId?: string; purpose?: string; context?: { phaseId: string } };
+type ExecutionEnd = { at?: string; outcome?: string; cessation?: string; code?: string };
+type SavedExecution = { executionId: string; request: { repair: { reasons?: Code[]; humanTips?: string[] } }; start?: { confirmedAt: string }; end?: ExecutionEnd;
+  slot?: { held: boolean } };
+type InspectedWork = { ticket: { number: number }; history: HistoryEntry[]; previousExecutions: SavedExecution[]; execution: SavedExecution | null };
+type Secrets = { storage: boolean; sessions: boolean; observations: boolean };
+type SavedRun = {
+  close: { status: string; events: PhaseEvent[]; work: { result: string; delivery: null; cancellation: null } };
+  'cancel-merge': { status: string; cancelReceipt: { outcome: string; reason: string | null }; events: PhaseEvent[];
+    work: { result: string; cancellation: { executionId: string } | null; delivery: { merge: { mergedAt: string; duringActivity: string | null } };
+      history: HistoryEntry[]; previousExecutions: SavedExecution[]; execution: SavedExecution & { slot: { held: boolean } } } };
+  inspect: { works: InspectedWork[]; pushViolations: string[]; sessions: { tokenPattern: boolean }[]; secretScan: Secrets };
+};
 const T0 = '2026-11-18T10:00:00.000Z', T1 = '2026-11-18T10:01:00.000Z', T2 = '2026-11-18T10:02:00.000Z';
-function passing(): Json {
+function passing(): SavedRun {
   return {
     close: { status: 'success', events: [{ call: 'activate', context: { phaseId: 'builder-continuation' } }], work: { result: 'closed-unmerged', delivery: null, cancellation: null } },
     'cancel-merge': { status: 'success', cancelReceipt: { outcome: 'accepted', reason: null }, events: [],
@@ -133,7 +148,7 @@ function passing(): Json {
       pushViolations: [], sessions: [{ tokenPattern: false }], secretScan: { storage: false, sessions: false, observations: false } },
   };
 }
-const failing = (saved: Json) => recipe.verdictOf(saved as never).checks.filter(item => !item.met).map(item => item.id);
+const failing = (saved: SavedRun) => recipe.verdictOf(saved as never).checks.filter(item => !item.met).map(item => item.id);
 
 test('verdict: V-04.e, V-10.g and V-13.g met by a consistent saved run; merge-first is an accepted order', () => {
   assert.deepEqual(failing(passing()), []);
@@ -146,10 +161,10 @@ test('verdict: V-04.e, V-10.g and V-13.g met by a consistent saved run; merge-fi
 
 test('q34-ghadv-s-v2 (D-12): the owner-shutdown aborts AFTER the repair completed are not an interruption; an abort before its end still fails', () => {
   const v2 = passing();
-  const repair = v2.inspect.works[0].previousExecutions[0];
+  const repair = v2.inspect.works[0]!.previousExecutions[0]!;
   repair.executionId = '0b523339-f7ef-40b2-9163-e6c144f6626e';
   repair.end = { at: '2026-11-18T09:00:20.996Z', outcome: 'completed', cessation: 'confirmed' };
-  v2.inspect.works[0].history[0].detail = '#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e';
+  v2.inspect.works[0]!.history[0]!.detail = '#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e';
   for (const role of ['builder', 'standards', 'spec']) v2.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role, executionId: repair.executionId });
   assert.ok(!failing(v2).includes('closed-during-repair-not-ceased-not-delivered-not-cancelled'), 'the v2 run meets V-04.e');
   assert.equal(abortsBeforeEnd(v2.close.events, repair), 0);
@@ -161,9 +176,9 @@ test('q34-ghadv-s-v2 (D-12): the owner-shutdown aborts AFTER the repair complete
 });
 
 test('verdict sensitivity: each obligation fails when its observation is altered', () => {
-  const cases: [string, (saved: Json) => void][] = [
+  const cases: [string, (saved: SavedRun) => void][] = [
     ['closed-during-repair-not-ceased-not-delivered-not-cancelled', saved => saved.close.events.push({ call: 'activity-aborted' })],
-    ['closed-during-repair-not-ceased-not-delivered-not-cancelled', saved => { saved.inspect.works[0].history[0].detail = '#9'; }],
+    ['closed-during-repair-not-ceased-not-delivered-not-cancelled', saved => { saved.inspect.works[0]!.history[0]!.detail = '#9'; }],
     ['pull-request-ended-during-repair', saved => { saved['cancel-merge'].work.delivery.merge.mergedAt = '2026-11-18T10:05:00.000Z'; }],
     ['pull-request-ended-during-repair', saved => saved['cancel-merge'].events.push({ call: 'activate', at: T2, context: { phaseId: 'builder-publication' } })],
     ['cancel-concurrent-with-merge', saved => { saved['cancel-merge'].work.result = 'cancelled'; }],

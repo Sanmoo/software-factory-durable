@@ -27,13 +27,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const execution = executionDoubles(remote, scripts);
   // Calendar of the persisted recovery waits (ticket 26): advanced by the test, never slept.
   execution.ports.calendar = { now: () => Date.now() + skew.ms };
-  let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   const time = manualClock();
   const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'], factoryApp: async () => app },
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
-  current = { control, stop, running: control.run(stop.signal), time };
+  const current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } = { control, stop, running: control.run(stop.signal), time };
   await time.sleeping();
   t.after(async () => { if (!current!.stop.signal.aborted) { current!.stop.abort(); await current!.running; } });
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView;

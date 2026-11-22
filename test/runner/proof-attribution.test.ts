@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { attribute, failingGates } from '../../scripts/test-runner/proof-attribution.ts';
+import { analyzedExactly, attribute, failingGates } from '../../scripts/test-runner/proof-attribution.ts';
 
 const report = (...failures: string[]) => [...failures.map(line => `FAILURE: ${line}`), failures.length ? 'RESULT: FAIL' : 'RESULT: PASS'].join('\n');
 
@@ -20,4 +20,12 @@ test('another failing gate, an unattributed failure, a green run or a crash prov
   assert.match(attribute({ exitCode: 0, report: report() }, 'Types', 'src/a.ts').reason, /stayed green/);
   assert.match(attribute({ exitCode: 2, report: 'DEPENDENCIES_MISMATCH: run npm ci' }, 'Types', 'src/a.ts').reason, /did not complete a report/);
   assert.match(attribute({ exitCode: null, report: '' }, 'Types', 'src/a.ts').reason, /did not complete a report/);
+});
+
+test('a changed-set proof counts only when the gate analyzed exactly the declared files', () => {
+  const line = 'static: tsc 1.0 s, eslint (changed: src/a.ts, src/b.ts) 1.0 s FAILED, guide-pointers 0.1 s';
+  assert.deepEqual(analyzedExactly('static: tsc 1.0 s, eslint (changed: src/a.ts) 1.0 s FAILED', 'eslint', ['src/a.ts']), { ok: true, analyzed: ['src/a.ts'] });
+  assert.deepEqual(analyzedExactly(line, 'eslint', ['src/a.ts']), { ok: false, analyzed: ['src/a.ts', 'src/b.ts'] });
+  assert.deepEqual(analyzedExactly('static: eslint 3.0 s', 'eslint', ['src/a.ts']), { ok: false, analyzed: 'unavailable' }, 'a whole-tree run is not the declared scope');
+  assert.deepEqual(analyzedExactly('static: eslint (no changed files) 0.0 s', 'eslint', ['src/a.ts']), { ok: false, analyzed: 'unavailable' }, 'an empty scope never counts');
 });

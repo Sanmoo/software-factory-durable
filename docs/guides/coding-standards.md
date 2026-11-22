@@ -10,6 +10,7 @@
 
 ## Onde estão os fatos
 
-- Linter e regras de carregamento: [eslint.config.mjs](../../eslint.config.mjs).
+- Linter (conjunto `recommended` do typescript-eslint, a convenção de `_` para bindings mantidos de propósito e as regras de carregamento): [eslint.config.mjs](../../eslint.config.mjs).
+- Termos evitados: as linhas _Avoid_ do [GLOSSARY.md](../../GLOSSARY.md), lidas pelo [checker](../../scripts/test-runner/avoided-terms.ts).
 - Tipos estritos: [tsconfig.json](../../tsconfig.json).
 - Quais quality gates existem e sobre qual escopo: [scripts/test-runner/policy.json](../../scripts/test-runner/policy.json).

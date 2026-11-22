@@ -34,6 +34,8 @@ export interface Steps {
   sandboxRoot(): Promise<{ path: string; cleanup(): Promise<void> }>;
   runDirectory(): Promise<{ path: string; cleanup(): Promise<void> }>;
   runFile(file: string, run: FileRun, signal: AbortSignal): Promise<FileResult>;
+  /** The Dependency vulnerabilities check (npm audit over the lockfile), run when the plan selects it. */
+  audit(signal: AbortSignal): Promise<StepResult>;
 }
 
 export interface Outcome { exitCode: number; report: string }
@@ -65,7 +67,7 @@ function staticFailures(steps: readonly StepResult[], policy: Policy): string[] 
 }
 
 const isDocumentation = (policy: Policy, change: Change) =>
-  change.widened === undefined && change.files.every(file => matchesAny(file, policy.documentation));
+  change.widened === undefined && change.files.every(file => matchesAny(file, policy.documentation) && !matchesAny(file, policy.sharedConfiguration));
 
 /** Preconditions (deps, manifest, policy) → lock (ci/full) → budget clock → static → [selection] → lanes → report. */
 export async function runTier(options: RunOptions, steps: Steps): Promise<Outcome> {
@@ -109,6 +111,15 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
           summary.validation.inconclusive = `required validation is estimated at ${Math.round(summary.validation.estimatedSeconds)} s, over the approved`
             + ` ${policy.budgetSeconds} s budget; the affected tests were not started and stay unverified. Decision needed: approve a wider budget in`
             + ' scripts/test-runner/policy.json for this change, or split it.';
+        }
+        // Dependency vulnerabilities runs before the tests when the plan selects it; its failure stops validation by change like a static one.
+        if (plan.entries.some(entry => entry.check.id === 'vulnerabilities' && entry.decision === 'run') && !controller.signal.aborted
+          && summary.validation.inconclusive === undefined) {
+          const audited = await steps.audit(controller.signal);
+          summary.static.push(audited);
+          if (!audited.ok && audited.output) steps.log(audited.output.trimEnd());
+          summary.failures.push(...staticFailures([audited], policy));
+          outcomes.vulnerabilities = audited.ok ? 'passed' : 'failed';
         }
       }
       const proceed = !controller.signal.aborted && summary.validation?.inconclusive === undefined && (mode === 'integral' || !summary.failures.length);

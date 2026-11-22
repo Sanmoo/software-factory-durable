@@ -10,7 +10,7 @@ import { authorizationChange, authorizationFacts, cancelDecision, cycleImpedimen
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
 import { noProgressCode } from '../rules/boot-rotation.js';
 import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
-import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { readWork, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';

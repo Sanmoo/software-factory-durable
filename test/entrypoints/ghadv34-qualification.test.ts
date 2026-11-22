@@ -207,8 +207,34 @@ test('human scripts: exact, fail-fast, operator-only; merges only with the rules
 });
 
 const H = sha('h'), B2 = sha('b');
-type Json = Record<string, any>;
-function passing(): Json {
+/** The saved results of one run, as this test builds, reads and alters them (the recipe's verdict input). */
+type Code = { code: string };
+type HistoryEntry = { event: string; detail?: string };
+type PhaseEvent = { call: string; at?: string; role?: string; executionId?: string; purpose?: string; context?: { phaseId: string } };
+type ExecutionEnd = { at?: string; outcome?: string; cessation?: string; code?: string };
+type SavedExecution = { executionId: string; request: { repair: { reasons?: Code[]; humanTips?: string[] } }; start?: { confirmedAt: string }; end?: ExecutionEnd;
+  slot?: { held: boolean } };
+type InspectedWork = { ticket: { number: number }; history: HistoryEntry[]; previousExecutions: SavedExecution[]; execution: SavedExecution | null };
+type Secrets = { storage: boolean; sessions: boolean; observations: boolean };
+type SavedRun = {
+  foreign: { status: string; hold: { pullRequests: { number: number }[] }; events: PhaseEvent[] };
+  strangers: { status: string; events: PhaseEvent[] };
+  withdraw: { status: string; events: PhaseEvent[]; work: { feedback: { ignored: Code[] } } };
+  resume: { status: string; resumeReceipt: { outcome: string } };
+  conflict: { status: string };
+  'merge-repair': { status: string; events: PhaseEvent[];
+    work: { delivery: { merge: { duringActivity: string } }; previousExecutions: SavedExecution[]; execution: SavedExecution & { end: ExecutionEnd } } };
+  close: { status: string; events: PhaseEvent[]; work: { result: string; delivery: null; cancellation: null } };
+  'cancel-merge': { status: string; cancelReceipt: { outcome: string; reason: string | null };
+    work: { result: string; cancellation: { executionId: string } | null; history: HistoryEntry[]; previousExecutions: SavedExecution[];
+      execution: SavedExecution & { slot: { held: boolean } } } };
+  steps: Record<number, { sha: string }>;
+  inspect: { works: InspectedWork[]; lastHoldA: Code;
+    questionsB: { recordedFrom: string; ignored: Code[]; answer: { text: string; author: { login: string } } }[];
+    compare: { baseToConflictHead: { value: { behind_by: number; commits: { parents: object[] }[] } }; humanToConflictHead: { value: { behind_by: number } } };
+    pushViolations: string[]; sessions: { tokenPattern: boolean }[]; secretScan: Secrets };
+};
+function passing(): SavedRun {
   return {
     foreign: { status: 'success', hold: { pullRequests: [{ number: 7 }] }, events: [] },
     strangers: { status: 'success', events: [] },
@@ -235,7 +261,7 @@ function passing(): Json {
       pushViolations: [], sessions: [{ tokenPattern: false }], secretScan: { storage: false, sessions: false, observations: false } },
   };
 }
-const failing = (saved: Json) => recipe.verdictOf(saved as never).checks.filter(item => !item.met).map(item => item.id);
+const failing = (saved: SavedRun) => recipe.verdictOf(saved as never).checks.filter(item => !item.met).map(item => item.id);
 
 test('verdict: every obligation met by a consistent saved run; merge-first is an accepted order of V-13.g', () => {
   assert.deepEqual(failing(passing()), []);
@@ -249,18 +275,18 @@ test('verdict: every obligation met by a consistent saved run; merge-first is an
 });
 
 test('verdict sensitivity: each obligation fails when its observation is altered', () => {
-  const cases: [string, (saved: Json) => void][] = [
+  const cases: [string, (saved: SavedRun) => void][] = [
     ['foreign-reported-not-adopted', saved => saved.inspect.works.push({ ticket: { number: 101 }, history: [], previousExecutions: [], execution: null })],
     ['close-withdraws-reopen-does-not-redispatch', saved => saved.withdraw.events.push({ call: 'activate' })],
-    ['only-explicit-resume-continues', saved => { saved.inspect.works[0].history = saved.inspect.works[0].history.filter((item: Json) => item.event !== 'resume-confirmed'); }],
+    ['only-explicit-resume-continues', saved => { saved.inspect.works[0]!.history = saved.inspect.works[0]!.history.filter(item => item.event !== 'resume-confirmed'); }],
     ['closed-during-activity-not-ceased-not-delivered-not-cancelled', saved => saved.close.events.push({ call: 'activity-aborted' })],
-    ['closed-during-activity-not-ceased-not-delivered-not-cancelled', saved => { saved.inspect.works[1].history[0].detail = '#5'; }],
+    ['closed-during-activity-not-ceased-not-delivered-not-cancelled', saved => { saved.inspect.works[1]!.history[0]!.detail = '#5'; }],
     ['merge-of-base-with-human-commit', saved => { saved.inspect.compare.baseToConflictHead.value.commits = [{ parents: [{}] }]; }],
     ['merge-of-base-with-human-commit', saved => { saved.inspect.compare.humanToConflictHead.value.behind_by = 1; }],
     ['merge-during-repair-delivers-and-interrupts', saved => saved['merge-repair'].events.push({ call: 'issue', purpose: 'builder-publish' })],
     ['merge-during-repair-delivers-and-interrupts', saved => { saved['merge-repair'].work.execution.end.code = 'WORK_CANCELLED'; }],
-    ['bot-and-non-operator-ignored', saved => { saved.inspect.questionsB[0].ignored = [{ code: 'AUTHOR_IS_BOT' }, { code: 'QUESTION_ALREADY_ANSWERED' }]; }],
-    ['prose-insufficient-repeated-grant-nothing', saved => { saved.inspect.questionsB[0].answer.text = 'beta'; }],
+    ['bot-and-non-operator-ignored', saved => { saved.inspect.questionsB[0]!.ignored = [{ code: 'AUTHOR_IS_BOT' }, { code: 'QUESTION_ALREADY_ANSWERED' }]; }],
+    ['prose-insufficient-repeated-grant-nothing', saved => { saved.inspect.questionsB[0]!.answer.text = 'beta'; }],
     ['cancel-concurrent-with-merge', saved => { saved['cancel-merge'].work.result = 'cancelled'; }],
     ['cancel-concurrent-with-merge', saved => { saved['cancel-merge'].work.execution.slot.held = true; }],
     ['no-secret', saved => { saved.inspect.secretScan.sessions = true; }],
@@ -369,7 +395,7 @@ test('v5: every held end names its reason (holdReason)', () => {
 
 test('q34-ghadv-s-v2 (D-12): V-04.e ignores aborts recorded after the closed repair ended (the recipe owner shutdown)', () => {
   const saved = passing();
-  saved.inspect.works[1].previousExecutions[0].end = { outcome: 'completed', at: '2026-11-18T09:00:20.996Z' };
+  saved.inspect.works[1]!.previousExecutions[0]!.end = { outcome: 'completed', at: '2026-11-18T09:00:20.996Z' };
   saved.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
   assert.ok(!failing(saved).includes('closed-during-activity-not-ceased-not-delivered-not-cancelled'));
   saved.close.events.push({ at: '2026-11-18T09:00:00.000Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });

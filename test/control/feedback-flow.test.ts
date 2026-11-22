@@ -175,7 +175,7 @@ test('AC4: a request withdrawn before the start of a correction of its own withd
 test('AC4/AC5/AC6/AC7: feedback during the repair accumulates for its next safe activation — same correction, preserved charge, no interruption, no duplicate; repair/resume during activity answer by phase', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
   const receipts: Promise<unknown>[] = [];
-  let control!: Control, workId = '';
+  let workId = '';
   // During the repair activation an operator submits a SECOND review and both an explicit CLI repair and a resume arrive.
   const during = (target: Remote) => {
     reviewsOf(target).reviews!.push(review('CHANGES_REQUESTED', operator, first, 'Also add an example to docs/b.md.'));
@@ -186,7 +186,7 @@ test('AC4/AC5/AC6/AC7: feedback during the repair accumulates for its next safe 
   const h = await harness(t, remote, [{ kind: 'implement', head: first }, { kind: 'publish', publish: publishAt(first), end: 'success' },
     { kind: 'implement', head: second, during }, { kind: 'publish', publish: publishAt(second), end: 'success' },
     { kind: 'implement', head: third }, { kind: 'publish', publish: publishAt(third), end: 'success' }]);
-  control = h.control;
+  const control: Control = h.control;
   await h.settle(work => work.publication?.state === 'published', 'publication');
   workId = (await h.work()).work_id;
   observe(remote, first);

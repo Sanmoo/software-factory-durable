@@ -191,10 +191,8 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (nativeEdit) editChild = child;
   if (nativeOAuth) {
     const send = child.send.bind(child);
-    let acknowledgements = 0;
     child.send = ((message: unknown, ...args: unknown[]) => {
       if (message && typeof message === 'object' && 'kind' in message && message.kind === 'worker-secret-ack') {
-        acknowledgements++;
         audit('secret-ack-attempt'); // metadata ONLY, before assertions/delegate
         if (nativeOAuth === 'held-ack') return true;
         if (nativeOAuth === 'rotation-ack-fail' && JSON.parse(fs.readFileSync(join(root!, 'credentials', 'chatgpt.json'), 'utf8')).openai.access === 'oauth-access-rotated') {

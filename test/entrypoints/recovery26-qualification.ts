@@ -174,7 +174,6 @@ async function child(step: Step) {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } } });
   const real = createBuilderCredentials({ github, repositories: [repository] });
   let issued = 0, prepared = 0, activated = 0;
-  let control: Awaited<ReturnType<typeof openControl>>;
   const allowed = async (workId: string) => {
     const shown = await control.inspect({ kind: 'show', work_id: workId });
     return 'work' in shown && shown.work.ticket.number === expectedTicket.number && shown.work.ticket.repositoryId === expectedTicket.repositoryId;
@@ -211,7 +210,7 @@ async function child(step: Step) {
       async deliver(worker, directive) { const result = await workers.deliver(worker, directive); log({ call: 'deliver', directive: directive.kind, result }); return result; },
       async observeStart(input) { const result = await workers.observeStart(input); log({ call: 'observe-start', input, result }); return result; },
     } };
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: inventory,
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: inventory,
     access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: pollingSeconds }, execution: ports });
   const stop = new AbortController();
   process.on('SIGTERM', () => stop.abort());

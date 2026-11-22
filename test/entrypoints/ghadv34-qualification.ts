@@ -750,7 +750,6 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
     if (!allowed) throw new Error('RECIPE_WRITE_GUARD');
     return rawTracker.postComment(ticketRef, comment, effect);
   } };
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const listView = async () => (await control.inspect({ kind: 'list' })) as ListView;
   const workIn = (view: ListView | null) => view?.works.find(item => item.ticket.number === number);
   let currentWork: string | null = null;
@@ -770,7 +769,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
       return codeRepository.reopenPullRequest(pr, effect);
     } };
   delete (repositoryPort as { cleanupBranch?: unknown }).cleanupBranch;
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repositories: [repository], dependencyRepositories: [], operators, factoryApp: () => github.appIdentity(repository), repository: repositoryPort as never },
     polling: { intervalSeconds: pollingSeconds },
     execution: { configuration, capacity: 1, builder: { skillPack, modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 }, reviews: { reviewer, rounds },

@@ -235,7 +235,7 @@ async function mountFacts(candidate: string): Promise<MountFacts> {
   const backingFile = loop ? (await fs.readFile(`/sys/block/${loop}/loop/backing_file`, 'utf8').catch(() => null))?.trim() ?? null : null;
   const statfs = await fs.statfs(real, { bigint: true }).then(value => ({ type: `0x${value.type.toString(16)}`, totalBytes: Number(value.blocks * value.bsize), availableBytes: Number(value.bavail * value.bsize) }), () => null);
   const info = await fs.stat(real).catch(() => null);
-  const imageInfo = await fs.stat(image).catch(() => null);
+  await fs.stat(image).catch(() => null);
   return { candidate: real, entry, backingFile, imagePath: await fs.realpath(image).catch(() => image), statfs, mountDev: info?.dev ?? null,
     homeDev: (await fs.stat(`/home/${user}`)).dev, rootDev: (await fs.stat('/')).dev, owner: info ? { uid: info.uid, mode: info.mode & 0o777 } : null, uid: process.getuid?.() ?? -1,
     entries: await fs.readdir(real).catch(() => []), ...await imageFacts() };

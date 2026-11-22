@@ -397,7 +397,6 @@ async function child(step: Step) {
   const builderCredentials = createBuilderCredentials({ github, repositories: [repository] });
   const guard = activationGuard(step);
   let posted = 0, prepared = 0, firstBuilder = true, opinionCut = false;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }), line);
   // Every method bound explicitly to the real tracker; each line's owner sees ONLY its own Ticket in the label listing.
   const guardedTracker: IssueTracker = { checkAccess: scope => tracker.checkAccess(scope), async listCandidates(scope) {
@@ -418,7 +417,7 @@ async function child(step: Step) {
     log({ call: 'post-returned', questionId, kind: result.kind, commentId: result.kind === 'published' ? result.commentId : null });
     return result;
   } };
-  control = await openControl({ storagePath: `${directory}/control.sqlite`, runtimeInventory: { kind: 'listed', observedAt: new Date().toISOString(), ...listed },
+  const control = await openControl({ storagePath: `${directory}/control.sqlite`, runtimeInventory: { kind: 'listed', observedAt: new Date().toISOString(), ...listed },
     access: { tracker: guardedTracker, repositories: [repository], dependencyRepositories: [], operators: preflight.operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), readPullRequest: query => codeRepository.readPullRequest(query),
         setDraft: async () => ({ kind: 'known-failure' as const, observedAt: new Date().toISOString(), code: 'RECIPE_NO_READINESS', nextStep: 'This recipe never converts draft/ready; nothing was sent.', revocation: 'not-issued' }),

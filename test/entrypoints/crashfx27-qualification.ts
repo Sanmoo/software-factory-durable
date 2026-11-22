@@ -276,7 +276,6 @@ async function child(step: Step) {
   const guard = activationGuard(step);
   const kill = (cut: string, detail: Record<string, unknown>) => { log({ call: 'cut', cut, ...detail }); process.kill(process.pid, 'SIGKILL'); };
   let posted = 0, prepared = 0, publishGrants = 0;
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
   // Every method bound explicitly to the real tracker (never an object spread that could drop prototype methods or `this`).
   const guardedTracker: IssueTracker = { checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope),
@@ -301,7 +300,7 @@ async function child(step: Step) {
     return new Promise<never>(() => {});
   } };
   const plannedBuilders = builderSequence[step].length;
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: inventory,
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: inventory,
     access: { tracker: guardedTracker, repositories: [repository], dependencyRepositories: [], operators: preflight.operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), readPullRequest: query => codeRepository.readPullRequest(query),
         setDraft: async () => ({ kind: 'known-failure' as const, observedAt: new Date().toISOString(), code: 'RECIPE_NO_READINESS', nextStep: 'This recipe never converts draft/ready; nothing was sent.', revocation: 'not-issued' }),

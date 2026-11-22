@@ -644,11 +644,10 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   const grants = grantGuard(phase);
   const conversions = conversionGuard(phase);
   const counts = { activations: 0, prepared: 0, conversions: 0, refusedConversions: 0 };
-  let control!: Awaited<ReturnType<typeof openControl>>;
   const all = () => listAll(cursor => control.inspect({ kind: 'list', cursor, limit: 50 }));
   const shown = async () => workOf(await all(), number);
   const numberOf = async (workId: string) => (await all()).works.find(item => item.work_id === workId)?.ticket.number ?? 0;
-  control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
+  const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repositories: [repository], dependencyRepositories: [], operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base),
         async readPullRequest(query) { const result = await codeRepository.readPullRequest(query); log({ call: 'read-pull-request', unless: Boolean(query.unless), kind: result.kind,

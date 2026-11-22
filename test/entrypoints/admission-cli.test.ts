@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld, issue, pull } from './github-world-fixture.js';
 import { ended, killTree, until } from '../runner/budget.js';
+import type { ControlStatus, ListView, ShowView } from '../../src/control/index.js';
 
 // Composition: real CLI, controller owner under flock, protocol socket, Pi Durable/SQLite, adapters, issuer and gh transport.
 // Only gh/GitHub (and the App HTTPS endpoints) are substituted by the local world fixture: NOT evidence of the real GitHub boundary.
@@ -20,7 +21,8 @@ function invoke(root: string, args: string[], fixturePath: string) {
   child.stderr.on('data', data => { stderr += String(data); });
   return { child, result: ended(child, () => `factory ${args[0]} (stderr: ${stderr.slice(-300)})`).then(({ code }) => ({ code, stdout, stderr })) };
 }
-type Json = Record<string, any>;
+/** The `--json` view each CLI command prints (the Control's inspection views). */
+type Views = { list: ListView; status: ControlStatus; show: ShowView };
 
 test('CLI list/show expose one durable Work per eligible Ticket across repeated polling and controller restart', async t => {
   const world = await githubWorld(t, { issues: [issue(1), issue(2), issue(3, { labels: [] })], pulls: [pull(20, { body: 'Fixes #2' })] });
@@ -29,9 +31,9 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   await writeFile(join(root, 'config.yaml'), (await readFile(join(root, 'config.yaml'), 'utf8'))
     .replace('credentials/unused.pem', 'credentials/app.pem')
     .replace('repositories: []', 'repositories: [{repository: acme/project, base: main, installationId: 2, workflows: false}]\npollingSeconds: 1'));
-  const cli = async (...args: string[]) => {
+  const cli = async <Command extends keyof Views>(...args: [Command, ...string[]]) => {
     const result = await invoke(root, args, root).result;
-    return { ...result, json: result.stdout ? JSON.parse(result.stdout) as Json : undefined };
+    return { ...result, json: result.stdout ? JSON.parse(result.stdout) as Views[Command] : undefined };
   };
   const unavailable = await cli('list');
   assert.equal(unavailable.code, 3);
@@ -65,16 +67,16 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   const view = listed.json!;
   assert.equal(view.kind, 'list');
   assert.equal(view.dispatch, 'closed');
-  assert.deepEqual(view.works.map((work: Json) => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
+  assert.deepEqual(view.works.map(work => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
     [[1, 7001, 'I_node1', 3, 1]]);
-  const work = view.works[0];
+  const work = view.works[0]!;
   assert.deepEqual(work.dispatch.reasons, ['EXECUTION_NOT_ENABLED'], 'no native blocker: only the execution barrier holds');
-  assert.equal(work.dependencies.latest.conclusion, 'satisfied');
-  const candidates = view.polling.repositories[0].candidates as Json[];
+  assert.equal(work.dependencies.latest!.conclusion, 'satisfied');
+  const candidates = view.polling.repositories[0]!.candidates!;
   const foreign = candidates.find(candidate => candidate.ticket.number === 2)!;
   assert.equal(foreign.outcome, 'held');
-  assert.equal(foreign.holds[0].code, 'FOREIGN_PULL_REQUEST');
-  assert.deepEqual(foreign.holds[0].pullRequests.map((pr: Json) => [pr.number, pr.pullRequestId]), [[20, 9020]]);
+  assert.equal(foreign.holds[0]!.code, 'FOREIGN_PULL_REQUEST');
+  assert.deepEqual(foreign.holds[0]!.pullRequests!.map(pr => [pr.number, pr.pullRequestId]), [[20, 9020]]);
   assert.equal(candidates.some(candidate => candidate.ticket.number === 3), false);
   const shown = await cli('show', work.work_id);
   assert.equal(shown.code, 0, shown.stderr);
@@ -90,7 +92,7 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   await world.update(state => { state.pulls = []; });
   running = await owner(3);
   const after = (await cli('list')).json!;
-  assert.deepEqual(after.works.map((item: Json) => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]), [[true, 1, 1], [false, 2, 2]]);
+  assert.deepEqual(after.works.map(item => [item.work_id === work.work_id, item.ticket.number, item.queue.sequence]), [[true, 1, 1], [false, 2, 2]]);
   const status = (await cli('status')).json!;
   assert.deepEqual([status.works.total, status.queues.normal, status.historyLength, status.polling.intervalSeconds], [2, 2, 0, 1]);
   await running.stop();

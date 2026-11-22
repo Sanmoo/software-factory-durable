@@ -29,6 +29,7 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
     headCommit: async () => 'abc',
     acquireLock: async tier => { events.push(`lock ${tier}`); return { waitedMs: 5000, release: () => events.push('release') }; },
     staticAnalysis: async tier => { events.push(`static ${tier}`); clock += 1000; return [{ name: 'tsc', ms: 1000, ok: true }]; },
+    audit: async () => { events.push('audit'); return { name: 'npm audit', ms: 1, ok: true, check: 'vulnerabilities', findings: [] }; },
     listTests: async () => ['test/a.test.ts', 'test/slow.test.ts', 'test/serial.test.ts'],
     loadTimings: async () => ({}),
     saveTimings: async () => { events.push('timings'); },
@@ -193,11 +194,12 @@ test('static stage: depcruise waits for compile (staged SDK, build output), the 
       compile: async () => { events.push('compile start'); await compiled; events.push('compile end'); return [{ name: 'tsc', ms: 1, ok: true }]; },
       lint: async () => { events.push('lint'); return { name: 'eslint', ms: 1, ok: true }; },
       depcruise: async () => { events.push('depcruise'); return [{ name: 'depcruise', ms: 1, ok: true }]; },
-      pointers: async () => { events.push('pointers'); return { name: 'guide-pointers', ms: 1, ok: true }; } });
+      pointers: async () => { events.push('pointers'); return { name: 'guide-pointers', ms: 1, ok: true }; },
+      avoided: async () => { events.push('avoided'); return { name: 'avoided-terms', ms: 1, ok: true }; } });
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(!events.includes('depcruise') && events.includes('lint') && events.includes('pointers'), `staged=${staged}`);
     finishCompile();
-    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise', 'guide-pointers']);
+    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise', 'guide-pointers', 'avoided-terms']);
     assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
   }
 });

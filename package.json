@@ -34,7 +34,8 @@
     "@typescript-eslint/parser": "8.72.1",
     "dependency-cruiser": "18.7.2",
     "eslint": "10.14.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
   },
   "imports": {
     "#factory-pi": {

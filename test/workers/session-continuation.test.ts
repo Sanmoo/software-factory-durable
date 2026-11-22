@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { SessionManager } from '#factory-pi';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
-import { createWorkers } from '../../src/workers/index.js';
+import { createWorkers, type WorkerQuestion } from '../../src/workers/index.js';
 import { builderToolNames } from '../../src/workers/session-ref.js';
 import { copyPreservedSession, launchToolNames, observePreservedSession, readSessionFile } from '../../src/platform/host/index.js';
 import { skillPackContinues } from '../../src/workers/skill-pack.js';
@@ -24,6 +24,8 @@ const provider = { providerId: 'offline-fixture', modelId: 'reader', apiKey: 'sy
   provider: { api: 'openai-completions' as const, baseUrl: 'https://offline.invalid', models: [{ id: 'reader', name: 'Reader', reasoning: false, input: ['text' as const],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } };
 const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+/** A worker IPC message as this test reads it (fields present only on some kinds). */
+type WorkerMessage = Record<string, unknown> & { question?: WorkerQuestion; receipt?: { id: string } };
 
 async function installation(t: { after(fn: () => Promise<void>): void }) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'factory-session-')));
@@ -50,10 +52,10 @@ async function runWorker(t: { after(fn: () => Promise<void>): void }, paths: { d
     execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL(`./fixtures/${preload}`, import.meta.url))],
     env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(paths.directory, 't'), XDG_CACHE_HOME: join(paths.directory, 'c') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   t.after(async () => { if (child.exitCode === null) child.kill(); });
-  const messages: Record<string, any>[] = [];
-  child.on('message', (message: Record<string, any>) => {
+  const messages: WorkerMessage[] = [];
+  child.on('message', (message: WorkerMessage) => {
     messages.push(message);
-    if (message.kind === 'worker-question') child.send({ kind: 'worker-question-ack', version: 1, context, questionId: message.question.questionId, status: 'recorded' });
+    if (message.kind === 'worker-question') child.send({ kind: 'worker-question-ack', version: 1, context, questionId: message.question!.questionId, status: 'recorded' });
   });
   const exited = once(child, 'exit');
   child.send(bootstrap);
@@ -119,9 +121,9 @@ test('AC1: a preserved Builder session is observed by its owner, found compatibl
   assert.equal(next.sessionId, ref.sessionId, 'same session identity, new content hash');
   assert.notEqual(next.sha256, ref.sha256);
   // The start receipt records the session format and the continuation identity (spec §6.1: "formato de sessão por Execução").
-  const receipt = JSON.parse(await readFile(join(continued.recordsRoot, 'continue-work', 'evidence', continued.result!.receipt.id, 'output'), 'utf8')).event;
+  const receipt = JSON.parse(await readFile(join(continued.recordsRoot, 'continue-work', 'evidence', continued.result!.receipt!.id, 'output'), 'utf8')).event;
   assert.deepEqual(receipt.session, { format: 'pi-session-jsonl-v3', mode: 'continue', sessionId: ref.sessionId, sha256: ref.sha256 });
-  const fresh = JSON.parse(await readFile(join(asked.recordsRoot, 'continue-work', 'evidence', asked.result!.receipt.id, 'output'), 'utf8')).event;
+  const fresh = JSON.parse(await readFile(join(asked.recordsRoot, 'continue-work', 'evidence', asked.result!.receipt!.id, 'output'), 'utf8')).event;
   assert.deepEqual(fresh.session, { format: 'pi-session-jsonl-v3', mode: 'new' });
 });
 

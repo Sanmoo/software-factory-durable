@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { readCruise } from './architecture.ts';
 import { changedSet, gitIn } from './changes.ts';
+import { avoidedTerms, findAvoided } from './avoided-terms.ts';
 import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
 import { acquireMachineLock, machineLockPath } from './lock.ts';
@@ -66,6 +67,7 @@ export interface StaticParts {
   lint(): Promise<StepResult>;
   depcruise(): Promise<StepResult[]>;
   pointers(): Promise<StepResult>;
+  avoided(): Promise<StepResult>;
 }
 
 /**
@@ -74,10 +76,13 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed] = await Promise.all([compiling, parts.lint(),
-    compiling.then(() => parts.depcruise()), parts.pointers()]);
-  return [...compiled, linted, ...cruised, pointed];
+  const [compiled, linted, cruised, pointed, avoided] = await Promise.all([compiling, parts.lint(),
+    compiling.then(() => parts.depcruise()), parts.pointers(), parts.avoided()]);
+  return [...compiled, linted, ...cruised, pointed, avoided];
 }
+
+/** The files a changed-set step analyzed, named in its report line so a Gate Proof can record them. */
+export const analyzedNames = (files: readonly string[]) => files.length <= 10 ? files.join(', ') : `${files.length} files`;
 
 const distFile = (source: string) => join('dist', source.replace(/\.ts$/, '.js'));
 
@@ -162,7 +167,7 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         if (tier !== 'fast') return linted('eslint', [...eslint, '.']);
         const files = await changedLintable(signal);
         if (files !== 'all' && !files.length) return { name: 'eslint (no changed files)', ms: 0, ok: true, check: 'lint' };
-        return linted(files === 'all' ? 'eslint' : `eslint (${files.length} changed)`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
+        return linted(files === 'all' ? 'eslint' : `eslint (changed: ${analyzedNames(files)})`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
       };
       const depcruise = async (): Promise<StepResult[]> => {
         const step = await tool('depcruise', ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'json', '.'], signal);
@@ -175,8 +180,23 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       };
       const compiled = async (): Promise<StepResult[]> => (await compile(tier, signal)).map(step => step.name.startsWith('tsc')
         ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step);
+      const avoided = async (): Promise<StepResult> => {
+        const started = Date.now();
+        const findings = await scanAvoidedTerms(root);
+        return { name: 'avoided-terms', ms: Date.now() - started, ok: !findings.length, check: 'avoided-terms', findings,
+          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
+      };
       return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
-        compile: compiled, lint, depcruise, pointers });
+        compile: compiled, lint, depcruise, pointers, avoided });
+    },
+    audit: async signal => {
+      const step = await execute('npm', ['audit', '--audit-level=high', '--json'], root, childEnv, signal)
+        .catch(error => ({ code: null, output: String(error), ms: 0 }));
+      const findings = auditFindings(step.output);
+      if (findings === undefined) return { name: 'npm audit', ms: step.ms, ok: false, check: 'vulnerabilities',
+        findings: [{ rule: 'audit-unavailable', location: step.output.slice(0, 160) }] };
+      return { name: 'npm audit', ms: step.ms, ok: !findings.length, check: 'vulnerabilities', findings,
+        output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
     },
     loadPolicy: async () => {
       const text = await readFile(join(root, 'scripts/test-runner/policy.json'), 'utf8');
@@ -226,4 +246,25 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       return result;
     },
   };
+}
+
+/** Identifiers of the tracked and untracked code under src/, test/ and scripts/ against GLOSSARY.md's _Avoid_ terms. */
+export async function scanAvoidedTerms(root: string): Promise<{ rule: string; location: string }[]> {
+  const terms = avoidedTerms(await readFile(join(root, 'GLOSSARY.md'), 'utf8'));
+  const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', 'src', 'test', 'scripts'], { cwd: root, encoding: 'utf8' }).split('\0');
+  const files = listed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file)));
+  const found: { rule: string; location: string }[] = [];
+  for (const file of files) found.push(...findAvoided(file, await readFile(join(root, file), 'utf8'), terms));
+  return found;
+}
+
+/** npm audit's JSON: one finding per vulnerable package at high or critical severity, or undefined when it is not an audit report. */
+export function auditFindings(output: string): { rule: string; location: string }[] | undefined {
+  try {
+    const report = JSON.parse(output) as { vulnerabilities?: Record<string, { severity: string; via: (string | { url?: string; title?: string })[] }> };
+    if (!report.vulnerabilities) return undefined;
+    return Object.entries(report.vulnerabilities).filter(([, item]) => item.severity === 'high' || item.severity === 'critical')
+      .map(([name, item]) => ({ rule: item.severity,
+        location: `${name} (${item.via.map(via => typeof via === 'string' ? via : via.url ?? via.title ?? '?').join(', ')})` }));
+  } catch { return undefined; }
 }
