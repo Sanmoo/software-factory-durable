@@ -53,4 +53,4 @@ Avaliação de um Ticket pelo Triager, anterior a qualquer Work e distinta de um
 Dono da leitura de tickets e de suas dependências nativas no GitHub.
 
 **Ticket**:
-Pedido e referência de especificação em um único repositório.
+Pedido e referência de especificação em um único repositório, composto pelo corpo e por seus comentários.
