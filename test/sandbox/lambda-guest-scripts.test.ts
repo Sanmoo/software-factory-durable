@@ -49,7 +49,8 @@ test('end-call ends the group of a dropped call whose members nobody reaps: zomb
   const [first] = await once(parent.stdout, 'data') as [Buffer];
   assert.equal(first.toString(), 'started\n');
   leader = Number(await readFile(callMarker(call), 'utf8'));
-  assert.deepEqual(processState(leader), { state: 'S', group: leader }, 'the marker names the leader of the call\'s own process group');
+  const before = processState(leader);
+  assert.ok(before && before.group === leader && before.state !== 'Z', `the marker names the living leader of the call's own process group: ${JSON.stringify(before)}`);
 
   const end = runProgram(endCallProgram(call));
   assert.deepEqual([end.status, end.stdout, end.stderr], [0, 'call-ended\n', '']);
