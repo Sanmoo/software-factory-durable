@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/index.js';
+import type { GitHubTicketRef } from '../../src/issue-tracker/index.js';
 import type { ExecutionPorts, ListView, ShowView, WorkView } from '../../src/control/index.js';
 import type { CodeRepository } from '../../src/code-repository/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';
@@ -409,7 +409,7 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name:
     const trace = (await fs.readFile(ghTrace, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { method: string | null; endpoint: string; allowed: boolean });
     const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${observations}/${name}`).catch(() => Buffer.alloc(0)))));
     const { tracker } = await compose([]);
-    const issue = cancelled ? await tracker.readTicket(githubOnly(cancelled.ticket)) : null;
+    const issue = cancelled ? await tracker.readTicket(cancelled.ticket as GitHubTicketRef) : null;
     await save('inspect-result', { works, issue, gh: { requests: trace.length, refused: trace.filter(item => !item.allowed), methods: [...new Set(trace.map(item => item.method))] },
       secretScan: { ghs: storage.includes(Buffer.from('ghs_')), privateKey: storage.includes(Buffer.from('PRIVATE KEY')) } });
     return;

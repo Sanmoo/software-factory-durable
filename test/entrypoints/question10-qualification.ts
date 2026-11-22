@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/index.js';
+import type { GitHubTicketRef } from '../../src/issue-tracker/index.js';
 import type { ExecutionPorts, ExecutionView, ListView, QuestionView, ShowView } from '../../src/control/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';
 
@@ -283,7 +283,7 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name:
   if (phase === 'inspect') {
     const { inspectEnvironment } = await import('./builder09-qualification.js');
     const { tracker } = await compose([]);
-    const comments = await tracker.readInputs(githubOnly(work.ticket), null);
+    const comments = await tracker.readInputs((work.ticket as GitHubTicketRef), null);
     const receipts: Record<string, string | null | { error: string }> = {};
     for (const execution of [...work.previousExecutions, work.execution]) {
       // Confined, bounded, no-follow reads of the protected start receipts.

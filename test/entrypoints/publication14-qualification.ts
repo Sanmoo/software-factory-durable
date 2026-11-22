@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/index.js';
+import type { GitHubTicketRef } from '../../src/issue-tracker/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, snapshotStorage } from './review12-qualification.js';
 export { readBounded, snapshotStorage };
@@ -386,7 +386,7 @@ export async function runPhase(phase: Phase) {
       // Read-only GitHub observation of the final remote state (own PR, own branch, main tip, issue still open).
       const { tracker, codeRepository } = await compose();
       const remote = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: work.branch ? [work.branch] : [], refs: true, base: repository.base });
-      const ticket = await tracker.readTicket(githubOnly(work.ticket));
+      const ticket = await tracker.readTicket(work.ticket as GitHubTicketRef);
       const preflight = JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { base: unknown; refs: unknown };
       await save('inspect-result', { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         history: work.history.filter(item => item.event.startsWith('publication') || item.event.startsWith('execution')) },

@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/index.js';
+import type { GitHubTicketRef } from '../../src/issue-tracker/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { keySource, pushViolations, requireKeySource, resolveOperator } from './humanchanges21-qualification.js';
@@ -527,7 +527,7 @@ export async function runPhase(phase: Phase) {
       const contents = head ? await access.read(repository, 'publication-read', session => session.get(`/repos/${repository.repository}/contents/docs/FACTORY_FEEDBACK.md?ref=${head}`)) : null;
       const pull = work.publication?.pullRequest ? await codeRepository.readPullRequest({ repo: repository, number: work.publication.pullRequest.number }) : null;
       const feedback = work.publication?.pullRequest ? await codeRepository.readFeedback!({ repo: repository, number: work.publication.pullRequest.number }) : null;
-      const issue = await tracker.readTicket(githubOnly(work.ticket));
+      const issue = await tracker.readTicket(work.ticket as GitHubTicketRef);
       await save('inspect-result', { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         budget: work.budget, correction: work.correction, corrections: work.corrections ?? [], feedback: work.feedback ?? null, queue: work.queue, readiness: work.readiness ?? null,
         history: work.history.filter(item => /^(publication|repair|correction|budget|feedback|resume)/.test(item.event)) },

@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/index.js';
+import type { GitHubTicketRef } from '../../src/issue-tracker/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { keySource, pushViolations, requireKeySource, resolveOperator } from './humanchanges21-qualification.js';
@@ -506,7 +506,7 @@ export async function runPhase(phase: Phase) {
       const compare = conflictBase && head ? await github.read(repository, 'publication-read', session => session.get(`/repos/${repository.repository}/compare/${conflictBase}...${head}`)) : null;
       const contents = head ? await github.read(repository, 'publication-read', session => session.get(`/repos/${repository.repository}/contents/docs/FACTORY_REPAIR.md?ref=${head}`)) : null;
       const pull = work.publication?.pullRequest ? await codeRepository.readPullRequest({ repo: repository, number: work.publication.pullRequest.number }) : null;
-      const issue = await tracker.readTicket(githubOnly(work.ticket));
+      const issue = await tracker.readTicket(work.ticket as GitHubTicketRef);
       const result = { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         budget: work.budget, correction: work.correction, corrections: work.corrections ?? [], queue: work.queue, checks: work.checks ?? null,
         history: work.history.filter(item => item.event.startsWith('publication') || item.event.startsWith('repair') || item.event.startsWith('correction') || item.event.startsWith('budget')) },
