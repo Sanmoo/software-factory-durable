@@ -201,13 +201,7 @@ export async function settleInterruption(
     const execution = work?.execution ?? null;
     if (!work || !execution || execution.executionId !== input.executionId || !unsettled(execution)) return 'stale' as const;
     const now = new Date().toISOString();
-    let questionNote: string | null = input.question
-      ? input.question.kind === 'question'
-        ? `found:${input.question.request.questionId}`
-        : input.question.kind === 'absent'
-          ? 'absent'
-          : `${questionRecordFound(input.question.code) ? 'found' : 'unresolved'}:${input.question.code}`
-      : null;
+    let questionNote: string | null = questionNoteOf(input.question);
     const found: RecoveryRecord['found'] = {
       state: execution.state,
       phase: execution.dispatch.phase,
@@ -289,16 +283,7 @@ export async function settleInterruption(
       confirmed: execution.start,
       phase: execution.dispatch.phase,
       cessation: 'confirmed',
-      observation:
-        observed === null
-          ? null
-          : observed.kind === 'receipt'
-            ? matching
-              ? { kind: 'receipt', receiptId: observed.receipt.id }
-              : { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' }
-            : observed.kind === 'absent'
-              ? { kind: 'absent' }
-              : { kind: 'uncertain', code: observed.code },
+      observation: startObservationOf(observed, matching),
     });
     // Ticket 27: a preserved ask_user request (or a found record) proves a worker ran: never "not started" by the missing receipt alone.
     const askedEvidence = input.question?.kind === 'question' || (input.question?.kind === 'uncertain' && questionRecordFound(input.question.code));
@@ -485,6 +470,22 @@ export async function settleInterruption(
     }
     return record(startRecord, decision, code);
   }, BACKGROUND_CONTEXT);
+}
+
+/** Ticket 27: what the reconciliation found of the Builder's preserved `ask_user` request, as its recovery record notes it. */
+function questionNoteOf(question: QuestionObservation | null | undefined): string | null {
+  if (!question) return null;
+  if (question.kind === 'question') return `found:${question.request.questionId}`;
+  if (question.kind === 'absent') return 'absent';
+  return `${questionRecordFound(question.code) ? 'found' : 'unresolved'}:${question.code}`;
+}
+
+/** The start observation `startDecision` weighs: only a receipt of THIS Execution (`matching`) is one. */
+function startObservationOf(observed: StartObservation | null, matching: boolean): Parameters<typeof startDecision>[0]['observation'] {
+  if (observed === null) return null;
+  if (observed.kind === 'receipt')
+    return matching ? { kind: 'receipt', receiptId: observed.receipt.id } : { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' };
+  return observed.kind === 'absent' ? { kind: 'absent' } : { kind: 'uncertain', code: observed.code };
 }
 
 /**

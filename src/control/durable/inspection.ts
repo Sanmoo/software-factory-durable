@@ -227,6 +227,20 @@ const removedEnvironment = (work: WorkRecord, environment: string | null) =>
     item => item.kind === 'environment' && item.environment === environment && (item.state === 'removed' || item.state === 'absent'),
   );
 
+/** The Work's Execution time: measured, proven lower bounds and started Executions of unknown duration. */
+function executionDurations(executions: ReturnType<typeof executionsOf>) {
+  let measuredMs = 0,
+    lowerBoundMs = 0,
+    unknown = 0;
+  for (const execution of executions) {
+    const duration = execution.timing?.duration;
+    if (duration?.kind === 'measured') measuredMs += duration.elapsedMs;
+    else if (duration?.kind === 'lower-bound') lowerBoundMs += duration.provenMs;
+    else if (execution.start) unknown++;
+  }
+  return { measuredMs, lowerBoundMs, unknown };
+}
+
 export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefined): Promise<WorkUsageView> {
   const counted = new Set<string>();
   const activities: UsageActivityView[] = [];
@@ -260,15 +274,7 @@ export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefi
     standards: aggregateUsage(activities.filter(item => item.role === 'standards')),
     spec: aggregateUsage(activities.filter(item => item.role === 'spec')),
   };
-  let measuredMs = 0,
-    lowerBoundMs = 0,
-    unknown = 0;
-  for (const execution of executions) {
-    const duration = execution.timing?.duration;
-    if (duration?.kind === 'measured') measuredMs += duration.elapsedMs;
-    else if (duration?.kind === 'lower-bound') lowerBoundMs += duration.provenMs;
-    else if (execution.start) unknown++;
-  }
+  const { measuredMs, lowerBoundMs, unknown } = executionDurations(executions);
   const counter = (key: 'corrections' | 'recoveries'): CounterView | null => (work.budget ? counterView(work.budget[key]) : null);
   // v2 ticket 14 (V2-32): the sandbox's own report for each environment of the Work, covering the boots of every Execution. A report
   // that cannot be obtained is `null` (unavailable), never an empty list.

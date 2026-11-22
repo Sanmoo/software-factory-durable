@@ -140,12 +140,7 @@ export async function cancelIn(
     nextStep:
       'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.',
   };
-  const who =
-    by.kind === 'question'
-      ? `Ended by the accepted answer to Question ${by.questionId}`
-      : by.kind === 'jira-comment'
-        ? `Cancelled by comment ${by.commentId} of Jira account ${by.accountId} on the origin Card`
-        : 'Cancelled by the operator';
+  const who = cancellerOf(by);
   addImpediment(work!, {
     code: cycleImpediments.cancelled,
     scope: 'work',
@@ -164,31 +159,42 @@ export async function cancelIn(
       detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512),
     });
   else history(work!, 'cancel-requested', by.kind, `${input.request_id}${active ? `:active:${active}` : ''}`, at);
-  // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
-  const execution = work!.execution;
-  if (
-    execution &&
-    !execution.reviewRetryLimit &&
-    (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)
-  ) {
-    const jira = by.kind === 'jira-comment';
-    execution.reviewRetryLimit = {
-      decision: 'cancel',
-      request_id: input.request_id,
-      operator: jira ? { kind: 'jira', accountId: by.accountId } : { kind: 'local-administrator' },
-      at,
-    };
-    work!.history.push({
-      at,
-      event: 'review-retry-limit-decided',
-      origin: jira ? 'jira-comment' : 'local-cli',
-      executionId: execution.executionId,
-      detail: `${input.request_id}:cancel`,
-    });
-  }
+  decideReviewRetryLimitByCancel(work!, input.request_id, by, at);
   if (settleCancellation(work!, at)) history(work!, 'cancellation-ceased', 'controller-cycles', 'no own activity was running', at);
   rememberResult(index, work!);
   return receiptOf(input, work!.work_id, 'accepted', null);
+}
+
+/** Who the cancellation's impediment names. */
+function cancellerOf(by: CancelBy) {
+  if (by.kind === 'question') return `Ended by the accepted answer to Question ${by.questionId}`;
+  if (by.kind === 'jira-comment') return `Cancelled by comment ${by.commentId} of Jira account ${by.accountId} on the origin Card`;
+  return 'Cancelled by the operator';
+}
+
+/** Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round). */
+function decideReviewRetryLimitByCancel(work: WorkRecord, request_id: string, by: CancelBy, at: string) {
+  const execution = work.execution;
+  if (
+    !execution ||
+    execution.reviewRetryLimit ||
+    !(execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)
+  )
+    return;
+  const jira = by.kind === 'jira-comment';
+  execution.reviewRetryLimit = {
+    decision: 'cancel',
+    request_id,
+    operator: jira ? { kind: 'jira', accountId: by.accountId } : { kind: 'local-administrator' },
+    at,
+  };
+  work.history.push({
+    at,
+    event: 'review-retry-limit-decided',
+    origin: jira ? 'jira-comment' : 'local-cli',
+    executionId: execution.executionId,
+    detail: `${request_id}:cancel`,
+  });
 }
 
 /** `resume <work>`: removes ONLY the suspension codes it answers and leaves a pending-read impediment; never touches any other impediment. */
@@ -283,18 +289,7 @@ async function acceptBlockedRecoveryOverride(
       cancelling: Boolean(work?.cancellation),
       pendingRecovery: Boolean(work?.pendingRecovery),
       // A returned failure (finding A9) lost no request: there is nothing a later read of Records could resolve.
-      resolved: Boolean(
-        blocked &&
-        blocked.cause !== 'returned-failure' &&
-        execution &&
-        positiveResolution({
-          blocked,
-          executionId: execution.executionId,
-          invocationId: execution.invocationId,
-          questions: bound,
-          recovery: execution.recovery ?? [],
-        }),
-      ),
+      resolved: blockedRequestResolved(execution, bound),
     });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
@@ -327,6 +322,23 @@ async function acceptBlockedRecoveryOverride(
     };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
+}
+
+/** Whether a later complete read of Records resolved the blocked request of the Execution (positively). */
+function blockedRequestResolved(execution: WorkRecord['execution'] | null, bound: { questionId: string; executionId: string; invocationId: string }[]) {
+  const blocked = execution?.blockedRequest;
+  return Boolean(
+    blocked &&
+    blocked.cause !== 'returned-failure' &&
+    execution &&
+    positiveResolution({
+      blocked,
+      executionId: execution.executionId,
+      invocationId: execution.invocationId,
+      questions: bound,
+      recovery: execution.recovery ?? [],
+    }),
+  );
 }
 
 /**
@@ -489,14 +501,7 @@ export async function acceptNewCycle(
     ticket.tracker === 'github' && ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
   // The Ticket's CURRENT cycle (as the commit finds it). Ticket 31: a forgotten current cycle is known by its minimal memory only.
   const snapshot = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
-  let current: (Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> & { result: WorkRecord['result'] }) | null = null;
-  for (const entry of Object.values(snapshot?.tickets ?? {})) {
-    const candidate = snapshot?.forgotten?.[entry.current] ?? (await readWork(session, entry.current));
-    if (candidate && sameTicket(candidate.ticket)) {
-      current = candidate;
-      break;
-    }
-  }
+  let current = await currentCycleOf(session, snapshot, sameTicket);
   if (current && (current.result === 'open' || current.result === 'closed-unmerged')) current = null;
   let authorization: ReturnType<typeof authorizationFacts> = { kind: 'unknown', code: 'TICKET_NOT_READ' };
   // Review LOW: the new cycle's authorization basis is the FRESH read (its label as observed now), never one copied or invented.
@@ -619,6 +624,19 @@ export async function acceptNewCycle(
   });
 }
 
+/** The current cycle (a Work, or the minimal memory of a forgotten one) of the Ticket `sameTicket` recognizes, as the snapshot finds it. */
+async function currentCycleOf(
+  session: Session,
+  snapshot: Index | null | undefined,
+  sameTicket: (ticket: TicketRef) => boolean,
+): Promise<(Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> & { result: WorkRecord['result'] }) | null> {
+  for (const entry of Object.values(snapshot?.tickets ?? {})) {
+    const candidate = snapshot?.forgotten?.[entry.current] ?? (await readWork(session, entry.current));
+    if (candidate && sameTicket(candidate.ticket)) return candidate;
+  }
+  return null;
+}
+
 /**
  * Ticket 31: the predecessor facts `newCycleDecision` needs, from a forgotten cycle's minimal memory. `forget` required it ended (cessation
  * confirmed, no activity, no own PR left open), so nothing else is invented.
@@ -704,6 +722,19 @@ async function beginReopen(session: Session, work_id: string, effectId: string):
   }, BACKGROUND_CONTEXT);
 }
 
+/** The reopen request's attempt, as GitHub answered it. */
+function recordReopenAttempt(
+  work: WorkRecord,
+  reopen: NonNullable<NonNullable<WorkRecord['closure']>['reopen']>,
+  effectId: string,
+  attempt: { outcome: string; code: string | null },
+  at: string,
+) {
+  reopen.attempt = { at, ...attempt };
+  reopen.state = 'attempted';
+  history(work, 'reopen-attempted', 'controller-cycles', `${effectId}:${attempt.outcome}${attempt.code ? `:${attempt.code}` : ''}`, at);
+}
+
 /** Records the attempt and/or the independent observation of a reopen; `open` confirms it (result open, RESUME_REQUIRED), `closed` settles it not applied. */
 async function recordReopen(
   session: Session,
@@ -717,11 +748,7 @@ async function recordReopen(
     const reopen = work?.closure?.reopen;
     if (!work || reopen?.effectId !== effectId || (reopen.state !== 'intended' && reopen.state !== 'attempted')) return 'stale' as const;
     const at = new Date().toISOString();
-    if (input.attempt) {
-      reopen.attempt = { at, ...input.attempt };
-      reopen.state = 'attempted';
-      history(work, 'reopen-attempted', 'controller-cycles', `${effectId}:${input.attempt.outcome}${input.attempt.code ? `:${input.attempt.code}` : ''}`, at);
-    }
+    if (input.attempt) recordReopenAttempt(work, reopen, effectId, input.attempt, at);
     if (input.observed === 'open' && work.result !== 'closed-unmerged') {
       // Review LOW-MED: sent, then the Work was cancelled: the effect is reconciled (confirmed); the cycle is NOT revived.
       Object.assign(reopen, { state: 'confirmed', observation: { at, outcome: 'open' }, settledAt: at });

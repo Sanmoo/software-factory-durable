@@ -254,6 +254,20 @@ export async function settleLivePublication(
   });
 }
 
+/** A live block that no longer applies: another basis or Execution, a publication past discovery, or one already attempted. */
+function liveBlockStale(work: WorkRecord, publication: NonNullable<WorkRecord['publication']>, executionId: string) {
+  return (
+    publication.basisExecutionId !== executionId ||
+    work.execution?.executionId !== executionId ||
+    (publication.state !== 'awaiting-discovery' && publication.state !== 'requested') ||
+    publicationAttempted(work)
+  );
+}
+/** Acceptance finding A6: an undecided discovery read while the verified commit is already on the Work's own branch on `origin`. */
+function undecidedWithHeadOnOrigin(work: WorkRecord, publication: NonNullable<WorkRecord['publication']>, reasons: string[]) {
+  return publication.state === 'awaiting-discovery' && undecidedRead(reasons) && verifiedHeadOnOrigin(publication, work.preservation);
+}
+
 /**
  * v2 ticket 06: the live discovery could not decide (incomplete or held read) while the boot was up. Acceptance finding A6: when Control's own
  * evidence shows the verified commit on the Work's own branch on `origin`, nothing is lost with the boot — the publication stays awaiting
@@ -263,16 +277,9 @@ export async function settleLivePublication(
 export async function blockLivePublication(session: Session, work_id: string, executionId: string, reasons: string[]): Promise<PublicationView | 'stale'> {
   return onWork(session, work_id, work => {
     const publication = work.publication;
-    if (
-      !publication ||
-      publication.basisExecutionId !== executionId ||
-      work.execution?.executionId !== executionId ||
-      (publication.state !== 'awaiting-discovery' && publication.state !== 'requested') ||
-      publicationAttempted(work)
-    )
-      return 'stale' as const;
+    if (!publication || liveBlockStale(work, publication, executionId)) return 'stale' as const;
     const at = new Date().toISOString();
-    if (publication.state === 'awaiting-discovery' && undecidedRead(reasons) && verifiedHeadOnOrigin(publication, work.preservation)) {
+    if (undecidedWithHeadOnOrigin(work, publication, reasons)) {
       Object.assign(publication, {
         updatedAt: at,
         nextStep:
@@ -723,6 +730,14 @@ export function markReconciliationExecution(work: WorkRecord, execution: Executi
   Object.assign(authorization, { state: 'executing', executionId: execution.executionId });
 }
 
+/** The Work is open and the current cycle of its Ticket. */
+const openCurrent = (index: { tickets: Record<string, { current: string } | undefined> }, work: WorkRecord) =>
+  work.result === 'open' && index.tickets[ticketKey(work.ticket)]?.current === work.work_id;
+/** A blocked publication that already has a pending re-evaluation. */
+type Publication = NonNullable<WorkRecord['publication']>;
+const reevaluationPending = (publication: Publication): publication is Publication & { reevaluation: NonNullable<Publication['reevaluation']> } =>
+  publication.state === 'blocked' && publication.reevaluation?.state === 'pending';
+
 /**
  * Ticket 61 "Aceitar comando" for `reevaluate-publication <work> --reason`: records ONE pending re-evaluation of a publication blocked ONLY by
  * unexpected ref changes and/or unknown pull requests (A14) after an attempt (deduplicated by request identity). Nothing is read or decided here: the next discovery pass re-reads
@@ -747,9 +762,9 @@ export async function acceptPublicationReevaluation(
     const publication = work?.publication ?? null;
     let receipt: Receipt;
     if (!work) receipt = refuse('WORK_NOT_FOUND');
-    else if (work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work.work_id) receipt = refuse('WORK_NOT_CURRENT');
+    else if (!openCurrent(index, work)) receipt = refuse('WORK_NOT_CURRENT');
     else if (!publication) receipt = refuse('PUBLICATION_NOT_BLOCKED');
-    else if (publication.state === 'blocked' && publication.reevaluation?.state === 'pending') {
+    else if (reevaluationPending(publication)) {
       receipt = { ...base, outcome: 'already-covered', reason: null, nextStep: `Re-evaluation ${publication.reevaluation.request_id} is already pending.` };
     } else {
       const eligible = reevaluationEligibility(publication, work.preservation ?? null);

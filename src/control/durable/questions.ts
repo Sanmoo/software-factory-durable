@@ -213,6 +213,28 @@ export async function acceptAnswer(
   return session.commit(tx => answerIn(tx, input), BACKGROUND_CONTEXT);
 }
 
+type Answer = NonNullable<QuestionView['answer']>;
+/** Who answered, as the accepted answer records it. */
+function answerAuthorOf(origin: AnswerOrigin): Answer['author'] {
+  if (origin.kind === 'github-comment') return { kind: 'github', id: origin.comment.author.id, login: origin.comment.author.login };
+  if (origin.kind === 'jira-comment') return { kind: 'jira', accountId: origin.comment.accountId };
+  return { kind: 'local-administrator' };
+}
+/** Where the accepted answer came from. */
+function answerOriginOf(origin: AnswerOrigin, request_id: string): Answer['origin'] {
+  if (origin.kind === 'github-comment') return { kind: 'github-comment', commentId: origin.comment.commentId, url: origin.comment.url };
+  if (origin.kind === 'jira-comment')
+    return {
+      kind: 'jira-comment',
+      siteId: origin.comment.siteId,
+      issueId: origin.comment.issueId,
+      commentId: origin.comment.commentId,
+      url: origin.comment.url,
+      request_id,
+    };
+  return { kind: 'local-cli', request_id };
+}
+
 /** The body of {@link acceptAnswer} inside the caller's commit (Jira ticket 06 decides the target Question in the same commit). */
 export async function answerIn(
   tx: Tx,
@@ -262,25 +284,8 @@ export async function answerIn(
       text: input.text,
       sha256: sha256(input.text),
       acceptedAt: now,
-      author:
-        origin.kind === 'github-comment'
-          ? { kind: 'github', id: origin.comment.author.id, login: origin.comment.author.login }
-          : origin.kind === 'jira-comment'
-            ? { kind: 'jira', accountId: origin.comment.accountId }
-            : { kind: 'local-administrator' },
-      origin:
-        origin.kind === 'github-comment'
-          ? { kind: 'github-comment', commentId: origin.comment.commentId, url: origin.comment.url }
-          : origin.kind === 'jira-comment'
-            ? {
-                kind: 'jira-comment',
-                siteId: origin.comment.siteId,
-                issueId: origin.comment.issueId,
-                commentId: origin.comment.commentId,
-                url: origin.comment.url,
-                request_id: input.request_id,
-              }
-            : { kind: 'local-cli', request_id: input.request_id },
+      author: answerAuthorOf(origin),
+      origin: answerOriginOf(origin, input.request_id),
     };
     // Only THIS Question's impediment; authorization, dependencies, other Questions and limits are untouched.
     work!.impediments = work!.impediments.filter(item => !(item.code === 'QUESTION_PENDING' && item.questionId === input.question_id));
