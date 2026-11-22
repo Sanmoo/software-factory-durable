@@ -32,7 +32,7 @@ test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, t
   const accountFile = join(dir, 'aws-account.json'), storagePath = join(dir, 'control.sqlite');
 
   // The controller dies with its boot in progress.
-  // Detached and bounded by the runner's budget (docs/agents/testing.md): past it `ended` kills the child's whole group and names the stage.
+  // Detached and bounded by the runner's budget (docs/guides/testing-strategy.md): past it `ended` kills the child's whole group and names the stage.
   const child = spawn(process.execPath, [fileURLToPath(new URL('./lambda-crash-child.js', import.meta.url)), world.root, world.executable, accountFile, storagePath], { stdio: ['ignore', 'pipe', 'inherit'], detached: true });
   let output = '';
   child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('CUT')) child.kill('SIGKILL'); });

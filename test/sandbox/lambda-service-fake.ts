@@ -316,7 +316,7 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
 
 /**
  * The clock every Lambda adapter test gives the adapter: the fake account's own instant, and a `sleep` that moves it instead of waiting
- * (docs/agents/testing.md: a fake clock, never a sleep).
+ * (docs/guides/testing-strategy.md: a fake clock, never a sleep).
  */
 export const accountClock = (fake: Pick<ReturnType<typeof lambdaAccountFake>, 'account'>) =>
   ({ now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } });

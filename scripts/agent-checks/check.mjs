@@ -19,8 +19,30 @@ try { root = await realpath(root); } catch {
   console.log(JSON.stringify({ok: false, findings: [{code: 'ROOT_UNAVAILABLE'}]})); process.exit(1);
 }
 const findings = [];
-const add = (code, path) => findings.push({code, path});
-const active = path => path === 'AGENTS.md' || path.startsWith('docs/agents/') || path.startsWith('.scratch/software-factory-v2/');
+const add = (code, path, target) => findings.push(target === undefined ? {code, path} : {code, path, target});
+// The engineering harness's Guides (docs/guides/, docs/adr/, GLOSSARY.md, AGENTS.md): links, paths and commands are checked.
+const guide = path => path === 'AGENTS.md' || path === 'GLOSSARY.md' || path.startsWith('docs/guides/') || path.startsWith('docs/adr/');
+const active = path => guide(path) || path.startsWith('docs/agents/') || path.startsWith('.scratch/software-factory-v2/');
+// A command is a check tool followed by an argument; a Guide names only the Entry Points and the full Entry Point's modes.
+const tools = new Set(['npm', 'npx', 'node', 'tsc', 'eslint', 'depcruise', 'prettier', 'gitleaks', 'stryker', 'cucumber-js', 'scripts/test-runner/run']);
+const entryPoints = new Set(['npm run test:fast', 'npm run test:ci', 'npm run test:full']);
+function commandsIn(text) {
+  const spans = [...text.matchAll(/`([^`\n]+)`/g)].map(match => match[1]);
+  let fence = null;
+  for (const line of text.split('\n')) {
+    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (mark) { if (!fence) fence = mark[0]; else if (mark[0] === fence) fence = null; continue; }
+    if (fence) spans.push(line.replace(/\s+#.*$/, ''));
+  }
+  return spans.map(span => span.trim().replace(/\s+/g, ' ')).filter(span => {
+    const [tool, ...rest] = span.split(' ');
+    return tools.has(tool) && rest.length > 0;
+  });
+}
+function pathsIn(text, tracked) {
+  return [...text.matchAll(/`([^`\s]+)`/g)].map(match => match[1].replace(/[.,;:]$/, ''))
+    .filter(span => !/[<>*{}$?]/.test(span) && span.includes('/') && tracked.has(span.split('/')[0]));
+}
 async function localFile(path, raw = false) {
   const full = resolve(root, path), canonical = await realpath(full), info = await lstat(full);
   if (!canonical.startsWith(`${root}${sep}`) || !info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw Error('UNSAFE_FILE');
@@ -91,8 +113,19 @@ try {
         const target = resolve(root, dirname(path), decodeURIComponent(link.split('#')[0]));
         const canonical = await realpath(target);
         if (!canonical.startsWith(`${root}${sep}`)) throw Error('OUTSIDE_REPO');
-      } catch { add('BROKEN_LINK', path); }
+      } catch { add('BROKEN_LINK', path, link); }
     }
+  }
+  const tracked = new Set(files.map(file => file.split('/')[0]));
+  for (const path of files.filter(p => guide(p) && p.endsWith('.md'))) {
+    let text;
+    try { text = await localFile(path); } catch { continue; }
+    for (const target of pathsIn(text, tracked)) {
+      const fromRoot = resolve(root, target), fromFile = resolve(root, dirname(path), target);
+      const exists = async candidate => { try { return (await realpath(candidate)).startsWith(`${root}${sep}`); } catch { return false; } };
+      if (!await exists(fromRoot) && !await exists(fromFile)) add('MISSING_PATH', path, target);
+    }
+    for (const command of commandsIn(text)) if (!entryPoints.has(command)) add('NON_ENTRY_POINT_COMMAND', path, command);
   }
 } catch { add('REPOSITORY_UNAVAILABLE', '.'); }
 if (!docsOnly) {

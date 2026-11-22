@@ -1,12 +1,12 @@
 #!/bin/sh
-# Nightly `full` tier over a LOCAL branch, in a dedicated detached worktree. No fetch, no network, no install.
+# Nightly integral validation (`full` tier) over a LOCAL branch, in a dedicated detached worktree. No fetch, no network, no install.
 # Run by the user systemd timer in scripts/test-runner/systemd/ (installed explicitly by the operator).
 # A red report becomes a ticket; it never blocks integration.
 #   SF_NIGHTLY_REPO    main checkout (required)
-#   SF_NIGHTLY_BRANCH  branch to test (default integration/software-factory-mvp; later main)
+#   SF_NIGHTLY_BRANCH  branch to test (default main: integral validation of the integrated line)
 set -eu
 repo=${SF_NIGHTLY_REPO:?set SF_NIGHTLY_REPO to the main checkout}
-branch=${SF_NIGHTLY_BRANCH:-integration/software-factory-mvp}
+branch=${SF_NIGHTLY_BRANCH:-main}
 worktree="$repo/.worktrees/nightly-full"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/software-factory/nightly-tests"
 mkdir -p "$state"

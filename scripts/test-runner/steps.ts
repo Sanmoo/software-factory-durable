@@ -3,10 +3,13 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { readCruise } from './architecture.ts';
+import { changedSet, gitIn } from './changes.ts';
 import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
 import { acquireMachineLock, machineLockPath } from './lock.ts';
 import type { FileRun, Steps } from './runner.ts';
+import { parsePolicy, type IntegralRecord } from './selection.ts';
 
 /** The handoff's Node prefix, applied to every child: no inherited NODE_OPTIONS/compile cache. */
 export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -62,21 +65,48 @@ export interface StaticParts {
   compile(): Promise<StepResult[]>;
   lint(): Promise<StepResult>;
   depcruise(): Promise<StepResult[]>;
+  pointers(): Promise<StepResult>;
 }
 
 /**
- * The linters do not read dist/, so they run alongside the compiler. dependency-cruiser resolves the package.json
- * #factory-* imports to files of the staged SDK, which a fresh tree only has after prepare-sdk (part of compile):
- * there it waits for the compile stage instead of reporting them as unresolved.
+ * The linters do not read dist/, so they run alongside the compiler. dependency-cruiser waits for the compile stage: it
+ * resolves the #factory-* imports to the SDK prepare-sdk stages, and some tests import the build output in dist/ itself.
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised] = await Promise.all([compiling, parts.lint(),
-    parts.staged ? parts.depcruise() : compiling.then(() => parts.depcruise())]);
-  return [...compiled, linted, ...cruised];
+  const [compiled, linted, cruised, pointed] = await Promise.all([compiling, parts.lint(),
+    compiling.then(() => parts.depcruise()), parts.pointers()]);
+  return [...compiled, linted, ...cruised, pointed];
 }
 
 const distFile = (source: string) => join('dist', source.replace(/\.ts$/, '.js'));
+
+/** `file(line,col): error TSnnnn` lines of tsc. */
+export function tscFindings(output: string): { rule: string; location: string }[] {
+  return [...output.matchAll(/^(.+?)\((\d+),(\d+)\): error (TS\d+)/gm)].map(match => ({ rule: match[4]!, location: `${match[1]}:${match[2]}` }));
+}
+
+/** ESLint's JSON formatter. The pure-rules bans of eslint.config.mjs are marked so they report under the Dependency rule. */
+export function eslintFindings(output: string, root: string): { rule: string; location: string }[] | undefined {
+  try {
+    const results = JSON.parse(output) as { filePath: string; messages: { ruleId: string | null; message: string; line: number }[] }[];
+    return results.flatMap(result => result.messages.map(message => ({
+      rule: `${message.ruleId ?? 'parse-error'}${message.message.startsWith('Pure Control rules') ? ':pure-rules' : ''}`,
+      location: `${relative(root, result.filePath)}:${message.line}` })));
+  } catch { return undefined; }
+}
+
+/** The documentary checker's JSON (scripts/agent-checks/check.mjs). */
+export function pointerFindings(output: string): { rule: string; location: string }[] | undefined {
+  try {
+    const result = JSON.parse(output.slice(output.indexOf('{'))) as { findings: { code: string; path: string; target?: string }[] };
+    return result.findings.map(finding => ({ rule: finding.code, location: finding.target ? `${finding.path} → ${finding.target}` : finding.path }));
+  } catch { return undefined; }
+}
+
+/** Where integral validation records its last result, so validation by change can read it. */
+export const integralRecordPath = (env: NodeJS.ProcessEnv) => env.FACTORY_INTEGRAL_RECORD
+  || join(env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'software-factory/nightly-tests/integral-result.json');
 
 export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: string) => void): Steps {
   const childEnv = childEnvironment(env);
@@ -116,19 +146,52 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
     checkDependencies: () => checkInstalledDependencies(root),
     loadManifest: async () => parseManifest(JSON.parse(await readFile(join(root, 'test/tiers.json'), 'utf8')), file => existsSync(join(root, file))),
     acquireLock: tier => acquireMachineLock(machineLockPath(env), { pid: process.pid, tier, root }, log),
-    staticAnalysis: async (tier, signal) => {
-      const eslint = ['node_modules/eslint/bin/eslint.js', '--max-warnings', '0'];
-      const lint = async (): Promise<StepResult> => {
-        if (tier !== 'fast') return tool('eslint', [...eslint, '.'], signal);
-        const files = await changedLintable(signal);
-        if (files !== 'all' && !files.length) return { name: 'eslint (no changed files)', ms: 0, ok: true };
-        return tool(files === 'all' ? 'eslint' : `eslint (${files.length} changed)`, [...eslint, ...(files === 'all' ? ['.'] : files)], signal);
+    staticAnalysis: async (tier, signal, part = 'all') => {
+      const pointers = async (): Promise<StepResult> => {
+        const step = await tool('guide-pointers', ['scripts/agent-checks/check.mjs', '--docs-only'], signal);
+        return { ...step, check: 'guide-pointers', findings: pointerFindings(step.output ?? '') ?? [] };
       };
-      const depcruise = (): Promise<StepResult[]> => tier === 'fast' ? Promise.resolve([])
-        : tool('depcruise', ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'err-long', '.'], signal).then(step => [step]);
+      if (part === 'documentation') return [await pointers()];
+      const eslint = ['node_modules/eslint/bin/eslint.js', '--max-warnings', '0', '--format', 'json'];
+      const linted = async (name: string, args: readonly string[]): Promise<StepResult> => {
+        const step = await tool(name, args, signal);
+        const findings = eslintFindings(step.output ?? '', root);
+        return { ...step, check: 'lint', findings: findings ?? [], ...(findings ? { output: findings.map(f => `${f.location} ${f.rule}`).join('\n') } : {}) };
+      };
+      const lint = async (): Promise<StepResult> => {
+        if (tier !== 'fast') return linted('eslint', [...eslint, '.']);
+        const files = await changedLintable(signal);
+        if (files !== 'all' && !files.length) return { name: 'eslint (no changed files)', ms: 0, ok: true, check: 'lint' };
+        return linted(files === 'all' ? 'eslint' : `eslint (${files.length} changed)`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
+      };
+      const depcruise = async (): Promise<StepResult[]> => {
+        const step = await tool('depcruise', ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'json', '.'], signal);
+        try {
+          const { violations, graph } = readCruise(step.output ?? '');
+          const findings = violations.map(item => ({ rule: item.rule, location: `${item.from} → ${item.to}` }));
+          return [{ ...step, ok: step.ok && !violations.length, check: 'boundaries', findings, graph,
+            output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') }];
+        } catch { return [{ ...step, ok: false, check: 'boundaries', findings: [{ rule: 'cruise-unreadable', location: '.dependency-cruiser.cjs' }] }]; }
+      };
+      const compiled = async (): Promise<StepResult[]> => (await compile(tier, signal)).map(step => step.name.startsWith('tsc')
+        ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step);
       return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
-        compile: () => compile(tier, signal), lint, depcruise });
+        compile: compiled, lint, depcruise, pointers });
     },
+    loadPolicy: async () => {
+      const text = await readFile(join(root, 'scripts/test-runner/policy.json'), 'utf8');
+      return parsePolicy(JSON.parse(text), text);
+    },
+    changedSet: async base => changedSet(root, env.VALIDATION_BASE || base, gitIn(root)),
+    loadIntegral: async () => {
+      try { return JSON.parse(await readFile(integralRecordPath(env), 'utf8')) as IntegralRecord; } catch { return undefined; }
+    },
+    saveIntegral: async record => {
+      const path = integralRecordPath(env);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify(record, null, 1) + '\n');
+    },
+    headCommit: async () => gitIn(root)(['rev-parse', 'HEAD'])?.trim() ?? 'unknown',
     listTests: async () => (await testSources(join(root, 'test'), root))
       // Only sources with a compiled output; stale dist files of deleted tests never run.
       .filter(source => existsSync(join(root, distFile(source)))).sort(),

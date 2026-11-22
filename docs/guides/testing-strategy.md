@@ -1,40 +1,26 @@
-# Testes: camadas, runner e regras para quem escreve teste
+# Estratégia de testes
 
-Decisão do operador no ticket 36 (`.scratch/software-factory-mvp/issues/36-tiered-parallel-test-runner.md`).
-Ela **substitui** a regra anterior do handoff, "um arquivo compilado por vez"
-(`node --test --test-concurrency=1 <arquivo>` em série): o gate agora é `npm run test:ci`.
+Decisão do operador no ticket 36 (`.scratch/software-factory-mvp/issues/36-tiered-parallel-test-runner.md`), reconciliada com a adoção do engineering harness ([ADOPTION-PLAN.md](../../ADOPTION-PLAN.md)).
 
-## Comandos
+## Intenção
 
-| Comando | Conteúdo | Teto (relógio, nesta máquina) | Lock |
-| --- | --- | --- | --- |
-| `npm run test:fast` | `tsc --incremental` + ESLint dos arquivos alterados (vs `HEAD` + não rastreados) + todos os arquivos sem `slow`, em paralelo com metade dos núcleos | 3 min | não |
-| `npm run test:ci` | `dist/` limpo + `tsc` + ESLint `--max-warnings 0` + dependency-cruiser completos + **todos** os arquivos (lane paralela com N = núcleos, depois a lane serial) | 10 min | sim |
-| `npm run test:full` | `ci` + testes de sandbox condicionados a `FACTORY_SANDBOX_TEST_ROOT` (raiz privada nova) + segunda passada em ordem aleatória (semente no relatório) | sem teto | sim |
+Os testes fixam o comportamento observado da fábrica: um teste de regressão registra o que ela faz hoje, mesmo quando parece surpreendente, para que uma mudança que o altere falhe em vez de passar despercebida. Um teste verde diz que o comportamento não mudou, não que ele está certo.
 
-Os três chamam `scripts/test-runner/run`, que aplica o prefixo de Node do projeto
-(`env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1`, Node fixado em `engines`,
-`--experimental-test-module-mocks`), compila uma vez e roda `dist/test/**/*.test.js` (apenas os que
-têm fonte `test/**/*.test.ts`; saída obsoleta de teste apagado nunca roda).
+## Entry Points
 
-- Antes de qualquer trabalho o runner falha cedo se `node_modules` não corresponder ao `package-lock.json`
-  (pacote ausente, inclusive dev como `pi-coding-agent`, ou versão diferente) e se `test/tiers.json`
-  citar arquivo inexistente.
-- `ci`/`full` pegam `flock` em `$XDG_RUNTIME_DIR/software-factory-test-runner.lock`: uma por vez na
-  máquina, entre worktrees e sessões. A espera aparece à parte ("lock wait") e não conta no teto.
-- Estouro do teto mata os processos em curso e sai não-zero com `BUDGET_EXCEEDED`; a saída é
-  reclassificar no manifesto ou otimizar. Carga de outras sessões não é desculpa.
-- O relatório final traz tempos da análise estática, de cada lane, da espera no lock, a carga
-  (`loadavg`) no início e no fim e os 10 arquivos mais lentos.
-- Filtro por arquivo (`npm run test:fast -- workers/sdk`) é conveniência manual: o relatório marca
-  "never a gate".
-- O histórico de duração (para começar pelos mais longos) fica em
-  `node_modules/.cache/software-factory-test-runner/timings.json`.
+- `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes sem `slow`; não substitui o completo.
+- `npm run test:ci`: Entry Point completo em **validação por mudança**. O supervisor local o roda uma vez antes de entregar e de novo após rebase ([ADR 0001](../adr/0001-local-supervisor-is-the-change-mode-ci.md)); uma mudança só está pronta quando ele está verde. Verde cobre o escopo afetado que o relatório nomeia, nunca a aplicação inteira.
+- `npm run test:full`: Entry Point completo em **validação integral**, chamado pelo timer noturno. Roda todos os checks sobre a entrada inteira, inclusive os periódicos; seu resultado vale para aquela árvore, não é certificação permanente.
 
-Agentes: `fast` no ciclo de TDD; `ci` uma vez antes de entregar e de novo após rebase; o supervisor lê o
-resultado do `ci` e integra. `full` é noturno e nunca bloqueia integração (vermelho vira ticket).
-Receitas reais `*-qualification` (GitHub/VM/modelo) ficam fora das camadas e continuam exigindo
-autorização do operador por execução; seus testes de plano/guarda continuam nas camadas.
+Quais checks cada modo roda, sobre qual escopo, com qual custo, cadência e orçamento está na política versionada [scripts/test-runner/policy.json](../../scripts/test-runner/policy.json), não aqui. Receitas reais `*-qualification` (GitHub/VM/modelo) ficam fora dos Entry Points e continuam exigindo autorização do operador por execução.
+
+Ambiente: rode os Entry Points com um `TMPDIR` curto (o `/tmp` padrão serve). Os testes de Sandbox derivam caminhos de socket de `os.tmpdir()`, e um caminho acima do limite do kernel falha como `SANDBOX_RUNTIME_PATH_TOO_LONG` ([src/sandbox/start.ts](../../src/sandbox/start.ts)). Nesta máquina o `/tmp` é um tmpfs com cota por usuário: uma execução que a estoura falha por ambiente, não por achado.
+
+## Julgamento
+
+- Comportamento já presente é fixado por um teste de regressão antes de mudar. Esse teste não audita se a regra de negócio está certa; evidência forte de erro óbvio vira uma decisão localizada do operador.
+- Dublês só para sistemas de terceiros na fronteira: o `gh` local de `test/entrypoints/github-world-fixture.ts` e provedores de modelo roteirizados. Não substitua um módulo da própria fábrica por um dublê num teste que prova a integração dele.
+- Prefira uma regra pura testada sem I/O a um cenário com processo real; um cenário real por mecanismo basta.
 
 ## Manifesto `test/tiers.json`
 

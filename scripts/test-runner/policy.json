@@ -1,0 +1,103 @@
+{
+  "$comment": "Selection policy of the full Entry Point (scripts/test-runner/run ci = validation by change, full = integral validation). Read by scripts/test-runner/selection.ts. Changing this file widens validation by change to every check. Approved in ADOPTION-PLAN.md.",
+  "version": 1,
+  "budgetSeconds": 900,
+  "base": "main",
+  "core": ["src/control/**", "src/workers/**"],
+  "sharedConfiguration": [
+    "package.json",
+    "package-lock.json",
+    ".npmrc",
+    ".node-version",
+    "mise.toml",
+    ".gitignore",
+    ".githooks/**",
+    "tsconfig.json",
+    "eslint.config.mjs",
+    ".dependency-cruiser.cjs",
+    "test/tiers.json",
+    "scripts/**",
+    ".github/**"
+  ],
+  "documentation": ["**/*.md", "docs/**/*.json", "docs/**/*.jsonl", "docs/**/*.txt", "docs/**/*.log", "docs/**/*.patch", "docs/**/*.yaml", ".scratch/**"],
+  "runtimeDependents": {
+    "$comment": "Composition tests reach the built entrypoints as processes (dist/src/entrypoints/*), an edge the import graph cannot see: they depend on every source file.",
+    "tests": ["test/entrypoints/**", "test/runner/**"],
+    "on": ["src/**"]
+  },
+  "checks": [
+    {
+      "id": "types",
+      "gate": "Types",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 40
+    },
+    {
+      "id": "lint",
+      "gate": "Lint",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 15,
+      "gateByRule": { "no-restricted-syntax:pure-rules": "Dependency rule" }
+    },
+    {
+      "id": "boundaries",
+      "gate": "Context boundaries",
+      "tier": "fast",
+      "appliesTo": ["src/**", "test/**", "scripts/**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 5,
+      "gateByRule": { "neutral-contracts": "Dependency rule", "pure-rules-imports": "Dependency rule", "no-cycles": "Static metrics" }
+    },
+    {
+      "id": "guide-pointers",
+      "gate": "Guide pointers",
+      "tier": "fast",
+      "appliesTo": ["**"],
+      "scope": "whole",
+      "cadence": "change",
+      "costSeconds": 3
+    },
+    {
+      "$comment": "Unit and Integration levels are declared per file in stage S3 of ADOPTION-PLAN.md; until then this is the whole regression suite.",
+      "id": "tests",
+      "gate": "Regression suite",
+      "tier": "full",
+      "appliesTo": ["src/**", "test/**"],
+      "scope": "affected-tests",
+      "cadence": "change",
+      "costSeconds": 280,
+      "coveredBy": "integral-pass"
+    },
+    {
+      "id": "integral-pass",
+      "gate": "Regression suite",
+      "tier": "full",
+      "appliesTo": ["src/**", "test/**"],
+      "scope": "whole",
+      "cadence": "periodic",
+      "cron": "30 3 * * *",
+      "protectionBetweenRuns": "validation by change runs every affected test file (changed files, their importers, and every composition test when any source changes)",
+      "residualRisk": "the real-disk sandbox tests (FACTORY_SANDBOX_TEST_ROOT) and the full-only files in test/tiers.json run only here; a break they alone see stays unseen until the next night",
+      "costSeconds": 900
+    },
+    {
+      "id": "random-order",
+      "gate": "Regression suite",
+      "tier": "full",
+      "appliesTo": ["src/**", "test/**"],
+      "scope": "whole",
+      "cadence": "periodic",
+      "cron": "30 3 * * *",
+      "protectionBetweenRuns": "validation by change runs the affected tests in their declared order",
+      "residualRisk": "an order dependence between tests stays unseen until the next night",
+      "costSeconds": 600
+    }
+  ]
+}

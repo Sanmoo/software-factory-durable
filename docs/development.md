@@ -44,7 +44,7 @@ npm run test:ci                   # gate de integração (≤10 min, lock da má
 `npm run test:ci` executa arquitetura (dependency-cruiser + ESLint `--max-warnings 0`), limpa somente
 `dist/`, compila e verifica tipos **uma vez** e executa **todos** os testes locais compilados com
 `node:test`/`node:assert/strict`, em paralelo com uma lane serial para as exceções. Camadas, manifesto
-`test/tiers.json`, lock, tetos e regras para quem escreve teste: [docs/agents/testing.md](agents/testing.md)
+`test/tiers.json`, lock, tetos e regras para quem escreve teste: [docs/guides/testing-strategy.md](guides/testing-strategy.md)
 (decisão do ticket 36, que substitui a regra "um arquivo compilado por vez" do handoff). Fixtures inválidas são criadas em diretórios
 temporários e analisadas separadamente; não são fontes de runtime nem excluem
 testes autorais da análise. `node_modules/` não é fonte autoral; seus imports
@@ -78,7 +78,7 @@ a admissão de storage recusa tmpfs; caminho curto por causa dos sockets) e uma 
 ordem aleatória. A execução noturna é versionada, **não instalada**:
 
 - `scripts/test-runner/nightly`: atualiza o worktree destacado `<checkout>/.worktrees/nightly-full`
-  para a ponta local de `integration/software-factory-mvp` (depois `main`), sem fetch nem instalação, e
+  para a ponta local de `main` (validação integral da linha integrada), sem fetch nem instalação, e
   roda `full --report` em `${XDG_STATE_HOME:-~/.local/state}/software-factory/nightly-tests/`.
   O `node_modules` desse worktree é mantido pelo operador (`npm ci` nele); divergência vira relatório
   vermelho pelo próprio runner.
@@ -113,33 +113,8 @@ nenhuma prova real afetada.
 
 ## Grafo executável
 
-`.dependency-cruiser.cjs` expressa a matriz da spec 2.4 diretamente: `contracts`,
-`protocol`, `records`, `platform/github`, `platform/host`, `issue-tracker`,
-`code-repository`, `sandbox`, `workers`, `control`. Só se criam diretórios quando
-há implementação real. Imports cruzados usam `index.ts`; não há deep imports,
-ciclos (inclusive de tipos) ou alias de bypass. `tsconfig.json` é o mesmo para
-compilação e resolução do checker (`@factory/*`); aliases não reescritos pelo
-`tsc` não são usados no runtime ESM.
-
-- Controle só importa contratos dos colaboradores via `import type`; Workers só
-  importa tipos da projeção pública de ferramentas Sandbox. Implementações injetadas
-  são compostas pelos entrypoints, não pelas regras.
-- CLI compõe validação Sandbox/Protocol/Records/contratos e somente tipos de Control;
-  controlador pode compor os módulos/infraestrutura; worker não compõe Control,
-  Sandbox ou emissor; adapter não compõe Control, Workers ou emissor.
-- Testes de módulo podem alcançar seu seam privado na zona correspondente;
-  `test/entrypoints` e `test/architecture` são composição de testes, sujeitos às
-  entradas públicas/ownership, não uma exclusão geral. Fonte nova fora das zonas,
-  inclusive fora de `src/`, falha até revisão explícita da classificação.
-- SQLite e Pi Durable somente em `control/durable`; Pi coding-agent somente em
-  Workers; Gondolin somente em Sandbox; Octokit somente nos adapters/infra GitHub.
-- `control/rules` não importa persistência/I/O/SDK; dados/tempo são injetados.
-  ESLint rejeita relógios/ambiente globais e carregamentos calculados/opacos.
-  Imports dinâmicos literais continuam analisáveis pelo dependency-cruiser.
-
-O checker reporta arquivo/dependência/regra. Fixtures afirmam **a regra e os paths**,
-não só exit não-zero. O reporter JSON do dependency-cruiser retorna zero ao gerar
-grafo, mesmo inválido: os testes usam `summary.advisedExitCode` **e**
-`summary.violations`; o comando de gate usa `err-long`, que falha por violação.
-Análise estática não prova mensagens/protocolo/isolamento em runtime nem é proteção
-contra código host comprometido. Nova aresta requer revisão, não relaxamento oportunista.
+A intenção, o julgamento e os ponteiros da arquitetura estão em [docs/guides/architecture.md](guides/architecture.md);
+o mapa executável é [.dependency-cruiser.cjs](../.dependency-cruiser.cjs). O reporter JSON do dependency-cruiser
+retorna zero ao gerar grafo, mesmo inválido: os testes usam `summary.advisedExitCode` **e** `summary.violations`;
+o comando de gate usa `err-long`, que falha por violação. Análise estática não prova mensagens/protocolo/isolamento
+em runtime nem é proteção contra código host comprometido.

@@ -3,13 +3,16 @@ import { test, mock } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parseManifest, parseTapCounts, type FileResult } from '../../scripts/test-runner/lib.ts';
 import { runTier, type FileRun, type Steps } from '../../scripts/test-runner/runner.ts';
-import { childEnvironment, composeStatic, execute, fileEnvironment } from '../../scripts/test-runner/steps.ts';
+import { childEnvironment, composeStatic, eslintFindings, execute, fileEnvironment, pointerFindings, tscFindings } from '../../scripts/test-runner/steps.ts';
+import type { Change, IntegralRecord } from '../../scripts/test-runner/selection.ts';
+import { fixturePolicy } from './policy-fixture.ts';
 
 const counts = { tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
 
 function fakeSteps(overrides: Partial<Steps> = {}) {
   const events: string[] = [];
   const runs: FileRun[] = [];
+  const integrals: IntegralRecord[] = [];
   let clock = 0;
   const steps: Steps = {
     cpus: 8,
@@ -19,6 +22,11 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
     checkDependencies: async () => { events.push('deps'); return []; },
     loadManifest: async () => { events.push('manifest'); return parseManifest({ schemaVersion: 1, files: {
       'test/slow.test.ts': { slow: true, reason: 'r' }, 'test/serial.test.ts': { serial: true, reason: 'r' } } }, () => true); },
+    loadPolicy: async () => fixturePolicy(),
+    changedSet: async base => ({ widened: 'fake: no repository', base }),
+    loadIntegral: async () => undefined,
+    saveIntegral: async record => { integrals.push(record); },
+    headCommit: async () => 'abc',
     acquireLock: async tier => { events.push(`lock ${tier}`); return { waitedMs: 5000, release: () => events.push('release') }; },
     staticAnalysis: async tier => { events.push(`static ${tier}`); clock += 1000; return [{ name: 'tsc', ms: 1000, ok: true }]; },
     listTests: async () => ['test/a.test.ts', 'test/slow.test.ts', 'test/serial.test.ts'],
@@ -34,7 +42,7 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
     },
     ...overrides,
   };
-  return { steps, events, runs, advance: (ms: number) => { clock += ms; } };
+  return { steps, events, runs, integrals, advance: (ms: number) => { clock += ms; } };
 }
 
 test('fast: no lock, slow excluded, parallel lane then serial lane', async () => {
@@ -176,7 +184,7 @@ test('a finished test process leaves nothing behind: leaked processes in its gro
   assert.ok(observed === 'gone' || observed === 'dead', `the leaked grandchild was killed with its group: ${observed}`);
 });
 
-test('static stage: without the staged SDK depcruise waits for compile (prepare-sdk); with it, all three run together', async () => {
+test('static stage: depcruise waits for compile (staged SDK, build output), the other checks run alongside it', async () => {
   for (const staged of [false, true]) {
     const events: string[] = [];
     let finishCompile = () => {};
@@ -184,11 +192,90 @@ test('static stage: without the staged SDK depcruise waits for compile (prepare-
     const result = composeStatic({ staged,
       compile: async () => { events.push('compile start'); await compiled; events.push('compile end'); return [{ name: 'tsc', ms: 1, ok: true }]; },
       lint: async () => { events.push('lint'); return { name: 'eslint', ms: 1, ok: true }; },
-      depcruise: async () => { events.push('depcruise'); return [{ name: 'depcruise', ms: 1, ok: true }]; } });
+      depcruise: async () => { events.push('depcruise'); return [{ name: 'depcruise', ms: 1, ok: true }]; },
+      pointers: async () => { events.push('pointers'); return { name: 'guide-pointers', ms: 1, ok: true }; } });
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(events.includes('depcruise'), staged, `staged=${staged}: depcruise before compile ends`);
+    assert.ok(!events.includes('depcruise') && events.includes('lint') && events.includes('pointers'), `staged=${staged}`);
     finishCompile();
-    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise']);
-    if (!staged) assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
+    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise', 'guide-pointers']);
+    assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
   }
+});
+
+const graphOf = (edges: Record<string, string[]>) => ({ edges: new Map(Object.entries(edges)), unresolved: [] });
+const changed = (files: string[]): Change & { base: string } => ({ files, deleted: [], base: 'main' });
+
+test('validation by change runs the affected tests only and says the result covers that scope, not the application', async () => {
+  const { steps, events } = fakeSteps({
+    changedSet: async () => changed(['test/a.test.ts']),
+    staticAnalysis: async () => [{ name: 'depcruise', ms: 1, ok: true, check: 'boundaries', graph: graphOf({ 'test/a.test.ts': [], 'test/slow.test.ts': [], 'test/serial.test.ts': [] }) }],
+  });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 0, outcome.report);
+  assert.deepEqual(events.filter(event => event.startsWith('run ')), ['run test/a.test.ts']);
+  assert.match(outcome.report, /mode: validation by change, policy 1\+sha256:[0-9a-f]{12}, base main/);
+  assert.match(outcome.report, /ran tests \[Regression suite\]: passed \(affected, 1 files\)/);
+  assert.match(outcome.report, /periodic integral-pass \[Regression suite\]: left to integral validation \(30 3 \* \* \*\); last integral result: not recorded/);
+  assert.match(outcome.report, /RESULT: PASS \(validation by change: the 1 affected files only, not the whole application\)/);
+});
+
+test('a documentation-only change runs only the documentation checks and reports the rest as not applicable', async () => {
+  const parts: string[] = [];
+  const { steps, events } = fakeSteps({ changedSet: async () => changed(['docs/x.md']),
+    staticAnalysis: async (_tier, _signal, part) => { parts.push(part ?? 'all'); return [{ name: 'guide-pointers', ms: 1, ok: true, check: 'guide-pointers' }]; } });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 0, outcome.report);
+  assert.deepEqual(parts, ['documentation']);
+  assert.ok(!events.some(event => event.startsWith('run ')));
+  assert.match(outcome.report, /not applicable types \[Types\]: no affected input/);
+  assert.match(outcome.report, /ran guide-pointers \[Guide pointers\]: passed/);
+});
+
+test('required validation over the approved budget is inconclusive: non-zero, the unverified scope named, no test started', async () => {
+  const { steps, events } = fakeSteps({ loadPolicy: async () => fixturePolicy({ budgetSeconds: 10 }) });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 3);
+  assert.ok(!events.some(event => event.startsWith('run ')));
+  assert.match(outcome.report, /INCONCLUSIVE: required validation is estimated at \d+ s, over the approved 10 s budget/);
+  assert.match(outcome.report, /Decision needed/);
+  assert.match(outcome.report, /RESULT: INCONCLUSIVE/);
+});
+
+test('a periodic check that failed in the last integral run blocks a change in its scope', async () => {
+  const { steps } = fakeSteps({ loadIntegral: async () => ({ policyVersion: 'v', commit: 'deadbeefcafe0', finishedAt: '2026-11-21T03:30:00Z', checks: { 'random-order': 'failed' } }) });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 1);
+  assert.match(outcome.report, /FAILURE: periodic check random-order \(quality gate Regression suite\) failed in the last integral validation at deadbeefcafe0/);
+  assert.match(outcome.report, /last integral result: failed at deadbeefcafe on 2026-11-21T03:30:00Z — BLOCKS this change/);
+});
+
+test('a static finding is reported under its quality gate with its location', async () => {
+  const { steps } = fakeSteps({ staticAnalysis: async () => [{ name: 'depcruise', ms: 1, ok: false, check: 'boundaries',
+    findings: [{ rule: 'pure-rules-imports', location: 'src/control/rules/x.ts → node:fs' }] }] });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 1);
+  assert.match(outcome.report, /FAILURE: quality gate Dependency rule \(boundaries\): pure-rules-imports at src\/control\/rules\/x\.ts → node:fs/);
+});
+
+test('integral validation runs every check even after one fails, and records each outcome for validation by change', async () => {
+  const { steps, events, integrals } = fakeSteps({ staticAnalysis: async () => [{ name: 'tsc', ms: 1, ok: false, check: 'types', findings: [{ rule: 'TS2345', location: 'src/a.ts:1' }] },
+    { name: 'eslint', ms: 1, ok: true, check: 'lint' }] });
+  const outcome = await runTier({ tier: 'full', filters: [], seed: 3 }, steps);
+  assert.equal(outcome.exitCode, 1);
+  assert.equal(events.filter(event => event.startsWith('run ')).length, 6, 'the tests and the random-order pass still ran');
+  assert.deepEqual(integrals.map(record => [record.commit, record.checks]), [['abc', { types: 'failed', lint: 'passed', 'integral-pass': 'passed', 'random-order': 'passed',
+    boundaries: 'not run', 'guide-pointers': 'not run' }]]);
+  assert.match(outcome.report, /covered tests \[Regression suite\]: by integral-pass/);
+  assert.match(outcome.report, /FAILURE: quality gate Types \(types\): TS2345 at src\/a\.ts:1/);
+});
+
+test('finding parsers: tsc lines, ESLint JSON with the pure-rules marker, the documentary checker JSON', () => {
+  assert.deepEqual(tscFindings('src/a.ts(3,7): error TS2345: Argument of type'), [{ rule: 'TS2345', location: 'src/a.ts:3' }]);
+  assert.deepEqual(eslintFindings(JSON.stringify([{ filePath: '/r/src/control/rules/x.ts', messages: [
+    { ruleId: 'no-restricted-syntax', message: 'Pure Control rules use injected data/time, not ambient clocks or I/O.', line: 4 },
+    { ruleId: 'no-unused-vars', message: 'x', line: 5 }] }]), '/r'),
+  [{ rule: 'no-restricted-syntax:pure-rules', location: 'src/control/rules/x.ts:4' }, { rule: 'no-unused-vars', location: 'src/control/rules/x.ts:5' }]);
+  assert.equal(eslintFindings('not json', '/r'), undefined);
+  assert.deepEqual(pointerFindings('{"ok": false, "findings": [{"code": "BROKEN_LINK", "path": "AGENTS.md", "target": "docs/x.md"}]}'),
+    [{ rule: 'BROKEN_LINK', location: 'AGENTS.md → docs/x.md' }]);
 });

@@ -1,11 +1,15 @@
 // Pure test-runner rules: tiers, the exceptions manifest, lane planning, budgets and the report.
 // Runs directly under Node type stripping (no compilation step), so only erasable TypeScript syntax.
+import type { Graph, ValidationPlan } from './selection.ts';
 
 export type Tier = 'fast' | 'ci' | 'full';
 export const tierNames: readonly Tier[] = ['fast', 'ci', 'full'];
 
-/** Wall-clock ceilings on this machine, lock wait excluded. Load from other sessions is not an excuse. */
-export const budgetsMs: Readonly<Record<Tier, number | undefined>> = Object.freeze({ fast: 180_000, ci: 600_000, full: undefined });
+/**
+ * Wall-clock ceilings on this machine, lock wait excluded. Load from other sessions is not an excuse. `ci` (validation by change)
+ * takes its ceiling from the approved budget in scripts/test-runner/policy.json; `full` (integral) is bounded by its systemd unit.
+ */
+export const budgetsMs: Readonly<Record<Tier, number | undefined>> = Object.freeze({ fast: 180_000, ci: undefined, full: undefined });
 
 /** `full`: nightly only (excluded from fast and ci), for files too expensive for the per-integration gate. */
 export interface ManifestEntry { slow: boolean; serial: boolean; full: boolean; quarantine?: string; reason: string }
@@ -97,13 +101,17 @@ export function shuffle<T>(items: readonly T[], seed: number): T[] {
 
 export interface Counts { tests: number; pass: number; fail: number; cancelled: number; skipped: number; todo: number }
 export interface FileResult { file: string; ms: number; ok: boolean; counts: Counts; output?: string }
-export interface StepResult { name: string; ms: number; ok: boolean; output?: string }
+/** A static step: the policy check it realizes, the findings that failed it (rule and location) and, for the cruise, the graph. */
+export interface StepResult { name: string; ms: number; ok: boolean; output?: string; check?: string; findings?: { rule: string; location: string }[]; graph?: Graph }
+export interface ValidationSummary {
+  plan: ValidationPlan; base: string | undefined; estimatedSeconds: number; outcomes: Record<string, 'passed' | 'failed' | 'not run'>; inconclusive?: string;
+}
 export interface LaneResult { name: string; concurrency: number; ms: number; files: FileResult[] }
 export interface RunSummary {
   tier: Tier; lockWaitMs: number; totalMs: number; budgetMs: number | undefined;
   load: { start: readonly number[]; end: readonly number[] };
   static: StepResult[]; lanes: LaneResult[]; quarantined: string[]; skippedSlow: string[]; skippedFull?: string[];
-  filtered: boolean; failures: string[]; seed?: number;
+  filtered: boolean; failures: string[]; seed?: number; validation?: ValidationSummary;
 }
 
 const emptyCounts = (): Counts => ({ tests: 0, pass: 0, fail: 0, cancelled: 0, skipped: 0, todo: 0 });
@@ -136,7 +144,34 @@ export function formatReport(summary: RunSummary): string {
   lines.push('slowest files:');
   [...all].sort((a, b) => b.ms - a.ms).slice(0, 10)
     .forEach((file, index) => lines.push(`  ${index + 1}. ${seconds(file.ms)} s ${file.file}`));
+  if (summary.validation) lines.push(...validationLines(summary.validation));
   for (const failure of summary.failures) lines.push(`FAILURE: ${failure}`);
-  lines.push(summary.failures.length ? 'RESULT: FAIL' : `RESULT: PASS${summary.filtered ? ' (filtered run: convenience only, never a gate)' : ''}`);
+  const scope = summary.validation?.plan.mode === 'change'
+    ? (summary.validation.plan.widened ? ' (validation by change, widened: every applicable check over its whole input; periodic checks not run)'
+      : ` (validation by change: the ${summary.validation.plan.affected?.length ?? 0} affected files only, not the whole application)`)
+    : summary.validation?.plan.mode === 'integral' ? ' (integral validation of this tree: every check over its whole input)' : '';
+  lines.push(summary.failures.length ? 'RESULT: FAIL'
+    : summary.validation?.inconclusive ? 'RESULT: INCONCLUSIVE'
+      : `RESULT: PASS${scope}${summary.filtered ? ' (filtered run: convenience only, never a gate)' : ''}`);
   return lines.join('\n');
+}
+
+function validationLines(validation: ValidationSummary): string[] {
+  const { plan } = validation;
+  const lines = [`mode: ${plan.mode === 'change' ? 'validation by change' : 'integral validation'}, policy ${plan.policyVersion}`
+    + (validation.base ? `, base ${validation.base}` : '')];
+  if (plan.mode === 'change') lines.push(plan.widened ? `selection widened: ${plan.widened}` : `selection: ${plan.affected?.length ?? 0} affected files (changed files and their dependents)`);
+  lines.push(`estimated cost: ${Math.round(validation.estimatedSeconds)} s`);
+  for (const entry of plan.entries) {
+    const label = `${entry.check.id} [${entry.check.gate}]`;
+    if (entry.decision === 'run') {
+      const scope = entry.scope === 'whole' ? 'whole input' : `${entry.scope}, ${entry.files.length} files`;
+      lines.push(`  ran ${label}: ${validation.outcomes[entry.check.id] ?? 'not run'} (${scope})`);
+    } else if (entry.decision === 'not-applicable') lines.push(`  not applicable ${label}: no affected input`);
+    else if (entry.decision === 'covered') lines.push(`  covered ${label}: by ${entry.by}`);
+    else lines.push(`  periodic ${label}: left to integral validation (${entry.check.cron}); last integral result: ${entry.last.outcome}`
+      + (entry.last.at ? ` at ${entry.last.commit?.slice(0, 12)} on ${entry.last.at}` : '') + (entry.blocking ? ' — BLOCKS this change' : ''));
+  }
+  if (validation.inconclusive) lines.push(`INCONCLUSIVE: ${validation.inconclusive}`);
+  return lines;
 }

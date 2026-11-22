@@ -119,3 +119,42 @@ test('the public check command rejects a broken active-document link', async t =
   assert.equal(result.status, 1);
   assert.match(result.stdout, /BROKEN_LINK/);
 });
+
+test('Guide pointers: links in GLOSSARY.md, docs/guides/ and docs/adr/ must resolve, and the finding names the target', async t => {
+  const root = await repository(t);
+  for (const directory of ['docs/guides', 'docs/adr']) await mkdir(join(root, directory), {recursive: true});
+  await writeFile(join(root, 'GLOSSARY.md'), '# G\n[spec](docs/spec.md)\n');
+  await writeFile(join(root, 'docs/guides/a.md'), '[up](../../GLOSSARY.md)\n');
+  await writeFile(join(root, 'docs/adr/0001-x.md'), '[guide](../guides/a.md)\n');
+  let result = check(root);
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout).findings, [{code: 'BROKEN_LINK', path: 'GLOSSARY.md', target: 'docs/spec.md'}]);
+  await writeFile(join(root, 'docs/spec.md'), 'x\n');
+  result = check(root);
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test('Guide pointers: a backticked repository path in a Guide must exist; placeholders, globs and untracked roots are not paths', async t => {
+  const root = await repository(t);
+  await mkdir(join(root, 'docs/guides'), {recursive: true});
+  await mkdir(join(root, 'src'), {recursive: true});
+  await writeFile(join(root, 'src/a.ts'), 'x\n');
+  await writeFile(join(root, 'docs/guides/g.md'), 'See `src/a.ts`, `src/<module>/index.ts`, `src/**`, `node_modules/.cache/x.json` and `src/gone.ts`.\n');
+  const result = check(root);
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout).findings, [{code: 'MISSING_PATH', path: 'docs/guides/g.md', target: 'src/gone.ts'}]);
+});
+
+test('Guide pointers: a Guide names only the Entry Points and the full Entry Point modes as commands', async t => {
+  const root = await repository(t);
+  await mkdir(join(root, 'docs/guides'), {recursive: true});
+  await writeFile(join(root, 'AGENTS.md'), 'Run `npm run test:fast`, `npm run test:ci` or `npm run test:full`; then `git push origin main`.\n');
+  await writeFile(join(root, 'docs/guides/g.md'), 'Never `npx eslint src`; `node --test dist/x.js` neither.\n\n```sh\nnpm run lint\n```\n');
+  const result = check(root);
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout).findings, [
+    {code: 'NON_ENTRY_POINT_COMMAND', path: 'docs/guides/g.md', target: 'npx eslint src'},
+    {code: 'NON_ENTRY_POINT_COMMAND', path: 'docs/guides/g.md', target: 'node --test dist/x.js'},
+    {code: 'NON_ENTRY_POINT_COMMAND', path: 'docs/guides/g.md', target: 'npm run lint'},
+  ]);
+});
