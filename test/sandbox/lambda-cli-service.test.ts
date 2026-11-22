@@ -49,6 +49,26 @@ test('a policy simulation names the principal, actions, resources and request co
     '--context-entries', 'ContextKeyName=aws:RequestTag/software-factory-installation,ContextKeyValues=acme,ContextKeyType=string']);
 });
 
+test('the recorded detail of a CLI failure is the line that names the problem, never the usage banner', async () => {
+  const detail = async (stderr: string) => { const result = await scripted({ 'sts get-caller-identity': { exitCode: 252, stderr } }).service.callerIdentity(); return result.ok ? 'ok' : result.failure.detail; };
+  // Observed in a real account on 2026-11-21: an unknown option, named only after the usage banner and the help hint.
+  assert.equal(await detail('\nusage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\nTo see help text, you can run:\n\n  aws help\n  aws <command> help\n  aws <command> <subcommand> help\n\nUnknown options: --tags, {"a":"b"}\n'),
+    'Unknown options: --tags, {"a":"b"}');
+  assert.equal(await detail("\naws: [ERROR]: An error occurred (ParamValidation): argument operation: Found invalid choice 'x'\n\nusage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\nTo see help text, you can run:\n\n  aws help\n"),
+    "aws: [ERROR]: An error occurred (ParamValidation): argument operation: Found invalid choice 'x'");
+  assert.equal(await detail('usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\nTo see help text, you can run:\n\n  aws help\n  aws <command> help\n  aws <command> <subcommand> help\n\naws: error: the following arguments are required: --bucket\n'),
+    'aws: error: the following arguments are required: --bucket');
+  // The error line wins over an earlier line that is neither banner nor error.
+  assert.equal(await detail('Note: something\nAn error occurred (Throttling) when calling the GetCallerIdentity operation: slow down\n'), 'An error occurred (Throttling) when calling the GetCallerIdentity operation: slow down');
+  // No recognised error line: the first line that is not the banner or its continuation.
+  assert.equal(await detail('usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\nTo see help text, you can run:\n\n  aws help\n  aws <command> help\n  aws <command> <subcommand> help\n\nsomething new went wrong\n'), 'something new went wrong');
+  assert.equal(await detail('something new\nmore'), 'something new');
+  // Only the banner: it is still better than nothing.
+  assert.equal(await detail('usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\n'), 'usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]');
+  assert.equal(await detail(''), undefined);
+  assert.equal((await detail(`Unknown options: ${'x'.repeat(400)}`))!.length, 300);
+});
+
 test('CLI failures become the port\'s causes: missing CLI, missing profile, no identity, denied action, missing resource, region without endpoint', async () => {
   const failing = async (stderr: string) => (await scripted({ 'sts get-caller-identity': { exitCode: 254, stderr } }).service.callerIdentity());
   const kind = async (stderr: string) => { const result = await failing(stderr); return result.ok ? 'ok' : result.failure.kind; };

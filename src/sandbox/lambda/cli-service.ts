@@ -27,7 +27,18 @@ export function createAwsCliRunner({ executable = 'aws', environment = process.e
   });
 }
 
-const line = (text: string) => text.split('\n').map(part => part.trim()).find(Boolean)?.slice(0, 300);
+/**
+ * The line of the CLI's stderr that names the problem, capped at 300 characters. A usage error prints the `usage:` banner and a help hint
+ * around the one line that matters, before it or after it depending on the CLI version (observed in a real account on 2026-11-21: an
+ * unknown option was recorded as `usage: aws [options] <command> ...` and the option's name was lost). So: a line that carries the error
+ * first, else the first line that is not the banner or its continuation, else whatever came first.
+ */
+const errorLine = /^aws: \[ERROR\]:|^aws: error:|^An error occurred|Unknown options|invalid choice/i;
+const usageBanner = /^usage:|^To see help text, you can run:|^aws( <command>)?( <subcommand>)? help$|^\[<subcommand> \.\.\.\]|^<command>|^\[parameters\]/i;
+function line(text: string): string | undefined {
+  const lines = text.split('\n').map(part => part.trim()).filter(Boolean);
+  return (lines.find(part => errorLine.test(part)) ?? lines.find(part => !usageBanner.test(part)) ?? lines[0])?.slice(0, 300);
+}
 
 /** AWS CLI error text to the port's failure kinds. The texts are the CLI's and botocore's stable messages. */
 function classify(stderr: string): LambdaServiceFailure {
