@@ -377,10 +377,15 @@ export async function openControl(options: { storagePath: string;
         const forgotten = work ? undefined : await readForgottenWork(state, query.work_id);
         if (forgotten) return { kind: 'work-forgotten', work_id: query.work_id, memory: forgotten, notRecoverable: [...forgottenNotRecoverable], nextStep: forgottenNextStep(forgotten) };
         if (!work) return { kind: 'work-not-found', work_id: query.work_id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
-        const lastPolled = pollingView().repositories.flatMap(repo => repo.candidates ?? [])
+        // Jira ticket 04: a Jira Work was last polled by its ORIGIN source round, not by its destination repository's.
+        const view = pollingView();
+        const polled = work.ticket.tracker === 'jira'
+          ? view.sources?.find(source => work.ticket.tracker === 'jira' && source.siteId === work.ticket.siteId && work.authorization.source === 'jira-rest' &&
+            source.projectId === work.authorization.basis.projectId)
+          : view.repositories.find(repo => repo.repository.toLowerCase() === work.repository.repository.toLowerCase());
+        const lastPolled = [...view.repositories, ...(view.sources ?? [])].flatMap(repo => repo.candidates ?? [])
           .find(candidate => ticketKey(candidate.ticket) === ticketKey(work.ticket)) ?? null;
         const questions = await readQuestions(state, work);
-        const polled = pollingView().repositories.find(repo => repo.repository.toLowerCase() === work.repository.repository.toLowerCase());
         const chain = chainOf(work, questions, { ageSeconds: at => { const time = at ? Date.parse(at) : Number.NaN; return Number.isFinite(time) ? Math.max(0, Math.round((calendar.now() - time) / 1000)) : null; },
           timeoutSeconds: configuredRepository(work.repository.repository)?.timeoutSeconds ?? null,
           lastPolledAt: lastPolled?.observedAt ?? null, lastPolledCompleteness: lastPolled ? polled?.completeness ?? null : null });

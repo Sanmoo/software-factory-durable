@@ -120,6 +120,8 @@ test('a key change (PAG-42 -> FIN-18) updates the presentation of the SAME Work,
   const shown = await h.show(work!.work_id);
   assert.deepEqual([shown.work.ticket.tracker === 'jira' && shown.work.ticket.key, shown.work.ticket.url, shown.work.repository.repository],
     ['FIN-18', 'https://equipe.atlassian.net/browse/FIN-18', 'acme/project']);
+  // The latest poll of its ORIGIN source names the Card under its current key.
+  assert.deepEqual([shown.lastPolled?.outcome, shown.lastPolled?.ticket.tracker === 'jira' && shown.lastPolled.ticket.key], ['existing', 'FIN-18']);
   const changed = shown.work.history.filter((entry: WorkView['history'][number]) => entry.event === 'ticket-presentation-changed');
   assert.deepEqual(changed.map(entry => 'detail' in entry ? entry.detail : null), ['PAG-42 -> FIN-18']);
   // Reads are by ID only (the listing is by project/label): nothing ever looks the old key up.
