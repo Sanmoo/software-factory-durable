@@ -472,7 +472,16 @@ const channelFile = 'channel.jsonl';
 const channelEntrySchema = z.union([
   z.strictObject({ kind: z.literal('effect'), at: instant, executionId: z.string(), invocationId: z.string(), role: z.string(), tool: z.enum(['bash', 'write', 'edit-source']),
     callId: z.string(), description: z.string(), outcome: z.enum(['orphan-ended', 'environment-ended', 'channel-unrecoverable']) }),
-  z.strictObject({ kind: z.literal('unrecoverable'), at: instant, attempts: z.number().int().positive() })]);
+  z.strictObject({ kind: z.literal('unrecoverable'), at: instant, attempts: z.number().int().positive() }),
+  // Diagnostics of a recovery (real run of 2026-11-22: an exhausted reconnection left nothing saying what each attempt met). One line
+  // per step: `drop` is the reconnection after a lost connection (numbered attempts, with the service's word on the environment),
+  // `interrupt` the end of a call the adapter itself cut (v2 ticket 09). `call` is the host's marker identity of the call; `outcome`
+  // is one of the fixed words of `end-call`. No output of a tool, no connection detail and no credential is ever here. It is not part
+  // of the channel report: Control decides nothing from it.
+  z.strictObject({ kind: z.literal('recovery'), at: instant, cause: z.enum(['drop', 'interrupt']), call: z.string(), attempt: z.number().int().positive(),
+    condition: z.enum(['active', 'ended', 'unknown']).optional(), action: z.enum(['end-call', 'rerun']).optional(),
+    status: z.enum(['exited', 'refused', 'lost', 'closed']).optional(), code: z.string().optional(), exitCode: z.number().int().optional(),
+    outcome: z.string().max(64).optional() })]);
 export type LambdaChannelEntry = z.infer<typeof channelEntrySchema>;
 
 /**
@@ -482,16 +491,19 @@ export type LambdaChannelEntry = z.infer<typeof channelEntrySchema>;
 export async function recordLambdaChannelEntry(root: string, environment: EnvironmentRef, boot: BootRef, entry: LambdaChannelEntry): Promise<void> {
   await appendFile(join(await bootDirectory(root, environment, boot), channelFile), `${JSON.stringify(channelEntrySchema.parse(entry))}\n`, { mode: 0o600 });
 }
+/** Every line of the boot's channel record, in order; empty when nothing was recorded. A line that cannot be read throws. */
+export async function readLambdaChannelLog(root: string, environment: EnvironmentRef, boot: BootRef): Promise<LambdaChannelEntry[]> {
+  if (!/^env-[a-f0-9]{64}$/.test(environment) || !bootRecordSchema.shape.boot.safeParse(boot).success) return [];
+  let text: string;
+  try { text = await readFile(join(await bootDirectory(root, environment, boot), channelFile), 'utf8'); } catch (error) { if (missing(error)) return []; throw error; }
+  return text.split('\n').filter(Boolean).map(line => channelEntrySchema.parse(JSON.parse(line)));
+}
 /** The channel report of one boot; empty when nothing was recorded. A line that cannot be read throws: an uncertain effect is never dropped silently. */
 export async function readLambdaChannelReport(root: string, environment: EnvironmentRef, boot: BootRef): Promise<ChannelReport> {
   const report: ChannelReport = { indeterminateEffects: [], unrecoverable: null };
-  if (!/^env-[a-f0-9]{64}$/.test(environment) || !bootRecordSchema.shape.boot.safeParse(boot).success) return report;
-  let text: string;
-  try { text = await readFile(join(await bootDirectory(root, environment, boot), channelFile), 'utf8'); } catch (error) { if (missing(error)) return report; throw error; }
-  for (const line of text.split('\n').filter(Boolean)) {
-    const entry = channelEntrySchema.parse(JSON.parse(line));
+  for (const entry of await readLambdaChannelLog(root, environment, boot)) {
     if (entry.kind === 'effect') { const { kind: _kind, ...effect } = entry; report.indeterminateEffects.push(effect satisfies IndeterminateEffect); }
-    else report.unrecoverable ??= { at: entry.at, attempts: entry.attempts };
+    else if (entry.kind === 'unrecoverable') report.unrecoverable ??= { at: entry.at, attempts: entry.attempts };
   }
   return report;
 }

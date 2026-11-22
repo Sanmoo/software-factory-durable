@@ -8,6 +8,7 @@ import { createSandbox, type BootRef, type EnvironmentRef, type ReadResult, type
 import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 import { manualObservationTimer } from './lambda-observation-timer.js';
+import { readLambdaChannelLog } from '../../src/sandbox/lambda/boot.js';
 
 // v2 ticket 10 (V2-15, mandatory gate; the continuity proof failed its absence: I2): the adapter watches the ENVIRONMENT through the
 // service at the profile's interval and, on confirmed cessation, cancels the call in flight and denies every later one. Sandbox level:
@@ -68,7 +69,7 @@ async function watchedBoot(t: TestContext) {
     return { running, finish };
   };
   const queries = () => fake.calls.filter(call => call.operation === 'microvm').length;
-  return { fake, guests, guest, sandbox, environment, boot, watch, endings, tools, bind, invocation, longCommand, queries };
+  return { root, fake, guests, guest, sandbox, environment, boot, watch, endings, tools, bind, invocation, longCommand, queries };
 }
 
 test('V2-15: the adapter asks the service for the environment at the interval of the profile, with or without a call in flight; a long command and a silent agent end nothing', async t => {
@@ -167,6 +168,9 @@ test('V2-13: the adapter interrupts the call in flight of one invocation: its co
   assert.deepEqual(h.guest.executions.filter(execution => execution.program === 'end-call').length, 1);
   const report = await h.sandbox.channelReport({ environment: h.environment, boot: h.boot });
   assert.deepEqual(report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome]), [['bash', 'mvn verify', 'orphan-ended']]);
+  // How the end of the interrupted call answered is in the boot's record (it is the same program a reconnection runs).
+  assert.deepEqual((await readLambdaChannelLog(h.root, h.environment, h.boot)).flatMap(entry => entry.kind === 'recovery' ? [[entry.cause, entry.attempt, entry.condition, entry.action, entry.status, entry.exitCode, entry.outcome]] : []),
+    [['interrupt', 1, undefined, 'end-call', 'exited', 0, 'call-ended']]);
   // The boot, the watch and the other invocation are untouched; the interrupted invocation runs its next command.
   assert.deepEqual(h.endings, []);
   assert.equal((await h.sandbox.observe({ environment: h.environment, boot: h.boot })).condition, 'active');

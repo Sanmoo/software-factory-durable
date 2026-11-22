@@ -8,6 +8,7 @@ import { createSandbox, type BootRef, type EnvironmentRef, type ReadResult, type
 import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 import { renderGuestImage } from '../../src/sandbox/lambda/guest-image.js';
+import { readLambdaChannelLog } from '../../src/sandbox/lambda/boot.js';
 import { channelPrelude, commitIdentityEnv, guestPath } from '../../src/sandbox/bash-tools.js';
 import { spawnSync } from 'node:child_process';
 import { remainingMs } from '../runner/budget.js';
@@ -333,7 +334,7 @@ test('a Builder copies a command output into /artifacts and reads it; a reviewer
 // ---- v2 ticket 11 (V2-21, V2-22): the channel drops while the environment lives ----
 
 test('a channel drop with the MicroVM alive: the adapter reconnects with the boot\'s own credentials, ends the orphan and answers "indeterminate"; the invocation goes on', async t => {
-  const { fake, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
+  const { root, fake, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
   const after: string[] = [];
   guests.world.commands['mvn deploy'] = async (_guest, run) => {
     run.emit('uploading\n');
@@ -358,6 +359,11 @@ test('a channel drop with the MicroVM alive: the adapter reconnects with the boo
   assert.deepEqual([call!.program, end!.program], ['tool', 'end-call']);
   assert.deepEqual([end!.user, end!.identityFile, end!.hostKey, end!.microvmId], [call!.user, call!.identityFile, call!.hostKey, call!.microvmId]);
   assert.equal(end!.hostKey, guest.hostKey);
+  // The boot's record says what the one attempt met and how the end of the orphan answered.
+  const steps = (await readLambdaChannelLog(root, environment, boot)).filter(entry => entry.kind === 'recovery');
+  assert.deepEqual(steps.map(({ at: _at, call: _call, ...step }) => step), [
+    { kind: 'recovery', cause: 'drop', attempt: 1, condition: 'active', action: 'end-call', status: 'exited', exitCode: 0, outcome: 'call-ended' }]);
+  assert.match(steps[0]!.call, /^[0-9a-f-]{36}$/);
   // The boot was not ended and the same invocation runs its next command.
   assert.equal((await sandbox.observe({ environment, boot })).condition, 'active');
   assert.equal(fake.account.microvms.at(-1)!.state, 'RUNNING');
@@ -415,6 +421,11 @@ test('reconnection that keeps failing with the MicroVM alive stops at its limit:
   const report = await sandbox.channelReport({ environment, boot });
   assert.deepEqual(report.indeterminateEffects.map(effect => [effect.description, effect.outcome]), [['make release', 'channel-unrecoverable']]);
   assert.equal(report.unrecoverable?.attempts, 5);
+  // Each of the five attempts is in the boot's record, before the limit: the service said the environment lived, the connection was refused.
+  const log = await readLambdaChannelLog(root, environment, boot);
+  assert.deepEqual(log.map(entry => entry.kind), ['recovery', 'recovery', 'recovery', 'recovery', 'recovery', 'unrecoverable', 'effect']);
+  assert.deepEqual(log.flatMap(entry => entry.kind === 'recovery' ? [[entry.cause, entry.attempt, entry.condition, entry.action, entry.status, entry.code]] : []),
+    [1, 2, 3, 4, 5].map(attempt => ['drop', attempt, 'active', 'end-call', 'refused', 'UNREACHABLE']));
   // The channel came back too late: this boot serves nothing more, and no further call consults the service or waits.
   guests.world.channelDown = false;
   const settled = { reads: reads(), now: fake.account.clock.now };
@@ -433,8 +444,29 @@ test('reconnection that keeps failing with the MicroVM alive stops at its limit:
     { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' });
 });
 
+test('an orphan the guest still reports alive is asked to end again; every attempt and its answer are in the boot\'s record, and nothing of a tool\'s output is', async t => {
+  const { root, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
+  const secret = 'ghs_outputOfTheCommandItself';
+  guests.world.commands['make publish'] = async (_guest, run) => { run.emit(`${secret}\n`); guests.drop(); await run.killed; return 0; };
+  // The guest answers twice that the group still runs (exit 5); the third time its own program ends it.
+  let asked = 0;
+  guests.world.programs['end-call'] = () => { if ((asked += 1) === 2) delete guests.world.programs['end-call']; return { exitCode: 5, stdout: `call-alive\n${secret}\n` }; };
+  const builder = await invocation();
+  assert.deepEqual(await builder.call({ name: 'bash', command: 'make publish' }, () => {}), { status: 'failure', code: 'BASH_RESULT_INDETERMINATE' });
+  assert.deepEqual(guest.processes.map(process => process.state), ['killed']);
+  const log = await readLambdaChannelLog(root, environment, boot);
+  assert.deepEqual(log.flatMap(entry => entry.kind === 'recovery' ? [[entry.attempt, entry.condition, entry.action, entry.status, entry.exitCode, entry.outcome]] : []), [
+    [1, 'active', 'end-call', 'exited', 5, 'call-alive'],
+    [2, 'active', 'end-call', 'exited', 5, 'call-alive'],
+    [3, 'active', 'end-call', 'exited', 0, 'call-ended']]);
+  assert.ok(!JSON.stringify(log).includes(secret));
+  // The report Control reads is unchanged by the diagnostics: one uncertain effect, no limit reached.
+  const report = await sandbox.channelReport({ environment, boot });
+  assert.deepEqual([report.indeterminateEffects.map(effect => effect.outcome), report.unrecoverable], [['orphan-ended'], null]);
+});
+
 test('a reconnection accepts only the host key pinned at the boot; a call that never reached the guest is run once the channel is back', async t => {
-  const { guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
+  const { root, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
   // The connection cannot be opened for a while with the MicroVM alive: nothing ran, so the call is simply made again.
   const builder = await invocation();
   guests.world.channelDown = true;
@@ -449,6 +481,9 @@ test('a reconnection accepts only the host key pinned at the boot; a call that n
   const listed = await builder.call({ name: 'bash', command: 'docker ps' }, () => {});
   assert.equal(listed.status === 'success' && 'exitCode' in listed && listed.exitCode, 0, JSON.stringify(listed));
   assert.equal(consulted, 2);
+  // A call that never started is run again, and the record says how each rerun ended (never what it printed).
+  assert.deepEqual((await readLambdaChannelLog(root, environment, boot)).flatMap(entry => entry.kind === 'recovery' ? [[entry.attempt, entry.action, entry.status, entry.code, entry.exitCode, entry.outcome]] : []),
+    [[1, 'rerun', 'refused', 'UNREACHABLE', undefined, undefined], [2, 'rerun', 'exited', undefined, 0, undefined]]);
   assert.deepEqual((await sandbox.channelReport({ environment, boot })).indeterminateEffects, []);
 
   // After a drop, something else answers at the endpoint with another host key: the adapter never talks to it.

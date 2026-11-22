@@ -4,7 +4,7 @@ import type { BootRef } from '../lifecycle.js';
 import type { EnvironmentRef } from '../prepare.js';
 import { serveReadTools } from '../read-tools.js';
 import { contextSchema, type GuestOwner, type QualifiedProfileOrigin, type ReadBinding, type ToolContext } from '../tool-binding.js';
-import { defaultLambdaObservationTimer, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, readLambdaChannelReport, recordLambdaChannelEntry, type LambdaBootDependencies, type LambdaObservation } from './boot.js';
+import { defaultLambdaObservationTimer, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, readLambdaChannelReport, recordLambdaChannelEntry, type LambdaBootDependencies, type LambdaChannelEntry, type LambdaObservation } from './boot.js';
 import type { GuestExecRequest, GuestExecResult, GuestUser, LambdaChannel } from './transport.js';
 
 /**
@@ -30,27 +30,45 @@ export const callMarker = (call: string) => `/tmp/factory-call-${call}`;
  * The bash text of one tool program: the fixed argument vector of the tool backends, every word single-quoted. It carries no secret.
  *
  * `call` (v2 ticket 11): the program first writes its own PID to the call's marker. `sshd` runs each command as the leader of a new
- * session, and `exec` keeps that PID, so the PID is the process GROUP of everything the call starts (NOT PROVEN in a real guest); it is
- * what `endCallProgram` kills after a reconnection.
+ * session, and `exec` keeps that PID, so the PID is the process GROUP of everything the call starts; it is what `endCallProgram` kills
+ * after a reconnection. Observed with the pinned Alpine packages (OpenSSH 10.2, bash 5.3) in a local container on 2026-11-22.
  */
 export const toolScript = (argv: readonly string[], cwd = '/', call?: string) =>
   `${call === undefined ? '' : `echo $$ > ${quote(callMarker(call))} && `}cd ${quote(cwd)} && exec ${argv.map(quote).join(' ')}`;
 /**
  * v2 ticket 11 (V2-21): ends the process group of a call whose connection dropped, over a NEW connection as the same guest user (the
  * proof showed a closed connection does not end the process). Prints `call-ended`, or `call-not-started` when the call never
- * registered; exit 5 when the group is still alive after the kill, exit 6 when the marker holds no usable PID. It reads nothing the
- * orphan wrote: there is no reattachment to its output.
+ * registered; exit 5 (`call-alive`) when a member of the group still runs after the kill, exit 6 when the marker holds no usable PID.
+ * It reads nothing the orphan wrote: there is no reattachment to its output.
+ *
+ * "Still runs" is read from `/proc`, never from `kill -0` (real run of 2026-11-22: every attempt answered `call-alive` with the group
+ * dead). When the connection drops, the `sshd` session process ends and the orphan is adopted by PID 1 of the guest, the hook agent,
+ * which reaps nothing: the killed members stay as zombies for the rest of the boot, and a signal to a zombie succeeds. A zombie runs
+ * nothing and holds nothing, so only members in another state count. `kill -0` remains the fallback of a guest without `/proc`.
  */
 export const endCallProgram = (call: string): GuestExecRequest => ({ program: 'end-call', script: [
   `marker=${quote(callMarker(call))}`,
   'pid=$(cat "$marker" 2>/dev/null) || { echo call-not-started; exit 0; }',
   'case "$pid" in \'\'|*[!0-9]*) exit 6;; esac',
   '[ "$pid" -gt 1 ] || exit 6',
+  'alive() {',
+  '  [ -r /proc/self/stat ] || { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; return; }',
+  '  local file line',
+  '  for file in /proc/[0-9]*/stat; do',
+  '    { IFS= read -r line < "$file"; } 2>/dev/null || continue',
+  // After the command name (which may itself hold spaces and parentheses): state, parent, process group.
+  '    set -- ${line##*) }',
+  '    { [ "$3" = "$pid" ] || [ "$file" = "/proc/$pid/stat" ]; } && [ "$1" != Z ] && [ "$1" != X ] && return 0',
+  '  done',
+  '  return 1',
+  '}',
   'kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true',
-  'for attempt in 1 2 3 4 5; do kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null || break; sleep 1; done',
-  'if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then echo call-alive; exit 5; fi',
+  'for attempt in 1 2 3 4 5; do alive || break; sleep 1; done',
+  'if alive; then echo call-alive; exit 5; fi',
   'rm -f "$marker"',
   'echo call-ended'].join('\n') });
+/** The one-line answer of `endCallProgram`, when it is one of its own fixed words (nothing else of a guest's output is ever recorded). */
+export const endCallOutcome = (stdout: string): string | undefined => /^call-[a-z-]{1,40}$/.exec(stdout.split('\n', 1)[0] ?? '')?.[0];
 
 /** Reconnection of a dropped channel with the environment alive (V2-21): bounded, then the boot serves no more calls. Never a loop. */
 export const lambdaReconnect = Object.freeze({ attempts: 5, intervalSeconds: 5 });
@@ -59,7 +77,19 @@ export const lambdaReconnect = Object.freeze({ attempts: 5, intervalSeconds: 5 }
  * environment (`unknown`: it could not be read, which is never taken as an end); `exhausted` latches once reconnection reached its limit.
  */
 export type ChannelRecovery = { condition(): Promise<'active' | 'ended' | 'unknown'>; sleep(milliseconds: number): Promise<void>;
-  exhausted(): boolean; exhaust(attempts: number): Promise<void> };
+  exhausted(): boolean; exhaust(attempts: number): Promise<void>;
+  /** Diagnostics only: one record per recovery step (what the service said, what was run over the new connection and how it ended). */
+  attempted?(step: RecoveryStep): Promise<void> };
+/** One step of a recovery, as recorded in the boot's `channel.jsonl`. It carries no output of a tool and no connection detail. */
+export type RecoveryStep = Omit<Extract<LambdaChannelEntry, { kind: 'recovery' }>, 'kind' | 'at'>;
+/** How a program run for a recovery ended. Only `end-call` has an `outcome`: a tool's own output is never part of a record. */
+const stepEnd = (action: 'end-call' | 'rerun', result: GuestExecResult): Pick<RecoveryStep, 'action' | 'status' | 'code' | 'exitCode' | 'outcome'> => {
+  const outcome = action === 'end-call' && result.status === 'exited' ? endCallOutcome(result.stdout) : undefined;
+  return { action, status: result.status, ...(result.status === 'refused' ? { code: result.code } : {}),
+    ...(result.status === 'exited' ? { exitCode: result.exitCode } : {}), ...(outcome === undefined ? {} : { outcome }) };
+};
+/** A record that cannot be written changes nothing of the recovery it describes. */
+const noted = (recovery: ChannelRecovery | undefined, step: RecoveryStep) => recovery?.attempted?.(step).catch(() => {}) ?? Promise.resolve();
 type Dropped = { status: 'dropped'; outcome: ChannelDropOutcome; /** Whether the program can have started in the guest. */ started: boolean };
 
 /**
@@ -76,15 +106,19 @@ async function recovered(first: GuestExecResult, run: () => Promise<GuestExecRes
   for (let attempt = 1; attempt <= lambdaReconnect.attempts; attempt += 1) {
     const condition = await recovery.condition();
     if (signal.aborted) return { status: 'lost' };
-    if (condition === 'ended') return { status: 'dropped', outcome: 'environment-ended', started };
     if (condition === 'active' && started) {
       const ended = await channel.exec(endCallProgram(call));
+      await noted(recovery, { cause: 'drop', call, attempt, condition, ...stepEnd('end-call', ended) });
       if (ended.status === 'closed') return ended;
       if (ended.status === 'exited' && ended.exitCode === 0) return { status: 'dropped', outcome: 'orphan-ended', started };
     } else if (condition === 'active') {
       const again = await run();
+      await noted(recovery, { cause: 'drop', call, attempt, condition, ...stepEnd('rerun', again) });
       if (!down(again)) return again;
       started ||= again.status === 'lost';
+    } else {
+      await noted(recovery, { cause: 'drop', call, attempt, condition });
+      if (condition === 'ended') return { status: 'dropped', outcome: 'environment-ended', started };
     }
     if (attempt < lambdaReconnect.attempts) await recovery.sleep(lambdaReconnect.intervalSeconds * 1000);
   }
@@ -149,6 +183,7 @@ export function lambdaGuestOwner(channel: LambdaChannel, recovery?: ChannelRecov
       // reconnected for it: its process group is ended and the call has no result. It may have started; it is never "not executed".
       if (cut.signal.aborted && !options.signal.aborted && !gone?.aborted && first.status !== 'exited') {
         const ended = await channel.exec(endCallProgram(call));
+        await noted(recovery, { cause: 'interrupt', call, attempt: 1, ...stepEnd('end-call', ended) });
         return { status: 'dropped', outcome: ended.status === 'exited' && ended.exitCode === 0 ? 'orphan-ended' : 'channel-unrecoverable', started: true };
       }
       const outcome = recovery && !gone?.aborted ? await recovered(first, run, channel, call, options.signal, recovery) : first;
@@ -269,6 +304,7 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
       exhausted = true;
       await recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'unrecoverable', at: new Date(dependencies.clock.now()).toISOString(), attempts });
     },
+    attempted: step => recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'recovery', at: new Date(dependencies.clock.now()).toISOString(), ...step }),
   };
   return { status: 'serving', tools: {
     async bind(binding) {
