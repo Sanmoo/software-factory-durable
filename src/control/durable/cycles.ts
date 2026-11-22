@@ -26,7 +26,7 @@ type Index = { tickets: Record<string, { current: string; previous: string[] }>;
   forgotten?: Record<string, ForgottenWork> };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const history = (work: WorkRecord, event: CycleEvent,
-  origin: 'controller-cycles' | 'local-cli', detail: string, at = new Date().toISOString()) => work.history.push({ at, event, origin, detail: detail.slice(0, 512) });
+  origin: 'controller-cycles' | 'local-cli' | 'jira-comment', detail: string, at = new Date().toISOString()) => work.history.push({ at, event, origin, detail: detail.slice(0, 512) });
 const addImpediment = (work: WorkRecord, impediment: Impediment) => { if (!hasImpediment(work, impediment.code)) work.impediments.push(impediment); };
 const removeImpediments = (work: WorkRecord, codes: string[]) => { work.impediments = work.impediments.filter(item => !codes.includes(item.code)); };
 /** The Ticket's explicit minimal memory (spec §12.4) follows the cycle's result in the same commit. */
@@ -51,8 +51,11 @@ async function command(session: Session, input: CycleInput, decide: (tx: Paramet
     return copy(receipt);
   }, BACKGROUND_CONTEXT);
 }
-const receiptOf = (input: CycleInput, work_id: string | null, outcome: Receipt['outcome'], reason: string | null, created: string | null = null): Receipt =>
+const receiptOf = (input: Pick<CycleInput, 'request_id' | 'operation'>, work_id: string | null, outcome: Receipt['outcome'], reason: string | null, created: string | null = null): Receipt =>
   ({ kind: 'durable', request_id: input.request_id, operation: input.operation, work_id, outcome, reason, created });
+
+/** Who cancels: the local operator, the accepted answer of a Question Control asked, or `/factory cancel` on the Work's origin Jira Card. */
+export type CancelBy = { kind: 'local-cli' } | { kind: 'question'; questionId: string } | { kind: 'jira-comment'; accountId: string; commentId: string };
 
 /**
  * `cancel <work>` (spec §3.4 "Interromper/cancelar", §12.3): in ONE commit the prohibition (result `cancelled`, impediment, queue work dropped,
@@ -62,31 +65,40 @@ const receiptOf = (input: CycleInput, work_id: string | null, outcome: Receipt['
 export async function acceptCancel(session: Session, input: CycleInput & { operation: 'cancel' },
   /** Final review, should-fix 13: the Work is ended by the accepted answer of a Question Control asked (the branch is gone from `origin`), not by a local command. */
   by?: { questionId: string }) {
-  return command(session, input, async tx => {
-    const index = await tx.doc(ticketIndex);
-    const work = (await tx.doc(works, input.work_id, null)).work;
-    const decision = cancelDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false);
-    if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
-    if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', 'ALREADY_CANCELLED');
-    const at = new Date().toISOString();
-    const active = work!.execution && occupying(work!.execution) ? work!.execution.executionId : null;
-    work!.result = 'cancelled';
-    work!.cancellation = { request_id: input.request_id, requestedAt: at, state: 'stopping', ceasedAt: null, executionId: active,
-      nextStep: 'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.' };
-    addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: `${by ? `Ended by the accepted answer to Question ${by.questionId}` : 'Cancelled by the operator'}: no new action, publication or renewal. ` +
-      '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.' });
-    if (by) work!.history.push({ at, event: 'cancel-requested', origin: 'controller-dispatch', detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512) });
-    else history(work!, 'cancel-requested', 'local-cli', `${input.request_id}${active ? `:active:${active}` : ''}`, at);
-    // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
-    const execution = work!.execution;
-    if (execution && !execution.reviewRetryLimit && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)) {
-      execution.reviewRetryLimit = { decision: 'cancel', request_id: input.request_id, operator: { kind: 'local-administrator' }, at };
-      work!.history.push({ at, event: 'review-retry-limit-decided', origin: 'local-cli', executionId: execution.executionId, detail: `${input.request_id}:cancel` });
-    }
-    if (settleCancellation(work!, at)) history(work!, 'cancellation-ceased', 'controller-cycles', 'no own activity was running', at);
-    rememberResult(index, work!);
-    return receiptOf(input, work!.work_id, 'accepted', null);
-  });
+  return command(session, input, tx => cancelIn(tx, input, by ? { kind: 'question', questionId: by.questionId } : { kind: 'local-cli' }));
+}
+
+/**
+ * The cancellation itself, inside the caller's commit (which records the request identity and receipt). Jira ticket 07: `/factory cancel`
+ * on a Jira Card uses this same transition; only the origin recorded in history and the review-retry decision differ.
+ */
+export async function cancelIn(tx: Parameters<Parameters<Session['commit']>[0]>[0], input: { request_id: string; operation: 'cancel'; work_id: string }, by: CancelBy) {
+  const index = await tx.doc(ticketIndex);
+  const work = (await tx.doc(works, input.work_id, null)).work;
+  const decision = cancelDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false);
+  if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
+  if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', 'ALREADY_CANCELLED');
+  const at = new Date().toISOString();
+  const active = work!.execution && occupying(work!.execution) ? work!.execution.executionId : null;
+  work!.result = 'cancelled';
+  work!.cancellation = { request_id: input.request_id, requestedAt: at, state: 'stopping', ceasedAt: null, executionId: active,
+    nextStep: 'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.' };
+  const who = by.kind === 'question' ? `Ended by the accepted answer to Question ${by.questionId}` : by.kind === 'jira-comment'
+    ? `Cancelled by comment ${by.commentId} of Jira account ${by.accountId} on the origin Card` : 'Cancelled by the operator';
+  addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: `${who}: no new action, publication or renewal. ` +
+    (work!.ticket.tracker === 'jira' ? 'No new cycle of this Card starts from Jira.' : '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.') });
+  if (by.kind === 'question') work!.history.push({ at, event: 'cancel-requested', origin: 'controller-dispatch', detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512) });
+  else history(work!, 'cancel-requested', by.kind, `${input.request_id}${active ? `:active:${active}` : ''}`, at);
+  // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
+  const execution = work!.execution;
+  if (execution && !execution.reviewRetryLimit && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)) {
+    const jira = by.kind === 'jira-comment';
+    execution.reviewRetryLimit = { decision: 'cancel', request_id: input.request_id, operator: jira ? { kind: 'jira', accountId: by.accountId } : { kind: 'local-administrator' }, at };
+    work!.history.push({ at, event: 'review-retry-limit-decided', origin: jira ? 'jira-comment' : 'local-cli', executionId: execution.executionId, detail: `${input.request_id}:cancel` });
+  }
+  if (settleCancellation(work!, at)) history(work!, 'cancellation-ceased', 'controller-cycles', 'no own activity was running', at);
+  rememberResult(index, work!);
+  return receiptOf(input, work!.work_id, 'accepted', null);
 }
 
 /** `resume <work>`: removes ONLY the suspension codes it answers and leaves a pending-read impediment; never touches any other impediment. */

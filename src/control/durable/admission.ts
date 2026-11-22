@@ -49,6 +49,8 @@ export const requests = defineDocFamily<{ input: ControlInput | { request_id: st
   { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'github-comment' } |
   /** Jira ticket 06: a `/factory` comment of a Jira Card that did not apply (its guidance/ignored receipt). */
   { request_id: string; operation: 'jira-comment'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string } } |
+  /** Jira ticket 07: `/factory cancel` on the Work's origin Card (its cancel receipt, the same cancellation as the local `cancel`). */
+  { request_id: string; operation: 'cancel'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string } } |
   null; receipt: ControlReceipt | null }, null>({
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
 });

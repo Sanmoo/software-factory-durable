@@ -150,8 +150,9 @@ export async function openControl(options: { storagePath: string;
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
     readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   // Jira ticket 06: answers (and guidance) read from the origin Card of each Jira Work; publication goes through the Jira source round below.
+  // Jira ticket 07: an accepted `/factory cancel` is interrupted like the local `cancel` (credentials first, then stop), after its commit.
   const jiraInputs = options.access?.trackers?.jira && options.polling ? createJiraInputDesk({ session: state, tracker: options.access.trackers.jira,
-    readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
+    readWorks: () => readWorks(state), stopped: () => stopped, cancelled: work_id => { void dispatcher?.cancel(work_id).catch(() => {}); } }) : undefined;
   const poller = options.access && options.polling ? createPoller({
     access: options.access, intervalSeconds: options.polling.intervalSeconds, clock: options.polling.clock ?? systemClock,
     paused: async () => (await readInstallation(state)).paused,

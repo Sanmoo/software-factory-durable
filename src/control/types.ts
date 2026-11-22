@@ -97,7 +97,9 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
    * suspension lifted pending the next authorization read; new: the new Work `created`); `already-satisfied`: nothing to do (e.g. already
    * cancelled, an activity already running for resume); `not-applied`: refused, nothing changed (`reason`). An ACK never proves cessation or effect. */
   { kind: 'durable'; request_id: string; operation: 'cancel' | 'resume' | 'reopen' | 'new'; work_id: string | null; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
-    reason: string | null; created: string | null } |
+    reason: string | null; created: string | null;
+    /** Jira ticket 07: a `/factory cancel` of a Jira Card: the logical reference of the reply intended on that Card. */
+    reply?: string } |
   /** Ticket 30. `cleanup-plan`: `accepted` = the plan (losses, warnings, refusals) is recorded and waits for `cleanup-confirm`; nothing was removed.
    * `cleanup-confirm`: `accepted` = confirmed after revalidation, the items still allowed are executed after the ACK (per-item results in
    * `factory show`); `already-satisfied` = this plan was already confirmed; `not-applied` = refused (`reason`), nothing changed. */
@@ -1053,11 +1055,12 @@ export type WorkView = {
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
       origin: 'controller-delivery'; detail: string } |
-    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli' | /* the accepted answer of a Question Control asked */ 'controller-dispatch'; detail: string } |
+    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli' | /* the accepted answer of a Question Control asked */ 'controller-dispatch' |
+      /* Jira ticket 07: `/factory cancel` on the origin Card */ 'jira-comment'; detail: string } |
     /** Ticket 41: correlated with the blocked Execution (ticket 29 `history --execution`). */
     { at: string; event: 'blocked-recovery-overridden'; origin: 'local-cli'; executionId: string; detail: string } |
     /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT (`<request id>:new-review-round` or `<request id>:cancel`). */
-    { at: string; event: 'review-retry-limit-decided'; origin: 'local-cli'; executionId: string; detail: string } |
+    { at: string; event: 'review-retry-limit-decided'; origin: 'local-cli' | 'jira-comment'; executionId: string; detail: string } |
     /** Ticket 50: operator retry of a refused boot/preparation; capacity wait; remedy applied by a preparation (correlated with the Execution). */
     { at: string; event: 'blocked-start-retried'; origin: 'local-cli'; executionId: string; detail: string } |
     { at: string; event: 'boot-deferred' | 'start-remedy-applied'; origin: 'controller-recovery'; executionId: string; detail: string } |
@@ -1076,7 +1079,9 @@ export type BlockedRequestView = { reference: string; code: string; questionId: 
   cause?: 'returned-failure';
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
 /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT. There is no decision that accepts the unverified round. */
-export type ReviewRetryLimitDecisionView = { decision: 'new-review-round' | 'cancel'; request_id: string; operator: { kind: 'local-administrator' }; at: string };
+export type ReviewRetryLimitDecisionView = { decision: 'new-review-round' | 'cancel'; request_id: string;
+  /** Jira ticket 07: `jira` = a `/factory cancel` on the Work's origin Card (the observed author account). */
+  operator: { kind: 'local-administrator' } | { kind: 'jira'; accountId: string }; at: string };
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
   'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |

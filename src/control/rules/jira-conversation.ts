@@ -8,13 +8,13 @@ import { reservedHeader, type FactoryCommentContent } from './jira-notices.js';
 const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 /** First line of every automatic Factory comment (`[Software Factory · <Kind> <ref>]`). */
 const reservedPrefix = '[Software Factory ·';
-/** Installation-level or other-Work commands: never commands of a Card's Work, and never an answer. Ticket 07 turns `cancel` into a command. */
-const unsupported: ReadonlySet<string> = new Set(['cancel', 'pause', 'unpause', 'resume', 'repair', 'forget', 'cleanup', 'grant', 'new', 'reopen', 'help']);
+/** Installation-level or other-Work commands: never commands of a Card's Work, and never an answer. */
+const unsupported: ReadonlySet<string> = new Set(['pause', 'unpause', 'resume', 'repair', 'forget', 'cleanup', 'grant', 'new', 'reopen', 'help']);
 
 export type JiraGuidanceCode = 'JIRA_COMMAND_INCOMPLETE' | 'JIRA_COMMAND_UNSUPPORTED' | 'JIRA_ANSWER_INVALID' | 'JIRA_NO_OPEN_QUESTION' | 'JIRA_QUESTION_AMBIGUOUS' |
-  'JIRA_QUESTION_NOT_OPEN_HERE' | 'JIRA_COMMENT_EDITED';
-export type JiraCommand = { kind: 'reserved' } | { kind: 'prose' } | { kind: 'free'; text: string } | { kind: 'answer'; ref: string; text: string } |
-  { kind: 'guide'; code: Extract<JiraGuidanceCode, 'JIRA_COMMAND_INCOMPLETE' | 'JIRA_COMMAND_UNSUPPORTED' | 'JIRA_ANSWER_INVALID'> };
+  'JIRA_QUESTION_NOT_OPEN_HERE' | 'JIRA_COMMENT_EDITED' | 'JIRA_CANCEL_INVALID';
+export type JiraCommand = { kind: 'reserved' } | { kind: 'prose' } | { kind: 'cancel' } | { kind: 'free'; text: string } | { kind: 'answer'; ref: string; text: string } |
+  { kind: 'guide'; code: Extract<JiraGuidanceCode, 'JIRA_COMMAND_INCOMPLETE' | 'JIRA_COMMAND_UNSUPPORTED' | 'JIRA_ANSWER_INVALID' | 'JIRA_CANCEL_INVALID'> };
 
 const answerText = (text: string): JiraCommand => {
   const trimmed = text.trim();
@@ -33,6 +33,9 @@ const refOf = (digits: string) => `Q-${Number(digits)}`;
  * EXACTLY with `/factory` (then whitespace or end) is conversation. Known commands have exact syntax (`/factory q17: <text>`,
  * `/factory answer Q-17 <text>`); a known command with missing parts asks for guidance and never becomes an answer; otherwise the rest
  * is a free answer (multi-line allowed, trimmed).
+ * Jira ticket 07: `/factory cancel` alone (the word in any case, surrounding whitespace ignored) cancels the Work of THIS Card. The word with
+ * anything else (`/factory cancel PAG-43`, a reason) or any other word starting with `cancel` (`cancelar`: spelling is never corrected into an
+ * order) asks for guidance; it is neither a cancellation nor an answer.
  */
 export function parseJiraCommand(body: string): JiraCommand {
   const text = body.replace(/\r\n?/g, '\n');
@@ -49,6 +52,8 @@ export function parseJiraCommand(body: string): JiraCommand {
   const short = /^q-?(\d{1,9}):([\s\S]*)$/i.exec(rest);
   if (short) return withRef(refOf(short[1]!), short[2]!);
   if (/^q-?\d{1,9}(?=\s|$)/i.test(rest)) return { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
+  if (word === 'cancel' && rest.toLowerCase() === 'cancel') return { kind: 'cancel' };
+  if (word.startsWith('cancel')) return { kind: 'guide', code: 'JIRA_CANCEL_INVALID' };
   if (unsupported.has(word)) return { kind: 'guide', code: 'JIRA_COMMAND_UNSUPPORTED' };
   return answerText(rest);
 }
@@ -56,7 +61,7 @@ export function parseJiraCommand(body: string): JiraCommand {
 /** A Question of the Work of THIS Card: its short reference and the instant after which a comment may answer it (epoch ms). */
 export type CardQuestion = { questionId: string; ref: string; state: 'open' | 'answered'; since: number };
 export type JiraCommentDecision = { kind: 'none' } | { kind: 'ignore'; code: 'JIRA_COMMENT_RESTRICTED' | 'JIRA_COMMENT_TIME_INVALID' } |
-  { kind: 'accept'; questionId: string; text: string } | { kind: 'guide'; code: JiraGuidanceCode; refs: string[] };
+  { kind: 'accept'; questionId: string; text: string } | { kind: 'cancel' } | { kind: 'guide'; code: JiraGuidanceCode; refs: string[] };
 
 /**
  * What one comment does, given the Questions of the Card's Work. Conversation and reserved text: nothing. A restricted comment is never
@@ -76,6 +81,7 @@ export function jiraCommentDecision(input: { comment: { text: string; createdAt:
   const refs = open.map(question => question.ref);
   if (updated !== created) return { kind: 'guide', code: 'JIRA_COMMENT_EDITED', refs };
   if (command.kind === 'guide') return { kind: 'guide', code: command.code, refs };
+  if (command.kind === 'cancel') return { kind: 'cancel' };
   if (command.kind === 'answer') {
     const target = open.find(question => question.ref === command.ref);
     return target ? { kind: 'accept', questionId: target.questionId, text: command.text } : { kind: 'guide', code: 'JIRA_QUESTION_NOT_OPEN_HERE', refs };
@@ -112,6 +118,7 @@ const guidanceText: Record<JiraGuidanceCode, string> = {
   JIRA_QUESTION_AMBIGUOUS: 'several questions of this Card are open; name one with `/factory q<n>: <answer>`.',
   JIRA_QUESTION_NOT_OPEN_HERE: 'that reference is not an open question of this Card.',
   JIRA_COMMENT_EDITED: 'the comment was edited before the Factory read it; post the instruction again in a new comment.',
+  JIRA_CANCEL_INVALID: 'to cancel the Work of this Card, comment exactly `/factory cancel` with nothing else; it never reaches another Card.',
 };
 /** Guidance reply to a `/factory` comment that did not apply. It names the comment by id and NEVER quotes its text. */
 export function jiraGuidanceComment(input: { ref: string; code: JiraGuidanceCode; refs: readonly string[]; commentId: string }): FactoryCommentContent {
@@ -119,4 +126,18 @@ export function jiraGuidanceComment(input: { ref: string; code: JiraGuidanceCode
   return { header, lines: [header, `Comment ${input.commentId} was not applied: ${guidanceText[input.code]}`,
     input.refs.length ? `Open questions of this Card: ${input.refs.join(', ')}.` : 'Open questions of this Card: none.',
     'Nothing changed in the Work.'] };
+}
+
+/**
+ * Jira ticket 07: reply to an applied `/factory cancel` (its cancel receipt outcome). Names the comment by id and never quotes it; an ACK never
+ * proves cessation, and nothing on GitHub (branch, PR) is undone.
+ */
+export function jiraCancelComment(input: { ref: string; commentId: string; outcome: 'accepted' | 'already-satisfied' | 'not-applied'; reason: string | null }): FactoryCommentContent {
+  const header = reservedHeader('Cancelamento', input.ref);
+  const body = input.outcome === 'accepted'
+    ? ['Cancellation recorded: the Work of this Card takes no new action, publication or renewal; a running activity is stopped.',
+      'Nothing on GitHub (branch, pull request) is undone, and a later merge of its own pull request still counts as delivered.']
+    : input.outcome === 'already-satisfied' ? ['The Work of this Card was already cancelled; nothing changed.']
+      : [`The Work of this Card could not be cancelled (${input.reason ?? 'NOT_APPLIED'}); nothing changed.`];
+  return { header, lines: [header, `Comment ${input.commentId}:`, ...body] };
 }

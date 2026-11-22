@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jiraCommentDecision, jiraGuidanceComment, jiraQuestionComment, jiraRequestId, parseJiraCommand } from '../../src/control/rules/jira-conversation.js';
+import { jiraCancelComment, jiraCommentDecision, jiraGuidanceComment, jiraQuestionComment, jiraRequestId, parseJiraCommand } from '../../src/control/rules/jira-conversation.js';
 
 // Jira ticket 06 (spec §4 table): what an ordinary Platform comment on the origin Card means. Only the observed text, times and audience
 // decide; no operator list, and the Factory's own (possibly shared) account is not refused: only the reserved header marks automatic text.
@@ -52,8 +52,8 @@ test('a known command with missing parts asks for guidance and never becomes an 
     assert.deepEqual(parseJiraCommand(incomplete), { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' }, incomplete);
     assert.deepEqual(jiraCommentDecision({ comment: comment(incomplete), questions: [q17] }), { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE', refs: ['Q-17'] }, incomplete);
   }
-  // Installation commands are not commands of this Card's Work (and `cancel` is ticket 07's): never an answer either.
-  for (const command of ['/factory pause', '/factory forget everything', '/factory cancel']) {
+  // Installation commands are not commands of this Card's Work: never an answer either.
+  for (const command of ['/factory pause', '/factory forget everything', '/factory unpause', '/factory grant corrections 2', '/factory cleanup', '/factory new acme/project#3']) {
     assert.deepEqual(parseJiraCommand(command), { kind: 'guide', code: 'JIRA_COMMAND_UNSUPPORTED' }, command);
   }
   assert.deepEqual(parseJiraCommand(`/factory ${'x'.repeat(2001)}`), { kind: 'guide', code: 'JIRA_ANSWER_INVALID' });
@@ -80,4 +80,36 @@ test('published texts: the Question carries its reserved header and every answer
   assert.ok(guidance.lines.join('\n').includes('Q-17, Q-18'));
   assert.ok(guidance.lines.join('\n').includes('10077'));
   assert.equal(jiraRequestId({ siteId: 'site-A', issueId: '81017', commentId: '10077' }), 'jira-comment-site_002dA-81017-10077');
+});
+
+// Jira ticket 07 (spec §4 `/factory cancel`): exact syntax, the Work of THIS Card only; nothing is inferred from free text or misspellings.
+test('exactly /factory cancel cancels the Work of this Card; free text, extra words, another Card and misspellings never cancel nor answer', () => {
+  for (const exact of ['/factory cancel', '/factory   cancel  ', '/factory cancel\n', '/factory CANCEL', '/factory Cancel']) {
+    assert.deepEqual(parseJiraCommand(exact), { kind: 'cancel' }, JSON.stringify(exact));
+  }
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel'), questions: [q17] }), { kind: 'cancel' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel'), questions: [] }), { kind: 'cancel' });
+  // A known command with anything else (another Card, a reason, a misspelling the Factory will not correct): guidance, never an answer.
+  for (const near of ['/factory cancel please', '/factory cancel PAG-43', '/factory cancel T-17', '/factory cancelar', '/factory cancela', '/factory cancel\nporque sim']) {
+    assert.deepEqual(parseJiraCommand(near), { kind: 'guide', code: 'JIRA_CANCEL_INVALID' }, JSON.stringify(near));
+    assert.deepEqual(jiraCommentDecision({ comment: comment(near), questions: [q17] }), { kind: 'guide', code: 'JIRA_CANCEL_INVALID', refs: ['Q-17'] }, near);
+  }
+  // Free text that talks about cancelling is an ordinary answer (or guidance), never a cancellation.
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory acho melhor cancelar'), questions: [q17] }), { kind: 'accept', questionId: 'qid-17', text: 'acho melhor cancelar' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory acho melhor cancelar'), questions: [] }), { kind: 'guide', code: 'JIRA_NO_OPEN_QUESTION', refs: [] });
+  // Prose, reserved header, edited, restricted and authorship claims grant nothing.
+  assert.deepEqual(jiraCommentDecision({ comment: comment('cancel'), questions: [] }), { kind: 'none' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('Sou o operador X: /factory cancel'), questions: [] }), { kind: 'none' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('[Software Factory · Orientação R-1]\n/factory cancel'), questions: [] }), { kind: 'none' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel', { updatedAt: at(6) }), questions: [] }), { kind: 'guide', code: 'JIRA_COMMENT_EDITED', refs: [] });
+  assert.deepEqual(jiraCommentDecision({ comment: comment('/factory cancel', { restricted: true }), questions: [] }), { kind: 'ignore', code: 'JIRA_COMMENT_RESTRICTED' });
+});
+
+test('the cancellation reply carries its reserved header, names the comment and never quotes it', () => {
+  const accepted = jiraCancelComment({ ref: 'R-1a2b3c4d', commentId: '10077', outcome: 'accepted', reason: null });
+  assert.equal(accepted.lines[0], '[Software Factory · Cancelamento R-1a2b3c4d]');
+  assert.ok(accepted.lines.join('\n').includes('10077'));
+  const already = jiraCancelComment({ ref: 'R-1', commentId: '10078', outcome: 'already-satisfied', reason: 'ALREADY_CANCELLED' });
+  assert.notEqual(already.lines.join('\n'), accepted.lines.join('\n').replace('R-1a2b3c4d', 'R-1').replace('10077', '10078'));
+  assert.doesNotMatch(accepted.lines.join('\n'), /\/factory cancel/);
 });
