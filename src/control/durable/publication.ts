@@ -3,8 +3,8 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, DivergenceView, ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { authorizationInForce, divergenceQuestion, reconciliationAnswer } from '../rules/divergence.js';
-import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, reevaluationEligibility,
-  reevaluationGuidance, type DiscoveryDecision } from '../rules/publication.js';
+import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, liveBasisRecoverable, reevaluationEligibility,
+  reevaluationGuidance, undecidedRead, unpublishedBeforeStop, unpublishedBeforeStopStep, verifiedHeadOnOrigin, type DiscoveryDecision } from '../rules/publication.js';
 import { validateQuestionRequest } from '../rules/questions.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions, questionSha256 } from './questions.js';
@@ -133,11 +133,11 @@ export async function settleLivePublication(session: Session, work_id: string, e
   });
 }
 
-/** The commit a live basis verified was NOT published before its boot ends: it dies with the boot (V2-08: nothing else preserves it). */
-export const unpublishedBeforeStop = 'VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP';
 /**
- * v2 ticket 06: the live discovery could not decide (incomplete or held read) while the boot was up. A later publication Execution would
- * start from `origin`, which does not have the verified commit: the publication is blocked explicitly instead of being queued.
+ * v2 ticket 06: the live discovery could not decide (incomplete or held read) while the boot was up. Acceptance finding A6: when Control's own
+ * evidence shows the verified commit on the Work's own branch on `origin`, nothing is lost with the boot — the publication stays awaiting
+ * discovery and the ordinary discovery re-reads after cessation. Otherwise a later publication Execution would start from an `origin`
+ * that may not have the commit: the publication is blocked explicitly instead of being queued (lifted by `liftLiveBlock`).
  */
 export async function blockLivePublication(session: Session, work_id: string, executionId: string, reasons: string[]): Promise<PublicationView | 'stale'> {
   return onWork(session, work_id, work => {
@@ -145,13 +145,32 @@ export async function blockLivePublication(session: Session, work_id: string, ex
     if (!publication || publication.basisExecutionId !== executionId || work.execution?.executionId !== executionId || (publication.state !== 'awaiting-discovery' && publication.state !== 'requested') ||
       publicationAttempted(work)) return 'stale' as const;
     const at = new Date().toISOString();
-    const nextStep = `The verified commit ${publication.verified?.head ?? ''} was not published before its boot ended (${reasons.join(', ')}); the sandbox keeps no disk, so it no longer exists. ` +
-        'Nothing is repeated automatically: the operator decides explicitly (a new Execution reproduces the work from the Ticket).';
+    if (publication.state === 'awaiting-discovery' && undecidedRead(reasons) && verifiedHeadOnOrigin(publication, work.preservation)) {
+      Object.assign(publication, { updatedAt: at, nextStep: `The discovery read in the boot decided nothing (${reasons.join(', ')}), but the verified commit ${publication.verified?.head ?? ''} ` +
+        'is on the Work branch on origin: nothing is blocked; the safe read is retried on later cycles and a complete read decides (only the pull request is missing).' });
+      return copy(publication);
+    }
+    const nextStep = unpublishedBeforeStopStep(publication.verified?.head ?? '', reasons);
     Object.assign(publication, { state: 'blocked', reasons: [unpublishedBeforeStop, ...reasons].slice(0, 16), updatedAt: at, nextStep });
     if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep });
     history(work, 'publication-blocked', executionId, publication.reasons.join(','));
     return copy(publication);
   });
+}
+/**
+ * Acceptance finding A6 (inside the caller's commit): a live-basis block whose verified commit Control now knows to be on the Work's own
+ * branch (`liveBasisRecoverable`) returns to `awaiting-discovery` with the reasons of the undecided read. Nothing is requested here: the
+ * ordinary discovery after cessation re-reads the remote and applies the rule in full. `by`: what lifted it (history).
+ */
+export function liftLiveBlock(work: WorkRecord, at: string, by: string): boolean {
+  const publication = work.publication;
+  if (!publication || !liveBasisRecoverable(publication, work.preservation)) return false;
+  Object.assign(publication, { state: 'awaiting-discovery', reasons: publication.reasons.filter(reason => reason !== unpublishedBeforeStop), updatedAt: at,
+    nextStep: `The verified commit ${publication.verified?.head ?? ''} is on the Work branch on origin: the block is lifted and the own publication is discovered again ` +
+      '(a complete read decides; only the pull request is missing).' });
+  work.impediments = work.impediments.filter(item => item.code !== publicationImpediment);
+  history(work, 'publication-block-lifted', work.execution?.executionId ?? null, `${by}:${publication.verified?.head ?? ''}`);
+  return true;
 }
 
 /**
@@ -422,10 +441,17 @@ Promise<Extract<ControlReceipt, { operation: 'reevaluate-publication' }> | { kin
     else if (publication.state === 'blocked' && publication.reevaluation?.state === 'pending') {
       receipt = { ...base, outcome: 'already-covered', reason: null, nextStep: `Re-evaluation ${publication.reevaluation.request_id} is already pending.` };
     } else {
-      const eligible = reevaluationEligibility(publication);
+      const eligible = reevaluationEligibility(publication, work.preservation ?? null);
+      const at = new Date().toISOString();
       if (!eligible.ok) receipt = refuse(eligible.code);
-      else {
-        const at = new Date().toISOString();
+      else if (eligible.liveBasis) {
+        // A6: a Work already blocked with its verified commit on the own branch: the request itself lifts the block (nothing is read here).
+        work.history.push({ at, event: 'publication-reevaluation-requested', origin: 'local-cli', detail: input.request_id });
+        liftLiveBlock(work, at, `reevaluation:${input.request_id}`);
+        publication.reevaluation = { request_id: input.request_id, reason: input.reason, requestedAt: at, state: 'accepted', settledAt: at, outcome: null, reasons: [] };
+        receipt = { ...base, outcome: 'accepted', reason: null, nextStep: 'The verified commit is on the Work branch on origin: the block is lifted and the next discovery pass ' +
+          're-reads the remote (complete read required) and applies the discovery rule; nothing is published by this command.' };
+      } else {
         publication.reevaluation = { request_id: input.request_id, reason: input.reason, requestedAt: at, state: 'pending', settledAt: null, outcome: null, reasons: [] };
         publication.updatedAt = at;
         work.history.push({ at, event: 'publication-reevaluation-requested', origin: 'local-cli', detail: input.request_id });

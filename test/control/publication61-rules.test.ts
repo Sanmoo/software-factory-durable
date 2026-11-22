@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decideDiscovery, otherPublications, publicationMarker, publicationStep, reevaluationEligibility, reevaluationGuidance, unexpectedRefChanges,
+import { decideDiscovery, liveBasisRecoverable, otherPublications, publicationMarker, publicationStep, reevaluationEligibility, reevaluationGuidance, unexpectedRefChanges,
+  unpublishedBeforeStop, unpublishedBeforeStopStep, verifiedHeadOnOrigin,
   type CandidateFacts } from '../../src/control/rules/publication.js';
 import type { ExecutionView, PublicationView } from '../../src/control/types.js';
 
@@ -151,4 +152,40 @@ test('A14: a block by an unknown pull request after an attempt is re-evaluable; 
   assert.equal(reevaluationGuidance([`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`], { workId: a.workId, marker }),
     ` If the changed refs are another Work's own publication, re-evaluate with \`factory reevaluate-publication ${a.workId} --reason <text>\`.`);
   assert.equal(reevaluationGuidance(['PULL_REQUEST_NOT_DRAFT', ...first.reasons], { workId: a.workId, marker }), '', 'no command where it does not apply');
+});
+
+// Acceptance finding A6 (sandbox without a persistent disk): the discovery in the boot decided nothing (e.g. the base protection read was
+// denied) while Control's own evidence showed the verified commit on the Work's own branch on origin. The block was a dead end.
+test('A6: a live basis whose verified commit Control knows to be on the own branch is recoverable; anything else keeps the block, worded by what is known', () => {
+  const discovery = (branch: PublicationView['discoveries'][number]['branch']) => ({ at: 'x', observedAt: 'x', trigger: 'verified' as const, outcome: 'incomplete' as const,
+    reasons: ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'], branch, candidates: [] });
+  const live = (overrides: Partial<PublicationView> = {}) => blocked({ reasons: [unpublishedBeforeStop, 'BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'], refsBefore: null, attempts: [],
+    discoveries: [discovery({ state: 'absent' })], ...overrides });
+  const gate = { branch: a.branch, heads: ['9'.repeat(40), a.head] };
+  // Evidence: the latest discovery read the own branch at the verified head, or a preservation gate confirmed that head on the own branch.
+  assert.equal(verifiedHeadOnOrigin(live(), null), false);
+  assert.equal(verifiedHeadOnOrigin(live({ discoveries: [discovery({ state: 'present', sha: a.head })] }), null), true);
+  assert.equal(verifiedHeadOnOrigin(live({ discoveries: [discovery({ state: 'present', sha: a.head }), discovery({ state: 'present', sha: 'e'.repeat(40) })] }), null), false, 'only the latest read');
+  assert.equal(verifiedHeadOnOrigin(live(), gate), true);
+  assert.equal(verifiedHeadOnOrigin(live(), { branch: b.branch, heads: [a.head] }), false, 'a confirmation of another branch proves nothing');
+  assert.equal(verifiedHeadOnOrigin(live(), { branch: a.branch, heads: ['9'.repeat(40)] }), false);
+  assert.equal(liveBasisRecoverable(live(), gate), true);
+  assert.equal(liveBasisRecoverable(live(), null), false);
+  assert.equal(liveBasisRecoverable(live({ reasons: [unpublishedBeforeStop, 'PROMPT_TOO_LARGE'] }), gate), false, 'not an undecided read: repeating cannot decide it');
+  assert.equal(liveBasisRecoverable(live({ reasons: ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'] }), gate), false, 'not a live-basis block');
+  assert.equal(liveBasisRecoverable(live({ ...attempted(a) }), gate), false, 'an attempted head is decided only by the discovery after it');
+  assert.equal(liveBasisRecoverable(live({ state: 'awaiting-discovery' }), gate), false);
+  // Works already blocked in this state: the operator command lifts the block back to the ordinary discovery.
+  assert.deepEqual(reevaluationEligibility(live(), gate), { ok: true, liveBasis: true });
+  assert.deepEqual(reevaluationEligibility(live({ discoveries: [discovery({ state: 'present', sha: a.head })] })), { ok: true, liveBasis: true });
+  assert.deepEqual(reevaluationEligibility(live()), { ok: false, code: `NOT_REEVALUABLE:${unpublishedBeforeStop},BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED` });
+  assert.deepEqual(reevaluationEligibility(blocked(), gate), { ok: true }, 'the ticket 61 path is unchanged');
+  // Lifted: the ordinary (non-live) discovery reads again after the boot ended, as for a basis that was never attempted.
+  assert.deepEqual(publicationStep({ result: 'open', execution: execution(), publication: live({ state: 'awaiting-discovery', reasons: ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'] }) }),
+    { kind: 'discover', trigger: 'verified', attempted: false });
+  // The block that remains says what is known: an incomplete read never proves that the commit is gone.
+  const step = unpublishedBeforeStopStep(a.head, ['REFS_UNKNOWN:GITHUB_QUERY_FAILED']);
+  assert.equal(step, `The verified commit ${a.head} was not published before its boot ended (REFS_UNKNOWN:GITHUB_QUERY_FAILED) and Control has not confirmed it on the Work branch on origin; ` +
+    'the sandbox keeps no disk, so the commit survives only if it was pushed there. If a preservation gate confirms it, the block lifts by itself and the ordinary discovery ' +
+    'publishes it; otherwise the operator decides explicitly (a new Execution reproduces the work from the Ticket).');
 });

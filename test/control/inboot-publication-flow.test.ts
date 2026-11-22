@@ -36,6 +36,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   return { execution, work, settle, kinds, activations };
 }
 const executionsOf = (work: WorkView): ExecutionView[] => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
+const branchOf = (activation: Activation) => /branch=(\S+)/.exec(activation.prompt)![1]!;
 
 test('without a persistent disk a Work goes from the Ticket to its own draft PR in ONE Execution and ONE boot: verified, then published by the same boot', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
@@ -108,28 +109,57 @@ test('without a persistent disk nothing boots while `origin` cannot be read: the
   assert.equal(h.kinds().filter(kind => kind === 'start').length, 1);
 });
 
-test('without a persistent disk an undecided discovery in the boot blocks the publication explicitly instead of queuing one that could not find the commit', async t => {
+// Acceptance finding A6: an undecided read in the boot used to block for good, even with the verified commit on the Work branch on origin.
+test('A6: an undecided discovery in the boot blocks only until the preservation gate confirms the verified commit on origin; the ordinary discovery then publishes it (PR only)', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main }, refsUnknown: true };
-  // v2 ticket 07: the unpublished verified commit is then refused by the preservation gate and the Builder publishes it as work in progress.
+  // v2 ticket 07: the unpublished verified commit is refused by the preservation gate and the Builder publishes it as work in progress.
   const scripts: Script[] = [{ kind: 'implement', head }];
   const h = await harness(t, remote, scripts, { diskless: true });
-  scripts.push({ kind: 'publish', publish: pushWip(h.execution.guest, head), end: 'success' });
+  scripts.push({ kind: 'publish', publish: pushWip(h.execution.guest, head), end: 'success' }, { kind: 'publish', publish: publishOwn(), end: 'success' });
   await h.settle('ended', value => value?.execution?.end?.cessation === 'confirmed' && !value.execution.slot.held);
-  const work = (await h.work())!;
-  assert.deepEqual([work.publication!.state, work.publication!.reasons], ['blocked', ['VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP', 'REFS_UNKNOWN:GITHUB_QUERY_FAILED']]);
-  assert.deepEqual(work.impediments.map(item => item.code), ['PUBLICATION_BLOCKED']);
-  assert.equal(work.execution!.inBootPublication, undefined, 'no publication activation was launched');
+  let work = (await h.work())!;
+  assert.equal(work.execution!.inBootPublication, undefined, 'no publication activation was launched in the boot');
   assert.deepEqual(h.kinds(), ['prepare', 'start', 'issue', 'activate', 'activate', 'stop']);
   assert.deepEqual(work.execution!.preservationGate?.attempts.map(item => item.code), ['HEAD_NOT_PUBLISHED', null]);
   assert.deepEqual([work.preservation?.commit, remote.refs![work.branch!]], [head, head], 'the commit outlives the boot on the Work branch, without a PR');
-  // Nothing is queued afterwards: the publication stays blocked for the operator.
-  remote.refsUnknown = false;
+  // Blocked while nothing showed the commit on origin (the true message), lifted by Control itself once its gate confirmed it there.
+  const events = work.history.filter(item => item.event === 'publication-blocked' || item.event === 'publication-block-lifted').map(item => [item.event, (item as { detail?: string }).detail]);
+  assert.deepEqual(events, [['publication-blocked', 'VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP,REFS_UNKNOWN:GITHUB_QUERY_FAILED'], ['publication-block-lifted', `preservation-gate:${head}`]]);
+  assert.deepEqual(work.impediments, []);
+  // While the read stays incomplete nothing is requested: the safe read is repeated, the Work is not blocked.
   for (let cycle = 0; cycle < 3; cycle += 1) await h.settle('cycle', () => true);
-  assert.equal(executionsOf((await h.work())!).length, 1);
+  work = (await h.work())!;
+  assert.deepEqual([work.publication!.state, work.publication!.reasons, executionsOf(work).length, work.impediments], ['awaiting-discovery', ['REFS_UNKNOWN:GITHUB_QUERY_FAILED'], 1, []]);
+  // A complete read: ONE publish-only Execution that creates only the pull request (the branch already holds the verified commit).
+  remote.refsUnknown = false;
+  await h.settle('published', value => value?.publication?.state === 'published');
+  work = (await h.work())!;
+  assert.equal(executionsOf(work).length, 2);
+  const publisher = h.activations().at(-1)!;
+  assert.ok(publisher.prompt.includes('already holds the verified commit') && !publisher.prompt.includes('push --force-with-lease'), 'never a second push');
+  assert.deepEqual(publisher.pushPolicy, { branch: work.branch, head, remote: 'https://github.com/acme/project.git', expected: head });
+  assert.deepEqual([work.pullRequest?.number, work.publication!.linkedHeads, work.impediments], [4, [head], []]);
+});
+
+test('A6: an incomplete read in the boot with the verified commit already on the Work branch never blocks: it is published once the read is complete', async t => {
+  // The acceptance case: the base protection read was denied while the discovery itself read the own branch at the verified head.
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main }, baseProtection: { state: 'unknown', code: 'GITHUB_ACCESS_DENIED' } };
+  const h = await harness(t, remote, [{ kind: 'implement', head, during: (world, activation) => pushAs(world, branchOf(activation), head, app) },
+    { kind: 'publish', publish: publishOwn(), end: 'success' }], { diskless: true });
+  await h.settle('ended', value => value?.execution?.end?.cessation === 'confirmed' && !value.execution.slot.held);
+  for (let cycle = 0; cycle < 2; cycle += 1) await h.settle('cycle', () => true);
+  let work = (await h.work())!;
+  assert.deepEqual([work.publication!.state, work.publication!.reasons, work.impediments], ['awaiting-discovery', ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'], []]);
+  assert.ok(!work.history.some(item => item.event === 'publication-blocked'), 'never blocked');
+  assert.equal(executionsOf(work).length, 1);
+  delete remote.baseProtection;
+  await h.settle('published', value => value?.publication?.state === 'published');
+  work = (await h.work())!;
+  assert.deepEqual([executionsOf(work).length, work.pullRequest?.number, work.impediments], [2, 4, []]);
+  assert.ok(!h.activations().at(-1)!.prompt.includes('push --force-with-lease'));
 });
 
 const wip = 'e'.repeat(40);
-const branchOf = (activation: Activation) => /branch=(\S+)/.exec(activation.prompt)![1]!;
 test('V2-07: work in progress the working Builder pushed with the Factory App identity is the Factory\'s own tip: the verified commit is published over exactly it', async t => {
   // The verified commit descends from the work in progress (the WIP push is never forced): Control's later preservation check reads that.
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main }, graph: { [head]: [wip] } };

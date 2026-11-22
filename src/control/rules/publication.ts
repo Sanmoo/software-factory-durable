@@ -224,13 +224,46 @@ const reevaluable = (reason: string) => refChange.test(reason) || unknownPull.te
  * marker of the Work's own PR; the classification is re-applied in full, nothing is adopted by the request).
  */
 export const reevaluableReasons = (reasons: readonly string[]) => reasons.length > 0 && reasons.every(reevaluable);
+/** The commit a live basis verified was NOT published before its boot ends (v2 ticket 06): the first reason of that block. */
+export const unpublishedBeforeStop = 'VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP';
+/** Reasons of a live-basis block that are NOT an undecided read of the remote: reading again decides nothing about them. */
+const notAnUndecidedRead: readonly string[] = ['PROMPT_TOO_LARGE', 'CREDENTIALS_WITHDRAWN'];
+/**
+ * Acceptance finding A6: Control's OWN evidence that the verified head is on the Work's own branch on `origin` — its latest discovery read
+ * the branch at exactly that head, or a preservation gate confirmed that head on that branch. Never the guest's word; it proves nothing
+ * about the pull request, which the ordinary discovery decides from a complete read.
+ */
+export function verifiedHeadOnOrigin(publication: Pick<PublicationView, 'verified' | 'branch' | 'discoveries'>, preservation: { branch: string; heads: readonly string[] } | null | undefined): boolean {
+  const head = publication.verified?.head;
+  if (!head) return false;
+  const read = publication.discoveries.at(-1)?.branch;
+  return (read?.state === 'present' && read.sha === head) || (preservation?.branch === publication.branch && preservation.heads.includes(head));
+}
+/** A6: whether `reasons` (of the undecided discovery of a live basis) leave something a later read can decide. */
+export const undecidedRead = (reasons: readonly string[]) => reasons.every(reason => reason === unpublishedBeforeStop || !notAnUndecidedRead.includes(reason));
+/**
+ * A6: a live-basis block that is no dead end — blocked only because the read in the boot decided nothing, never attempted, and the verified
+ * head is on the own branch by Control's evidence. It returns to the ordinary discovery, which re-reads and applies the rule in full.
+ */
+export function liveBasisRecoverable(publication: Pick<PublicationView, 'state' | 'reasons' | 'verified' | 'branch' | 'discoveries' | 'attempts' | 'reconciliation'>,
+  preservation: { branch: string; heads: readonly string[] } | null | undefined): boolean {
+  return publication.state === 'blocked' && publication.reasons.includes(unpublishedBeforeStop) && undecidedRead(publication.reasons) &&
+    !publicationAttempted({ publication: publication as PublicationView }) && verifiedHeadOnOrigin(publication, preservation);
+}
+/** A6: the next step of a live-basis block Control could not avoid, by what is known (an incomplete read never proves the commit is gone). */
+export const unpublishedBeforeStopStep = (head: string, reasons: readonly string[]) =>
+  `The verified commit ${head} was not published before its boot ended (${reasons.join(', ')}) and Control has not confirmed it on the Work branch on origin; ` +
+  'the sandbox keeps no disk, so the commit survives only if it was pushed there. If a preservation gate confirms it, the block lifts by itself and the ordinary discovery ' +
+  'publishes it; otherwise the operator decides explicitly (a new Execution reproduces the work from the Ticket).';
 /**
  * Ticket 61: whether an operator may ask for a re-evaluation of the blocked publication: blocked ONLY by re-evaluable reasons, after an
- * attempt of the verified head, with the request's refs snapshot (the window the rule is re-applied to). Anything else: the code.
+ * attempt of the verified head, with the request's refs snapshot (the window the rule is re-applied to). A6 (`liveBasis`): or a recoverable
+ * live-basis block, which the request returns to the ordinary discovery. Anything else: the code.
  */
-export function reevaluationEligibility(publication: Pick<PublicationView, 'state' | 'reasons' | 'refsBefore' | 'verified' | 'attempts' | 'reconciliation'>):
-  { ok: true } | { ok: false; code: string } {
+export function reevaluationEligibility(publication: Pick<PublicationView, 'state' | 'reasons' | 'refsBefore' | 'verified' | 'attempts' | 'reconciliation' | 'branch' | 'discoveries'>,
+  preservation: { branch: string; heads: readonly string[] } | null = null): { ok: true; liveBasis?: true } | { ok: false; code: string } {
   if (publication.state !== 'blocked') return { ok: false, code: 'PUBLICATION_NOT_BLOCKED' };
+  if (liveBasisRecoverable(publication, preservation)) return { ok: true, liveBasis: true };
   const other = publication.reasons.filter(reason => !reevaluable(reason));
   if (!reevaluableReasons(publication.reasons)) return { ok: false, code: `NOT_REEVALUABLE:${other.join(',') || 'NO_REASON'}`.slice(0, 200) };
   if (!publication.refsBefore) return { ok: false, code: 'REFS_SNAPSHOT_ABSENT' };

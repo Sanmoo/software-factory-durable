@@ -586,7 +586,8 @@ export type PublicationView = {
   /** Review HIGH: commits pushed by others whose loss the operator explicitly authorized (`discard <tip>`): no longer required at linking. */
   waived?: string[];
   /** Ticket 61: the latest operator re-evaluation of a block (`reevaluate-publication`). `pending`: the next discovery pass re-reads the remote
-   * and re-applies the rule to `refsBefore`; `accepted`: the block lifted with the decision `outcome`; `still-blocked`: `reasons` remain. */
+   * and re-applies the rule to `refsBefore`; `accepted`: the block lifted with the decision `outcome` (acceptance A6: `null` when the request itself returned a
+   * live-basis block to the ordinary discovery, which then decides); `still-blocked`: `reasons` remain. */
   reevaluation?: { request_id: string; reason: string; requestedAt: string; state: 'pending' | 'accepted' | 'still-blocked'; settledAt: string | null;
     outcome: PublicationDiscovery['outcome'] | null; reasons: string[] } | null;
 };
@@ -994,7 +995,7 @@ export type WorkView = {
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
     { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete' |
       /* ticket 21 */ 'publication-diverged' | 'reconciliation-authorized' | 'reconciliation-not-authorized' | 'reconciliation-superseded' | 'publication-base-changed' | 'publication-base-restored' |
-      'reconciliation-failed' | /* ticket 61 */ 'publication-reevaluated';
+      'reconciliation-failed' | /* ticket 61 */ 'publication-reevaluated' | /* acceptance A6 */ 'publication-block-lifted';
       origin: 'controller-publication'; executionId: string | null; detail: string } |
     /** Ticket 61: the operator asked to re-evaluate a blocked publication (`<request id>`). */
     { at: string; event: 'publication-reevaluation-requested'; origin: 'local-cli'; detail: string } |

@@ -1,6 +1,7 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Session } from './store.js';
 import { works } from './admission.js';
+import { liftLiveBlock } from './publication.js';
 import { recordPreserved, type GateDecision } from '../rules/preservation.js';
 import type { ExecutionView, PreservationOccasion } from '../types.js';
 
@@ -23,6 +24,8 @@ export async function recordGateCheck(session: Session, work_id: string, executi
       decision.outcome === 'accepted' ? { at, outcome: 'accepted', code: null, commit: decision.commit } : { at, outcome: 'refused', code: decision.code, detail: decision.detail }] };
     if (decision.outcome === 'accepted') {
       work.preservation = recordPreserved(work.preservation, { commit: decision.commit, branch: input.branch, confirmedAt: at, executionId, boot: input.boot, occasion: input.occasion });
+      // Acceptance finding A6: a publication blocked because its live basis was not seen on `origin` is no dead end once the gate confirms it there.
+      liftLiveBlock(work, at, 'preservation-gate');
     }
     work.history.push({ at, event: decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', origin: 'controller-dispatch', executionId,
       detail: (decision.outcome === 'accepted' ? `${input.occasion}:${decision.commit}` : `${input.occasion}:${decision.code}:${decision.detail}`).slice(0, 512) });

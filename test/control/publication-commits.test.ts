@@ -7,7 +7,8 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { openStore } from '../../src/control/durable/store.js';
 import { admitTicket, initialize, readWork, recordDependencies, works } from '../../src/control/durable/admission.js';
 import { admitExecution, beginRenewal, confirmActivation, confirmStart, initializeSlots, recordEnd, recordIssuance, recordPhase, releaseAfterCessation } from '../../src/control/durable/execution.js';
-import type { DependencyEvaluation, PublicationView } from '../../src/control/types.js';
+import { acceptPublicationReevaluation } from '../../src/control/durable/publication.js';
+import type { ControlInput, DependencyEvaluation, PublicationView } from '../../src/control/types.js';
 import { ticket } from './doubles.js';
 
 // Ticket 14, real Pi Durable/SQLite commits: the publication activation is admitted only for the Work's requested publication, holds the
@@ -111,4 +112,34 @@ test('AC6: a started publication activation is an attempt: never requested again
   // Even with the Work queued again by some other path, nothing runs before the discovery decides.
   const again = await run('d3', { resume, request: { ticket: '', repository: 'acme/project', base: 'main', branch, policies: {}, publication } }, 'builder-publish');
   assert.ok('kind' in again && again.kind === 'refused' && again.reasons.includes('PUBLICATION_DISCOVERY_PENDING'));
+});
+
+// Acceptance finding A6: a Work an earlier version left blocked with its verified commit on the own branch gets out by the operator command.
+test('A6: reevaluate-publication lifts a live-basis block whose verified commit is on the own branch back to the ordinary discovery; without that evidence it refuses', async t => {
+  const { session, work_id, branch } = await ready(t);
+  const reasons = ['VERIFIED_COMMIT_NOT_PUBLISHED_BEFORE_STOP', 'BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'];
+  const seed = (tip: PublicationView['discoveries'][number]['branch']) => session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work!;
+    work.publication = { state: 'blocked', basisExecutionId: 'e1', marker: `<!-- software-factory:work:${work_id} -->`, branch, base: 'main',
+      verified: { executionId: 'e1', head, contentSha256: 'f'.repeat(64), verifiedAt: null, reviewedRound: 1, gates: [], requiredChecks: [] }, expectedRemote: null, requestedAt: null,
+      pullRequest: null, description: null, reasons, nextStep: 'old text', updatedAt: 'x', attempts: [], refsBefore: null,
+      discoveries: [{ at: 'x', observedAt: 'x', trigger: 'verified', outcome: 'incomplete', reasons: [reasons[1]!], branch: tip, candidates: [] }] };
+    work.impediments = [{ code: 'PUBLICATION_BLOCKED', scope: 'work', since: 'x', nextStep: 'old text' }];
+  }, BACKGROUND_CONTEXT);
+  const input = (request_id: string): Extract<ControlInput, { operation: 'reevaluate-publication' }> =>
+    ({ request_id, operation: 'reevaluate-publication', work_id, reason: 'The verified commit is on the Work branch.', origin: 'local-cli' });
+  await seed({ state: 'absent' });
+  assert.deepEqual(await acceptPublicationReevaluation(session, input('a6-0')), { kind: 'durable', request_id: 'a6-0', operation: 'reevaluate-publication', work_id,
+    outcome: 'not-applied', reason: `NOT_REEVALUABLE:${reasons.join(',')}`, nextStep: null });
+  assert.equal((await readWork(session, work_id))!.publication!.state, 'blocked');
+  await seed({ state: 'present', sha: head });
+  const receipt = await acceptPublicationReevaluation(session, input('a6-1'));
+  assert.deepEqual([(receipt as { outcome: string }).outcome, (receipt as { reason: string | null }).reason], ['accepted', null]);
+  const work = (await readWork(session, work_id))!;
+  assert.deepEqual([work.publication!.state, work.publication!.reasons, work.impediments], ['awaiting-discovery', ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED'], []]);
+  assert.deepEqual([work.publication!.reevaluation!.state, work.publication!.reevaluation!.request_id], ['accepted', 'a6-1']);
+  assert.deepEqual(work.history.filter(item => item.event.startsWith('publication-')).map(item => [item.event, (item as { detail?: string }).detail]),
+    [['publication-reevaluation-requested', 'a6-1'], ['publication-block-lifted', `reevaluation:a6-1:${head}`]]);
+  assert.deepEqual(await acceptPublicationReevaluation(session, input('a6-1')), receipt, 'same identity and content: same receipt');
+  assert.equal((await acceptPublicationReevaluation(session, input('a6-2')) as { reason: string | null }).reason, 'PUBLICATION_NOT_BLOCKED');
 });
