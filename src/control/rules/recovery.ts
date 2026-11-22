@@ -191,18 +191,54 @@ export function blockedRequestImpediment(workId: string, reference: string, code
 }
 
 /**
- * Acceptance finding A9: `RECOVERY_BLOCKED` by a failure the Execution itself RETURNED and that is not transient (authorization,
- * configuration, drift, a Host protocol refusal). Nothing is retried automatically; the exit is the same explicit override as ticket 41.
+ * Acceptance finding A9: `RECOVERY_BLOCKED` by a failure the Execution itself RETURNED, that is not transient and that the Factory does not
+ * retry by itself (`returnedFailureRecovery`): a configuration or credential failure, or the same failure twice in a row. Nothing is
+ * retried automatically; the exit is the same explicit override as ticket 41.
  */
-export function blockedFailureImpediment(workId: string, reference: string, code: string, since: string): Impediment {
-  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution ended with ${code}, which is not a transient operational failure: ` +
+export function blockedFailureImpediment(workId: string, reference: string, code: string, since: string, why: 'deterministic' | 'repeated' | 'publication' | 'reconciled'): Impediment {
+  const cause = why === 'deterministic' ? 'a configuration or credential failure that repeating cannot fix'
+    : why === 'repeated' ? 'not a transient operational failure, and the previous Execution of this Work ended with the same failure'
+    : why === 'publication' ? 'not a transient operational failure of a publication activation (its effects are decided by the discovery, never by a repetition)'
+    : 'not a transient operational failure';
+  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution ended with ${code}, which is ${cause}: ` +
     'nothing is retried automatically. Inspect the Execution evidence (`factory show`, `factory logs`) and fix the cause; then, to continue in a substitute ' +
     `Execution, \`factory resume ${workId} --override-blocked-recovery ${reference} --request-id <id>\` (one operational recovery unit), or \`factory cancel ${workId}\`.` };
 }
 
 /**
+ * Acceptance finding A9, part B — returned failures that repeating cannot fix, derived conservatively from the code catalog (matched after
+ * the dispatch phase prefix): a boot/preparation refusal (ticket 50 has its own decision), the environment declaration/preparation, the
+ * installation, release and Sandbox configuration, the worker profile/launch setup, any drift, anything not composed/configured/enabled,
+ * credentials and model or GitHub login/authorization, and a resumption that cannot be built. A code that is not here gets ONE automatic
+ * operational recovery; a new deterministic code must be added here or it costs one recovery unit before `repeated` blocks it.
+ */
+const deterministicFailures: readonly RegExp[] = [blockedStartCodePattern,
+  /^ENVIRONMENT_(DECLARATION|CONFIGURATION|BASE|PREPARATION|DISK|OWNERSHIP|REF)_|^ENVIRONMENT_NOT_(DECLARED|PINNED|EVALUATED|PREPARED|OWNED)$/,
+  /^(INSTALLATION|RELEASE|ARTIFACT_SEED|GUEST_ASSETS?|WORKER_PROFILE)_/, /^SANDBOX_(CAPABILITY_MISSING|ADAPTER_UNAVAILABLE|RUNTIME_PATH_TOO_LONG)$/,
+  /^WORKER_(NODE24_REQUIRED|PRIVATE_PATH_REQUIRED|ROLE_UNSUPPORTED|QUALIFICATION_CLOSED|BUDGET_INVALID|ENVIRONMENT_INVALID|LAUNCH_INVALID|BOOTSTRAP_INVALID|MODEL_MISMATCH|BOOT_MISMATCH)$/,
+  /_DRIFT$/, /_CONFIGURATION_(INVALID|MISMATCH)$/, /_NOT_(COMPOSED|CONFIGURED|ENABLED)$/,
+  /(^|_)(CREDENTIALS?|AUTHENTICATION|AUTHORIZATION|AUTHORIZED|UNAUTHORIZED|AUTH|OAUTH|LOGIN|FORBIDDEN|DENIED)(_|$)/,
+  /^(PROMPT_TOO_LARGE|RECOVERY_CONTEXT_INSUFFICIENT)$/];
+/**
+ * Acceptance finding A9, part B (Operator decision of 2026-11-22: bounded self-recovery before an operator command): a returned failure
+ * that is not transient is recovered by ONE automatic operational recovery (ticket 26's ordinary path and budget), EXCEPT (a) a
+ * deterministic configuration/credential failure and (b) the same code that already ended the previous Execution of this Work — those keep
+ * `RECOVERY_BLOCKED` with its override, as does a publication activation (never repeated). `code`: the blocking code (`blocksReturnedFailure`); `previous`: the end of the Execution before.
+ */
+export function returnedFailureRecovery(input: { code: string; previous: { outcome: string; code: string | null } | null;
+  /** The Execution was a publish-only activation: its attempt is decided by the discovery and never repeated (spec §9.1). */ publication?: boolean }):
+  { kind: 'recover' } | { kind: 'block'; why: 'deterministic' | 'repeated' | 'publication' } {
+  if (input.publication) return { kind: 'block', why: 'publication' };
+  const prefix = phases.find(item => input.code.startsWith(item));
+  const bare = prefix ? input.code.slice(prefix.length) : input.code;
+  if (deterministicFailures.some(pattern => pattern.test(input.code) || pattern.test(bare))) return { kind: 'block', why: 'deterministic' };
+  if (input.previous?.outcome === 'failure' && input.previous.code === input.code) return { kind: 'block', why: 'repeated' };
+  return { kind: 'recover' };
+}
+
+/**
  * Acceptance finding A9: the code of an ended Execution whose confirmed cessation would leave the Work open with nothing to do and nothing
- * to decide — a returned failure that is not transient (so no operational recovery; that policy is `classifyInterruption`, unchanged here),
+ * to decide — a returned failure that is not transient (so not `classifyInterruption`'s recovery; `returnedFailureRecovery` answers it),
  * on an open Work that is not being cancelled, has no recovery pending and has no decision of its own: its own impediment (two boots
  * without progress), the reviewer retry limit (ticket 51), a lost request (ticket 27) or an override already given (ticket 41). Else null.
  */

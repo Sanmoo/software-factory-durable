@@ -83,7 +83,52 @@ test('AC6: a live transient failure returns as ONE recovery under its own counte
   assert.deepEqual([work.budget!.recoveries.consumed, h.current().doubles.calls('activate').length], [3, 4]);
 });
 
-test('AC6: a returned blocking failure (drift/authorization/configuration) is never retried automatically; it blocks visibly and the operator override starts a substitute', async t => {
+// Acceptance finding A9, part B: a returned failure that is not transient no longer waits for the operator by default.
+test('A9 part B: a returned failure that is not transient gets ONE automatic substitute Execution, charged to the recoveries budget', async t => {
+  const h = await harness(t);
+  await h.start([{ kind: 'fail', code: 'WORKER_SECRET_SYNC_SCHEMA' }, { kind: 'complete' }]);
+  await idle(h, 1);
+  let work = await h.work();
+  assert.deepEqual([work.execution!.end!.code, work.pendingRecovery!.reason, work.pendingRecovery!.waitSeconds, work.queue.pending, work.impediments, work.execution!.blockedRequest ?? null],
+    ['WORKER_SECRET_SYNC_SCHEMA', 'returned-failure:WORKER_SECRET_SYNC_SCHEMA', 5, true, [], null]);
+  assert.ok(work.history.some(item => item.event === 'recovery-requested' && 'detail' in item && item.detail!.startsWith('returned-failure:WORKER_SECRET_SYNC_SCHEMA')));
+  h.current().doubles.jumpCalendar(60000);
+  await idle(h, 2);
+  work = await h.work();
+  assert.deepEqual([work.execution!.interruption!.reason, work.execution!.interruption!.code, work.execution!.charge!.kind, work.budget!.recoveries.consumed, work.execution!.end!.outcome, work.impediments],
+    ['OPERATIONAL_RECOVERY', 'WORKER_SECRET_SYNC_SCHEMA', 'recovery', 1, 'completed', []]);
+});
+
+test('A9 part B: the same returned failure in the substitute Execution is not retried again: it blocks with the override as its exit', async t => {
+  const h = await harness(t);
+  const fail = { kind: 'fail' as const, code: 'WORKER_SECRET_SYNC_SCHEMA' };
+  await h.start([fail, fail, fail]);
+  await idle(h, 1);
+  h.current().doubles.jumpCalendar(60000);
+  await idle(h, 2);
+  h.current().doubles.jumpCalendar(600000);
+  await h.rounds(3);
+  const work = await h.work();
+  const reference = `request:${work.execution!.invocationId}:WORKER_SECRET_SYNC_SCHEMA`;
+  assert.deepEqual([work.pendingRecovery, work.queue.pending, work.budget!.recoveries.consumed, h.current().doubles.calls('activate').length], [null, false, 1, 2], 'one unit, never a third activation');
+  const blocked = work.impediments.filter(item => item.code === 'RECOVERY_BLOCKED');
+  assert.deepEqual([work.impediments.length, blocked.length, work.execution!.blockedRequest!.cause, work.execution!.blockedRequest!.code], [1, 1, 'returned-failure', 'WORKER_SECRET_SYNC_SCHEMA']);
+  assert.ok(blocked[0]!.nextStep.includes('the previous Execution of this Work ended with the same failure') &&
+    blocked[0]!.nextStep.includes(`factory resume ${work.work_id} --override-blocked-recovery ${reference} --request-id <id>`), blocked[0]!.nextStep);
+});
+
+test('A9 part B: with the recoveries budget exhausted the automatic recovery shows the usual limit impediment and nothing starts', async t => {
+  const h = await harness(t, { recoveryLimit: 0 });
+  await h.start([{ kind: 'fail', code: 'WORKER_SECRET_SYNC_SCHEMA' }, { kind: 'complete' }]);
+  await idle(h, 1);
+  h.current().doubles.jumpCalendar(600000);
+  await h.rounds(3);
+  const work = await h.work();
+  assert.deepEqual([work.impediments.map(item => item.code), work.pendingRecovery!.reason, work.budget!.recoveries.consumed, h.current().doubles.calls('activate').length],
+    [['RECOVERY_LIMIT_REACHED'], 'returned-failure:WORKER_SECRET_SYNC_SCHEMA', 0, 1]);
+});
+
+test('AC6 / A9 part B exception: a returned configuration failure (drift/authorization/configuration) is never retried automatically; it blocks visibly and the operator override starts a substitute', async t => {
   const h = await harness(t);
   await h.start([{ kind: 'fail', code: 'WORKER_SKILL_PACK_DRIFT' }, { kind: 'complete' }]);
   await idle(h, 1);

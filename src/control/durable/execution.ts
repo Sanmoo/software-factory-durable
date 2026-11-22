@@ -16,7 +16,7 @@ import { markPublicationAttempt, markReconciliationExecution } from './publicati
 import { attemptsOf, publicationResumes } from '../rules/publication.js';
 import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
-import { blockedFailureImpediment, blockedRequestToken, blocksReturnedFailure, classifyInterruption } from '../rules/recovery.js';
+import { blockedFailureImpediment, blockedRequestToken, blocksReturnedFailure, classifyInterruption, returnedFailureRecovery } from '../rules/recovery.js';
 import { applyContinuationRequest, applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
 import { budgetEndProgress, budgetExhaustedCode, originProgress } from '../rules/budget-continuation.js';
 import type { CheckoutFingerprint } from '../../contracts/index.js';
@@ -644,7 +644,7 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
           : progress.kind === 'none' ? 'no-progress' : `unknown:${progress.code}`}; guest-stop ${budgetEnd.guestStop ?? 'not-recorded'}`.slice(0, 512) });
     }
     if (cessation !== 'confirmed') return 'kept' as const;
-    applyConfirmedCessation(document.work, execution, await tx.doc(slots));
+    applyConfirmedCessation(document.work, execution, await tx.doc(slots), { returned: true });
     return 'released' as const;
   }, BACKGROUND_CONTEXT);
 }
@@ -654,10 +654,13 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
  * Inside a commit, after CONFIRMED cessation of an ended Execution (shared by the live release and the boot reconciliation, ticket 26): the
  * Slot is released and the outcome decides the queue — question/timeout/stopped keep the same position; completed consumes the scope updates
  * it delivered and requeues for pending ones (ticket 11); a transient failure becomes ONE operational recovery; any other returned failure
- * blocks visibly (acceptance finding A9).
+ * is recovered once or blocks visibly (acceptance finding A9, `settleReturnedFailure`, whose answer is returned).
  */
-export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionView, occupancy: { held: Record<string, string> }) {
+export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionView, occupancy: { held: Record<string, string> },
+  /** `returned`: the Execution itself returned its end (live); false for an end the boot reconciliation decided for an interrupted one. */
+  options: { returned: boolean }): 'recovery' | 'blocked' | null {
   const executionId = execution.executionId;
+  let answered: 'recovery' | 'blocked' | null = null;
   const end = execution.end!;
   end.cessation = 'confirmed';
   execution.dispatch.phase = 'stopped';
@@ -684,25 +687,34 @@ export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionVi
       detail: `${end.code}:progress:${progress.commits ? 'commits' : ''}${progress.commits && progress.checkout ? '+' : ''}${progress.checkout ? 'checkout' : ''}` });
   } else if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable' && !work.cancellation) {
     applyRecoveryRequest(work, { executionId, code: end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
-  } else blockReturnedFailure(work, execution, execution.slot.releasedAt!);
+  } else answered = settleReturnedFailure(work, execution, execution.slot.releasedAt!, options.returned);
   history(work, 'slot-released', executionId);
   settleCancelled(work, execution.slot.releasedAt!);
+  return answered;
 }
 
 /**
- * Acceptance finding A9: a returned failure that is not transient never leaves the Work open with nothing to do. It becomes the visible
- * `RECOVERY_BLOCKED` of a blocked recovery, with the failure code, a stable reference and ticket 41's explicit override as its exit
- * (`resume --override-blocked-recovery <reference>`: ONE operational recovery). Nothing is retried automatically.
+ * Acceptance finding A9: a returned failure that is not transient never leaves the Work open with nothing to do. Part B: when the
+ * Execution itself returned it (`returned`), ONE operational recovery is requested at once through ticket 26's ordinary path (persisted
+ * wait, one `recoveries` unit at the confirmed start, the usual limit impediment when exhausted) unless `returnedFailureRecovery` says the
+ * failure is deterministic or repeated. Otherwise it becomes the visible `RECOVERY_BLOCKED` of a blocked recovery, with the failure code,
+ * a stable reference and ticket 41's explicit override as its exit (`resume --override-blocked-recovery <reference>`).
  */
-function blockReturnedFailure(work: WorkRecord, execution: ExecutionView, at: string) {
+function settleReturnedFailure(work: WorkRecord, execution: ExecutionView, at: string, returned: boolean): 'recovery' | 'blocked' | null {
   const code = blocksReturnedFailure({ result: work.result, cancelling: Boolean(work.cancellation), pendingRecovery: Boolean(work.pendingRecovery), impediments: work.impediments,
     end: execution.end!, decided: Boolean(execution.blockedRequest) });
-  if (!code) return;
+  if (!code) return null;
+  const decision = returned ? returnedFailureRecovery({ code, previous: work.previousExecutions?.at(-1)?.end ?? null, publication: Boolean(execution.request.publication) }) : { kind: 'block' as const, why: 'reconciled' as const };
+  if (decision.kind === 'recover') {
+    applyRecoveryRequest(work, { executionId: execution.executionId, code, at, reason: `returned-failure:${code}` });
+    return 'recovery';
+  }
   const reference = blockedRequestReference(blockedRequestToken({ invocationId: execution.invocationId, records: [], executionId: execution.executionId }), code);
   // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
   execution.blockedRequest = { reference, code, questionId: null, records: [], at, cause: 'returned-failure', override: null };
-  work.impediments.push(blockedFailureImpediment(work.work_id, reference, code, at));
+  work.impediments.push(blockedFailureImpediment(work.work_id, reference, code, at, decision.why));
   history(work, 'recovery-blocked', execution.executionId, code);
+  return 'blocked';
 }
 
 /**

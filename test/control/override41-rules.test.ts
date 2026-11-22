@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { blockedReferencePattern, blockedRequestReference } from '../../src/contracts/index.js';
-import { blockedFailureImpediment, blockedRequestImpediment, blockedRequestToken, blocksReturnedFailure, overrideBlockedRecoveryDecision, positiveResolution, type OverrideFacts } from '../../src/control/rules/recovery.js';
+import { blockedFailureImpediment, blockedRequestImpediment, blockedRequestToken, blocksReturnedFailure, overrideBlockedRecoveryDecision, positiveResolution, returnedFailureRecovery, type OverrideFacts } from '../../src/control/rules/recovery.js';
 
 // Rules level, ticket 41: the explicit operator exit of a recovery blocked by a lost Builder request (ticket 27). Every fact is supplied by the test.
 const invocation = 'builder-5d1e0c1a-8a0b-4b5e-9c3f-0123456789ab';
@@ -80,12 +80,39 @@ test('LOW: the reference always has a usable token (invocation, else the Records
 // Acceptance finding A9: an Execution that RETURNED a blocking failure (not a loss) used to leave the Work open with nothing to do.
 test('A9: a returned blocking failure blocks the Work visibly, with the failure code and the override command as its next step', () => {
   const blocked = blockedRequestReference(invocation, 'WORKER_SECRET_SYNC_SCHEMA');
-  const impediment = blockedFailureImpediment('w-1', blocked, 'WORKER_SECRET_SYNC_SCHEMA', '2026-11-22T10:00:00.000Z');
+  const impediment = blockedFailureImpediment('w-1', blocked, 'WORKER_SECRET_SYNC_SCHEMA', '2026-11-22T10:00:00.000Z', 'repeated');
   assert.equal(impediment.code, 'RECOVERY_BLOCKED');
   assert.ok(blockedReferencePattern.test(blocked));
   assert.ok(impediment.nextStep.includes('WORKER_SECRET_SYNC_SCHEMA') && impediment.nextStep.includes(`factory resume w-1 --override-blocked-recovery ${blocked} --request-id <id>`) &&
     impediment.nextStep.includes('factory cancel w-1'), impediment.nextStep);
   assert.ok(impediment.nextStep.includes('nothing is retried automatically'));
+  // The message says why no substitute Execution was started by the Factory itself.
+  assert.ok(impediment.nextStep.includes('the previous Execution of this Work ended with the same failure'), impediment.nextStep);
+  assert.ok(blockedFailureImpediment('w-1', blocked, 'WORKER_SKILL_PACK_DRIFT', 'x', 'deterministic').nextStep.includes('a configuration or credential failure that repeating cannot fix'));
+});
+
+// Acceptance finding A9, part B (Operator decision): a returned failure that is not transient gets ONE automatic operational recovery,
+// unless repeating cannot fix it (configuration/credential) or the previous Execution of the Work already ended with the same code.
+test('A9 part B: a returned failure recovers by itself unless it is deterministic or repeats the previous Execution\'s failure', () => {
+  const first = { code: 'WORKER_SECRET_SYNC_SCHEMA', previous: null };
+  assert.deepEqual(returnedFailureRecovery(first), { kind: 'recover' });
+  assert.deepEqual(returnedFailureRecovery({ ...first, previous: { outcome: 'completed', code: null } }), { kind: 'recover' });
+  assert.deepEqual(returnedFailureRecovery({ ...first, previous: { outcome: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' } }), { kind: 'recover' }, 'another failure before it');
+  for (const code of ['UNEXPECTED_FAILURE', 'WORKER_PROCESS_FAILED', 'WORKER_SESSION_UNAVAILABLE', 'HANDOFF_CAPTURE_FAILED', 'STARTED_WORKER_SECRET_SYNC_LIMIT']) {
+    assert.deepEqual(returnedFailureRecovery({ code, previous: null }), { kind: 'recover' }, code);
+  }
+  // A publication activation is never repeated: its attempt is decided by the discovery.
+  assert.deepEqual(returnedFailureRecovery({ ...first, publication: true }), { kind: 'block', why: 'publication' });
+  // (b) the same returned failure twice in a row is a deterministic defect: the budget is not burnt on it.
+  assert.deepEqual(returnedFailureRecovery({ ...first, previous: { outcome: 'failure', code: 'WORKER_SECRET_SYNC_SCHEMA' } }), { kind: 'block', why: 'repeated' });
+  // (a) environment declaration/preparation, installation and Sandbox configuration, credentials, model login/authorization, profile and drift.
+  for (const code of ['WORKER_SKILL_PACK_DRIFT', 'ACTIVATE_WORKER_SKILL_PACK_DRIFT', 'WORKER_PROFILE_NOT_CONFIGURED', 'WORKER_PROFILE_INVALID', 'WORKER_MODEL_MISMATCH',
+    'WORKER_EXECUTION_NOT_ENABLED', 'ENVIRONMENT_DECLARATION_INVALID', 'ENVIRONMENT_NOT_PINNED', 'PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED', 'START_GUEST_ASSETS_INVALID',
+    'SANDBOX_CONFIGURATION_INVALID', 'INSTALLATION_STATE_MISSING', 'CREDENTIAL_GITHUB_TOKEN_ISSUANCE_UNKNOWN', 'CREDENTIAL_ROLE_DENIED', 'ACTIVATION_CREDENTIALS_WITHDRAWN',
+    'CHECKOUT_FETCH_CREDENTIAL_UNAVAILABLE', 'AUTHENTICATION_REFUSED', 'WORKER_MODEL_LOGIN_REQUIRED', 'STARTED_WORKER_PROVIDER_UNAUTHORIZED', 'RELEASE_SDK_PROFILE_DRIFT',
+    'CHECKOUT_NOT_COMPOSED', 'PROMPT_TOO_LARGE', 'RECOVERY_CONTEXT_INSUFFICIENT']) {
+    assert.deepEqual(returnedFailureRecovery({ code, previous: null }), { kind: 'block', why: 'deterministic' }, code);
+  }
 });
 
 test('A9: only a failure nothing else answers is blocked: not a transient one, a cancelled or closed Work, one with its own decision or one already blocked', () => {

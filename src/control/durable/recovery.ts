@@ -243,6 +243,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
     settleInterruptedReviews(execution, now);
     let decision: RecoveryRecord['decision'];
     let code: string | null;
+    // Acceptance finding A9, part B: an end the Execution itself returned (recorded before this reconciliation) keeps its automatic recovery.
+    const returned = execution.state === 'ended' && Boolean(execution.end);
     if (execution.state === 'ended' && execution.end) {
       // The end was recorded earlier (with ticket 11's scope handling) but its cessation was not confirmed then.
       code = execution.end.outcome === 'failure' ? execution.end.code ?? 'CONTROLLER_CRASH' : execution.end.outcome;
@@ -295,9 +297,11 @@ export async function settleInterruption(session: Session, input: { work_id: str
       decision = outcome === 'stopped' ? 'administrative-continuation' : outcome === 'failure' ? 'operational-recovery' : 'settled';
     }
     // Shared with the live release (ticket 11 scope consumption/requeue, question/timeout/stop positions, ONE operational recovery).
-    applyConfirmedCessation(work, execution, occupancy);
+    const answered = applyConfirmedCessation(work, execution, occupancy, { returned });
     if (execution.end.outcome === 'failure') {
       const classified = classifyInterruption(execution.end.code);
+      // A9 part B: the returned failure was answered by ONE automatic operational recovery (pending): nothing blocks.
+      if (classified.kind === 'blocking' && answered === 'recovery') return record(startRecord, 'operational-recovery', classified.code);
       // Ticket 41 (idempotence): a block the operator already overrode is never re-blocked by a later settlement; its recovery stays pending.
       if (classified.kind === 'blocking' && execution.blockedRequest?.override && execution.blockedRequest.code === classified.code) {
         return record(startRecord, 'operational-recovery', classified.code);
