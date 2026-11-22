@@ -169,6 +169,17 @@ export function releaseStorageSupport(manifest: ReleaseManifest): { format: numb
   return { format: 1, migratesFrom: [], declared: false };
 }
 
+/**
+ * Jira ticket 02: the config.yaml schema versions a release validates, from its manifest `metadata.formats.configuration`: a list since the
+ * Jira origin (`[1, 2]`), a single number before it (`1`). null: not declared or not readable, so no configuration can be verified for it.
+ */
+export function releaseConfigurationSupport(manifest: ReleaseManifest): number[] | null {
+  const declared = (manifest.metadata.formats as { configuration?: unknown } | undefined)?.configuration;
+  if (Number.isSafeInteger(declared)) return [declared as number];
+  if (Array.isArray(declared) && declared.length > 0 && declared.every(Number.isSafeInteger)) return [...declared as number[]];
+  return null;
+}
+
 class ReleaseFailure extends Error {
   constructor(readonly code: string, readonly path?: string) { super(code); }
 }

@@ -17,13 +17,59 @@ import { unsettledExecutions, type SettlementFacts } from '../rules/quiescence.j
  * migrate it implicitly) and an older Factory document is never adopted lazily.
  */
 export const currentFormat = controlStorageCompatibility.format;
-const formats: Record<number, Record<string, number>> = {
+/**
+ * Format → document kind → version. Jira ticket 02: format 3 differs from format 2 only by `factory.installation` v3 (its format identity), so a
+ * format-2 release refuses a storage that may hold Jira-origin state. Format 3 is still open while the Jira origin is integrated: a later ticket
+ * adds its new kinds HERE (format 3 only) and extends the 2→3 transformation; a kind absent from the detected format makes the storage mixed.
+ */
+export type FormatTable = Record<number, Record<string, number>>;
+const formats: FormatTable = {
   1: { 'factory.installation': 1, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
   2: { 'factory.installation': 2, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
+  // The current format's matrix is declared once, in the contract the release manifest publishes.
+  [currentFormat]: { ...controlStorageCompatibility.documents },
 };
-/** Supported migrations: explicit, whole-storage, one Session commit each. */
-export const supportedMigrations = [{ id: 'factory-storage-1-to-2', from: 1, to: 2,
-  changes: 'factory.installation v1 → v2: adds the storage format identity, the migration record and the controller lifecycle (clean-stop evidence); every other document is kept byte-for-byte.' }] as const;
+/** Supported migrations: explicit, whole-storage, one Session commit each (a path of several is still applied in ONE commit, see `migrationPath`). */
+export const supportedMigrations = [
+  { id: 'factory-storage-1-to-2', from: 1, to: 2,
+    changes: 'factory.installation v1 → v2: adds the storage format identity, the migration record and the controller lifecycle (clean-stop evidence); every other document is kept byte-for-byte.' },
+  { id: 'factory-storage-2-to-3', from: 2, to: 3,
+    changes: 'factory.installation v2 → v3: the storage format identity becomes 3 (a format-2 release refuses it); pause, history, migration records and lifecycle are kept; every other document is kept byte-for-byte; nothing is published.' },
+] as const;
+export type SupportedMigration = typeof supportedMigrations[number];
+/**
+ * The explicit chain of supported migrations from `from` to `to` (each step's `to` is the next step's `from`), or null when none exists. Format 1
+ * reaches 3 only through the existing 1→2 step followed by 2→3; nothing is skipped or invented.
+ */
+export function migrationPath(from: number, to: number, available: readonly { id: string; from: number; to: number }[] = supportedMigrations) {
+  const path: { id: string; from: number; to: number }[] = [];
+  for (let at = from; at !== to;) {
+    const step = available.find(item => item.from === at && item.to > at && item.to <= to);
+    if (!step) return null;
+    path.push(step);
+    at = step.to;
+  }
+  return path.length ? path : null;
+}
+/** The id an operator requests for a path: one step's id, or the step ids in order joined by commas. */
+export const migrationPathId = (path: readonly { id: string }[]) => path.map(step => step.id).join(',');
+
+/**
+ * Pure format decision (Jira ticket 02): the installation version names the format; every other document kind must exist in that format at
+ * exactly its version (a kind another format defines but this one does not, or another version, is STORAGE_FORMAT_MIXED).
+ */
+export function decideFormat(installationVersion: number | null, versions: Record<string, Record<string, number>>, table: FormatTable = formats) {
+  const problems: StorageProblem[] = [];
+  const found = installationVersion === null ? undefined : Object.entries(table).find(([, kinds]) => kinds['factory.installation'] === installationVersion)?.[0];
+  const format = found === undefined ? null : Number(found);
+  if (format !== null) for (const [kind, entry] of Object.entries(versions)) {
+    if (!Object.values(table).some(kinds => kind in kinds)) continue; // Unknown kinds are reported as STORAGE_DOCUMENT_UNKNOWN.
+    for (const version of Object.keys(entry)) if (table[format]![kind] !== Number(version)) {
+      problems.push({ code: 'STORAGE_FORMAT_MIXED', detail: table[format]![kind] === undefined ? `${kind} is not part of format ${format}.` : `${kind} version ${version} does not belong to format ${format}.` });
+    }
+  }
+  return { format, problems };
+}
 export const durableSchemaVersion = CURRENT_SQLITE_SCHEMA_VERSION;
 
 export type StorageProblem = { code: 'STORAGE_BACKEND_INCOMPATIBLE' | 'STORAGE_DOCUMENT_UNKNOWN' | 'STORAGE_DOCUMENT_VERSION_UNSUPPORTED' | 'STORAGE_FORMAT_MIXED' |
@@ -51,7 +97,7 @@ export type StorageInspection = { kind: 'absent' } | { kind: 'storage';
 const canonical = (value: JsonValue | undefined): string => value === null || typeof value !== 'object' ? JSON.stringify(value ?? null)
   : Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
     : `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as JsonObject)[key])}`).join(',')}}`;
-/** Installation fields every migration preserves (format 2 additions excluded). */
+/** Installation fields every migration preserves (format 2 and 3 additions excluded). */
 const preservedInstallation = (value: JsonObject) => ({ paused: value.paused ?? null, history: value.history ?? null });
 export const preservedCanonical = (value: JsonObject) => canonical(preservedInstallation(value) as JsonObject);
 
@@ -133,14 +179,9 @@ export async function examine(database: SqliteDatabase, options: { create: boole
     }
     cursor = page.next;
   } while (cursor !== undefined);
-  // Every non-installation document is v1 in both formats; the installation version decides the format.
-  const format = installationVersion === null ? null : Object.entries(formats).find(([, kinds]) => kinds['factory.installation'] === installationVersion)?.[0];
-  const detected = format === undefined ? null : format === null ? null : Number(format);
-  if (detected !== null) for (const [kind, entry] of Object.entries(documents)) {
-    for (const version of Object.keys(entry.versions)) if (formats[detected]?.[kind] !== undefined && formats[detected][kind] !== Number(version)) {
-      problems.push({ code: 'STORAGE_FORMAT_MIXED', detail: `${kind} version ${version} does not belong to format ${detected}.` });
-    }
-  }
+  const decided = decideFormat(installationVersion, Object.fromEntries(Object.entries(documents).map(([kind, entry]) => [kind, entry.versions])));
+  const detected = decided.format;
+  problems.push(...decided.problems);
   // Factory documents without the installation document: never adopted, never completed by a lazily created installation.
   if (installationVersion === null && Object.keys(documents).length > 0) {
     problems.push({ code: 'STORAGE_INSTALLATION_MISSING', detail: 'Factory documents exist without the installation document; the storage is not adopted.' });
@@ -149,7 +190,7 @@ export async function examine(database: SqliteDatabase, options: { create: boole
   const taskKinds = [...new Set(tasks.items.map(task => String((task as { kind?: unknown }).kind)))].sort();
   if (tasks.items.length > 0) problems.push({ code: 'STORAGE_REGISTRY_INCOMPATIBLE', detail: `Persisted Pi Durable task kinds ${taskKinds.join(', ')}; this release registers no task definition.` });
   const operational = problems.length > 0 ? 'incompatible' : detected === null || detected === currentFormat ? 'ready'
-    : supportedMigrations.some(migration => migration.from === detected && migration.to === currentFormat) ? 'migration-required' : 'incompatible';
+    : migrationPath(detected, currentFormat) ? 'migration-required' : 'incompatible';
   return { storage, inspection: { kind: 'storage', ...base, format: detected, documents, tasks: { count: tasks.items.length, kinds: taskKinds }, problems, installation,
     preserved: { works: counts.works, questions: { open: counts.open, answered: counts.answered }, heldSlots: counts.heldSlots, requests: counts.requests, sessions: counts.sessions,
       digest: digest.digest('hex') }, stateDigest: full.digest('hex'), activity: { unsettled: unsettledExecutions(workFacts), heldSlots: counts.heldSlots }, operational } };

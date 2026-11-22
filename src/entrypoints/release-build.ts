@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { protocolVersion } from '../protocol/index.js';
 import { controlStorageCompatibility, factorySkillPackIds } from '../contracts/index.js';
 import { createSandbox, prepareReleaseGondolinSdk, verifyGondolinSdk, gondolinSdkProfile } from '../sandbox/index.js';
-import { configurationSchemaVersion } from './configuration.js';
+import { configurationSchemaVersions } from './configuration.js';
 import { applicationRoot, inventoryTree, latestContinuationPack, parseReleaseManifest, productionProfile, releaseIdSchema, releaseLauncher, releaseManifestName, verifyReleaseTree, type TreeEntry } from './release.js';
 
 /**
@@ -364,8 +364,9 @@ export async function buildRelease(input: BuildInput) {
       })),
       protocol: { version: protocolVersion },
       // Ticket 33: the storage formats this release operates/migrates (upgrade and rollback decide on it before changing anything).
-      storage: { format: controlStorageCompatibility.format, migratesFrom: [...controlStorageCompatibility.migratesFrom] },
-      formats: { releaseManifest: 1, configuration: configurationSchemaVersion, sandboxConfiguration: 1, sandboxProfile: productionProfile.sandboxProfile,
+      storage: { format: controlStorageCompatibility.format, migratesFrom: [...controlStorageCompatibility.migratesFrom],
+        migrations: [...controlStorageCompatibility.migrations], documents: { ...controlStorageCompatibility.documents } },
+      formats: { releaseManifest: 1, configuration: [...configurationSchemaVersions], sandboxConfiguration: 1, sandboxProfile: productionProfile.sandboxProfile,
         controlStorage: 'Pi Durable SqliteStorage on node:sqlite (FULL synchronous)', workerSessions: 'Pi coding-agent SessionManager JSONL v3 (context only)' },
       build: { typescript: await developmentTool('typescript', 'tsconfig.json'), npm: { pinned: packageJson.packageManager, executed: false,
         note: 'The build never runs npm; the lockfile above is the dependency authority.' },

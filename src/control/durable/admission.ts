@@ -23,20 +23,25 @@ export type ControllerRunEnd = ControllerRun & { endedAt: string; end: 'clean' |
 /** Ticket 33: explicitly requested, supported storage migrations applied to this storage, oldest first. */
 export type StorageMigration = { upgradeId: string; migration: string; from: number; to: number; at: string; release: string; previousRelease: string | null };
 type Installation = { paused: boolean; history: History[];
-  /** Storage format 2 (ticket 33): the format identity and the record of every migration applied. */
-  storage: { format: 2; migrations: StorageMigration[] };
+  /** Storage format identity (ticket 33; 3 since the Jira origin) and the record of every migration applied. */
+  storage: { format: 3; migrations: StorageMigration[] };
   /** Storage format 2 (ticket 33): `current` is the run that has not recorded its end (alive, or crashed); `last` the latest recorded end. */
   lifecycle: { current: ControllerRun | null; last: ControllerRunEnd | null } };
+/** factory-storage-1-to-2 (ticket 33): format 1 recorded no controller lifecycle, so nothing proves how its last run ended and nothing is invented. */
+const installationOneToTwo = (value: Record<string, unknown>) => ({ ...value, storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } });
+/** factory-storage-2-to-3 (Jira ticket 02): only the format identity changes; pause, history, migration records and lifecycle are kept. */
+const installationTwoToThree = (value: Record<string, unknown>) => ({ ...value, storage: { ...(value.storage as Record<string, unknown>), format: 3 } });
 /**
- * Version 2 = storage format 2 (ticket 33). Version 1 storages are NEVER migrated lazily: the operational open refuses them
- * (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration commits this conversion, all at once.
+ * Version 3 = storage format 3 (Jira ticket 02; version 2 = format 2, ticket 33). Older storages are NEVER migrated lazily: the operational open
+ * refuses them (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration commits this conversion, all at once. A format-1
+ * installation passes through exactly the 1→2 conversion first.
  */
-export const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 2, scope: 'session',
-  initial: () => ({ paused: false, history: [], storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } }), checkpointWhen: () => true,
+export const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 3, scope: 'session',
+  initial: () => ({ paused: false, history: [], storage: { format: 3, migrations: [] }, lifecycle: { current: null, last: null } }), checkpointWhen: () => true,
   migrate: (value, fromVersion) => {
-    if (fromVersion !== 1) throw new Error('STORAGE_FORMAT_UNSUPPORTED');
-    // Format 1 recorded no controller lifecycle: nothing proves how its last run ended, so nothing is invented here.
-    return { ...value, storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } } as unknown as Installation;
+    if (fromVersion !== 1 && fromVersion !== 2) throw new Error('STORAGE_FORMAT_UNSUPPORTED');
+    const two = fromVersion === 1 ? installationOneToTwo(value as Record<string, unknown>) : value as Record<string, unknown>;
+    return installationTwoToThree(two) as unknown as Installation;
   } });
 /** Identified ingresses (CLI request ids, `github-comment-<id>` for comments) with their single durable result. */
 export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } |

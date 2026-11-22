@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inventoryTree, parseReleaseManifest, productionProfile, releaseLauncher } from '../../src/entrypoints/release.js';
 import type { UpgradeContext } from '../../src/entrypoints/controller/upgrade.js';
+import { controlStorageCompatibility } from '../../src/contracts/index.js';
+import { configurationSchemaVersions } from '../../src/entrypoints/configuration.js';
 
 // I-local fixture (ticket 33): an installation root with SMALL synthetic release trees whose manifests are real (schema + exact inventory,
 // verified by the real verifyReleaseTree) and real launchers pinned by them; synthetic guest assets pinned by hash. The trees carry no
@@ -21,8 +23,17 @@ sandbox: { schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1 }
 repositories: []
 `;
 
-/** A release tree `releases/<id>` with a valid manifest; `storage` false omits the ticket-33 declaration (a pre-33 release: format 1 only). */
-export async function fakeRelease(root: string, id: string, options: { storage?: boolean; skillPack?: string; configurationSchema?: number | null } = {}) {
+/** Storage declarations of releases: `current` = this checkout's; `formatTwo` = every release before the Jira origin (format 2, migrates 1). */
+export const storageDeclarations = { current: { format: controlStorageCompatibility.format, migratesFrom: [...controlStorageCompatibility.migratesFrom] },
+  formatTwo: { format: 2, migratesFrom: [1] } };
+export type StorageDeclaration = false | { format: number; migratesFrom: number[] };
+/** Configuration schema declarations: this checkout's list, and the single number of every release before the Jira origin. */
+export const configurationDeclarations = { current: [...configurationSchemaVersions], beforeJira: 1 };
+/**
+ * A release tree `releases/<id>` with a valid manifest (the previous one of `installation` declares configuration 1 unless told otherwise); `storage` false omits the ticket-33 declaration (a pre-33 release: format 1 only), by
+ * default this checkout's. `configurationSchema` null omits the configuration declaration; by default this checkout's.
+ */
+export async function fakeRelease(root: string, id: string, options: { storage?: StorageDeclaration; skillPack?: string; configurationSchema?: number | number[] | null } = {}) {
   const directory = join(root, 'releases', id);
   await mkdir(join(directory, 'dist'), { recursive: true, mode: 0o700 });
   await writeFile(join(directory, 'dist', 'marker.txt'), `release ${id}\n`, { mode: 0o644 });
@@ -33,8 +44,8 @@ export async function fakeRelease(root: string, id: string, options: { storage?:
     guestAssets: { path: `assets/guest/${assetsSha256}`, manifestSha256: assetsSha256, files: await inventoryTree(assets) },
     production: { id: productionProfile.id, sdkProfileId: productionProfile.sdkProfileId, builder: { skillPack: options.skillPack ?? 'factory-skills-v5' } },
     qualification: { status: 'unqualified', statement: 'synthetic' },
-    metadata: { protocol: { version: 1 }, ...(options.configurationSchema === null ? {} : { formats: { configuration: options.configurationSchema ?? 1 } }),
-      ...(options.storage === false ? {} : { storage: { format: 2, migratesFrom: [1] } }) },
+    metadata: { protocol: { version: 1 }, ...(options.configurationSchema === null ? {} : { formats: { configuration: options.configurationSchema ?? configurationDeclarations.current } }),
+      ...(options.storage === false ? {} : { storage: options.storage ?? storageDeclarations.current }) },
     files: await inventoryTree(directory) };
   const bytes = JSON.stringify(manifest) + '\n';
   await writeFile(join(directory, 'release-manifest.json'), bytes, { mode: 0o644 });
@@ -43,8 +54,11 @@ export async function fakeRelease(root: string, id: string, options: { storage?:
   return { directory, launcher, ...parsed };
 }
 
-/** Root with `previous` selected by its launcher and `target` extracted next to it (not selected). */
-export async function installation(options: { previousStorage?: boolean; previousConfigurationSchema?: number | null } = {}) {
+/**
+ * Root with `previous` selected by its launcher and `target` extracted next to it (not selected). `previousStorage`: false (default) = a pre-33
+ * release; true = a release operating this checkout's format; or an explicit declaration (e.g. `storageDeclarations.formatTwo`).
+ */
+export async function installation(options: { previousStorage?: boolean | StorageDeclaration; previousConfigurationSchema?: number | number[] | null; configuration?: string } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'factory-upgrade-'));
   for (const name of ['releases', 'assets', 'credentials', 'data', 'environments', 'run']) await mkdir(join(root, name), { mode: 0o700 });
   const assets = join(root, 'assets', 'guest', assetsSha256);
@@ -53,9 +67,10 @@ export async function installation(options: { previousStorage?: boolean; previou
   for (const [name, text] of [['vmlinuz-virt', 'kernel fixture\n'], ['initramfs.cpio.lz4', 'initramfs fixture\n'], ['rootfs.ext4', 'rootfs fixture\n']] as const) {
     await writeFile(join(assets, name), text, { mode: 0o644 });
   }
-  await writeFile(join(root, 'config.yaml'), configuration, { mode: 0o600 });
-  const previous = await fakeRelease(root, 'mvp-32.1', { storage: options.previousStorage ?? false, skillPack: 'factory-skills-v4',
-    ...(options.previousConfigurationSchema !== undefined ? { configurationSchema: options.previousConfigurationSchema } : {}) });
+  await writeFile(join(root, 'config.yaml'), options.configuration ?? configuration, { mode: 0o600 });
+  const storage = options.previousStorage === true ? storageDeclarations.current : options.previousStorage ?? false;
+  const previous = await fakeRelease(root, 'mvp-32.1', { storage, skillPack: 'factory-skills-v4',
+    configurationSchema: options.previousConfigurationSchema === undefined ? configurationDeclarations.beforeJira : options.previousConfigurationSchema });
   await writeFile(join(root, 'factory'), previous.launcher, { mode: 0o755 });
   const target = await fakeRelease(root, 'mvp-33.1');
   const context: UpgradeContext = { root, storagePath: join(root, 'data', 'control.sqlite'),

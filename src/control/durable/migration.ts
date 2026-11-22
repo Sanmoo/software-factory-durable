@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { installation, type ControllerRunEnd } from './admission.js';
 import type { JsonObject } from '@earendil-works/pi-durable';
-import { currentFormat, inspectStorage, preservedCanonical, supportedMigrations, type StorageInspection } from './format.js';
+import { currentFormat, inspectStorage, migrationPath, migrationPathId, preservedCanonical, type StorageInspection } from './format.js';
 import { openStore, type Session } from './store.js';
 
 export type MigrationResult =
@@ -15,8 +15,9 @@ const applied = (inspection: StorageInspection, upgradeId: string) => inspection
   (inspection.installation?.migrations ?? []).some(item => (item as { upgradeId?: unknown }).upgradeId === upgradeId);
 
 /**
- * Ticket 33 (spec §11.4 step 4): the ONLY supported migration, executed only when the upgrade explicitly requests it, as ONE Session
- * commit (all or nothing: an interruption leaves format 1 untouched, or format 2 complete with this upgrade's record). Idempotent per
+ * Ticket 33 (spec §11.4 step 4) and Jira ticket 02 (spec §6.2-6.3): the supported migration path from the detected format to the current one
+ * (2→3, or 1→2 then 2→3), executed only when the upgrade explicitly requests it, as ONE Session commit with one record per step (all or
+ * nothing: an interruption leaves the older format untouched, or the current format complete with this upgrade's records). Idempotent per
  * `upgradeId`, so an interrupted upgrade can complete it. Afterwards the preserved documents (ids, index/cycles, FIFO sequence, Questions and
  * answers, Slots/reservations, limits, effects, history) must be EXACTLY those before, or the result is an error. The caller holds the flock.
  */
@@ -31,19 +32,20 @@ export async function migrateStorage(storagePath: string, input: { upgradeId: st
     if (!applied(before, input.upgradeId)) return { kind: 'not-needed', inspection: before };
     return expected(before) ? { kind: 'already-applied', inspection: before } : { kind: 'refused', code: 'MIGRATION_VERIFICATION_FAILED', inspection: before };
   }
-  const migration = supportedMigrations.find(item => item.from === before.format && item.to === currentFormat);
-  if (!migration) return { kind: 'refused', code: 'MIGRATION_NOT_SUPPORTED', inspection: before };
+  const path = migrationPath(before.format, currentFormat);
+  if (!path) return { kind: 'refused', code: 'MIGRATION_NOT_SUPPORTED', inspection: before };
   if (!expected(before)) return { kind: 'refused', code: 'MIGRATION_VERIFICATION_FAILED', inspection: before };
   const unchanged = before.installation?.preservedCanonical;
   const store = await openStore(storagePath, { purpose: 'migration' });
   try {
     try { await store.session.commit(async tx => {
-      // Read at version 1 and converted in memory by the definition; this commit is the only one that persists version 2.
+      // Read at its stored version and converted in memory by the definition; this commit is the only one that persists the current version.
       const current = await tx.doc(installation);
       // Verified BEFORE the commit: the converted document keeps exactly the preserved fields (the other documents are not written).
       if (preservedCanonical(JSON.parse(JSON.stringify(current)) as JsonObject) !== unchanged) throw new Error('MIGRATION_VERIFICATION_FAILED');
-      current.storage.migrations.push({ upgradeId: input.upgradeId, migration: migration.id, from: migration.from, to: migration.to,
-        at: new Date().toISOString(), release: input.release, previousRelease: input.previousRelease });
+      const at = new Date().toISOString();
+      for (const step of path) current.storage.migrations.push({ upgradeId: input.upgradeId, migration: step.id, from: step.from, to: step.to,
+        at, release: input.release, previousRelease: input.previousRelease });
     }, BACKGROUND_CONTEXT); }
     catch (error) {
       if (error instanceof Error && error.message === 'MIGRATION_VERIFICATION_FAILED') return { kind: 'refused', code: 'MIGRATION_VERIFICATION_FAILED', inspection: before };
@@ -55,7 +57,7 @@ export async function migrateStorage(storagePath: string, input: { upgradeId: st
   if (after.kind !== 'storage' || after.format !== currentFormat || after.operational !== 'ready' || preserved(after) !== preserved(before) || !applied(after, input.upgradeId)) {
     return { kind: 'refused', code: 'MIGRATION_VERIFICATION_FAILED', inspection: after };
   }
-  return { kind: 'migrated', migration: migration.id, before, after };
+  return { kind: 'migrated', migration: migrationPathId(path), before, after };
 }
 
 /** Ticket 33: the run of THIS owner begins (committed before polling or any dispatch). An earlier `current` left behind is a crash. */

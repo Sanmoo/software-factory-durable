@@ -1,6 +1,7 @@
 export { openControl } from './durable/control.js';
 // Ticket 33: bootstrap-level storage compatibility and the explicitly requested migration (the caller holds the canonical-storage flock).
-export { inspectStorage, currentFormat as controlStorageFormat, supportedMigrations as controlStorageMigrations, durableSchemaVersion } from './durable/format.js';
+export { inspectStorage, currentFormat as controlStorageFormat, supportedMigrations as controlStorageMigrations, durableSchemaVersion, migrationPath as controlStorageMigrationPath,
+  migrationPathId as controlStorageMigrationPathId } from './durable/format.js';
 export { migrateStorage } from './durable/migration.js';
 export { StorageFormatError } from './durable/store.js';
 export type { StorageInspection, StorageProblem } from './durable/format.js';

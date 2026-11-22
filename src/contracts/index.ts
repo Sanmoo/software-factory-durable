@@ -220,7 +220,11 @@ export type FactorySkillPackId = typeof factorySkillPackIds[number];
  * (which enforces it); declared in each release manifest so an upgrade or rollback can decide, BEFORE changing anything, whether a release
  * may operate a given storage. A release manifest without this declaration predates ticket 33 and operates format 1 only.
  */
-export const controlStorageCompatibility = Object.freeze({ format: 2, migratesFrom: Object.freeze([1]) });
+// Jira ticket 02: format 3 (installation v3) marks every storage that may hold state of the Jira origin, so a format-2 release refuses it.
+// `documents` is the document kind → version matrix of that format (Control's format table uses it as is; later Jira tickets add their kinds here).
+export const controlStorageCompatibility = Object.freeze({ format: 3, migratesFrom: Object.freeze([1, 2]),
+  migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3']),
+  documents: Object.freeze({ 'factory.installation': 3, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 }) });
 
 // Ticket 44: the per-repository environment declaration (`.factory/environment.yaml`), its observation, pin and prepared identity.
 export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits, environmentDeclarationMaxBytes, environmentDeclarationPath, imageReferencePattern,

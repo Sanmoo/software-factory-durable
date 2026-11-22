@@ -109,17 +109,29 @@ async function documentsOf(storage: SqliteStorage) {
   return result;
 }
 
+/** The installation document as an older format writes it: format 1 keeps only pause/history; format 2 adds its storage identity and lifecycle. */
+function olderInstallation(value: JsonObject, format: 1 | 2): JsonObject {
+  if (format === 1) return { paused: value.paused, history: value.history } as JsonObject;
+  const storage = value.storage as JsonObject | undefined;
+  return { paused: value.paused, history: value.history, storage: { format: 2, migrations: (storage?.migrations ?? []) as JsonObject[] },
+    lifecycle: (value.lifecycle ?? { current: null, last: null }) as JsonObject } as JsonObject;
+}
+
 /**
- * Copies `source` (any format) into a NEW storage at `target` as format 1, through the public Pi Durable API with version-1 definitions.
- * `extra` adds documents of the given kind/version (used to build incompatible storages). Test fixture only; never a production path.
+ * Copies `source` (any format) into a NEW storage at `target` as an OLDER format (1 or 2), through the public Pi Durable API with the
+ * definitions of that format (every kind except the installation is v1 in formats 1 to 3). `extra` adds documents of the given kind/version
+ * (used to build incompatible storages); `patch` rewrites the value of a copied kind (e.g. a forgotten Work in the Ticket index). Test fixture only.
  */
-export async function writeFormatOne(source: string, target: string, extra: { kind: string; version: number; key?: string; value: JsonObject }[] = [], omit: string[] = []) {
+export async function writeOlderFormat(format: 1 | 2, source: string, target: string, options: { extra?: { kind: string; version: number; key?: string; value: JsonObject }[];
+  omit?: string[]; patch?: Record<string, (value: JsonObject) => JsonObject> } = {}) {
   const from = await SqliteStorage.open(await openNodeSqliteDatabase(source));
   const documents = await documentsOf(from);
   await from.close(BACKGROUND_CONTEXT);
   const session = createSession(await SqliteStorage.open(await openNodeSqliteDatabase(target)));
-  const all = [...documents.filter(item => !omit.includes(item.kind)).map(item => ({ ...item, version: item.kind === 'factory.installation' ? 1 : item.version,
-    value: item.kind === 'factory.installation' ? { paused: item.value.paused, history: item.value.history } as JsonObject : item.value })), ...extra];
+  const all = [...documents.filter(item => !(options.omit ?? []).includes(item.kind)).map(item => {
+    const value = item.kind === 'factory.installation' ? olderInstallation(item.value, format) : item.value;
+    return { ...item, version: item.kind === 'factory.installation' ? format : item.version, value: options.patch?.[item.kind]?.(value) ?? value };
+  }), ...(options.extra ?? [])];
   for (const item of all) {
     await session.commit(async tx => {
       if (item.key === undefined && (singletons.includes(item.kind) || !item.kind.startsWith('factory.') || item.kind === 'factory.future')) {
@@ -134,6 +146,11 @@ export async function writeFormatOne(source: string, target: string, extra: { ki
   }
   await session.close(BACKGROUND_CONTEXT);
 }
+/** `source` re-expressed as a pre-ticket-33 (format 1) storage. */
+export const writeFormatOne = (source: string, target: string, extra: { kind: string; version: number; key?: string; value: JsonObject }[] = [], omit: string[] = []) =>
+  writeOlderFormat(1, source, target, { extra, omit });
+/** `source` re-expressed as a format-2 storage (the format of every release before the Jira origin). */
+export const writeFormatTwo = (source: string, target: string, options: Parameters<typeof writeOlderFormat>[3] = {}) => writeOlderFormat(2, source, target, options);
 
 /** Ticket 33 + 26: the owner is stopped while its Builder still runs and the boot stop cannot be confirmed: the run ends `uncertain`. */
 export async function storageStoppedWithLiveActivity(storagePath: string) {

@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { inspectStorage, openControl, type StorageInspection } from '../../src/control/index.js';
 import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '../../src/entrypoints/controller/upgrade.js';
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
-import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
-import { installation } from './upgrade-fixture.js';
+import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne, writeFormatTwo } from '../control/upgrade-fixture.js';
+import { configuration, installation, storageDeclarations } from './upgrade-fixture.js';
 import { remainingMs, untilHolds } from '../runner/budget.js';
 
 // I-local (ticket 33): the real upgrade logic against an installation root with real manifests/launchers of synthetic release trees and a
@@ -17,16 +17,24 @@ import { remainingMs, untilHolds } from '../runner/budget.js';
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const node = process.execPath;
 const child = 'dist/test/entrypoints/upgrade-crash-child.js';
-async function rootWithFormatOne(t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}) {
+/** Format 1 reaches the current format only through the existing 1→2 step, then 2→3 (one commit, requested explicitly as this path). */
+const fromOne = 'factory-storage-1-to-2,factory-storage-2-to-3';
+const fromTwo = 'factory-storage-2-to-3';
+/** A v2 config.yaml (ticketSources), valid for this release and for no release before the Jira origin. */
+const configurationTwo = configuration.replace('schemaVersion: 1', 'schemaVersion: 2') + 'ticketSources: []\n';
+async function rootWithFormatOne(t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}, format: 1 | 2 = 1) {
   const fixture = await installation(options);
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   const source = join(fixture.root, 'run', 'source.sqlite');
   const pending = await storageWithPendingQuestion(source);
-  await writeFormatOne(source, fixture.context.storagePath);
+  await (format === 1 ? writeFormatOne(source, fixture.context.storagePath) : writeFormatTwo(source, fixture.context.storagePath));
   await rm(source); await rm(`${source}-wal`, { force: true }); await rm(`${source}-shm`, { force: true });
   await chmod(fixture.context.storagePath, 0o600); // As the controller creates it (umask 077).
   return { ...fixture, pending };
 }
+/** A format-2 storage (pending published Question) under a previous release of the format-2 era. */
+const rootWithFormatTwo = (t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}) =>
+  rootWithFormatOne(t, { previousStorage: storageDeclarations.formatTwo, ...options }, 2);
 const snapshot = async (root: string, storagePath: string) => ({ launcher: sha(await readFile(join(root, 'factory'))), journal: await readJournal(root),
   storage: await inspectStorage(storagePath) });
 const blocked = (result: UpgradeReport) => result.checks.filter(item => item.status === 'blocked').map(item => item.id);
@@ -43,22 +51,25 @@ test('check verifies every compatibility point read-only; apply refuses a requir
   const stop = checked.checks.find(item => item.id === 'upgrade:stop')!;
   assert.equal(stop.status, 'ok', 'format 1 records no run end: the evidence is the durably settled activity');
   assert.match(stop.message, /no unsettled Execution and no held Slot/);
-  assert.deepEqual([checked.from, checked.migration.required, checked.storage!.format, checked.storage!.paused], [{ release: 'mvp-32.1' }, 'factory-storage-1-to-2', 1, true]);
+  assert.deepEqual([checked.from, checked.migration.required, checked.storage!.format, checked.storage!.paused], [{ release: 'mvp-32.1' }, fromOne, 1, true]);
   for (const [options, code] of [[{}, 'UPGRADE_MIGRATION_NOT_REQUESTED'], [{ migrate: 'something-else' }, 'UPGRADE_MIGRATION_NOT_APPLICABLE']] as const) {
     assert.equal((await upgrade(context, 'apply', options)).code, code);
     assert.deepEqual(await snapshot(root, context.storagePath), before, `${code}: nothing changed`);
   }
-  const applied = await upgrade(context, 'apply', { migrate: 'factory-storage-1-to-2' });
+  // Only the explicit path is accepted: a single step of it is not.
+  assert.equal((await upgrade(context, 'apply', { migrate: fromTwo })).code, 'UPGRADE_MIGRATION_NOT_APPLICABLE');
+  const applied = await upgrade(context, 'apply', { migrate: fromOne });
   assert.equal(applied.code, 'UPGRADE_COMPLETED', JSON.stringify(applied));
   const after = await snapshot(root, context.storagePath);
   assert.equal(after.launcher, target.manifest.launcher.sha256, 'the explicit selection now names the new release');
   assert.deepEqual([after.journal !== 'invalid' && after.journal?.state, after.journal !== 'invalid' && after.journal?.steps.map(step => step.state)],
     ['completed', ['guarding', 'migrating', 'migrated', 'selecting', 'completed']]);
   assert.deepEqual(storageOf(after.storage).preserved, storageOf(before.storage).preserved, 'ids, queues, Questions, Slots and history preserved');
-  assert.equal(storageOf(after.storage).format, 2);
+  assert.equal(storageOf(after.storage).format, 3);
+  assert.deepEqual((storageOf(after.storage).installation!.migrations as { migration: string }[]).map(item => item.migration), fromOne.split(','));
   assert.equal((await verifyReleaseTree(previous.directory)).kind, 'release', 'previous release preserved intact');
   assert.equal(await upgradeBlocksStart(root), null);
-  // No universal rollback: the previous release operates format 1 only and this storage is now format 2.
+  // No universal rollback: the previous release operates format 1 only and this storage is now format 3.
   const rollback = await upgrade(context, 'rollback');
   assert.equal(rollback.code, 'ROLLBACK_FORMAT_UNSUPPORTED');
   assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
@@ -100,7 +111,7 @@ test('incompatibility is refused before any change: not paused, unclean stop, un
   await writeFile(join(bad.root, 'environments', environment, 'ready.json'), JSON.stringify({ environment }), { mode: 0o600 });
   await writeFile(join(bad.root, 'config.yaml'), 'schemaVersion: 1\n', { mode: 0o600 });
   const snapshotBad = await snapshot(bad.root, bad.context.storagePath);
-  const refused = await upgrade(bad.context, 'apply', { migrate: 'factory-storage-1-to-2' });
+  const refused = await upgrade(bad.context, 'apply', { migrate: fromOne });
   assert.equal(refused.code, 'UPGRADE_INCOMPATIBLE');
   assert.deepEqual(blocked(refused), ['upgrade:configuration', 'upgrade:storage', 'upgrade:environments']);
   assert.match(refused.checks.find(item => item.id === 'upgrade:storage')!.message, /STORAGE_DOCUMENT_UNKNOWN/);
@@ -112,31 +123,31 @@ test('incompatibility is refused before any change: not paused, unclean stop, un
  * Ticket 37 P5 (approved): the upgrade stopped right after `cut` without a second process. Its observe hook never returns at that step,
  * so the call stays frozen there (as a killed process, it does nothing more) and what is durable is exactly what that step left.
  */
-function frozenAt(context: Parameters<typeof upgrade>[0], cut: 'journal' | 'selected'): Promise<void> {
+function frozenAt(context: Parameters<typeof upgrade>[0], cut: 'journal' | 'selected', migrate = fromTwo): Promise<void> {
   return new Promise(reached => {
-    void upgrade({ ...context, observe: step => { if (step !== cut) return; reached(); return new Promise<never>(() => {}); } }, 'apply', { migrate: 'factory-storage-1-to-2' });
+    void upgrade({ ...context, observe: step => { if (step !== cut) return; reached(); return new Promise<never>(() => {}); } }, 'apply', { migrate });
   });
 }
 
-test('interruption after each durable step (a real SIGKILL at the migration commit; journal and selection frozen at their step): the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
+test('interruption after each durable step of 2→3 (a real SIGKILL at the migration commit; journal and selection frozen at their step): the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
   for (const cut of ['journal', 'migrated', 'selected'] as const) {
-    const { root, context, previous, target, pending } = await rootWithFormatOne(t);
+    const { root, context, previous, target, pending } = await rootWithFormatTwo(t);
     const before = storageOf(await inspectStorage(context.storagePath));
     if (cut === 'migrated') {
       // The one real process death of this mechanism: a SIGKILL right after the migration committed.
-      const killed = spawnSync(node, [child, root, cut, 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
+      const killed = spawnSync(node, [child, root, cut, 'apply', fromTwo], { encoding: 'utf8', timeout: remainingMs() });
       assert.equal(killed.signal, 'SIGKILL', `${cut}: ${killed.stderr}`);
     } else await frozenAt(context, cut);
     const journal = await readJournal(root);
     assert.ok(journal && journal !== 'invalid');
     assert.equal(journal.state, { journal: 'migrating', migrated: 'migrated', selected: 'selecting' }[cut]);
     const storage = storageOf(await inspectStorage(context.storagePath));
-    assert.equal(storage.format, cut === 'journal' ? 1 : 2, `${cut}: never a partially migrated storage`);
+    assert.equal(storage.format, cut === 'journal' ? 2 : 3, `${cut}: never a partially migrated storage`);
     assert.deepEqual(storage.preserved, before.preserved);
     const selected = sha(await readFile(join(root, 'factory')));
     if (cut === 'selected') assert.equal(selected, target.manifest.launcher.sha256);
     else {
-      // From the journal on, <root>/factory is the guard launcher: NO release (not the pre-33 v1) can start until resume or rollback.
+      // From the journal on, <root>/factory is the guard launcher: NO release (not the format-2 one) can start until resume or rollback.
       assert.notEqual(selected, previous.manifest.launcher.sha256);
       const v1 = spawnSync(join(root, 'factory'), ['run'], { encoding: 'utf8', timeout: remainingMs() });
       assert.equal(v1.status, 2, `${cut}: the launcher starts nothing during the upgrade`);
@@ -144,7 +155,7 @@ test('interruption after each durable step (a real SIGKILL at the migration comm
     }
     assert.equal((await upgradeBlocksStart(root))?.code, 'UPGRADE_INCOMPLETE');
     assert.equal((await upgrade(context, 'status')).code, 'UPGRADE_INCOMPLETE');
-    assert.equal((await upgrade(context, 'apply', { migrate: 'factory-storage-1-to-2' })).code, 'UPGRADE_IN_PROGRESS');
+    assert.equal((await upgrade(context, 'apply', { migrate: fromTwo })).code, 'UPGRADE_IN_PROGRESS');
     if (cut === 'journal') {
       // Nothing migrated yet: rolling back closes the upgrade with the previous release still selected and the storage untouched.
       const rolled = await upgrade(context, 'rollback');
@@ -153,17 +164,20 @@ test('interruption after each durable step (a real SIGKILL at the migration comm
       assert.deepEqual(storageOf(await inspectStorage(context.storagePath)), before);
       assert.equal(await upgradeBlocksStart(root), null);
       // A new upgrade can then start again and a SIGKILLed resume is itself resumable.
-      const again = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
+      const again = spawnSync(node, [child, root, 'migrated', 'apply', fromTwo], { encoding: 'utf8', timeout: remainingMs() });
       assert.equal(again.signal, 'SIGKILL');
     } else {
       const rolled = await upgrade(context, 'rollback');
       assert.equal(rolled.code, 'ROLLBACK_FORMAT_UNSUPPORTED', `${cut}: the previous release cannot operate the migrated storage`);
+      assert.deepEqual(blocked(rolled), ['rollback:storage'], `${cut}: data refused, configuration (v1) accepted`);
+      assert.match(rolled.nextStep, /correct forward/);
+      assert.doesNotMatch(rolled.nextStep, /restore|backup/i, 'no reverse migration or restore promised');
     }
     const resumed = await upgrade(context, 'resume');
     assert.equal(resumed.code, 'UPGRADE_COMPLETED', `${cut}: ${JSON.stringify(resumed.checks)}`);
     assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
     const final = storageOf(await inspectStorage(context.storagePath));
-    assert.deepEqual([final.format, final.preserved], [2, before.preserved]);
+    assert.deepEqual([final.format, final.preserved], [3, before.preserved]);
     assert.equal((final.installation!.migrations as unknown[]).length, 1, `${cut}: migrated exactly once`);
     assert.equal(final.preserved!.questions.open, 1, 'the pending Question is still open (answerable after start)');
     assert.equal(pending.waiting.impediments.some(item => item.code === 'QUESTION_PENDING'), true);
@@ -178,7 +192,7 @@ test('the controller owner refuses an incomplete upgrade and an unmigrated stora
   const migrationRequired = ownerRun();
   assert.equal(migrationRequired.status, 2, migrationRequired.stderr);
   assert.equal(JSON.parse(migrationRequired.stderr.trim().split('\n').at(-1)!).code, 'STORAGE_MIGRATION_REQUIRED');
-  const killed = spawnSync(node, [child, root, 'journal', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
+  const killed = spawnSync(node, [child, root, 'journal', 'apply', fromOne], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(killed.signal, 'SIGKILL');
   const before = await inspectStorage(context.storagePath);
   const incomplete = ownerRun();
@@ -196,7 +210,7 @@ test('the controller owner refuses an incomplete upgrade and an unmigrated stora
 
 test('resume re-verifies the migrated storage against the journal: a changed state blocks the selection with an explicit exit', async t => {
   const { root, context, target } = await rootWithFormatOne(t);
-  const killed = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
+  const killed = spawnSync(node, [child, root, 'migrated', 'apply', fromOne], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(killed.signal, 'SIGKILL');
   // The storage changes after the migration commit (here through the public Control; a stale or foreign writer in reality).
   const control = await openControl({ storagePath: context.storagePath, runtimeInventory: 'unknown' });
@@ -275,14 +289,40 @@ test('after an interruption, only a run that performed ticket 26\'s boot reconci
   assert.equal((await stopOf()).status, 'ok');
 });
 
-test('rollback validates config.yaml with the current rules only when the previous release declares the same configuration schema', async t => {
-  for (const schema of [2, null]) {
-    const fixture = await installation({ previousStorage: true, previousConfigurationSchema: schema });
+test('rollback pre-checks config.yaml by its ACTUAL schema version against what the previous release declares', async t => {
+  // Undeclared, or declared but not the YAML's version: refused, the current selection kept.
+  for (const [declared, yaml, code] of [[null, configuration, 'ROLLBACK_CONFIGURATION_UNVERIFIABLE'], [2, configuration, 'ROLLBACK_CONFIGURATION_INCOMPATIBLE'],
+    [1, configurationTwo, 'ROLLBACK_CONFIGURATION_INCOMPATIBLE']] as const) {
+    const fixture = await installation({ previousStorage: true, previousConfigurationSchema: declared, configuration: yaml });
     t.after(() => rm(fixture.root, { recursive: true, force: true }));
     await storageWithPendingQuestion(fixture.context.storagePath);
     await chmod(fixture.context.storagePath, 0o600);
     assert.equal((await upgrade(fixture.context, 'apply')).code, 'UPGRADE_COMPLETED');
-    assert.equal((await upgrade(fixture.context, 'rollback')).code, 'ROLLBACK_CONFIGURATION_UNVERIFIABLE', String(schema));
-    assert.equal(sha(await readFile(join(fixture.root, 'factory'))), fixture.target.manifest.launcher.sha256);
+    const before = await snapshot(fixture.root, fixture.context.storagePath);
+    const refused = await upgrade(fixture.context, 'rollback');
+    assert.deepEqual([refused.code, blocked(refused)], [code, ['rollback:configuration']], `${String(declared)}`);
+    assert.match(refused.nextStep, /correct forward/);
+    assert.deepEqual(await snapshot(fixture.root, fixture.context.storagePath), before, 'nothing changed (selection, journal, storage)');
   }
+  // A v1 YAML under a previous release that declares 1 (every release before the Jira origin) or a list containing it: rolled back.
+  for (const declared of [1, [1, 2]]) {
+    const fixture = await installation({ previousStorage: true, previousConfigurationSchema: declared });
+    t.after(() => rm(fixture.root, { recursive: true, force: true }));
+    await storageWithPendingQuestion(fixture.context.storagePath);
+    await chmod(fixture.context.storagePath, 0o600);
+    assert.equal((await upgrade(fixture.context, 'apply')).code, 'UPGRADE_COMPLETED');
+    assert.equal((await upgrade(fixture.context, 'rollback')).code, 'UPGRADE_ROLLED_BACK', JSON.stringify(declared));
+    assert.equal(sha(await readFile(join(fixture.root, 'factory'))), fixture.previous.manifest.launcher.sha256);
+  }
+});
+
+test('after 2→3 with a v2 config.yaml, rollback refuses on data AND configuration at once, changing nothing', async t => {
+  const { root, context, target } = await rootWithFormatTwo(t, { configuration: configurationTwo });
+  assert.equal((await upgrade(context, 'apply', { migrate: fromTwo })).code, 'UPGRADE_COMPLETED');
+  const before = await snapshot(root, context.storagePath);
+  const refused = await upgrade(context, 'rollback');
+  assert.deepEqual([refused.code, blocked(refused)], ['ROLLBACK_FORMAT_UNSUPPORTED', ['rollback:storage', 'rollback:configuration']]);
+  assert.match(refused.checks.find(item => item.id === 'rollback:configuration')!.message, /schema version 2; release mvp-32\.1 validates only 1/);
+  assert.deepEqual(await snapshot(root, context.storagePath), before);
+  assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
 });

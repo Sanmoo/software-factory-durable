@@ -10,7 +10,7 @@ import { id, releaseBuild } from './release-fixture.js';
 import { remainingMs, until } from '../runner/budget.js';
 import { configuration, fakeRelease } from './upgrade-fixture.js';
 
-// I-local (ticket 33): the REAL release builder output (private Node, emitted JS, manifest declaring storage format 2) extracted NEXT TO a
+// I-local (ticket 33): the REAL release builder output (private Node, emitted JS, manifest declaring storage format 3) extracted NEXT TO a
 // pre-33 release selected by its pinned launcher (a synthetic tree with a real manifest; it carries no code) with SYNTHETIC guest assets.
 // The new release's own private Node runs `upgrade check/apply` (CLI → flock → upgrade owner), then the switched launcher starts the real
 // controller (paused, no repository configured: no GitHub/network call), the local CLI reads/answers the pending Question over the real
@@ -52,7 +52,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
   // (Refusals without the explicit request and the rollback refusal are covered against the same logic in upgrade.test.ts.)
   assert.equal(sha(await readFile(join(root, 'factory'))), previous.manifest.launcher.sha256);
   await assert.rejects(stat(join(root, 'data', 'upgrade')), { code: 'ENOENT' }, 'check writes nothing');
-  const applied = target(['upgrade', 'apply', '--migrate', 'factory-storage-1-to-2']);
+  const applied = target(['upgrade', 'apply', '--migrate', 'factory-storage-1-to-2,factory-storage-2-to-3']);
   assert.equal(applied.status, 0, applied.stderr + applied.stdout);
   assert.equal(JSON.parse(applied.stdout).code, 'UPGRADE_COMPLETED');
   assert.equal(JSON.stringify(await inventoryTree(join(root, 'releases', 'mvp-32.1'))), releasesBefore, 'previous release preserved');
@@ -73,7 +73,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
       return probe.status === 0 ? probe : undefined;
     }, 100);
     const view = JSON.parse(status.stdout).payload ?? JSON.parse(status.stdout);
-    assert.deepEqual([view.paused, view.storage.format, view.questions.open], [true, 2, 1]);
+    assert.deepEqual([view.paused, view.storage.format, view.questions.open], [true, 3, 1]);
     const question = JSON.parse(factory(['question', questionId, '--json']).stdout);
     assert.equal(question.question.state, 'open');
     const answered = factory(['answer', questionId, 'Use docs/factory.md']);

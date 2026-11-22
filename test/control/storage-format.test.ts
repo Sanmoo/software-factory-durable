@@ -35,16 +35,16 @@ async function status(storagePath: string, run = true) {
   return { view: started, end: await running, control };
 }
 
-test('format 2: a fresh storage is created at the current format; the controller lifecycle tells a clean stop from a crash', async t => {
+test('format 3: a fresh storage is created at the current format; the controller lifecycle tells a clean stop from a crash', async t => {
   const dir = await directory(t);
   const path = join(dir, 'control.sqlite');
   assert.deepEqual(await inspectStorage(path), { kind: 'absent' });
   const first = await status(path);
   assert.deepEqual(first.end, { kind: 'clean' });
-  assert.equal(first.view.storage.format, 2);
+  assert.equal(first.view.storage.format, 3);
   assert.equal(first.view.storage.previousRun, null);
   const inspected = storage(await inspectStorage(path));
-  assert.equal(inspected.format, 2);
+  assert.equal(inspected.format, 3);
   assert.equal(inspected.operational, 'ready');
   const lifecycle = inspected.installation!.lifecycle as { current: unknown; last: { end: string; runId: string } };
   assert.equal(lifecycle.current, null);
@@ -66,7 +66,7 @@ test('format 2: a fresh storage is created at the current format; the controller
   assert.equal(JSON.stringify(storage(await inspectStorage(path)).installation), before);
 });
 
-test('format 1 is never adopted implicitly; the explicit supported migration preserves everything and the pending Question stays answerable', async t => {
+test('format 1 is never adopted implicitly; the explicit 1→2→3 path (one commit) preserves everything and the pending Question stays answerable', async t => {
   const dir = await directory(t);
   const source = join(dir, 'source.sqlite'), path = join(dir, 'control.sqlite');
   const { waiting, list } = await storageWithPendingQuestion(source);
@@ -80,14 +80,15 @@ test('format 1 is never adopted implicitly; the explicit supported migration pre
   await assert.rejects(openControl({ storagePath: path, runtimeInventory: 'unknown' }),
     (error: unknown) => error instanceof StorageFormatError && error.code === 'STORAGE_MIGRATION_REQUIRED');
   assert.deepEqual(storage(await inspectStorage(path)), before);
-  // Explicit migration: one commit; ids, index/cycles, FIFO, Questions, Slots, limits, history unchanged (preserved digest), installation v2.
+  // Explicit migration: one commit through the existing 1→2 step then 2→3; ids, index/cycles, FIFO, Questions, Slots, limits, history unchanged.
   const migrated = await migrateStorage(path, { upgradeId: 'up-1', release: 'mvp-33.1', previousRelease: 'mvp-32.1' });
-  assert.equal(migrated.kind, 'migrated');
+  assert.deepEqual([migrated.kind, migrated.kind === 'migrated' && migrated.migration], ['migrated', 'factory-storage-1-to-2,factory-storage-2-to-3']);
   const after = storage(await inspectStorage(path));
-  assert.deepEqual([after.format, after.operational, after.problems], [2, 'ready', []]);
+  assert.deepEqual([after.format, after.operational, after.problems], [3, 'ready', []]);
+  assert.deepEqual([after.installation!.lifecycle], [{ current: null, last: null }], 'format 1 proves no run end: none is invented');
   assert.deepEqual(after.preserved, before.preserved);
   assert.deepEqual((after.installation!.migrations as { upgradeId: string; migration: string; from: number; to: number }[]).map(item => [item.upgradeId, item.migration, item.from, item.to]),
-    [['up-1', 'factory-storage-1-to-2', 1, 2]]);
+    [['up-1', 'factory-storage-1-to-2', 1, 2], ['up-1', 'factory-storage-2-to-3', 2, 3]]);
   // Completing the same upgrade again is idempotent; another upgrade finds nothing to migrate.
   assert.equal((await migrateStorage(path, { upgradeId: 'up-1', release: 'mvp-33.1', previousRelease: 'mvp-32.1' })).kind, 'already-applied');
   assert.equal((await migrateStorage(path, { upgradeId: 'up-2', release: 'mvp-33.1', previousRelease: 'mvp-32.1' })).kind, 'not-needed');
@@ -100,7 +101,7 @@ test('format 1 is never adopted implicitly; the explicit supported migration pre
   assert.deepEqual(shown.work.dispatch.reasons.includes('GLOBAL_PAUSE'), true, 'starts paused');
   assert.deepEqual(shown.work.execution?.executionId, waiting.execution?.executionId);
   const status = await control.inspect({ kind: 'status' }) as ControlStatus;
-  assert.deepEqual([status.paused, status.works.total, status.storage.format, status.storage.previousRun], [true, list.works.length, 2, null]);
+  assert.deepEqual([status.paused, status.works.total, status.storage.format, status.storage.previousRun], [true, list.works.length, 3, null]);
   const question = await control.inspect({ kind: 'question', question_id: questionId }) as QuestionQueryView;
   assert.equal(question.kind === 'question' && question.question.state, 'open');
   const answer = await control.accept({ request_id: 'answer-after-upgrade', operation: 'answer', question_id: questionId, text: 'Use docs/factory.md', origin: 'local-cli' }) as ControlReceipt;

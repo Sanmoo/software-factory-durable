@@ -13,7 +13,7 @@ import { releaseInstallationRoot } from './release.js';
 import { blockedReferencePattern as blockedReference, blockedStartCodePattern, startRetryRemedies } from '../contracts/index.js';
 
 const usage = 'factory <setup|doctor|cleanup-images [<image name>] [--yes]|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
-const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
+const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>[,<next id>...]] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
 const cycleCommands = ['cancel', 'resume', 'reopen', 'new'];
@@ -181,7 +181,7 @@ export async function main(input: string[]): Promise<number> {
     const rest = args.slice(2);
     let upgradeRoot = installation ?? resolve('.');
     if (rest[0] === '--root' && rest[1]) { upgradeRoot = resolve(rest[1]); rest.splice(0, 2); }
-    const migrate = rest.length === 2 && rest[0] === '--migrate' && /^[a-z0-9-]{1,64}$/.test(rest[1]!) && (sub === 'apply' || sub === 'check');
+    const migrate = rest.length === 2 && rest[0] === '--migrate' && /^[a-z0-9-]{1,64}(,[a-z0-9-]{1,64}){0,7}$/.test(rest[1]!) && (sub === 'apply' || sub === 'check');
     if (!['check', 'apply', 'status', 'resume', 'rollback'].includes(sub ?? '') || (rest.length && !migrate)) {
       console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS', message: upgradeUsage }));
       return 2;

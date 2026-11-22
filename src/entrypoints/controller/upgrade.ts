@@ -6,12 +6,12 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { Diagnostic } from '../../contracts/index.js';
 import { factorySkillPackIds } from '../../contracts/index.js';
-import { controlStorageMigrations, inspectStorage, migrateStorage, type StorageInspection } from '../../control/index.js';
+import { controlStorageMigrationPath, controlStorageMigrationPathId, inspectStorage, migrateStorage, type StorageInspection } from '../../control/index.js';
 import { protocolVersion } from '../../protocol/index.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { environmentDependencies } from '../../sandbox/index.js';
-import { configurationSchemaVersion, readConfiguration } from '../configuration.js';
-import { applicationRoot, inspectRelease, parseReleaseManifest, productionModelChecks, productionProfile, releaseIdSchema, releaseLauncher,
+import { readConfiguration } from '../configuration.js';
+import { applicationRoot, inspectRelease, parseReleaseManifest, productionModelChecks, productionProfile, releaseConfigurationSupport, releaseIdSchema, releaseLauncher,
   releaseManifestName, releaseStorageSupport, verifyReleaseTree, type ReleaseManifest } from '../release.js';
 
 /**
@@ -147,7 +147,9 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
   if (inspection.kind === 'storage') {
     const formatOk = inspection.operational !== 'incompatible' && (inspection.format === null || inspection.format === support.format || support.migratesFrom.includes(inspection.format));
     if (inspection.format !== null && inspection.format !== support.format && formatOk) {
-      required = controlStorageMigrations.find(item => item.from === inspection.format && item.to === support.format)?.id ?? null;
+      // The explicit path (format 1: the existing 1→2 step, then 2→3), requested as its comma-joined step ids.
+      const path = controlStorageMigrationPath(inspection.format, support.format);
+      required = path ? controlStorageMigrationPathId(path) : null;
     }
     checks.push(check('upgrade:storage', formatOk && (phase === 'before-migration' || required === null), inspection.operational === 'incompatible'
       ? `Storage incompatible with release ${target.manifest.release}: ${inspection.problems.map(problem => problem.code).join(', ')}.`
@@ -272,6 +274,26 @@ async function finish(context: UpgradeContext, journal: UpgradeJournal, command:
   return report(command, 'UPGRADE_COMPLETED', context, { journal, from: { release: journal.from.release }, storage: summary(await inspectStorage(context.storagePath)), nextStep: startStep });
 }
 
+/**
+ * Jira ticket 02 (spec §6.5): config.yaml is pre-checked against the previous release by its ACTUAL schema version (never this release's
+ * newest): the previous manifest must declare that version, and this release validates it with the same rules (a version names one schema).
+ * An invalid config.yaml is left to the normal pre-checks (`upgrade:configuration`); a YAML version is not a storage format.
+ */
+async function rollbackConfiguration(root: string, previous: ReleaseManifest, guestAssets: { directory: string; manifestSha256: string }, journal: UpgradeJournal, forward: string) {
+  const declared = releaseConfigurationSupport(previous);
+  if (declared === null) {
+    return { code: 'ROLLBACK_CONFIGURATION_UNVERIFIABLE', message: `Release ${journal.from.release} declares no readable configuration schema: config.yaml cannot be verified for it.`,
+      nextStep: `${forward} The rollback changed nothing.` };
+  }
+  const configuration = await readConfiguration(root, guestAssets);
+  if (!configuration.configuration.valid) return null;
+  const actual = configuration.configuration.effective.schemaVersion;
+  if (declared.includes(actual)) return null;
+  return { code: 'ROLLBACK_CONFIGURATION_INCOMPATIBLE',
+    message: `config.yaml is schema version ${actual}; release ${journal.from.release} validates only ${declared.join(', ')}.`,
+    nextStep: `${forward} The rollback changed nothing and never rewrites config.yaml.` };
+}
+
 /** The upgrade commands. The caller holds the canonical-storage flock (no controller runs) for the whole call. */
 export async function upgrade(context: UpgradeContext, command: UpgradeCommand, options: { migrate?: string } = {}): Promise<UpgradeReport> {
   const { root, target } = context;
@@ -307,24 +329,29 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     if (intact.kind !== 'release' || intact.manifestSha256 !== journal.from.manifestSha256 || intact.manifest.launcher.sha256 !== journal.from.launcherSha256) {
       return report(command, 'ROLLBACK_PREVIOUS_RELEASE_INVALID', context, { journal, nextStep: 'The previous release no longer matches its manifest; reselecting it is refused.' });
     }
+    // Data AND configuration are pre-checked against the previous release before anything is reselected; both verdicts are reported.
     const inspection = await inspectStorage(context.storagePath);
     const format = inspection.kind === 'storage' ? inspection.format : null;
-    if (format === null) {
-      return report(command, 'ROLLBACK_FORMAT_UNKNOWN', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
-        nextStep: `No storage format is established; keep ${journal.to.release} (\`upgrade resume\` if incomplete). A rollback needs a storage in a format the previous release operates.` });
-    }
-    if (format !== journal.from.storageFormat) {
-      return report(command, 'ROLLBACK_FORMAT_UNSUPPORTED', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
-        nextStep: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}. There is no universal rollback: keep ${journal.to.release}, or restore your own external storage protection (outside the Factory; GitHub is never undone).` });
-    }
-    // config.yaml is validated with THIS release's rules, which is valid for the previous release only when it declares the same schema.
-    const previousConfiguration = (intact.manifest.metadata.formats as { configuration?: unknown } | undefined)?.configuration;
-    if (previousConfiguration !== configurationSchemaVersion) {
-      return report(command, 'ROLLBACK_CONFIGURATION_UNVERIFIABLE', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
-        nextStep: `Release ${journal.from.release} declares configuration schema ${String(previousConfiguration ?? 'none')}, not ${configurationSchemaVersion}: this release cannot verify config.yaml for it, so the rollback is refused. Keep ${journal.to.release}.` });
+    const towardsAssets = { directory: join(root, intact.manifest.guestAssets.path), manifestSha256: intact.manifest.guestAssets.manifestSha256 };
+    const forward = `Keep ${journal.to.release} selected and correct forward with it; there is no reverse migration, and an earlier copy of the storage ` +
+      'would not undo or safely replay what GitHub or Jira already received.';
+    const dataRefusal = format === null ? { code: 'ROLLBACK_FORMAT_UNKNOWN', message: 'No storage format is established: nothing proves the previous release operates it.',
+      nextStep: `Keep ${journal.to.release} (\`upgrade resume\` if incomplete). A rollback needs a storage in a format the previous release operates.` }
+      : format !== journal.from.storageFormat ? { code: 'ROLLBACK_FORMAT_UNSUPPORTED',
+        message: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}.`, nextStep: forward }
+        : null;
+    const configurationRefusal = await rollbackConfiguration(root, intact.manifest, towardsAssets, journal, forward);
+    const rollbackChecks = [
+      check('rollback:storage', dataRefusal === null, dataRefusal?.message ?? `Storage format ${format} is operated by release ${journal.from.release}.`, dataRefusal?.nextStep ?? 'Nothing to do.'),
+      check('rollback:configuration', configurationRefusal === null, configurationRefusal?.message ?? `config.yaml declares a schema version release ${journal.from.release} validates.`,
+        configurationRefusal?.nextStep ?? 'Nothing to do.'),
+    ];
+    const refusal = dataRefusal ?? configurationRefusal;
+    if (refusal) {
+      return report(command, refusal.code, context, { journal, checks: rollbackChecks, storage: summary(inspection), from: { release: journal.from.release }, nextStep: refusal.nextStep });
     }
     const towards: UpgradeContext = { ...context, target: { directory: previousDirectory, manifest: intact.manifest, manifestSha256: intact.manifestSha256, checks: [],
-      guestAssets: { directory: join(root, intact.manifest.guestAssets.path), manifestSha256: intact.manifest.guestAssets.manifestSha256 } } };
+      guestAssets: towardsAssets } };
     const prechecks = await compatibility(towards, 'after-migration');
     const refused = prechecks.checks.filter(item => item.status === 'blocked' && item.id !== 'upgrade:previous' && item.id !== 'upgrade:target');
     if (refused.length) {

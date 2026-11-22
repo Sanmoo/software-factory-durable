@@ -13,7 +13,7 @@ import { prepareAuthority } from './delivery17-qualification.js';
 const sha = async (path: string) => createHash('sha256').update(await readFile(path)).digest('hex');
 const storage = (inspection: StorageInspection) => { assert.equal(inspection.kind, 'storage'); return inspection as Extract<StorageInspection, { kind: 'storage' }>; };
 
-test('recipe preflight storage: a format-1 source is copied, ONLY the copy is migrated 1→2 with the preserved digest checked and recorded', async t => {
+test('recipe preflight storage: a format-1 source is copied, ONLY the copy is migrated to the current format with the preserved digest checked and recorded', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'q17-storage-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await storageWithPendingQuestion(join(dir, 'state.sqlite'));
@@ -27,17 +27,17 @@ test('recipe preflight storage: a format-1 source is copied, ONLY the copy is mi
   const result = await prepareAuthority(source, join(dir, 'authority'), 'q17-test');
   assert.equal(result.kind, 'migrated');
   if (result.kind !== 'migrated') return;
-  assert.deepEqual([result.before.format, result.after.format], [1, 2]);
+  assert.deepEqual([result.before.format, result.after.format], [1, 3]);
   assert.equal(result.before.digest, sourceBefore.preserved!.digest);
   assert.equal(result.after.digest, result.before.digest, 'preserved documents identical after the migration');
   assert.equal(result.storagePath, join(dir, 'authority', 'control.sqlite'));
-  assert.equal(storage(await inspectStorage(result.storagePath)).format, 2);
+  assert.equal(storage(await inspectStorage(result.storagePath)).format, 3);
   assert.equal(storage(await inspectStorage(join(source, 'control.sqlite'))).format, 1, 'the original is never migrated');
   assert.equal(await sha(join(source, 'control.sqlite')), bytes, 'the original is byte-identical');
   await assert.rejects(prepareAuthority(source, join(dir, 'authority'), 'q17-test'), 'the authority copy is exclusive, never reused');
 });
 
-test('recipe preflight storage: a format-2 source needs no migration; an absent source is refused', async t => {
+test('recipe preflight storage: a current-format source needs no migration; an absent source is refused', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'q17-storage-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const { mkdir } = await import('node:fs/promises');
