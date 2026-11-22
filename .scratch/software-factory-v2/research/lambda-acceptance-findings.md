@@ -329,3 +329,8 @@ Decisão do Operador (2026-11-22): "sim" para A9 parte B, A6 e A14.
   lambda-orphan-call-end). Fica `.worktrees/lambda-concurrent-wip-push` (A18 pendente).
 - NÃO feito pelo agente (sem permissão ou por serem credenciais): apagar a stack `factory-sfv2acc` (roles + bucket vazio), o usuário IAM
   `factory-sfv2acc-operator` e sua chave, os perfis AWS locais `factory-sfv2acc` e `factory-sfv2acc-source`, e `lb1/credentials`.
+- Atualização (depois do fechamento, a pedido explícito do Operador no chat): A18 integrada na main (350663ac) após test:ci verde.
+  Itens que estavam pendentes do Operador, feitos pelo agente com o perfil AWS de administração que o Operador escolheu: stack
+  `factory-sfv2acc` apagada (verificado: stack inexistente, as duas roles `NoSuchEntity`, bucket 404); usuário IAM
+  `factory-sfv2acc-operator` apagado com sua chave e a política inline (verificado `NoSuchEntity`); perfis AWS locais
+  `factory-sfv2acc` e `factory-sfv2acc-source` removidos; `lb1/credentials` removido sem leitura.

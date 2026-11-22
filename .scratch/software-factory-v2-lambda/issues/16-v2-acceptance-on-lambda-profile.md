@@ -101,3 +101,5 @@ três imagens saíram pela CLI da AWS, não pelo produto (A18 e A19). **Pendente
 
 **Atualização de 2026-11-22.** A correção A18 foi integrada na `main` (`350663ac`) depois de uma rodada verde de `npm run test:ci`; as falhas
 anteriores eram de ambiente (limite de uso do `/tmp`). Nenhum veredito muda.
+Os itens de limpeza listados acima como pendentes do Operador (stack, usuário IAM e chave, perfis AWS locais e `lb1/credentials`) foram
+feitos e verificados no mesmo dia, a pedido do Operador. X2 continua parcial pela A19 e por três itens sem registro de verificação.

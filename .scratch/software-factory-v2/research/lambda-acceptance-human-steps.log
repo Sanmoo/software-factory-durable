@@ -91,3 +91,6 @@
 2026-11-22T15:09:17Z cleanup: controller up paused (controller-17.log); factory cancel 0ec12177 (closed-unmerged) and factory cleanup --select environment --yes for the 9 Works holding the image
 2026-11-22T15:14:24Z cleanup: last image deleted via aws (product cleanup blocked by A19); 2 build artifacts deleted from the bucket; build log groups deleted; controller stopped
 2026-11-22T15:14:45Z cleanup: fixture repository Sanmoo/sfv2acc-fixture deleted (refs, issues and PR lists saved before)
+2026-11-22T17:58:54Z cleanup (requested by the user in chat): lb1/credentials removed without reading its contents
+2026-11-22T18:09:59Z cleanup (requested by the user in chat, with the profile the user chose): stack factory-sfv2acc deleted and verified absent (roles and bucket gone); IAM user factory-sfv2acc-operator, its access key and inline policy deleted and verified absent
+2026-11-22T18:10:09Z cleanup (requested by the user in chat): local AWS profiles factory-sfv2acc and factory-sfv2acc-source removed from ~/.aws/config and ~/.aws/credentials (contents not printed)

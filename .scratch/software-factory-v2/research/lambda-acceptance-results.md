@@ -220,3 +220,11 @@ A correção A18 foi integrada na `main` (`350663ac`) depois de uma rodada verde
 afetados). As falhas anteriores dessa validação eram de ambiente: o limite de uso do `/tmp` da máquina, e não o código alterado. Onde
 este documento diz que a A18 está "pendente de integração" ou "fora da `main`", vale esta atualização; o worktree `lambda-concurrent-wip-push`
 foi removido. Nenhum veredito muda: X2 continua `inconclusive` (parcial) pelos itens pendentes do Operador e pela A19.
+
+Os quatro itens de limpeza que a seção 6 lista como pendentes do Operador foram feitos no mesmo dia, pelo agente, a pedido explícito
+do Operador e com o perfil AWS de administração que ele escolheu, cada um verificado por leitura: a stack `factory-sfv2acc` não existe
+mais (as duas roles e o bucket também não); o usuário IAM `factory-sfv2acc-operator`, sua chave e sua política inline foram apagados;
+os perfis AWS locais `factory-sfv2acc` e `factory-sfv2acc-source` foram removidos; `lb1/credentials` foi apagado sem leitura.
+X2 continua `inconclusive` (parcial): a limpeza do próprio produto não removeu tudo sozinha (A19 aberta; a A18 só foi corrigida durante
+a limpeza), e três itens seguem sem registro de verificação (rótulo `factory-acc` no repositório real, instalação do GitHub App e a
+branch de protótipo).
