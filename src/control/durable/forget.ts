@@ -7,6 +7,7 @@ import { forgetBasis, forgetLosses, forgetPlanNextStep, forgetRefusals, minimalM
 import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { rememberResult } from './cycles.js';
 import { questions as questionDocs } from './questions.js';
+import { jiraDeliveryProtections } from './jira-deliveries.js';
 import type { Session } from './store.js';
 
 // Ticket 31 durable commits (spec §12.4 `forget`). Plan and confirmation are deduplicated commands (as ticket 30's cleanup); the deletion is
@@ -56,7 +57,7 @@ export async function acceptForgetPlan(session: Session, input: ForgetInput & { 
     if (index.forgotten?.[input.work_id]) return receiptOf(input, 'already-satisfied', 'ALREADY_FORGOTTEN', null);
     const work = (await tx.doc(works, input.work_id, null)).work;
     if (!work) return receiptOf(input, 'not-applied', 'WORK_NOT_FOUND', null);
-    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work) };
+    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work), jiraUnsettled: await jiraDeliveryProtections(tx, work.work_id) };
     const refusals = forgetRefusals(work, current);
     const at = new Date().toISOString();
     const plans = plansOf(work);
@@ -88,7 +89,7 @@ export async function acceptForgetConfirm(session: Session, input: ForgetInput &
     // Review MED: an ended plan answers its real outcome (never `already-satisfied`); only a confirmed/executing one is already satisfied.
     if (plan.state === 'dropped' || plan.state === 'failed' || plan.state === 'indeterminate') return receiptOf(input, 'not-applied', `PLAN_${plan.state.toUpperCase()}${plan.code ? `:${plan.code}` : ''}`, plan);
     if (plan.state !== 'planned') return receiptOf(input, 'already-satisfied', 'PLAN_ALREADY_CONFIRMED', plan);
-    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work) };
+    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work), jiraUnsettled: await jiraDeliveryProtections(tx, work.work_id) };
     const at = new Date().toISOString();
     const refusals = forgetRefusals(work, current);
     const code = refusals.length ? `BECAME_INELIGIBLE:${refusals.map(item => item.code).join(',')}` : forgetBasis(work, current) !== plan.basis ? 'PLAN_OBSOLETE' : null;
@@ -131,7 +132,7 @@ export async function beginForget(session: Session, work_id: string, planId: str
     const work = (await tx.doc(works, work_id, null)).work;
     const plan = work?.forget?.plans.find(item => item.planId === planId);
     if (!work || !plan || plan.state !== 'confirmed') return 'stale' as const;
-    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work) };
+    const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work), jiraUnsettled: await jiraDeliveryProtections(tx, work.work_id) };
     const at = new Date().toISOString();
     // The plan's own confirmed state is not a refusal of itself.
     const refusals = forgetRefusals({ ...work, forget: { plans: work.forget!.plans.filter(item => item.planId !== planId) } }, current);

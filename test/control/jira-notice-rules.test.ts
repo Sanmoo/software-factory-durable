@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commentReconciliation, impedimentComment, impedimentNotice } from '../../src/control/rules/jira-notices.js';
+import { commentReconciliation, deliveryComment, impedimentComment, impedimentNotice } from '../../src/control/rules/jira-notices.js';
 import type { JiraEvaluation } from '../../src/control/rules/jira-admission.js';
 
 // Jira ticket 05 (spec §3 step 4, §4 last paragraph): when a refused Card is told why, and how an uncertain comment POST is reconciled.
@@ -74,4 +74,18 @@ test('reconciliation: two copies, an edited or restricted own copy, an incomplet
   assert.equal(pending({ listing: { kind: 'complete', comments: [own('101', expected.lines, { restricted: true })] }, account: 'acc-factory', expected }), 'JIRA_COMMENT_SIMILAR');
   assert.equal(pending({ listing: { kind: 'incomplete', code: 'JIRA_COMMENTS_INCOMPLETE' }, account: 'acc-factory', expected }), 'JIRA_COMMENTS_INCOMPLETE');
   assert.equal(pending({ listing: { kind: 'complete', comments: [] }, account: null, expected }), 'JIRA_ACCOUNT_UNKNOWN');
+});
+
+test('Jira ticket 09: the delivery notice is ONE line led by its reserved header; reconciliation recognises it and a same-header variant stays ambiguous', () => {
+  const expected = deliveryComment({ workRef: 'T-17', base: 'main', url: 'https://github.com/acme/payments-api/pull/9' });
+  assert.deepEqual(expected, { header: '[Software Factory · Entrega T-17]', lines: ['[Software Factory · Entrega T-17] O PR foi integrado a main: https://github.com/acme/payments-api/pull/9'] });
+  const comment = (commentId: string, text: string) => ({ commentId, accountId: 'acc-factory', text, restricted: false });
+  const listing = (...comments: ReturnType<typeof comment>[]) => ({ listing: { kind: 'complete' as const, comments }, account: 'acc-factory', expected });
+  assert.deepEqual(commentReconciliation(listing(comment('1', expected.lines[0]!))), { kind: 'confirmed', commentId: '1' });
+  assert.deepEqual(commentReconciliation(listing(comment('1', expected.lines[0]!), comment('2', expected.lines[0]!))),
+    { kind: 'pending', code: 'JIRA_COMMENT_MULTIPLE', candidates: ['1', '2'] });
+  assert.deepEqual(commentReconciliation(listing(comment('3', '[Software Factory · Entrega T-17] O PR foi integrado a release: x'))),
+    { kind: 'pending', code: 'JIRA_COMMENT_SIMILAR', candidates: ['3'] });
+  assert.deepEqual(commentReconciliation(listing(comment('4', '[Software Factory · Entrega T-170] O PR foi integrado a main: x'))), { kind: 'absent' },
+    'another Work\'s header is not a prefix match');
 });

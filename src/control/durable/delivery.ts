@@ -7,6 +7,7 @@ import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 import { rememberResult } from './cycles.js';
 import { desireJiraLink } from './jira-links.js';
+import { intendJiraDelivery } from './jira-deliveries.js';
 
 // Durable commits of ticket 17 (spec §3.4/§12.3). Remote reads and cleanup effects happen OUTSIDE these commits; each commit re-checks the
 // Work, its result and the resource it records. Intent is committed before every effect and its result after it.
@@ -64,6 +65,8 @@ export async function recordMergeObservation(session: Session, work_id: string, 
       // Ticket 30: an explicit cleanup already recorded for the cancelled cycle keeps its per-resource results (never re-planned from zero).
       work.cleanup = work.cleanup ? { ...work.cleanup, explicit: null, eligibility: { eligible: false, reasons: ['NOT_EVALUATED'], checkedAt: at } } : initialCleanup(at);
       // The cancellation (if any) stays recorded as history: delivery prevails without erasing it (spec §12.3).
+      // Jira ticket 09: the Card's link (`delivered`) and delivery notice are intents of THIS commit; they never gate or undo the delivery.
+      await intendJiraDelivery(tx, { work, url: input.own.url, base: input.own.base });
       history(work, 'delivery-confirmed', `#${decision.merge.number}:${decision.merge.mergeCommitSha}${during ? `:during:${during}` : ''}${work.cancellation ? `:cancel-requested:${work.cancellation.request_id}` : ''}`);
     } else if (decision.outcome === 'closed-unmerged' && work.result === 'open') {
       // Ticket 25 (spec §4.1/§12.3): closed without merge is NOT delivery and proves nothing about a running activity (not interrupted). The

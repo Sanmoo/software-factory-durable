@@ -25,6 +25,10 @@ export type JiraRemote = {
   redeliver?: boolean;
   /** Jira ticket 08: outcomes of the next remote link upserts (default applied). `lost`: Jira applies it but the answer is lost (unknown). */
   linkOutcomes?: ('applied' | 'lost' | 'down')[];
+  /** Jira ticket 09: outcomes of the next comment POSTs (default published). `lost`: created, answer lost; `twice`: two copies created, answer lost. */
+  commentOutcomes?: ('published' | 'lost' | 'down' | 'twice')[];
+  /** Jira ticket 09: the whole site is unreachable for comments, links and the account read (listing via `listFailure`). */
+  down?: boolean;
 };
 export const jiraSource = (overrides: Partial<Extract<TicketSource, { tracker: 'jira' }>> = {}): Extract<TicketSource, { tracker: 'jira' }> => ({
   tracker: 'jira', siteId: site.siteId, url: site.url, projectId: '10010', label: 'factory-ready', discover: true,
@@ -74,29 +78,36 @@ export function jiraDoubles(remote: JiraRemote) {
     },
     publishComment: async (ticket, comment) => {
       calls.push({ method: 'publishComment', args: { issueId: ticket.issueId, lines: comment.lines } });
-      const outcome = remote.postOutcomes?.shift() ?? 'ok';
-      if (outcome === 'lost-not-created') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
+      const outcome = remote.down ? 'down' : remote.commentOutcomes?.shift() ?? 'published';
+      if (outcome === 'down') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_UNAVAILABLE', nextStep: 'synthetic' };
+      const posted = remote.postOutcomes?.shift() ?? 'ok';
+      if (posted === 'lost-not-created') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
       const commentId = String(commentSequence += 1), at = observedAt();
       (comments[ticket.issueId] ??= []).push({ commentId, authorAccountId: 'acc-factory', text: comment.lines.join('\n'), createdAt: at, updatedAt: at, restricted: false });
-      if (outcome === 'lost-created') return { kind: 'unknown', observedAt: at, code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
+      if (outcome === 'twice') {
+        const copy = String(commentSequence += 1);
+        comments[ticket.issueId]!.push({ commentId: copy, authorAccountId: 'acc-factory', text: comment.lines.join('\n'), createdAt: at, updatedAt: at, restricted: false });
+      }
+      if (outcome !== 'published' || posted === 'lost-created') return { kind: 'unknown', observedAt: at, code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
       return { kind: 'published', observedAt: at, commentId, createdAt: at, authorAccountId: 'acc-factory', url: `${ticket.url}?focusedCommentId=${commentId}` };
     },
     listComments: async ticket => {
       calls.push({ method: 'listComments', args: ticket.issueId });
+      if (remote.down) return unavailable('JIRA_UNAVAILABLE');
       if (remote.commentsFailure) return unavailable(remote.commentsFailure);
       return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId: site.siteId, issueId: ticket.issueId, completeness: 'complete',
-        comments: [...(comments[ticket.issueId] ?? [])], limitations: [] };
+      comments: [...(comments[ticket.issueId] ?? [])], limitations: [] };
     },
     readInputs: async (ticket, cursor) => {
       calls.push({ method: 'readInputs', args: ticket.issueId });
-      const listing = remote.commentsFailure ? unavailable(remote.commentsFailure) : { kind: 'observed' as const, source: 'jira-rest' as const, observedAt: observedAt(), siteId: site.siteId,
+      const listing = remote.down || remote.commentsFailure ? unavailable(remote.commentsFailure ?? 'JIRA_UNAVAILABLE') : { kind: 'observed' as const, source: 'jira-rest' as const, observedAt: observedAt(), siteId: site.siteId,
         issueId: ticket.issueId, completeness: 'complete' as const, comments: structuredClone(comments[ticket.issueId] ?? []), limitations: [] };
       return jiraInputsOf(ticket, listing, remote.redeliver ? null : cursor);
     },
-    readAccount: async siteId => { calls.push({ method: 'readAccount' }); return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, accountId: 'acc-factory' }; },
+    readAccount: async siteId => { calls.push({ method: 'readAccount' }); if (remote.down) return unavailable('JIRA_UNAVAILABLE'); return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, accountId: 'acc-factory' }; },
     upsertRemoteLink: async (ticket, link) => {
       calls.push({ method: 'upsertRemoteLink', args: { issueId: ticket.issueId, ...link } });
-      const outcome = remote.linkOutcomes?.shift() ?? 'applied';
+      const outcome = remote.down ? 'down' : remote.linkOutcomes?.shift() ?? 'applied';
       if (outcome === 'down') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_UNAVAILABLE', nextStep: 'synthetic' };
       const card = (links[ticket.issueId] ??= {});
       const id = card[link.globalId]?.id ?? String(linkSequence += 1);

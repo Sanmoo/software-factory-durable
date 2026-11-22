@@ -45,6 +45,18 @@ export function impedimentComment(input: { ref: string; steps: readonly string[]
     'This notice is not repeated while the same impediment persists; the next poll reads the Card again.'] };
 }
 
+/**
+ * Jira ticket 09 (spec §5): the delivery notice, one line led by the reserved header, e.g.
+ * `[Software Factory · Entrega T-17] O PR foi integrado a main: <URL>`. Its header names the Work, so it is told once per Work.
+ */
+export function deliveryComment(input: { workRef: string; base: string; url: string }): FactoryCommentContent {
+  const header = reservedHeader('Entrega', input.workRef);
+  return { header, lines: [`${header} O PR foi integrado a ${input.base}: ${input.url}`] };
+}
+
+/** Whether a comment's first line is led by `header` (alone, or followed by a space and the rest of that line). */
+const ledBy = (text: string, header: string) => { const first = text.split('\n')[0]?.trim() ?? ''; return first === header || first.startsWith(`${header} `); };
+
 /** A visible comment as reconciliation compares it: author account, plain text projected from its ADF, and whether it carries a visibility restriction. */
 export type ObservedComment = { commentId: string; accountId: string; text: string; restricted: boolean };
 export type CommentReconciliation = { kind: 'confirmed'; commentId: string } | { kind: 'absent' } |
@@ -61,7 +73,7 @@ export function commentReconciliation(input: { listing: { kind: 'complete'; comm
   if (input.listing.kind === 'incomplete') return { kind: 'pending', code: input.listing.code };
   if (input.account === null) return { kind: 'pending', code: 'JIRA_ACCOUNT_UNKNOWN' };
   const text = input.expected.lines.join('\n');
-  const own = input.listing.comments.filter(comment => comment.accountId === input.account && comment.text.split('\n')[0]?.trim() === input.expected.header);
+  const own = input.listing.comments.filter(comment => comment.accountId === input.account && ledBy(comment.text, input.expected.header));
   const exact = own.filter(comment => comment.text === text && !comment.restricted);
   if (own.length > exact.length) return { kind: 'pending', code: 'JIRA_COMMENT_SIMILAR', candidates: own.map(comment => comment.commentId) };
   if (exact.length > 1) return { kind: 'pending', code: 'JIRA_COMMENT_MULTIPLE', candidates: exact.map(comment => comment.commentId) };

@@ -7,7 +7,7 @@ import { ticketLabel } from './admission.js';
 // cycle memory kept instead. No I/O, storage or clock: callers pass the facts and the instant.
 
 type Work = Omit<WorkView, 'dispatch' | 'limits'>;
-export type ForgetFacts = { running: boolean; questions: Pick<QuestionView, 'questionId' | 'state' | 'publication'>[];
+export type ForgetFacts = { running: boolean; questions: Pick<QuestionView, 'questionId' | 'state' | 'publication'>[]; jiraUnsettled?: string[];
   /** The Work's whole Records area as inspected just before (null: no Records port composed). */ tree: ForgetTree | null; repositoryConfigured: boolean };
 export type ForgetRefusal = { code: string; detail: string };
 const executionsOf = (work: Pick<Work, 'execution' | 'previousExecutions'>) => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];

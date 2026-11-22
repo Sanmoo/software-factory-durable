@@ -9,7 +9,9 @@ export const defaultRetentionDays = 30;
 const dayMs = 86_400_000;
 type Work = Pick<WorkView, 'work_id' | 'result' | 'execution' | 'previousExecutions' | 'impediments' | 'cancellation' | 'closure' | 'delivery' | 'cleanup' | 'readiness' |
   'publication' | 'pendingRecovery' | 'retention'>;
-type Facts = { running: boolean; questions: Pick<QuestionView, 'questionId' | 'state' | 'publication'>[] };
+type Facts = { running: boolean; questions: Pick<QuestionView, 'questionId' | 'state' | 'publication'>[];
+  /** Jira ticket 09: protections of the Work's Card communication still unsettled (link not confirmed, delivery notice not published). */
+  jiraUnsettled?: string[] };
 const executionsOf = (work: Pick<Work, 'execution' | 'previousExecutions'>): ExecutionView[] => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
 const recoveryImpediments = ['RECOVERY_BLOCKED', 'RECOVERY_CESSATION_UNCONFIRMED', 'RECOVERY_START_UNCERTAIN'];
 
@@ -43,6 +45,7 @@ export function retentionProtections(work: Work, facts: Facts): string[] {
   const reopen = work.closure?.reopen;
   if (reopen && (reopen.state === 'intended' || reopen.state === 'attempted')) reasons.push(`EFFECT_UNSETTLED:reopen:${reopen.effectId}`);
   if (work.publication?.state === 'requested') reasons.push('EFFECT_UNSETTLED:publication');
+  reasons.push(...(facts.jiraUnsettled ?? []));
   if (work.cancellation?.state === 'stopping') reasons.push('CANCELLATION_STOPPING');
   const continuable = work.result === 'open' || work.result === 'closed-unmerged';
   if (continuable && work.pendingRecovery) reasons.push('RECOVERY_PENDING');

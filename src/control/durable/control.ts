@@ -21,6 +21,7 @@ import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
 import { jiraConversationOwners, prepareJiraQuestions } from './jira-questions.js';
 import { createJiraInputDesk } from './jira-inputs.js';
 import { createJiraLinkDesk, jiraLinkStatus } from './jira-links.js';
+import { jiraDeliveryOwner } from './jira-deliveries.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { acceptPublicationReevaluation } from './publication.js';
@@ -166,7 +167,9 @@ export async function openControl(options: { storagePath: string;
       if (!tracker) return;
       // Jira ticket 06: Questions of Jira Works get their comment intent first, then ONE desk pass posts/reconciles every purpose.
       await prepareJiraQuestions(state, () => readWorks(state));
-      await noticeJiraImpediments({ session: state, tracker, source, evaluation: { kind: 'candidates', candidates }, stopped: () => stopped, owners: jiraConversationOwners });
+      await noticeJiraImpediments({ session: state, tracker, source, evaluation: { kind: 'candidates', candidates }, stopped: () => stopped,
+        // Jira ticket 09: delivery notices share the single comment desk pass (posted/reconciled whatever the Work's result or cleanup).
+        owners: { ...jiraConversationOwners, delivery: jiraDeliveryOwner } });
     },
     presentation: async (work_id, fresh) => {
       const current = await readWork(state, work_id);

@@ -99,3 +99,10 @@ test('AC6: the plan names what becomes unrecoverable, what stays and what forget
   assert.notEqual(forgetBasis(work(), facts()), forgetBasis(work(), facts({ tree: tree({ files: 13 }) })), 'a changed tree makes the plan obsolete');
   assert.equal(forgetBasis(work(), facts()), forgetBasis(work(), facts()));
 });
+
+test('Jira ticket 09: a delivered Work whose Card link or delivery notice is still unsettled is not forgotten (its pending reference stays visible)', () => {
+  const refusals = forgetRefusals(work(), facts({ jiraUnsettled: ['EFFECT_UNSETTLED:jira-link:w-1', 'EFFECT_UNSETTLED:jira-notice:e-9'] }));
+  assert.deepEqual(refusals.map(item => item.code), ['PROTECTED']);
+  assert.match(refusals[0]!.detail, /EFFECT_UNSETTLED:jira-link:w-1, EFFECT_UNSETTLED:jira-notice:e-9/);
+  assert.deepEqual(codes(work(), { jiraUnsettled: [] }), [], 'settled: eligible again');
+});

@@ -17,7 +17,9 @@ export type JiraCommentPurpose = { kind: 'impediment'; ticketKey: string; reason
   /** Jira ticket 06: a Question of a Jira Work, published on its origin Card. */
   { kind: 'question'; questionId: string; workId: string } |
   /** Jira ticket 06: guidance to a `/factory` comment of the Card that did not apply (by its ingress request). */
-  { kind: 'reply'; workId: string; request_id: string };
+  { kind: 'reply'; workId: string; request_id: string } |
+  /** Jira ticket 09: the delivery notice of a Work whose own PR was merged (told once; delivery never depends on it). */
+  { kind: 'delivery'; workId: string };
 export type JiraCommentState = 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned';
 export type JiraCommentEffect = { effectId: string; logicalRef: string; destination: JiraTicketRef; purpose: JiraCommentPurpose;
   /** Plain lines (header first); the ADF sent is one paragraph per line, so the stored lines ARE the content. */
@@ -49,11 +51,12 @@ const keep = <T>(items: T[]) => items.slice(-20);
  * `<prefix>-<effect id prefix>`, or with `sequenced` the next installation-wide number of that prefix (`Q-17`, short enough to type).
  */
 export async function intendJiraComment(tx: Tx, input: { destination: JiraTicketRef; purpose: JiraCommentPurpose; content: (ref: string) => FactoryCommentContent;
-  refPrefix: string; sequenced?: boolean }): Promise<JiraCommentEffect> {
+  refPrefix: string; sequenced?: boolean;
+  /** Jira ticket 09: a reference fixed by the caller (`delivery:<work_id>`), instead of a prefix-based one. */ logicalRef?: string }): Promise<JiraCommentEffect> {
   const document = await tx.doc(jiraComments);
   const effectId = randomUUID();
-  let logicalRef = `${input.refPrefix}-${effectId.slice(0, 8)}`;
-  if (input.sequenced) {
+  let logicalRef = input.logicalRef ?? `${input.refPrefix}-${effectId.slice(0, 8)}`;
+  if (input.sequenced && input.logicalRef === undefined) {
     const sequences = document.sequences ??= {};
     sequences[input.refPrefix] = (sequences[input.refPrefix] ?? 0) + 1;
     logicalRef = `${input.refPrefix}-${sequences[input.refPrefix]}`;
