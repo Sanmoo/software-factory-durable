@@ -353,13 +353,17 @@ test('static stage: depcruise waits for compile (staged SDK, build output), the 
         events.push('secrets');
         return { name: 'gitleaks', ms: 1, ok: true };
       },
+      metrics: async () => {
+        events.push('metrics');
+        return { name: 'static-metrics', ms: 1, ok: true };
+      },
     });
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(!events.includes('depcruise') && events.includes('lint') && events.includes('pointers'), `staged=${staged}`);
     finishCompile();
     assert.deepEqual(
       (await result).map(step => step.name),
-      ['tsc', 'eslint', 'depcruise', 'guide-pointers', 'avoided-terms', 'lint-suppressions', 'prettier', 'gitleaks'],
+      ['tsc', 'eslint', 'depcruise', 'guide-pointers', 'avoided-terms', 'lint-suppressions', 'prettier', 'gitleaks', 'static-metrics'],
     );
     assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
   }
