@@ -646,3 +646,27 @@ Toda diretiva `eslint-disable` esconde um achado do Lint, então cada uma é um 
 - **Regressão**: `test:ci` verde (2338 testes, 305 s de 900 s), e de novo após o rebase sobre `main` (2338 testes, 314 s). Uma execução anterior, sobre a base antiga, ficou vermelha por cota de `/tmp` (`release-install`) e por carga (prova de Context boundaries acima de 180 s); as duas são ambientais e não se repetiram.
 - **Adotados**: Format; todos os quality gates já adotados provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
 - **Continuam pendentes**: Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
+
+### Emenda aprovada (2026-11-22): 11 achados de Secrets no histórico além dos medidos
+
+A re-medição do S5 no `main` depois do reformat achou 27 achados no histórico de HEAD em vez de 16, todos sintéticos e sem credencial:
+- **9 no commit de reformat `df1d6dd4`**: os mesmos tokens de teste, o mesmo JWT de exemplo e o mesmo template PEM já aprovados, numa posição nova porque o reformat moveu as suas linhas.
+- **2 trazidos pelo trabalho do Jira**: `ghs_syntheticJiraQuestion0123` (`12527db0`, `test/control/jira-question-flow.test.ts`) e `ATATT3xFfGF0SYNTHETIC_SECRET` (`6491677c`, `test/entrypoints/configuration-sources.test.ts`).
+
+O mantenedor decidiu tolerar os 11, cada um com a sua decisão ao lado da entrada. Os 2 do Jira também foram reescritos na árvore, como os 9 do plano.
+
+### S5 — concluída em 2026-11-22
+
+- **Mudou**:
+  - O quality gate Secrets: gitleaks 8.30.1 (fixado em `mise.toml`) sobre o histórico de HEAD e os arquivos não commitados, nos dois Entry Points. O wrapper `scripts/test-runner/secrets.ts`, portado de #24, casa cada achado com `scripts/test-runner/secrets-tolerated.json` pela identidade (commit, arquivo, regra, linha, coluna). Falha um achado sem entrada, dois achados numa entrada só, e uma entrada cujo commit a varredura cobriu mas que ela já não reporta.
+  - O check `secrets` entrou na política de seleção, e a Gate Proof foi adicionada.
+  - Ponteiro em `coding-standards.md`.
+  - As cópias descartáveis do rehearsal e das provas passaram a herdar o histórico de HEAD, com os objetos emprestados por `alternates`. Numa cópia de um commit só, todo achado tolerado caía num commit que nenhuma entrada nomeia, e o Secrets ficava vermelho ao lado de toda prova.
+- **Mudanças de código**: os 11 tokens sintéticos da árvore (os 9 do plano e os 2 do Jira) são escritos em partes concatenadas (`'ghs_' + '…'`), com o mesmo valor em runtime. A árvore fica só com os 7 achados aprovados: 6 fingerprints de host key em `.scratch/software-factory-v2/research/alpine-guest-evidence.json` e o template PEM em `src/sandbox/lambda/transport.ts`. Os dois estão commitados, então são tolerados pelas entradas de histórico dos commits que os introduziram ou moveram.
+- **Achados tolerados**: 27 entradas de histórico, as 16 do apêndice B e as 11 da emenda, cada uma com a decisão explícita do mantenedor.
+- **Regra de aperto**: uma entrada sai na mesma mudança revisada que remove o seu achado, e uma entrada obsoleta falha. Um achado novo é corrigido antes do commit: depois de commitado, só sai do histórico com push forçado, e tolerá-lo exige uma nova decisão explícita.
+- **Atenção**: uma mudança que reescreva a linha do template PEM de `src/sandbox/lambda/transport.ts` (inclusive um reformat) cria um achado novo no commit dela, e esse achado precisa de uma decisão explícita.
+- **Regressão**: `test:ci` verde (2342 testes, 370 s de 900 s). Na primeira execução das provas, Context boundaries, Guide pointers e Format estouraram o teto de 180 s do tier fast por carga da máquina; repetidas sem carga, as três passaram.
+- **Integração**: pelo PR #34, conforme o ADR 0003, que entrou no `main` durante a etapa: o merge é humano, por rebase.
+- **Adotados**: Secrets; todos os quality gates já adotados provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
+- **Continuam pendentes**: Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
