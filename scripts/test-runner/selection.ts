@@ -12,7 +12,11 @@ export interface Check {
   gateByRule?: Record<string, string>;
   /** Under integral validation this check is not run separately: the named periodic check runs its whole input. */
   coveredBy?: string;
+  /** An affected-tests check bound to one test level (test/levels.json). */
+  level?: Level;
 }
+/** The test level of a file: unit when test/levels.json declares it, integration otherwise. */
+export type Level = 'unit' | 'integration';
 export interface Policy {
   version: number; budgetSeconds: number; base: string; core: string[]; sharedConfiguration: string[]; documentation: string[];
   runtimeDependents: { tests: string[]; on: string[] }; checks: Check[]; policyVersion: string; raw: unknown;
@@ -33,7 +37,7 @@ export interface ValidationPlan { mode: Mode; policyVersion: string; widened: st
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string');
 const topKeys = new Set(['$comment', 'version', 'budgetSeconds', 'base', 'core', 'sharedConfiguration', 'documentation', 'runtimeDependents', 'checks']);
-const checkKeys = new Set(['id', 'gate', 'tier', 'appliesTo', 'scope', 'cadence', 'costSeconds', 'cron', 'protectionBetweenRuns', 'residualRisk', 'gateByRule', 'coveredBy', '$comment']);
+const checkKeys = new Set(['id', 'gate', 'tier', 'appliesTo', 'scope', 'cadence', 'costSeconds', 'cron', 'protectionBetweenRuns', 'residualRisk', 'gateByRule', 'coveredBy', 'level', '$comment']);
 
 export function parsePolicy(value: unknown, text: string): Policy {
   const problems: string[] = [];
@@ -61,6 +65,7 @@ export function parsePolicy(value: unknown, text: string): Policy {
     if (typeof raw.costSeconds !== 'number' || raw.costSeconds < 0) at('needs costSeconds');
     if (raw.cadence === 'periodic' && [raw.cron, raw.protectionBetweenRuns, raw.residualRisk].some(item => typeof item !== 'string' || !item))
       at('a periodic check needs cron, protectionBetweenRuns and residualRisk');
+    if ('level' in raw && raw.level !== 'unit' && raw.level !== 'integration') at('level must be unit or integration');
     if ('gateByRule' in raw && (!isRecord(raw.gateByRule) || !Object.values(raw.gateByRule).every(item => typeof item === 'string'))) at('gateByRule maps rule prefixes to gates');
   }
   if (Array.isArray(value.checks)) for (const raw of value.checks as Record<string, unknown>[])
@@ -127,13 +132,14 @@ function lastIntegral(check: Check, integral: IntegralRecord | undefined): LastI
   return { outcome, at: integral.finishedAt, commit: integral.commit, policyVersion: integral.policyVersion };
 }
 
-/** The plan of one mode. `tests` are the test files that exist in the tree. */
+/** The plan of one mode. `tests` are the test files that exist in the tree; a level-bound check selects among its level's. */
 export function planValidation(mode: Mode, policy: Policy, change: Change, graph: Graph | undefined, tests: readonly string[],
-  integral: IntegralRecord | undefined): ValidationPlan {
+  integral: IntegralRecord | undefined, levelOf: (file: string) => Level = () => 'integration'): ValidationPlan {
   const allTests = [...tests].sort();
+  const testsOf = (check: Check) => check.level ? allTests.filter(file => levelOf(file) === check.level) : allTests;
   if (mode === 'integral') return { mode, policyVersion: policy.policyVersion, widened: 'integral validation runs every check over its whole input',
     affected: undefined, entries: policy.checks.map((check): Entry => check.coveredBy ? { check, decision: 'covered', by: check.coveredBy }
-      : { check, decision: 'run', scope: 'whole', files: check.scope === 'affected-tests' ? allTests : [] }) };
+      : { check, decision: 'run', scope: 'whole', files: check.scope === 'affected-tests' ? testsOf(check) : [] }) };
   const widened = wideningReason(change, policy, graph);
   const files = change.files ?? [];
   let affected: string[] | undefined;
@@ -151,10 +157,11 @@ export function planValidation(mode: Mode, policy: Policy, change: Change, graph
       return { check, decision: 'periodic', last, blocking: last.outcome === 'failed' && inScope };
     }
     if (affected === undefined) return { check, decision: 'run', scope: check.scope === 'changed' ? 'changed' : 'whole',
-      files: check.scope === 'affected-tests' ? allTests : check.scope === 'changed' ? files.filter(file => !deleted.includes(file)).sort() : [] };
+      files: check.scope === 'affected-tests' ? testsOf(check) : check.scope === 'changed' ? files.filter(file => !deleted.includes(file)).sort() : [] };
     if (!affected.some(file => matchesAny(file, check.appliesTo))) return { check, decision: 'not-applicable' };
     if (check.scope === 'affected-tests') {
-      const selected = affected.filter(file => allTests.includes(file) && !deleted.includes(file));
+      const own = testsOf(check);
+      const selected = affected.filter(file => own.includes(file) && !deleted.includes(file));
       return selected.length ? { check, decision: 'run', scope: 'affected', files: selected } : { check, decision: 'not-applicable' };
     }
     if (check.scope === 'changed') return { check, decision: 'run', scope: 'changed', files: files.filter(file => !deleted.includes(file)).sort() };
@@ -169,11 +176,12 @@ export function gateOf(check: Check, rule: string): string {
   return prefix === undefined ? check.gate : check.gateByRule![prefix]!;
 }
 
-/** Estimated seconds of the checks the plan runs; an affected-tests check costs its share of the whole suite. */
-export function estimatedSeconds(plan: ValidationPlan, testCount: number): number {
+/** Estimated seconds of the checks the plan runs; an affected-tests check costs its share of its level's tests. */
+export function estimatedSeconds(plan: ValidationPlan, tests: readonly string[], levelOf: (file: string) => Level = () => 'integration'): number {
   return plan.entries.reduce((sum, entry) => {
     if (entry.decision !== 'run') return sum;
-    if (entry.check.scope === 'affected-tests' && testCount > 0) return sum + entry.check.costSeconds * entry.files.length / testCount;
+    const pool = entry.check.level ? tests.filter(file => levelOf(file) === entry.check.level).length : tests.length;
+    if (entry.check.scope === 'affected-tests') return sum + (pool > 0 ? entry.check.costSeconds * entry.files.length / pool : 0);
     return sum + entry.check.costSeconds;
   }, 0);
 }

@@ -29,6 +29,7 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
     headCommit: async () => 'abc',
     acquireLock: async tier => { events.push(`lock ${tier}`); return { waitedMs: 5000, release: () => events.push('release') }; },
     staticAnalysis: async tier => { events.push(`static ${tier}`); clock += 1000; return [{ name: 'tsc', ms: 1000, ok: true }]; },
+    loadLevels: async () => () => 'integration',
     audit: async () => { events.push('audit'); return { name: 'npm audit', ms: 1, ok: true, check: 'vulnerabilities', findings: [] }; },
     listTests: async () => ['test/a.test.ts', 'test/slow.test.ts', 'test/serial.test.ts'],
     loadTimings: async () => ({}),
@@ -46,8 +47,10 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
   return { steps, events, runs, integrals, advance: (ms: number) => { clock += ms; } };
 }
 
+const allUnit = { loadLevels: async () => () => 'unit' as const };
+
 test('fast: no lock, slow excluded, parallel lane then serial lane', async () => {
-  const { steps, events } = fakeSteps();
+  const { steps, events } = fakeSteps(allUnit);
   const outcome = await runTier({ tier: 'fast', filters: [] }, steps);
   assert.equal(outcome.exitCode, 0, outcome.report);
   assert.deepEqual(events, ['deps', 'manifest', 'static fast', 'shared', 'run test/a.test.ts', 'run test/serial.test.ts', 'timings', 'shared cleanup']);
@@ -113,12 +116,12 @@ test('static failure stops before tests and fails the gate', async () => {
 });
 
 test('a failing file fails the gate without retry', async () => {
-  const { steps, events } = fakeSteps({ runFile: async file => ({ file, ms: 1, ok: file !== 'test/a.test.ts', counts }) });
+  const { steps, events } = fakeSteps({ ...allUnit, runFile: async file => ({ file, ms: 1, ok: file !== 'test/a.test.ts', counts }) });
   const runs: string[] = [];
   const outcome = await runTier({ tier: 'fast', filters: [] }, { ...steps, runFile: async (file, run, signal) => { runs.push(file); return steps.runFile(file, run, signal); } });
   assert.equal(outcome.exitCode, 1);
   assert.deepEqual(runs, ['test/a.test.ts', 'test/serial.test.ts'], 'each file exactly once');
-  assert.match(outcome.report, /FAILURE: test\/a\.test\.ts failed/);
+  assert.match(outcome.report, /FAILURE: quality gate Unit tests \(unit-tests\): test\/a\.test\.ts failed/);
   assert.ok(events.includes('timings'));
 });
 
@@ -127,7 +130,7 @@ test('budget overrun during the run aborts the running files and exits non-zero 
   t.after(() => mock.timers.reset());
   let started!: () => void;
   const running = new Promise<void>(resolve => { started = resolve; });
-  const fake = fakeSteps();
+  const fake = fakeSteps(allUnit);
   const aborted: string[] = [];
   const outcome = runTier({ tier: 'fast', filters: [] }, { ...fake.steps, runFile: (file, _run, signal) => new Promise(resolve => {
     started();
@@ -216,7 +219,8 @@ test('validation by change runs the affected tests only and says the result cove
   assert.equal(outcome.exitCode, 0, outcome.report);
   assert.deepEqual(events.filter(event => event.startsWith('run ')), ['run test/a.test.ts']);
   assert.match(outcome.report, /mode: validation by change, policy 1\+sha256:[0-9a-f]{12}, base main/);
-  assert.match(outcome.report, /ran tests \[Regression suite\]: passed \(affected, 1 files\)/);
+  assert.match(outcome.report, /ran integration-tests \[Integration tests\]: passed \(affected, 1 files\)/);
+  assert.match(outcome.report, /not applicable unit-tests \[Unit tests\]/);
   assert.match(outcome.report, /periodic integral-pass \[Regression suite\]: left to integral validation \(30 3 \* \* \*\); last integral result: not recorded/);
   assert.match(outcome.report, /RESULT: PASS \(validation by change: the 1 affected files only, not the whole application\)/);
 });
@@ -267,7 +271,8 @@ test('integral validation runs every check even after one fails, and records eac
   assert.equal(events.filter(event => event.startsWith('run ')).length, 6, 'the tests and the random-order pass still ran');
   assert.deepEqual(integrals.map(record => [record.commit, record.checks]), [['abc', { types: 'failed', lint: 'passed', 'integral-pass': 'passed', 'random-order': 'passed',
     boundaries: 'not run', 'guide-pointers': 'not run' }]]);
-  assert.match(outcome.report, /covered tests \[Regression suite\]: by integral-pass/);
+  assert.match(outcome.report, /covered unit-tests \[Unit tests\]: by integral-pass/);
+  assert.match(outcome.report, /covered integration-tests \[Integration tests\]: by integral-pass/);
   assert.match(outcome.report, /FAILURE: quality gate Types \(types\): TS2345 at src\/a\.ts:1/);
 });
 
@@ -280,4 +285,37 @@ test('finding parsers: tsc lines, ESLint JSON with the pure-rules marker, the do
   assert.equal(eslintFindings('not json', '/r'), undefined);
   assert.deepEqual(pointerFindings('{"ok": false, "findings": [{"code": "BROKEN_LINK", "path": "AGENTS.md", "target": "docs/x.md"}]}'),
     [{ rule: 'BROKEN_LINK', location: 'AGENTS.md → docs/x.md' }]);
+});
+
+const aUnit = { loadLevels: async () => (file: string) => file === 'test/a.test.ts' ? 'unit' as const : 'integration' as const };
+
+test('fast runs the unit-level tests only; a filter (never a gate) may still reach any level', async () => {
+  const unit = fakeSteps(aUnit);
+  assert.equal((await runTier({ tier: 'fast', filters: [] }, unit.steps)).exitCode, 0);
+  assert.deepEqual(unit.events.filter(event => event.startsWith('run ')), ['run test/a.test.ts']);
+  const filtered = fakeSteps(aUnit);
+  await runTier({ tier: 'fast', filters: ['serial'] }, filtered.steps);
+  assert.deepEqual(filtered.events.filter(event => event.startsWith('run ')), ['run test/serial.test.ts']);
+});
+
+test('a failing test file is reported under the quality gate of its level; ci records each level\'s outcome', async () => {
+  const { steps } = fakeSteps({ ...aUnit, runFile: async file => ({ file, ms: 1, ok: false, counts }) });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 1);
+  assert.match(outcome.report, /FAILURE: quality gate Unit tests \(unit-tests\): test\/a\.test\.ts failed/);
+  assert.match(outcome.report, /FAILURE: quality gate Integration tests \(integration-tests\): test\/serial\.test\.ts failed/);
+  assert.match(outcome.report, /ran unit-tests \[Unit tests\]: failed/);
+  const integrationGreen = fakeSteps({ ...aUnit, runFile: async file => ({ file, ms: 1, ok: file !== 'test/a.test.ts', counts }) });
+  const report = (await runTier({ tier: 'ci', filters: [] }, integrationGreen.steps)).report;
+  assert.match(report, /ran unit-tests \[Unit tests\]: failed/);
+  assert.match(report, /ran integration-tests \[Integration tests\]: passed/);
+  assert.doesNotMatch(report, /quality gate Integration tests/);
+});
+
+test('an unreadable test/levels.json is a precondition failure, before lock or compile', async () => {
+  const { steps, events } = fakeSteps({ loadLevels: async () => { throw new Error('LEVELS_INVALID: test/levels.json needs schemaVersion 1'); } });
+  const outcome = await runTier({ tier: 'ci', filters: [] }, steps);
+  assert.equal(outcome.exitCode, 2);
+  assert.match(outcome.report, /LEVELS_INVALID/);
+  assert.deepEqual(events, ['deps', 'manifest']);
 });

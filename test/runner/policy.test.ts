@@ -8,11 +8,13 @@ const policy = parsePolicy(JSON.parse(text), text);
 const gateFloor = ['Format', 'Lint', 'Types', 'Unit tests', 'Integration tests', 'E2E tests', 'Mutation', 'Context boundaries', 'Dependency rule',
   'Static metrics', 'Dependency vulnerabilities', 'Secrets', 'Avoided terms', 'Guide pointers'];
 
-test('the versioned policy is valid and every finding is attributed to a quality gate of the Gate Floor (or the regression suite until S3)', () => {
+test('the versioned policy is valid and every finding is attributed to a quality gate of the Gate Floor (the periodic passes over both levels: the regression suite)', () => {
   for (const check of policy.checks) {
     for (const gate of [check.gate, ...Object.values(check.gateByRule ?? {})])
-      assert.ok(gateFloor.includes(gate) || gate === 'Regression suite', `${check.id}: ${gate}`);
+      assert.ok(gateFloor.includes(gate) || (gate === 'Regression suite' && check.cadence === 'periodic' && check.level === undefined), `${check.id}: ${gate}`);
   }
+  const levels = policy.checks.filter(check => check.scope === 'affected-tests').map(check => [check.id, check.gate, check.level, check.tier]);
+  assert.deepEqual(levels, [['unit-tests', 'Unit tests', 'unit', 'fast'], ['integration-tests', 'Integration tests', 'integration', 'full']]);
   assert.deepEqual(policy.core, ['src/control/**', 'src/workers/**'], 'the core contexts approved in the adoption interview');
 });
 

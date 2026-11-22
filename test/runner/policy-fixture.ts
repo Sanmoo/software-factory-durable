@@ -1,4 +1,4 @@
-// A small selection policy for runner tests: the static checks, the affected tests and the two periodic checks.
+// A small selection policy for runner tests: the static checks, the affected tests of each level and the two periodic checks.
 import { parsePolicy, type Policy } from '../../scripts/test-runner/selection.ts';
 
 export function fixturePolicy(overrides: Record<string, unknown> = {}): Policy {
@@ -11,8 +11,10 @@ export function fixturePolicy(overrides: Record<string, unknown> = {}): Policy {
       { id: 'boundaries', gate: 'Context boundaries', tier: 'fast', appliesTo: ['src/**', 'test/**'], scope: 'whole', cadence: 'change', costSeconds: 1,
         gateByRule: { 'pure-rules-imports': 'Dependency rule' } },
       { id: 'guide-pointers', gate: 'Guide pointers', tier: 'fast', appliesTo: ['**'], scope: 'whole', cadence: 'change', costSeconds: 1 },
-      { id: 'tests', gate: 'Regression suite', tier: 'full', appliesTo: ['src/**', 'test/**'], scope: 'affected-tests', cadence: 'change', costSeconds: 30,
-        coveredBy: 'integral-pass' },
+      { id: 'unit-tests', gate: 'Unit tests', tier: 'fast', level: 'unit', appliesTo: ['src/**', 'test/**'], scope: 'affected-tests', cadence: 'change',
+        costSeconds: 1, coveredBy: 'integral-pass' },
+      { id: 'integration-tests', gate: 'Integration tests', tier: 'full', level: 'integration', appliesTo: ['src/**', 'test/**'], scope: 'affected-tests',
+        cadence: 'change', costSeconds: 30, coveredBy: 'integral-pass' },
       { id: 'integral-pass', gate: 'Regression suite', tier: 'full', appliesTo: ['src/**', 'test/**'], scope: 'whole', cadence: 'periodic',
         cron: '30 3 * * *', protectionBetweenRuns: 'p', residualRisk: 'r', costSeconds: 100 },
       { id: 'random-order', gate: 'Regression suite', tier: 'full', appliesTo: ['src/**', 'test/**'], scope: 'whole', cadence: 'periodic',

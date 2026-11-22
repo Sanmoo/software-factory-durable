@@ -2,7 +2,7 @@ import { budgetExceeded, budgetsMs, formatReport, planLanes, shuffle,
   type FileResult, type LaneResult, type Manifest, type RunSummary, type StepResult, type Tier } from './lib.ts';
 import type { MachineLock } from './lock.ts';
 import { estimatedSeconds, gateOf, matchesAny, planValidation,
-  type Change, type IntegralRecord, type Policy, type ValidationPlan } from './selection.ts';
+  type Change, type IntegralRecord, type Level, type Policy, type ValidationPlan } from './selection.ts';
 
 export interface RunOptions { tier: Tier; filters: readonly string[]; seed?: number; budgetMs?: number }
 /**
@@ -29,6 +29,8 @@ export interface Steps {
   saveIntegral(record: IntegralRecord): Promise<void>;
   headCommit(): Promise<string>;
   listTests(): Promise<string[]>;
+  /** test/levels.json: the level of each test file (unit when declared, integration otherwise). */
+  loadLevels(): Promise<(file: string) => Level>;
   loadTimings(): Promise<Record<string, number>>;
   saveTimings(timings: Record<string, number>): Promise<void>;
   sandboxRoot(): Promise<{ path: string; cleanup(): Promise<void> }>;
@@ -75,9 +77,10 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
   const precondition = (message: string): Outcome => { steps.log(message); return { exitCode: 2, report: message }; };
   const problems = await steps.checkDependencies();
   if (problems.length) return precondition(`DEPENDENCIES_MISMATCH: node_modules does not match package-lock.json; run \`npm ci\`.\n  ${problems.join('\n  ')}`);
-  let manifest: Manifest, policy: Policy;
+  let manifest: Manifest, policy: Policy, levelOf: (file: string) => Level;
   try { manifest = await steps.loadManifest(); } catch (error) { return precondition((error as Error).message); }
   try { policy = await steps.loadPolicy(); } catch (error) { return precondition((error as Error).message); }
+  try { levelOf = await steps.loadLevels(); } catch (error) { return precondition((error as Error).message); }
   const mode = tier === 'ci' ? 'change' : tier === 'full' ? 'integral' : undefined;
 
   const lock = tier === 'fast' ? undefined : await steps.acquireLock(tier);
@@ -101,9 +104,9 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
       const listed = await steps.listTests();
       if (mode !== undefined) {
         const graph = summary.static.find(step => step.graph)?.graph;
-        plan = planValidation(mode, policy, change, graph, listed, mode === 'change' ? await steps.loadIntegral() : undefined);
+        plan = planValidation(mode, policy, change, graph, listed, mode === 'change' ? await steps.loadIntegral() : undefined, levelOf);
         summary.validation = { plan, base: 'base' in change ? `${change.base}${change.compared ? ` (compared ${change.compared.slice(0, 12)})` : ''}` : undefined,
-          estimatedSeconds: estimatedSeconds(plan, listed.length), outcomes };
+          estimatedSeconds: estimatedSeconds(plan, listed, levelOf), outcomes };
         for (const entry of plan.entries) if (entry.decision === 'periodic' && entry.blocking)
           summary.failures.push(`periodic check ${entry.check.id} (quality gate ${entry.check.gate}) failed in the last integral validation`
             + ` at ${entry.last.commit ?? '?'}; this change verifies files in its scope, so its failure requires treatment`);
@@ -125,8 +128,11 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
       const proceed = !controller.signal.aborted && summary.validation?.inconclusive === undefined && (mode === 'integral' || !summary.failures.length);
       if (proceed) {
         const timings = await steps.loadTimings();
-        const testsEntry = plan?.entries.find(entry => entry.check.id === 'tests');
-        const selected = mode === 'change' ? (testsEntry?.decision === 'run' ? testsEntry.files : []) : listed;
+        // fast: the unit level (a filter, a convenience that is never a gate, may still reach any level); ci: the plan's affected
+        // tests of each level; full: every test.
+        const testEntries = (plan?.entries ?? []).filter(entry => entry.check.scope === 'affected-tests');
+        const selected = mode === 'change' ? [...new Set(testEntries.flatMap(entry => entry.decision === 'run' ? entry.files : []))].sort()
+          : mode === undefined && !options.filters.length ? listed.filter(file => levelOf(file) === 'unit') : listed;
         const files = options.filters.length ? selected.filter(file => options.filters.some(filter => file.includes(filter))) : selected;
         const lanePlan = planLanes(tier, files, manifest, steps.cpus, timings);
         summary.quarantined = lanePlan.quarantined;
@@ -139,7 +145,9 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
           await lane('serial', lanePlan.serial, 1, run, steps, controller.signal)];
         summary.lanes.push(...first);
         const firstOk = first.every(item => item.files.every(file => file.ok));
-        if (mode === 'change' && testsEntry?.decision === 'run') outcomes.tests = firstOk ? 'passed' : 'failed';
+        const failedFirst = new Set(first.flatMap(item => item.files.filter(file => !file.ok).map(file => file.file)));
+        if (mode === 'change') for (const entry of testEntries) if (entry.decision === 'run')
+          outcomes[entry.check.id] = entry.files.some(file => failedFirst.has(file)) ? 'failed' : 'passed';
         if (mode === 'integral') outcomes['integral-pass'] = firstOk ? 'passed' : 'failed';
         if (tier === 'full') {
           const seed = options.seed ?? Math.floor(Math.random() * 2 ** 31);
@@ -150,9 +158,13 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
           summary.lanes.push(...second);
           outcomes['random-order'] = second.every(item => item.files.every(file => file.ok)) ? 'passed' : 'failed';
         }
-        for (const result of summary.lanes.flatMap(item => item.files)) {
+        // Each failing file is reported under the quality gate of its level (the random-order pass under its own periodic check).
+        const levelCheck = (file: string) => policy.checks.find(check => check.scope === 'affected-tests' && check.level === levelOf(file));
+        for (const item of summary.lanes) for (const result of item.files) {
           timings[result.file] = result.ms;
-          if (!result.ok) summary.failures.push(`${result.file} failed`);
+          if (result.ok) continue;
+          const check = item.name.startsWith('random') ? policy.checks.find(entry => entry.id === 'random-order') : levelCheck(result.file);
+          summary.failures.push(check ? `quality gate ${check.gate} (${check.id}): ${result.file} failed` : `${result.file} failed`);
         }
         if (!summary.filtered && !controller.signal.aborted) await steps.saveTimings(timings);
       }

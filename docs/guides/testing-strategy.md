@@ -6,10 +6,18 @@ Decisão do operador no ticket 36 (`.scratch/software-factory-mvp/issues/36-tier
 
 Os testes fixam o comportamento observado da fábrica: um teste de regressão registra o que ela faz hoje, mesmo quando parece surpreendente, para que uma mudança que o altere falhe em vez de passar despercebida. Um teste verde diz que o comportamento não mudou, não que ele está certo.
 
+## Níveis
+
+- **Unit**: exercita um módulo pela interface pública, sem I/O em runtime e sem substituir nada que a fábrica possui; fixa as regras de domínio (`src/control/rules`, `src/contracts`) e as regras puras do runner. Os arquivos de nível unit estão declarados em [test/levels.json](../../test/levels.json); o cruise de Context boundaries recusa um teste declarado unit que alcance I/O (built-ins de arquivo, processo ou rede, os pacotes de I/O, um import não resolvido), e o achado sai sob o quality gate Unit tests.
+- **Integration**: todo outro arquivo de teste. Dirige um contexto contra processos, sistema de arquivos e armazenamento reais; só sistemas de terceiros são dublês na fronteira: o GitHub pelo `gh` local de `test/entrypoints/github-world-fixture.ts` e provedores de modelo roteirizados.
+- As receitas reais `*-qualification` ficam fora dos níveis e dos Entry Points.
+
+Um comportamento novo é testado no nível mais baixo que o prova. Um teste unit não ganha I/O para "testar de verdade": vira integration e sai de `test/levels.json`. Uma falha de arquivo é reportada sob o quality gate do seu nível.
+
 ## Entry Points
 
-- `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes sem `slow`; não substitui o completo.
-- `npm run test:ci`: Entry Point completo em **validação por mudança**. O supervisor local o roda uma vez antes de entregar e de novo após rebase ([ADR 0001](../adr/0001-local-supervisor-is-the-change-mode-ci.md)); uma mudança só está pronta quando ele está verde. Verde cobre o escopo afetado que o relatório nomeia, nunca a aplicação inteira.
+- `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes de nível unit; integration fica no Entry Point completo, que ele não substitui. Um filtro (conveniência, nunca um gate) ainda alcança qualquer teste no ciclo de TDD.
+- `npm run test:ci`: Entry Point completo em **validação por mudança**. O supervisor local o roda uma vez antes de entregar e de novo após rebase ([ADR 0001](../adr/0001-local-supervisor-is-the-change-mode-ci.md)); uma mudança só está pronta quando ele está verde. Roda os testes afetados de cada nível sob o quality gate dele (Unit tests, Integration tests). Verde cobre o escopo afetado que o relatório nomeia, nunca a aplicação inteira.
 - `npm run test:full`: Entry Point completo em **validação integral**, chamado pelo timer noturno. Roda todos os checks sobre a entrada inteira, inclusive os periódicos; seu resultado vale para aquela árvore, não é certificação permanente.
 
 Quais checks cada modo roda, sobre qual escopo, com qual custo, cadência e orçamento está na política versionada [scripts/test-runner/policy.json](../../scripts/test-runner/policy.json), não aqui. Receitas reais `*-qualification` (GitHub/VM/modelo) ficam fora dos Entry Points e continuam exigindo autorização do operador por execução.
@@ -24,7 +32,7 @@ Ambiente: rode os Entry Points com um `TMPDIR` curto (o `/tmp` padrão serve). O
 
 ## Manifesto `test/tiers.json`
 
-Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
+Lista **apenas exceções** de tempo e paralelismo. Arquivo sem entrada é paralelo; o nível (unit ou integration) vem de [test/levels.json](../../test/levels.json).
 
 ```json
 { "schemaVersion": 1, "files": {
@@ -35,7 +43,7 @@ Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
 } }
 ```
 
-- `slow`: fica fora de `fast`, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
+- `slow`: fica fora de um `fast` filtrado, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
 - `full`: só no noturno (fora de `fast` e `ci`; o relatório lista como "full only"). Para arquivo caro demais
   para o gate de integração; a regra que ele prova precisa de um teste barato em `fast`/`ci`.
 - `quarantine`: o arquivo não roda em camada nenhuma e o relatório o lista como **não cobertura**;

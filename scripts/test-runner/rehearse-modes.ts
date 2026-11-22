@@ -51,7 +51,7 @@ function scenario(name: string, body: (expect: (condition: boolean, what: string
     console.log(output.split('\n').filter(line => /^(selection|mode|FAILURE|RESULT|ok |FAIL)/.test(line)).join('\n'));
     expect(status === 1, `exit 1, got ${status}`);
     expect(/^selection: \d+ affected files/m.test(output), 'the selection did not widen');
-    expect(/FAILURE: test\/control\/budget-rules\.test\.ts failed/.test(output), 'the dependent test caught the violation');
+    expect(/FAILURE: quality gate Unit tests \(unit-tests\): test\/control\/budget-rules\.test\.ts failed/.test(output), 'the dependent test caught the violation');
     expect(!/test\/protocol\/protocol\.test\.ts/.test(output), 'an independent test was not selected');
   }, copy);
 }

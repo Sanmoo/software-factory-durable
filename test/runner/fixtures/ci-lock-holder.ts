@@ -13,7 +13,7 @@ const outcome = await runTier({ tier: 'ci', filters: [] }, {
   changedSet: async base => ({ widened: 'fixture', base }), loadIntegral: async () => undefined, saveIntegral: async () => {}, headCommit: async () => 'c',
   acquireLock: tier => acquireMachineLock(lockPath, { pid: process.pid, tier, name }, log),
   staticAnalysis: async () => { log('working'); await stdinClosed; log('done'); return []; },
-  audit: async () => { throw new Error('unused'); },
+  audit: async () => { throw new Error('unused'); }, loadLevels: async () => () => 'integration',
   listTests: async () => [], loadTimings: async () => ({}), saveTimings: async () => {},
   sandboxRoot: async () => { throw new Error('unused'); }, runDirectory: async () => ({ path: '/unused', cleanup: async () => {} }),
   runFile: async () => { throw new Error('unused'); },

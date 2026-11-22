@@ -17,6 +17,7 @@
     ".dependency-cruiser.cjs",
     "GLOSSARY.md",
     "test/tiers.json",
+    "test/levels.json",
     "scripts/**",
     ".github/**"
   ],
@@ -54,7 +55,7 @@
       "scope": "whole",
       "cadence": "change",
       "costSeconds": 5,
-      "gateByRule": { "neutral-contracts": "Dependency rule", "pure-rules-imports": "Dependency rule", "no-cycles": "Static metrics" }
+      "gateByRule": { "neutral-contracts": "Dependency rule", "pure-rules-imports": "Dependency rule", "no-cycles": "Static metrics", "unit-": "Unit tests" }
     },
     {
       "id": "guide-pointers",
@@ -86,10 +87,23 @@
       "costSeconds": 100
     },
     {
-      "$comment": "Unit and Integration levels are declared per file in stage S3 of ADOPTION-PLAN.md; until then this is the whole regression suite.",
-      "id": "tests",
-      "gate": "Regression suite",
+      "$comment": "Unit level (test/levels.json): no runtime I/O, enforced by the boundaries cruise (rule unit-performs-io, reported under Unit tests). The fast Entry Point runs this level.",
+      "id": "unit-tests",
+      "gate": "Unit tests",
+      "tier": "fast",
+      "level": "unit",
+      "appliesTo": ["src/**", "test/**"],
+      "scope": "affected-tests",
+      "cadence": "change",
+      "costSeconds": 8,
+      "coveredBy": "integral-pass"
+    },
+    {
+      "$comment": "Integration level: every test file not declared unit; only third-party systems (GitHub through the local gh fixture, model providers) are doubled.",
+      "id": "integration-tests",
+      "gate": "Integration tests",
       "tier": "full",
+      "level": "integration",
       "appliesTo": ["src/**", "test/**"],
       "scope": "affected-tests",
       "cadence": "change",
@@ -104,7 +118,7 @@
       "scope": "whole",
       "cadence": "periodic",
       "cron": "30 3 * * *",
-      "protectionBetweenRuns": "validation by change runs every affected test file (changed files, their importers, and every composition test when any source changes)",
+      "protectionBetweenRuns": "validation by change runs every affected test file of each level under its own quality gate, Unit tests and Integration tests (changed files, their importers, and every composition test when any source changes)",
       "residualRisk": "the real-disk sandbox tests (FACTORY_SANDBOX_TEST_ROOT) and the full-only files in test/tiers.json run only here; a break they alone see stays unseen until the next night",
       "costSeconds": 900
     },

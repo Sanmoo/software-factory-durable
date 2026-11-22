@@ -90,9 +90,9 @@ test('a failed periodic check blocks a change that verifies files in its scope, 
 
 test('estimated cost scales an affected-tests check by the share of tests it selects; over budget is reported', () => {
   const plan = planValidation('change', policy, change(['src/control/rules/a.ts']), g, tests, undefined);
-  assert.equal(estimatedSeconds(plan, tests.length), 10 + 1 + 60 * 2 / 3);
+  assert.equal(estimatedSeconds(plan, tests), 10 + 1 + 60 * 2 / 3);
   const wide = planValidation('change', { ...policy, budgetSeconds: 50 }, change(['package.json']), g, tests, undefined);
-  assert.ok(estimatedSeconds(wide, tests.length) > 50);
+  assert.ok(estimatedSeconds(wide, tests) > 50);
 });
 
 test('equivalent changes under the same policy give the same plan; the plan records the policy version', () => {
@@ -110,4 +110,39 @@ test('the policy is validated: unknown keys, a periodic check without cron or ri
   const gateless = JSON.parse(JSON.stringify(policy.raw));
   delete gateless.checks[0].gate;
   assert.throws(() => parsePolicy(gateless, 'x'), /types: needs gate/);
+});
+
+const leveled = (() => {
+  const raw = JSON.parse(JSON.stringify(policy.raw));
+  raw.checks.splice(2, 1,
+    { id: 'unit-tests', gate: 'Unit tests', tier: 'fast', level: 'unit', appliesTo: ['src/**', 'test/**'], scope: 'affected-tests', cadence: 'change', costSeconds: 6 },
+    { id: 'integration-tests', gate: 'Integration tests', tier: 'full', level: 'integration', appliesTo: ['src/**', 'test/**'], scope: 'affected-tests',
+      cadence: 'change', costSeconds: 60 });
+  return parsePolicy(raw, 'x');
+})();
+const levelOf = (file: string) => file === 'test/control/b.test.ts' || file === 'test/other.test.ts' ? 'unit' as const : 'integration' as const;
+const filesOf = (plan: ReturnType<typeof planValidation>, id: string) => {
+  const entry = plan.entries.find(item => item.check.id === id);
+  return entry?.decision === 'run' ? entry.files : entry?.decision;
+};
+
+test('a level is unit or integration; a level-bound tests check selects only the affected tests of its level', () => {
+  assert.equal(leveled.checks[2]!.level, 'unit');
+  const raw = JSON.parse(JSON.stringify(leveled.raw));
+  assert.throws(() => parsePolicy({ ...raw, checks: [{ ...raw.checks[2], level: 'e2e' }] }, 'x'), /unit-tests: level must be unit or integration/);
+  const plan = planValidation('change', leveled, change(['src/control/rules/a.ts']), g, tests, undefined, levelOf);
+  assert.deepEqual(filesOf(plan, 'unit-tests'), ['test/control/b.test.ts']);
+  assert.deepEqual(filesOf(plan, 'integration-tests'), ['test/entrypoints/cli.test.ts']);
+  const widened = planValidation('change', leveled, change(['package.json']), g, tests, undefined, levelOf);
+  assert.deepEqual(filesOf(widened, 'unit-tests'), ['test/control/b.test.ts', 'test/other.test.ts']);
+  assert.deepEqual(filesOf(widened, 'integration-tests'), ['test/entrypoints/cli.test.ts']);
+  const integral = planValidation('integral', leveled, change([]), g, tests, undefined, levelOf);
+  assert.deepEqual(filesOf(integral, 'unit-tests'), ['test/control/b.test.ts', 'test/other.test.ts']);
+});
+
+test('estimated cost: each level-bound check costs its share of its own level\'s tests', () => {
+  const plan = planValidation('change', leveled, change(['src/control/rules/a.ts']), g, tests, undefined, levelOf);
+  assert.equal(estimatedSeconds(plan, tests, levelOf), 10 + 1 + 6 * 1 / 2 + 60 * 1 / 1);
+  const noUnits = planValidation('change', leveled, change(['package.json']), g, tests, undefined, () => 'integration');
+  assert.equal(estimatedSeconds(noUnits, tests, () => 'integration'), 10 + 1 + 0 + 60, 'an empty level costs nothing');
 });
