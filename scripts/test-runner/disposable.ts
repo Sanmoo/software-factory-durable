@@ -1,6 +1,8 @@
 // Disposable copies of the project for the rehearsal and the Gate Proofs: a git repository with the project's tracked and
-// untracked files and a private node_modules (prepare-sdk refuses a shared one; a reflink copy where the filesystem allows),
-// whose base commit carries an optional fixture.
+// untracked files and a private node_modules (prepare-sdk refuses a shared one; a reflink copy where the filesystem allows).
+// Its history is the project's history of HEAD (objects borrowed through alternates, never copied), so a check that reads
+// history, like the Secrets quality gate, sees each finding at its real commit; the base commit on top carries the
+// project's uncommitted changes and an optional fixture.
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -37,7 +39,12 @@ export function disposableCopy(project: string, name: string, fixture: (copy: Co
     },
     remove: () => rmSync(dir, { recursive: true, force: true }),
   };
+  const inProject = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' }).trim();
+  const objects = join(inProject('rev-parse', '--path-format=absolute', '--git-common-dir'), 'objects');
   git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, '.git/objects/info/alternates'), `${objects}\n`);
+  git('update-ref', 'refs/heads/main', inProject('rev-parse', 'HEAD'));
+  git('reset', '-q');
   writeFileSync(join(dir, '.git/info/exclude'), '.integral-result.json\n');
   fixture(copy);
   copy.commit('base');
