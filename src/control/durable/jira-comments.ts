@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc } from '@earendil-works/pi-durable';
-import type { JiraTicketRef } from '../../issue-tracker/index.js';
+import type { JiraCommentListing, JiraCommentPost, JiraTicketRef, JiraWriteNotApplied } from '../../issue-tracker/index.js';
 import type { JiraOriginTracker } from '../types.js';
-import { commentReconciliation, type FactoryCommentContent } from '../rules/jira-notices.js';
+import { commentReconciliation, type CommentReconciliation, type FactoryCommentContent } from '../rules/jira-notices.js';
 import { jiraCommentBackoffSeconds, retryNotBefore } from './jira-retry.js';
 import type { Session } from './store.js';
 
@@ -79,6 +79,86 @@ function backOff(effect: JiraCommentEffect, at: string, waitSeconds?: number) {
   else delete effect.notBefore;
 }
 const keep = <T>(items: T[]) => items.slice(-20);
+
+type PendingReconciliation = Extract<CommentReconciliation, { kind: 'pending' }>;
+const pendingDetail = (outcome: PendingReconciliation) => ({
+  code: outcome.code,
+  ...(outcome.candidates ? { candidates: outcome.candidates.slice(0, 10) } : {}),
+});
+/** An attempt found still `attempting` was interrupted; every reconciliation is recorded, bounded. */
+function recordReconciliation(current: JiraCommentEffect, outcome: CommentReconciliation, at: string) {
+  if (current.state === 'attempting') current.attempts = keep([...current.attempts, { at, outcome: 'interrupted' }]);
+  current.reconciliations = keep([...current.reconciliations, { at, outcome: outcome.kind, ...(outcome.kind === 'pending' ? pendingDetail(outcome) : {}) }]);
+}
+function confirmReconciled(current: JiraCommentEffect, commentId: string, listing: JiraCommentListing | undefined) {
+  current.state = 'published';
+  const createdAt = listing?.kind === 'observed' ? listing.comments.find(item => item.commentId === commentId)?.createdAt : undefined;
+  current.comment = {
+    commentId,
+    url: `${current.destination.url}?focusedCommentId=${commentId}`,
+    ...(createdAt ? { createdAt } : {}),
+  };
+  current.diagnostic = null;
+}
+function holdReconciled(current: JiraCommentEffect, code: string, at: string) {
+  current.state = 'pending';
+  current.diagnostic = {
+    code,
+    at,
+    nextStep:
+      code === 'JIRA_COMMENT_MULTIPLE' || code === 'JIRA_COMMENT_SIMILAR'
+        ? `More than one own comment, or an edited one, carries ${current.logicalRef}: nothing is reposted or deleted; the operator may remove the extra copy.`
+        : `The Card's comments could not be read completely (${code}); nothing is reposted blindly, the next poll reads again.`,
+  };
+}
+/** Absent in a complete read: the same reference may be sent again (spec §4), if its owner still wants it, after the backoff. */
+function reopenAbsent(current: JiraCommentEffect, at: string) {
+  current.state = 'intended';
+  backOff(current, at);
+  current.diagnostic =
+    unsuccessful(current) > 1
+      ? {
+          code: 'JIRA_COMMENT_ABSENT_AFTER_UNCERTAIN_POST',
+          at,
+          nextStep: `${current.logicalRef} was not found after ${unsuccessful(current)} uncertain POSTs; it stays pending and is sent again with the same reference${current.notBefore ? ` after ${current.notBefore}` : ''}.`,
+        }
+      : null;
+}
+function recordPublished(current: JiraCommentEffect, result: Extract<JiraCommentPost, { kind: 'published' }>, at: string) {
+  current.state = 'published';
+  current.comment = { commentId: result.commentId, url: result.url, createdAt: result.createdAt };
+  current.attempts = keep([...current.attempts, { at, outcome: 'published' }]);
+  current.diagnostic = null;
+}
+function recordNotPublished(current: JiraCommentEffect, result: JiraWriteNotApplied | undefined, at: string) {
+  const code = result?.code ?? 'JIRA_UNEXPECTED_FAILURE';
+  current.attempts = keep([...current.attempts, { at, outcome: result?.kind === 'failed' ? 'failed' : 'unknown', code }]);
+  if (result?.kind === 'failed') recordFailed(current, result, code, at);
+  else {
+    current.state = 'unknown';
+    current.diagnostic = {
+      code,
+      at,
+      nextStep: "The comment may exist: the next pass reconciles it against the Card's visible comments before any new POST.",
+    };
+  }
+}
+function recordFailed(current: JiraCommentEffect, result: Extract<JiraWriteNotApplied, { kind: 'failed' }>, code: string, at: string) {
+  current.state = 'failed';
+  // A missing token sent nothing: retried every pass (Retry-After aside), whatever was refused before.
+  if (code === credentialMissing) {
+    if (result.waitSeconds !== undefined) current.notBefore = retryNotBefore(at, result.waitSeconds);
+    else delete current.notBefore;
+  } else backOff(current, at, result.waitSeconds);
+  current.diagnostic = {
+    code,
+    at,
+    nextStep:
+      code === credentialMissing
+        ? `${result.nextStep} ${current.logicalRef} stays pending on this Card and is sent on the next poll after the token file is restored; it is never sent elsewhere.`
+        : `${result.nextStep} ${current.logicalRef} stays pending on this Card and is retried with backoff${current.notBefore ? ` (next after ${current.notBefore})` : ''}; it is never abandoned.`,
+  };
+}
 
 /**
  * Records the intent of one automatic comment INSIDE the caller's commit (with whatever decided it). The logical reference is fixed here:
@@ -207,47 +287,10 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
     });
     return onEffect(effect.effectId, (current, _tx, at) => {
       if (current.state !== effect.state) return 'stale' as const;
-      if (current.state === 'attempting') current.attempts = keep([...current.attempts, { at, outcome: 'interrupted' }]);
-      current.reconciliations = keep([
-        ...current.reconciliations,
-        {
-          at,
-          outcome: outcome.kind,
-          ...(outcome.kind === 'pending' ? { code: outcome.code, ...(outcome.candidates ? { candidates: outcome.candidates.slice(0, 10) } : {}) } : {}),
-        },
-      ]);
-      if (outcome.kind === 'confirmed') {
-        current.state = 'published';
-        const createdAt = listing?.kind === 'observed' ? listing.comments.find(item => item.commentId === outcome.commentId)?.createdAt : undefined;
-        current.comment = {
-          commentId: outcome.commentId,
-          url: `${current.destination.url}?focusedCommentId=${outcome.commentId}`,
-          ...(createdAt ? { createdAt } : {}),
-        };
-        current.diagnostic = null;
-      } else if (outcome.kind === 'pending') {
-        current.state = 'pending';
-        current.diagnostic = {
-          code: outcome.code,
-          at,
-          nextStep:
-            outcome.code === 'JIRA_COMMENT_MULTIPLE' || outcome.code === 'JIRA_COMMENT_SIMILAR'
-              ? `More than one own comment, or an edited one, carries ${current.logicalRef}: nothing is reposted or deleted; the operator may remove the extra copy.`
-              : `The Card's comments could not be read completely (${outcome.code}); nothing is reposted blindly, the next poll reads again.`,
-        };
-      } else {
-        // Absent in a complete read: the same reference may be sent again (spec §4), if its owner still wants it, after the backoff.
-        current.state = 'intended';
-        backOff(current, at);
-        current.diagnostic =
-          unsuccessful(current) > 1
-            ? {
-                code: 'JIRA_COMMENT_ABSENT_AFTER_UNCERTAIN_POST',
-                at,
-                nextStep: `${current.logicalRef} was not found after ${unsuccessful(current)} uncertain POSTs; it stays pending and is sent again with the same reference${current.notBefore ? ` after ${current.notBefore}` : ''}.`,
-              }
-            : null;
-      }
+      recordReconciliation(current, outcome, at);
+      if (outcome.kind === 'confirmed') confirmReconciled(current, outcome.commentId, listing);
+      else if (outcome.kind === 'pending') holdReconciled(current, outcome.code, at);
+      else reopenAbsent(current, at);
       return current.state;
     });
   }
@@ -272,37 +315,10 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
       if (current.state !== 'attempting') return;
       if (result?.kind === 'published') {
         if (result.authorAccountId) accounts.set(current.destination.siteId, result.authorAccountId);
-        current.state = 'published';
-        current.comment = { commentId: result.commentId, url: result.url, createdAt: result.createdAt };
-        current.attempts = keep([...current.attempts, { at, outcome: 'published' }]);
-        current.diagnostic = null;
+        recordPublished(current, result, at);
         return;
       }
-      const code = result?.code ?? 'JIRA_UNEXPECTED_FAILURE';
-      current.attempts = keep([...current.attempts, { at, outcome: result?.kind === 'failed' ? 'failed' : 'unknown', code }]);
-      if (result?.kind === 'failed') {
-        current.state = 'failed';
-        // A missing token sent nothing: retried every pass (Retry-After aside), whatever was refused before.
-        if (code === credentialMissing) {
-          if (result.waitSeconds !== undefined) current.notBefore = retryNotBefore(at, result.waitSeconds);
-          else delete current.notBefore;
-        } else backOff(current, at, result.waitSeconds);
-        current.diagnostic = {
-          code,
-          at,
-          nextStep:
-            code === credentialMissing
-              ? `${result.nextStep} ${current.logicalRef} stays pending on this Card and is sent on the next poll after the token file is restored; it is never sent elsewhere.`
-              : `${result.nextStep} ${current.logicalRef} stays pending on this Card and is retried with backoff${current.notBefore ? ` (next after ${current.notBefore})` : ''}; it is never abandoned.`,
-        };
-      } else {
-        current.state = 'unknown';
-        current.diagnostic = {
-          code,
-          at,
-          nextStep: "The comment may exist: the next pass reconciles it against the Card's visible comments before any new POST.",
-        };
-      }
+      recordNotPublished(current, result, at);
     });
   }
 

@@ -125,6 +125,78 @@ const unverifiableCodes: ReadonlySet<JiraReasonCode> = new Set([
   'JIRA_TICKET_UNVERIFIABLE',
 ]);
 
+/** The destination criterion: none, divergent or an unreadable component list is a reason; a single destination is none. */
+function routeReasons(route: RouteDecision): JiraReason[] {
+  if (route.kind === 'none')
+    return [
+      {
+        code: 'JIRA_ROUTE_NONE',
+        nextStep: 'No component of the Card routes to an authorized repository; set one routed component or adjust the routes.',
+      },
+    ];
+  if (route.kind === 'divergent')
+    return [
+      {
+        code: 'JIRA_ROUTE_DIVERGENT',
+        repositories: route.repositories,
+        nextStep: `The Card's components route to different repositories (${route.repositories.join(', ')}); keep components that route to one repository.`,
+      },
+    ];
+  if (route.kind === 'unverifiable')
+    return [
+      {
+        code: 'JIRA_COMPONENTS_UNVERIFIABLE',
+        nextStep: 'The component list could not be read completely; nothing is concluded, the next poll reads it again.',
+      },
+    ];
+  return [];
+}
+
+/** A link of the Card that needs the operator, or disagrees with the catalogue, is a reason. */
+function linkReasons(link: LinkDirection): JiraReason[] {
+  if (link.kind === 'needs-operator')
+    return [
+      {
+        code: link.code,
+        linkId: link.linkId,
+        nextStep:
+          (link.code === 'JIRA_LINK_TYPE_CUSTOM'
+            ? `The Card has a custom link type (ID ${link.typeId}) whose blocking meaning is unknown`
+            : `The site's Blocks link type (ID ${link.typeId}) is edited or duplicated, so its direction is ambiguous`) +
+          `; the operator must declare it in the Jira source's linkTypes ({ id: '${link.typeId}', blocks: inward | outward | none }) or remove the link.`,
+      },
+    ];
+  if (link.kind === 'unverifiable')
+    return [
+      {
+        code: link.code,
+        linkId: link.linkId,
+        nextStep: "A link of the Card disagrees with the site's link type catalogue; nothing is concluded, the next poll reads it again.",
+      },
+    ];
+  return [];
+}
+
+/** Unverifiable blockers are one reason; otherwise each visible blocker not in the Done category is one. */
+function blockerReasons(facts: JiraBlockerFacts): JiraReason[] {
+  if (facts.kind === 'unavailable')
+    return [
+      {
+        code: 'JIRA_BLOCKERS_UNVERIFIABLE',
+        observedCode: facts.code,
+        ...(facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
+        nextStep: `The visible blockers could not be verified (${facts.code}); this never releases the Card. ${facts.nextStep}`,
+      },
+    ];
+  return facts.blockers
+    .filter(blocker => blocker.statusCategory !== 'done')
+    .map(blocker => ({
+      code: 'JIRA_BLOCKER_NOT_DONE',
+      blocker: { issueId: blocker.issueId, key: blocker.key },
+      nextStep: 'A visible blocker of the Card is not in a Done status category; finish it or remove the "is blocked by" link.',
+    }));
+}
+
 /**
  * Whether a re-read Jira candidate may start (spec §3 steps 1-3). Label absent = not a candidate. Otherwise every reason is collected: any
  * known impediment (no or divergent destination, a visible blocker not in the Done category, a link that needs the operator) = blocked;
@@ -137,59 +209,8 @@ export function evaluateJiraCandidate(input: {
   blockers: JiraBlockerFacts;
 }): JiraEvaluation {
   if (!input.labelPresent) return { decision: 'not-candidate', reasons: [] };
-  const reasons: JiraReason[] = [];
   const { route } = input;
-  if (route.kind === 'none')
-    reasons.push({
-      code: 'JIRA_ROUTE_NONE',
-      nextStep: 'No component of the Card routes to an authorized repository; set one routed component or adjust the routes.',
-    });
-  if (route.kind === 'divergent')
-    reasons.push({
-      code: 'JIRA_ROUTE_DIVERGENT',
-      repositories: route.repositories,
-      nextStep: `The Card's components route to different repositories (${route.repositories.join(', ')}); keep components that route to one repository.`,
-    });
-  if (route.kind === 'unverifiable')
-    reasons.push({
-      code: 'JIRA_COMPONENTS_UNVERIFIABLE',
-      nextStep: 'The component list could not be read completely; nothing is concluded, the next poll reads it again.',
-    });
-  for (const link of input.links) {
-    if (link.kind === 'needs-operator')
-      reasons.push({
-        code: link.code,
-        linkId: link.linkId,
-        nextStep:
-          (link.code === 'JIRA_LINK_TYPE_CUSTOM'
-            ? `The Card has a custom link type (ID ${link.typeId}) whose blocking meaning is unknown`
-            : `The site's Blocks link type (ID ${link.typeId}) is edited or duplicated, so its direction is ambiguous`) +
-          `; the operator must declare it in the Jira source's linkTypes ({ id: '${link.typeId}', blocks: inward | outward | none }) or remove the link.`,
-      });
-    if (link.kind === 'unverifiable')
-      reasons.push({
-        code: link.code,
-        linkId: link.linkId,
-        nextStep: "A link of the Card disagrees with the site's link type catalogue; nothing is concluded, the next poll reads it again.",
-      });
-  }
-  const facts = input.blockers;
-  if (facts.kind === 'unavailable')
-    reasons.push({
-      code: 'JIRA_BLOCKERS_UNVERIFIABLE',
-      observedCode: facts.code,
-      ...(facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
-      nextStep: `The visible blockers could not be verified (${facts.code}); this never releases the Card. ${facts.nextStep}`,
-    });
-  else
-    for (const blocker of facts.blockers) {
-      if (blocker.statusCategory !== 'done')
-        reasons.push({
-          code: 'JIRA_BLOCKER_NOT_DONE',
-          blocker: { issueId: blocker.issueId, key: blocker.key },
-          nextStep: 'A visible blocker of the Card is not in a Done status category; finish it or remove the "is blocked by" link.',
-        });
-    }
+  const reasons: JiraReason[] = [...routeReasons(route), ...input.links.flatMap(linkReasons), ...blockerReasons(input.blockers)];
   if (!reasons.length && route.kind === 'single') return { decision: 'eligible', repository: route.repository, reasons: [] };
   return { decision: reasons.some(reason => !unverifiableCodes.has(reason.code)) ? 'blocked' : 'unverifiable', reasons };
 }

@@ -23,14 +23,50 @@ type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 const keep = <T>(items: T[]) => items.slice(-20);
 const maxSettledFinal = 500;
 
+type LinkWork = { work_id: string; ticket: TicketRef; queue: { sequence: number } };
+/** What a new revision carries over from the previous desire of the Work's link (its first revision starts afresh). */
+function priorLink(previous: JiraLinkIntent | undefined, sequence: number, at: string) {
+  if (!previous) return { workRef: workShortRef(sequence), revision: 1, recordedAt: at, attempts: [], confirmed: null };
+  return {
+    workRef: previous.workRef ?? workShortRef(sequence),
+    revision: (previous.revision ?? 0) + 1,
+    recordedAt: previous.recordedAt ?? at,
+    attempts: previous.attempts ?? [],
+    confirmed: previous.confirmed ?? null,
+  };
+}
+/** A new pending revision of the Work's link, carrying over its reference, history and last confirmation. */
+function nextLinkIntent(
+  work: LinkWork,
+  input: { url: string; desired: JiraLinkDesired },
+  destination: JiraTicketRef,
+  previous: JiraLinkIntent | undefined,
+  at: string,
+): JiraLinkIntent {
+  const prior = priorLink(previous, work.queue.sequence, at);
+  return {
+    workId: work.work_id,
+    globalId: jiraLinkGlobalId(work.work_id),
+    destination,
+    workRef: prior.workRef,
+    url: input.url,
+    desired: input.desired,
+    title: jiraLinkTitle(prior.workRef, input.desired),
+    revision: prior.revision,
+    state: 'pending',
+    recordedAt: prior.recordedAt,
+    updatedAt: at,
+    attempts: prior.attempts,
+    confirmed: prior.confirmed,
+    diagnostic: null,
+  };
+}
+
 /**
  * Records, INSIDE the caller's commit, the desired state of the Work's link on its Card (nothing for a GitHub Work). Same state and URL
  * as the latest one: unchanged (no new revision, nothing re-sent). Otherwise a new revision, pending, replaces the previous desire.
  */
-export async function desireJiraLink(
-  tx: Tx,
-  input: { work: { work_id: string; ticket: TicketRef; queue: { sequence: number } }; url: string; desired: JiraLinkDesired },
-): Promise<JiraLinkIntent | null> {
+export async function desireJiraLink(tx: Tx, input: { work: LinkWork; url: string; desired: JiraLinkDesired }): Promise<JiraLinkIntent | null> {
   const { work } = input;
   if (work.ticket.tracker !== 'jira') return null;
   const document = await tx.doc(jiraLinks);
@@ -42,23 +78,7 @@ export async function desireJiraLink(
     previous.destination = destination;
     return previous;
   }
-  const workRef = previous?.workRef ?? workShortRef(work.queue.sequence);
-  const intent: JiraLinkIntent = {
-    workId: work.work_id,
-    globalId: jiraLinkGlobalId(work.work_id),
-    destination,
-    workRef,
-    url: input.url,
-    desired: input.desired,
-    title: jiraLinkTitle(workRef, input.desired),
-    revision: (previous?.revision ?? 0) + 1,
-    state: 'pending',
-    recordedAt: previous?.recordedAt ?? at,
-    updatedAt: at,
-    attempts: previous?.attempts ?? [],
-    confirmed: previous?.confirmed ?? null,
-    diagnostic: null,
-  };
+  const intent = nextLinkIntent(work, input, destination, previous, at);
   document.links[work.work_id] = intent;
   // Bounded: confirmed links of finished Works (closed/delivered) beyond the bound are dropped, oldest first; pending ones never.
   const settled = Object.values(document.links)

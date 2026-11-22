@@ -33,6 +33,50 @@ const children = (node: Node): Node[] => (Array.isArray(node.content) ? node.con
 const attr = (node: Node, name: string) =>
   typeof node.attrs?.[name] === 'string' ? (node.attrs[name] as string) : typeof node.attrs?.[name] === 'number' ? String(node.attrs[name]) : null;
 
+/** What a node's renderer may use: the node, its children joined (`inner`), and one child rendered one level deeper. */
+type Rendering = { node: Node; inner: (separator?: string) => string; child: (item: Node) => string };
+const fromInner = ({ inner }: Rendering) => inner();
+/** Known nodes by type; any other node keeps only its text content (`fromInner`). */
+const renderers = new Map<unknown, (rendering: Rendering) => string>([
+  ['text', ({ node }) => (typeof node.text === 'string' ? node.text : '')],
+  ['hardBreak', () => '\n'],
+  ['mention', ({ node }) => attr(node, 'text') ?? `@${attr(node, 'id') ?? ''}`],
+  ['emoji', ({ node }) => attr(node, 'text') ?? attr(node, 'shortName') ?? ''],
+  ['inlineCard', ({ node }) => attr(node, 'url') ?? ''],
+  ['blockCard', ({ node }) => attr(node, 'url') ?? ''],
+  ['status', ({ node }) => attr(node, 'text') ?? ''],
+  ['date', ({ node }) => attr(node, 'timestamp') ?? ''],
+  ['rule', () => '---'],
+  ['heading', ({ node, inner }) => `${'#'.repeat(Math.min(Math.max(Number(attr(node, 'level') ?? 1), 1), 6))} ${inner('')}`],
+  ['paragraph', ({ inner }) => inner('')],
+  [
+    'bulletList',
+    ({ node, child }) =>
+      children(node)
+        .map(item => `- ${child(item)}`)
+        .join('\n'),
+  ],
+  [
+    'orderedList',
+    ({ node, child }) => {
+      const start = Number(attr(node, 'order') ?? 1);
+      return children(node)
+        .map((item, index) => `${(Number.isSafeInteger(start) ? start : 1) + index}. ${child(item)}`)
+        .join('\n');
+    },
+  ],
+  ['listItem', ({ inner }) => inner('\n')],
+  ['codeBlock', ({ node, inner }) => `\`\`\`${attr(node, 'language') ?? ''}\n${inner('')}\n\`\`\``],
+  [
+    'blockquote',
+    ({ inner }) =>
+      inner()
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+  ],
+]);
+
 /**
  * Plain text of an ADF document, at most `maxChars` characters (`truncated` says the bound or the nesting depth cut something: never a
  * silent truncation). `null` when the value is not an ADF document (absent description included).
@@ -45,55 +89,13 @@ export function adfPlainText(value: unknown, maxChars: number): { text: string; 
       truncated = true;
       return '';
     }
+    const child = (item: Node) => render(item, depth + 1);
     const inner = (separator?: string) => {
       const items = children(node);
       const joiner = separator ?? (items.some(item => typeof item.type === 'string' && blocks.has(item.type)) ? '\n\n' : '');
-      return items.map(item => render(item, depth + 1)).join(joiner);
+      return items.map(child).join(joiner);
     };
-    switch (node.type) {
-      case 'text':
-        return typeof node.text === 'string' ? node.text : '';
-      case 'hardBreak':
-        return '\n';
-      case 'mention':
-        return attr(node, 'text') ?? `@${attr(node, 'id') ?? ''}`;
-      case 'emoji':
-        return attr(node, 'text') ?? attr(node, 'shortName') ?? '';
-      case 'inlineCard':
-      case 'blockCard':
-        return attr(node, 'url') ?? '';
-      case 'status':
-        return attr(node, 'text') ?? '';
-      case 'date':
-        return attr(node, 'timestamp') ?? '';
-      case 'rule':
-        return '---';
-      case 'heading':
-        return `${'#'.repeat(Math.min(Math.max(Number(attr(node, 'level') ?? 1), 1), 6))} ${inner('')}`;
-      case 'paragraph':
-        return inner('');
-      case 'bulletList':
-        return children(node)
-          .map(item => `- ${render(item, depth + 1)}`)
-          .join('\n');
-      case 'orderedList': {
-        const start = Number(attr(node, 'order') ?? 1);
-        return children(node)
-          .map((item, index) => `${(Number.isSafeInteger(start) ? start : 1) + index}. ${render(item, depth + 1)}`)
-          .join('\n');
-      }
-      case 'listItem':
-        return inner('\n');
-      case 'codeBlock':
-        return `\`\`\`${attr(node, 'language') ?? ''}\n${inner('')}\n\`\`\``;
-      case 'blockquote':
-        return inner()
-          .split('\n')
-          .map(line => `> ${line}`)
-          .join('\n');
-      default:
-        return inner();
-    }
+    return (renderers.get(node.type) ?? fromInner)({ node, inner, child });
   };
   const text = render(value, 0);
   if (text.length > maxChars) return { text: text.slice(0, maxChars), truncated: true };

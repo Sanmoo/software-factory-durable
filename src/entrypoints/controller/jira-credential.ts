@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -10,13 +10,12 @@ import { join } from 'node:path';
 export async function readJiraToken(root: string, tokenFile: string): Promise<string> {
   for (const path of [root, join(root, 'credentials')]) {
     const info = await lstat(path);
-    if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || info.mode & 0o077) throw new Error('UNSAFE_CREDENTIAL_PATH');
+    if (unsafeDirectory(info)) throw new Error('UNSAFE_CREDENTIAL_PATH');
   }
   const file = await open(join(root, tokenFile), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077 || info.nlink !== 1 || info.size > 4096)
-      throw new Error('UNSAFE_CREDENTIAL_FILE');
+    if (unsafeTokenFile(info)) throw new Error('UNSAFE_CREDENTIAL_FILE');
     const token = (await file.readFile('utf8')).trim();
     if (!token || /\s/.test(token)) throw new Error('INVALID_JIRA_TOKEN');
     return token;
@@ -24,3 +23,9 @@ export async function readJiraToken(root: string, tokenFile: string): Promise<st
     await file.close();
   }
 }
+
+/** Not a private directory of this user (or a symlink to one). */
+const unsafeDirectory = (info: Stats) => !info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || Boolean(info.mode & 0o077);
+/** Not a private regular file of this user with one link and a bounded size. */
+const unsafeTokenFile = (info: Stats) =>
+  !info.isFile() || info.uid !== process.getuid?.() || Boolean(info.mode & 0o077) || info.nlink !== 1 || info.size > 4096;
