@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { IssueTracker, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
+import type { IssueTracker, JiraBlockerReads, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -25,7 +25,9 @@ export type AccessDependencies = { tracker: IssueTracker; repository: CodeReposi
   /** Jira ticket 01: the configured Ticket sources (absent = every executable repository is a GitHub source with discovery on, YAML v1). */
   sources?: TicketSource[];
   /** Jira ticket 01: adapters of the other origins, selected by the Ticket's persisted `tracker` (`tracker` above stays the GitHub one). */
-  trackers?: { jira?: IssueTracker<'jira'> & JiraRemoteLinks } };
+  trackers?: { jira?: JiraOriginTracker } };
+/** Jira ticket 03: the Jira adapter as the Control uses it (common contract, remote links and the reads behind visible blockers). */
+export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads;
 /**
  * Jira ticket 01: one Ticket source. `discover` gates NEW admissions only: Works already admitted keep their origin, destination and
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.

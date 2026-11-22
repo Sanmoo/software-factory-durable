@@ -10,4 +10,9 @@ export type { AccessDependencies, TicketSource, ConfiguredRepository, ExecutionV
 // Ticket 39: pure interpretation of the active base rules (merge-blocking or not, with source and reason) for evidence recipes and views.
 export { interpretBaseRules, evaluateChecks } from './rules/checks.js';
 export { githubOnly, ticketKey, ticketLabel } from './rules/admission.js';
+// Jira ticket 03: read-only evaluation of Jira candidates (no admission, comment or dispatch) and its pure rules.
+export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluation.js';
+export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
+export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
+export type { JiraOriginTracker } from './types.js';
 export type { ChecksEvaluation, ModalityView, UsageView } from './types.js';

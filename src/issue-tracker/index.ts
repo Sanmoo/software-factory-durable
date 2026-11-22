@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { questionMarkerPrefix, replyMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead, type TokenRevocation } from '../platform/github/index.js';
+import type { JiraRequest, JiraTransport } from './jira-http.js';
 
 /** Origin of GitHub Tickets: one configured repository plus its effective entry label (shape unchanged since v1). */
 export type GitHubTrackerScope = GitHubScope & { label: string };
@@ -82,7 +83,17 @@ export type JiraCandidateObservation = { kind: 'observed'; source: 'jira-rest'; 
   completeness: 'complete'; candidates: JiraTicketRef[]; limitations: string[] } | JiraUnavailable;
 /** Re-read by ID: entry facts. `components: null` = the list was not read completely (never "zero routes"). */
 export type JiraTicketObservation = { kind: 'observed'; source: 'jira-rest'; observedAt: string; completeness: 'complete'; ticket: JiraTicketRef;
-  projectId: string; labels: string[]; components: { id: string; name: string }[] | null; statusCategory: string } | JiraUnavailable;
+  projectId: string; labels: string[]; components: { id: string; name: string }[] | null; statusCategory: string;
+  /** Jira ticket 03: the Card's summary (null when absent) and its links as observed (`null` = not read completely: never "no link"). */
+  summary: string | null; links: JiraLink[] | null } | JiraUnavailable;
+/** One entry of the site's link type catalogue; the labels are the site administrator's (editable). */
+export type JiraLinkType = { id: string; name: string; inward: string; outward: string };
+/** A link of the read Ticket: `end: 'inward'` = the neighbour came as `inwardIssue` (to be read with `type.inward`). The type's meaning is the Control's rule. */
+export type JiraLink = { linkId: string; type: JiraLinkType; end: 'inward' | 'outward'; issue: { issueId: string; key: string } };
+export type JiraLinkTypesObservation = { kind: 'observed'; source: 'jira-rest'; observedAt: string; siteId: string; types: JiraLinkType[] } | JiraUnavailable;
+/** Status CATEGORY of one issue of the site read by ID (any project, with or without the label); never its local status name. */
+export type JiraIssueStatusObservation = { kind: 'observed'; source: 'jira-rest'; observedAt: string; siteId: string; issueId: string; key: string;
+  statusCategory: string } | JiraUnavailable;
 /** A visible "is blocked by" neighbour, judged by its status CATEGORY (never the local column name). */
 export type JiraBlocker = { issueId: string; key: string; statusCategory: string };
 /** Visible blockers of one Ticket. `coverage: 'visible'`: an empty list is a valid read of what this account sees, never global absence. */
@@ -143,6 +154,14 @@ export type RemoteLinkResult = { kind: 'applied'; observedAt: string } |
   { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
 export interface JiraRemoteLinks {
   upsertRemoteLink(ticket: JiraTicketRef, link: RemoteLink): Promise<RemoteLinkResult>;
+}
+/**
+ * Jira-only reads behind the visible-blockers fact (Jira ticket 03): the site's link type catalogue and the status category of a neighbour.
+ * The Control decides which links block (catalogue + direction rule) and reads only those neighbours.
+ */
+export interface JiraBlockerReads {
+  readLinkTypes(siteId: string): Promise<JiraLinkTypesObservation>;
+  readIssueStatus(siteId: string, issueId: string): Promise<JiraIssueStatusObservation>;
 }
 
 const issueSchema = z.object({
@@ -450,32 +469,46 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
   };
 }
 
-/**
- * One closed REST v3 request of the Jira adapter. `path` is always `/rest/api/3/...` built by the adapter; the host transport supplies the
- * configured HTTPS origin and the credential (never the adapter, the Control or the agent).
- */
-export type JiraRequest = { method: 'GET' | 'POST' | 'PUT'; path: string; query?: Record<string, string>; body?: unknown };
-/** A known response (any HTTP status the transport passes through as data) or a failure that concludes nothing. */
-export type JiraResponse = { ok: true; status: number; body: unknown; observedAt: string } |
-  { ok: false; code: string; status?: number; waitSeconds?: number; observedAt: string; nextStep: string };
-export interface JiraTransport { request(input: JiraRequest): Promise<JiraResponse> }
+export { createJiraHttpTransport, type JiraHostSite, type JiraHttpExchange, type JiraHttpResult, type JiraRequest, type JiraResponse, type JiraTransport } from './jira-http.js';
 
+const jiraId = z.string().regex(/^[1-9][0-9]{0,17}$/);
+const jiraKey = z.string().regex(/^[A-Z][A-Z0-9_]{0,254}-[1-9][0-9]{0,17}$/);
+const jiraLinkTypeSchema = z.object({ id: jiraId, name: z.string().min(1).max(255), inward: z.string().min(1).max(255), outward: z.string().min(1).max(255) });
+const jiraLinkSchema = z.object({ id: jiraId, type: jiraLinkTypeSchema,
+  inwardIssue: z.object({ id: jiraId, key: jiraKey }).optional(), outwardIssue: z.object({ id: jiraId, key: jiraKey }).optional() })
+  .refine(link => (link.inwardIssue === undefined) !== (link.outwardIssue === undefined));
 const jiraIssueSchema = z.object({
-  id: z.string().regex(/^[1-9][0-9]{0,17}$/), key: z.string().regex(/^[A-Z][A-Z0-9_]{0,254}-[1-9][0-9]{0,17}$/),
+  id: jiraId, key: jiraKey,
   fields: z.object({
     labels: z.array(z.string().min(1).max(255)),
-    components: z.array(z.object({ id: z.string().regex(/^[1-9][0-9]{0,17}$/), name: z.string().max(255) })),
-    project: z.object({ id: z.string().regex(/^[1-9][0-9]{0,17}$/) }),
+    // Absent = not read (failFast=false or not returned): a partial read, never an empty list.
+    components: z.unknown().optional(),
+    issuelinks: z.unknown().optional(),
+    summary: z.string().max(4096).nullable().optional(),
+    project: z.object({ id: jiraId }),
     status: z.object({ statusCategory: z.object({ key: z.string().min(1).max(64) }) }),
   }),
 });
+const jiraComponentsSchema = z.array(z.object({ id: jiraId, name: z.string().max(255) }));
+const jiraStatusSchema = z.object({ id: jiraId, key: jiraKey, fields: z.object({ status: z.object({ statusCategory: z.object({ key: z.string().min(1).max(64) }) }) }) });
+const jiraLinkTypesSchema = z.object({ issueLinkTypes: z.array(jiraLinkTypeSchema).max(500) });
+const jiraSearchPageSchema = z.object({ issues: z.array(z.object({ id: jiraId, key: jiraKey, fields: z.object({ project: z.object({ id: jiraId }) }) })).max(5000),
+  nextPageToken: z.string().min(1).max(4096).optional(), isLast: z.boolean() });
+/** Bound of one listing: beyond it the listing is unavailable, never truncated. */
+const maxSearchPages = 50;
+const visibleOnly = 'Only what the configured account can see; the last page ends this query, it is neither global completeness nor an atomic snapshot.';
+/** JQL string literal: quotes and backslashes escaped (labels are validated without spaces). */
+const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\\${character}`)}"`;
 
 /**
- * Jira Cloud adapter of the common tracker contract (Jira ticket 01: composition and the re-read by ID). The transport of each configured
- * site is created lazily, on the first request to that site; listing, visible blockers, inputs and comments answer unavailable (ticket 03,
- * 05/06) and the remote link is refused without any call (tickets 08/09). Nothing here admits Work or authorizes commands.
+ * Jira Cloud adapter of the common tracker contract. Jira ticket 01: composition and the re-read by ID; ticket 03: the JQL listing (all
+ * pages, `nextPageToken`/`isLast` of the enhanced search), the re-read with components and links, the link type catalogue and a
+ * neighbour's status category. The transport of each configured site is created lazily, on the first request to that site; visible
+ * blockers are assembled by the Control (direction is its rule), inputs and comments answer unavailable (tickets 05/06) and the remote link
+ * is refused without any call (tickets 08/09). Nothing here admits Work or authorizes commands.
  */
-export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transport: (scope: JiraTrackerScope) => JiraTransport }): IssueTracker<'jira'> & JiraRemoteLinks {
+export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transport: (scope: JiraTrackerScope) => JiraTransport }):
+  IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads {
   const transports = new Map<string, JiraTransport>();
   const site = (siteId: string) => options.scopes.find(scope => scope.siteId === siteId);
   const transportOf = (scope: JiraTrackerScope) => {
@@ -487,29 +520,82 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
     kind: 'unavailable', source: 'jira-rest', observedAt, siteId, completeness: 'incomplete', code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep });
   const notConfigured = (siteId: string) => unavailable(siteId, 'JIRA_SITE_NOT_CONFIGURED', 'Only explicitly configured Jira sites are read.');
   const notAvailable = (siteId: string) => unavailable(siteId, 'JIRA_CAPABILITY_NOT_AVAILABLE', 'This release does not read it from Jira yet; nothing is concluded.');
+  const invalid = (siteId: string, observedAt: string) => unavailable(siteId, 'JIRA_OBSERVATION_INVALID', 'Jira returned an answer that could not be verified; nothing is concluded.', observedAt);
   const notSent = () => ({ kind: 'failed' as const, observedAt: new Date().toISOString(), code: 'JIRA_CAPABILITY_NOT_AVAILABLE',
     nextStep: 'This release does not write to Jira yet; nothing was sent.' });
+  /** One GET/POST of a configured site: the 200 body, or the unavailable fact that concludes nothing. */
+  async function read(siteId: string, request: JiraRequest): Promise<{ ok: true; body: unknown; observedAt: string } | { ok: false; fact: JiraUnavailable }> {
+    const scope = site(siteId);
+    if (!scope) return { ok: false, fact: notConfigured(siteId) };
+    const response = await transportOf(scope).request(request);
+    if (!response.ok) return { ok: false, fact: unavailable(siteId, response.code, response.nextStep, response.observedAt, response.waitSeconds) };
+    if (response.status !== 200) return { ok: false, fact: invalid(siteId, response.observedAt) };
+    return { ok: true, body: response.body, observedAt: response.observedAt };
+  }
   return {
     async checkAccess(scope) {
       return { source: 'jira-rest', purpose: 'tracker', observedAt: new Date().toISOString(), siteId: scope.siteId, projectId: scope.projectId, status: 'blocked',
         code: 'JIRA_CAPABILITY_NOT_AVAILABLE', completeness: 'incomplete', nextStep: 'Jira access diagnosis is not available in this release.' };
     },
-    async listCandidates(scope) { return notAvailable(scope.siteId); },
-    async readTicket(ticket) {
-      const scope = site(ticket.siteId);
-      if (!scope) return notConfigured(ticket.siteId);
-      const response = await transportOf(scope).request({ method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}`,
-        query: { fields: 'labels,components,project,status' } });
-      if (!response.ok) return unavailable(scope.siteId, response.code, response.nextStep, response.observedAt, response.waitSeconds);
-      const parsed = response.status === 200 ? jiraIssueSchema.safeParse(response.body) : undefined;
-      if (!parsed?.success || parsed.data.id !== ticket.issueId) {
-        return unavailable(scope.siteId, 'JIRA_OBSERVATION_INVALID', 'Jira returned an issue that could not be verified; nothing is concluded.', response.observedAt);
+    async listCandidates(scope) {
+      const configured = site(scope.siteId);
+      if (!configured || configured.projectId !== scope.projectId || configured.label !== scope.label) return notConfigured(scope.siteId);
+      const jql = `project = ${scope.projectId} AND labels = ${jqlString(scope.label)}`;
+      const seen = new Map<string, JiraTicketRef>();
+      const tokens = new Set<string>();
+      let token: string | undefined;
+      let observedAt = '';
+      for (let pages = 0; ; pages += 1) {
+        if (pages >= maxSearchPages) return unavailable(scope.siteId, 'JIRA_SEARCH_TOO_LARGE', `More than ${maxSearchPages} result pages; narrow the project/label. Nothing is concluded.`, observedAt);
+        const answer = await read(scope.siteId, { method: 'POST', path: '/rest/api/3/search/jql',
+          body: { jql, fields: ['project'], maxResults: 100, ...(token === undefined ? {} : { nextPageToken: token }) } });
+        if (!answer.ok) return answer.fact;
+        observedAt ||= answer.observedAt;
+        const parsed = jiraSearchPageSchema.safeParse(answer.body);
+        if (!parsed.success || parsed.data.issues.some(item => item.fields.project.id !== scope.projectId)) return invalid(scope.siteId, answer.observedAt);
+        for (const item of parsed.data.issues) if (!seen.has(item.id)) seen.set(item.id, { tracker: 'jira', siteId: scope.siteId, issueId: item.id, key: item.key, url: `${configured.url}/browse/${item.key}` });
+        if (parsed.data.isLast) break;
+        token = parsed.data.nextPageToken;
+        if (token === undefined || tokens.has(token)) return unavailable(scope.siteId, 'JIRA_SEARCH_INCOMPLETE', 'The JQL pages did not reach their end; nothing is concluded, the next poll lists again.', answer.observedAt);
+        tokens.add(token);
       }
+      return { kind: 'observed', source: 'jira-rest', observedAt, siteId: scope.siteId, projectId: scope.projectId, label: scope.label, completeness: 'complete',
+        candidates: [...seen.values()], limitations: [visibleOnly] };
+    },
+    async readTicket(ticket) {
+      const answer = await read(ticket.siteId, { method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}`,
+        query: { fields: 'labels,components,issuelinks,status,summary,project' } });
+      if (!answer.ok) return answer.fact;
+      const parsed = jiraIssueSchema.safeParse(answer.body);
+      if (!parsed.success || parsed.data.id !== ticket.issueId) return invalid(ticket.siteId, answer.observedAt);
       const { key, fields } = parsed.data;
-      return { kind: 'observed', source: 'jira-rest', observedAt: response.observedAt, completeness: 'complete',
-        ticket: { tracker: 'jira', siteId: scope.siteId, issueId: ticket.issueId, key, url: `${scope.url}/browse/${key}` },
-        projectId: fields.project.id, labels: fields.labels, components: fields.components.map(item => ({ id: item.id, name: item.name })),
-        statusCategory: fields.status.statusCategory.key };
+      const components = jiraComponentsSchema.safeParse(fields.components);
+      const links = z.array(jiraLinkSchema).max(1000).safeParse(fields.issuelinks);
+      return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, completeness: 'complete',
+        ticket: { tracker: 'jira', siteId: ticket.siteId, issueId: ticket.issueId, key, url: `${site(ticket.siteId)!.url}/browse/${key}` },
+        projectId: fields.project.id, labels: fields.labels,
+        components: components.success ? components.data.map(item => ({ id: item.id, name: item.name })) : null,
+        statusCategory: fields.status.statusCategory.key, summary: fields.summary ?? null,
+        links: links.success ? links.data.map(link => {
+          const neighbour = (link.inwardIssue ?? link.outwardIssue)!;
+          return { linkId: link.id, type: { id: link.type.id, name: link.type.name, inward: link.type.inward, outward: link.type.outward },
+            end: link.inwardIssue ? 'inward' as const : 'outward' as const, issue: { issueId: neighbour.id, key: neighbour.key } };
+        }) : null };
+    },
+    async readLinkTypes(siteId) {
+      const answer = await read(siteId, { method: 'GET', path: '/rest/api/3/issueLinkType' });
+      if (!answer.ok) return answer.fact;
+      const parsed = jiraLinkTypesSchema.safeParse(answer.body);
+      if (!parsed.success) return invalid(siteId, answer.observedAt);
+      return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, siteId,
+        types: parsed.data.issueLinkTypes.map(type => ({ id: type.id, name: type.name, inward: type.inward, outward: type.outward })) };
+    },
+    async readIssueStatus(siteId, issueId) {
+      const answer = await read(siteId, { method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(issueId)}`, query: { fields: 'status' } });
+      if (!answer.ok) return answer.fact;
+      const parsed = jiraStatusSchema.safeParse(answer.body);
+      if (!parsed.success || parsed.data.id !== issueId) return invalid(siteId, answer.observedAt);
+      return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, siteId, issueId, key: parsed.data.key, statusCategory: parsed.data.fields.status.statusCategory.key };
     },
     async readDependencyGraph(ticket) { return notAvailable(ticket.siteId); },
     async readInputs(ticket) { return notAvailable(ticket.siteId); },

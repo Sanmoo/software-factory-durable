@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory, TicketSource } from '../../control/index.js';
-import { createIssueTracker, createJiraTracker, type JiraTransport } from '../../issue-tracker/index.js';
+import { createIssueTracker, createJiraHttpTransport, createJiraTracker, type JiraHostSite, type JiraHttpExchange, type JiraHttpResult, type JiraTransport } from '../../issue-tracker/index.js';
 import type { TicketSourceConfiguration } from '../configuration.js';
 import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
@@ -78,16 +78,12 @@ export async function composeRuntimeInventory(input: { root: string; effective: 
  * configured. One function for the controller owner, the composed journey test and the ticket 18 recipe (no per-ticket wiring).
  */
 /** Host access of one configured Jira site, given to its transport only: the credential is read lazily from the installation root. */
-export type JiraSiteAccess = { siteId: string; url: string; email: string; credential: () => Promise<string> };
+export type JiraSiteAccess = JiraHostSite;
 /**
  * Jira ticket 01: discovery of NEW Jira Tickets is not released yet (ticket 10 enables it once the whole flow exists). A configured
  * `discover: true` is composed as off; the adapter is still composed, so existing Works keep their origin.
  */
 export const jiraDiscoveryReleased = false;
-/** Until the REST v3 client exists (ticket 03): a transport that sends nothing and reads no credential; every Jira read is unavailable. */
-const jiraClientNotComposed = (): JiraTransport => ({ request: async () => ({ ok: false, code: 'JIRA_CLIENT_NOT_COMPOSED', observedAt: new Date().toISOString(),
-  nextStep: 'This release has no Jira REST client; nothing was sent and nothing is concluded.' }) });
-
 /**
  * Owner access: GitHub as before and, only when the v2 configuration names Jira sources, the Jira adapter beside it (selected by the
  * Ticket's persisted origin, never by its destination). `repositories` stay the executable destinations; `sources` the Ticket sources.
@@ -96,8 +92,11 @@ const jiraClientNotComposed = (): JiraTransport => ({ request: async () => ({ ok
 export function composeProductionAccess(input: { github: GitHubAccess; root?: string; effective: { repositories: ConfiguredRepository[];
   dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[];
   ticketSources?: readonly TicketSourceConfiguration[] };
-  /** Tests substitute the host transport of each Jira site (the production one arrives with ticket 03). */
-  jira?: { transport?: (site: JiraSiteAccess) => JiraTransport } }): AccessDependencies {
+  /**
+   * Production: the host HTTPS REST v3 transport of each Jira site (ticket 03). Tests substitute the whole transport, or only its raw
+   * HTTPS exchange (`send`) to keep the production origin/auth/failure handling under test.
+   */
+  jira?: { transport?: (site: JiraSiteAccess) => JiraTransport; send?: (exchange: JiraHttpExchange) => Promise<JiraHttpResult> } }): AccessDependencies {
   const { github, effective } = input;
   const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   const configured = effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
@@ -106,7 +105,8 @@ export function composeProductionAccess(input: { github: GitHubAccess; root?: st
       routes: source.routes.map(route => ({ componentId: route.componentId, repository: route.repository })) });
   const jiraSources = configured.filter(source => source.tracker === 'jira');
   const root = input.root;
-  const transport = input.jira?.transport ?? jiraClientNotComposed;
+  const send = input.jira?.send;
+  const transport = input.jira?.transport ?? ((site: JiraSiteAccess) => createJiraHttpTransport(site, send ? { send } : {}));
   const jira = jiraSources.length ? createJiraTracker({
     scopes: jiraSources.map(source => ({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label })),
     transport: scope => {
