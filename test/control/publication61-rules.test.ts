@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decideDiscovery, otherPublications, publicationMarker, publicationStep, reevaluationEligibility, unexpectedRefChanges,
+import { decideDiscovery, otherPublications, publicationMarker, publicationStep, reevaluationEligibility, reevaluationGuidance, unexpectedRefChanges,
   type CandidateFacts } from '../../src/control/rules/publication.js';
 import type { ExecutionView, PublicationView } from '../../src/control/types.js';
 
@@ -70,7 +70,7 @@ test('ticket 61: only a publication blocked ONLY by unexpected ref changes after
   assert.deepEqual(reevaluationEligibility(blocked({ state: 'published' })), { ok: false, code: 'PUBLICATION_NOT_BLOCKED' });
   assert.deepEqual(reevaluationEligibility(blocked({ reasons: [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`, 'PULL_REQUEST_NOT_DRAFT'] })),
     { ok: false, code: 'NOT_REEVALUABLE:PULL_REQUEST_NOT_DRAFT' }, 'a reason the corrected rule does not change');
-  assert.deepEqual(reevaluationEligibility(blocked({ reasons: ['UNKNOWN_PULL_REQUEST:7'] })), { ok: false, code: 'NOT_REEVALUABLE:UNKNOWN_PULL_REQUEST:7' });
+  assert.deepEqual(reevaluationEligibility(blocked({ reasons: ['MULTIPLE_OWN_PULL_REQUESTS:7,8'] })), { ok: false, code: 'NOT_REEVALUABLE:MULTIPLE_OWN_PULL_REQUESTS:7,8' });
   assert.deepEqual(reevaluationEligibility(blocked({ refsBefore: null })), { ok: false, code: 'REFS_SNAPSHOT_ABSENT' });
   assert.deepEqual(reevaluationEligibility(blocked({ attempts: [] })), { ok: false, code: 'PUBLICATION_NOT_ATTEMPTED' });
   // A pending re-evaluation turns the settled block into ONE discovery after the attempt; without it the block stays settled.
@@ -122,4 +122,33 @@ test('A13: a push on the own branch of a Work whose Execution is still running d
   const ended = otherPublications([{ ...running, execution: { ...live, state: 'ended', slot: { held: false } } }], { workId: a.workId, repositoryId: 3 });
   assert.deepEqual(ended, []);
   assert.deepEqual(decide({ others: ended }), ['blocked', [`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`]]);
+});
+
+// Acceptance finding A14: the publish session created the Work's own PR with the correlation marker mistyped by one character. The refusal is
+// right, but a human can correct the PR body: the block is re-evaluable and the SAME rule decides again from a new read (nothing is adopted).
+test('A14: a block by an unknown pull request after an attempt is re-evaluable; the rule links the PR only once it classifies as own', () => {
+  const now = { ...main, [`refs/heads/${a.branch}`]: a.head };
+  const mistyped = { ...own(a), body: own(a).body!.replace(a.workId, `${a.workId.slice(0, -1)}0`) };
+  const input = { expect: expectOf(a), attempted: true, refsBefore: main, others: [] };
+  const first = decideDiscovery({ ...input, observation: { ...observed(a, now), candidates: [mistyped] } });
+  assert.deepEqual([first.outcome, first.reasons, first.candidates.map(item => item.reasons)], ['blocked', [`UNKNOWN_PULL_REQUEST:${a.pull}`], [['MARKER_ABSENT']]]);
+  assert.deepEqual(reevaluationEligibility(blocked({ reasons: first.reasons })), { ok: true });
+  assert.deepEqual(reevaluationEligibility(blocked({ reasons: [...first.reasons, `UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`] })), { ok: true }, 'both re-evaluable reasons together');
+  assert.deepEqual(reevaluationEligibility(blocked({ reasons: first.reasons, attempts: [] })), { ok: false, code: 'PUBLICATION_NOT_ATTEMPTED' });
+  // Marker corrected by a human: the same PR now classifies as own and everything else of the rule still applies.
+  const corrected = decideDiscovery({ ...input, observation: observed(a, now) });
+  assert.deepEqual([corrected.outcome, corrected.reasons], ['linked', []]);
+  // A marker alone adopts nothing: another author stays unknown, and a corrected own PR at another head is blocked by the rule.
+  const human = decideDiscovery({ ...input, observation: { ...observed(a, now), candidates: [{ ...own(a), author: { id: 7, login: 'someone', type: 'User' } }] } });
+  assert.deepEqual([human.outcome, human.reasons], ['blocked', [`UNKNOWN_PULL_REQUEST:${a.pull}`]]);
+  const moved = decideDiscovery({ ...input, known: { heads: [], pullRequestId: null, expected: null, authorized: null },
+    observation: { ...observed(a, { ...main, [`refs/heads/${a.branch}`]: 'e'.repeat(40) }), branch: { state: 'present', sha: 'e'.repeat(40) }, candidates: [{ ...own(a), headSha: 'e'.repeat(40) }] } });
+  assert.notEqual(moved.outcome, 'linked');
+  // The operator is told exactly what to correct and which command to run.
+  const marker = publicationMarker(a.workId);
+  assert.equal(reevaluationGuidance(first.reasons, { workId: a.workId, marker }), ` If pull request #${a.pull} is this Work's own publication with a wrong marker, correct the ` +
+    `marker line of its body to exactly \`${marker}\` and re-evaluate with \`factory reevaluate-publication ${a.workId} --reason <text>\`.`);
+  assert.equal(reevaluationGuidance([`UNEXPECTED_REF_CHANGE:refs/heads/${b.branch}`], { workId: a.workId, marker }),
+    ` If the changed refs are another Work's own publication, re-evaluate with \`factory reevaluate-publication ${a.workId} --reason <text>\`.`);
+  assert.equal(reevaluationGuidance(['PULL_REQUEST_NOT_DRAFT', ...first.reasons], { workId: a.workId, marker }), '', 'no command where it does not apply');
 });

@@ -3,8 +3,8 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, DivergenceView, ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { authorizationInForce, divergenceQuestion, reconciliationAnswer } from '../rules/divergence.js';
-import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, reevaluableReasons, reevaluationCommand,
-  reevaluationEligibility, type DiscoveryDecision } from '../rules/publication.js';
+import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, reevaluationEligibility,
+  reevaluationGuidance, type DiscoveryDecision } from '../rules/publication.js';
 import { validateQuestionRequest } from '../rules/questions.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions, questionSha256 } from './questions.js';
@@ -267,8 +267,8 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       if (decision.pullRequest) link(decision.pullRequest);
       publication.state = 'blocked';
       publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).` +
-        // Ticket 61: a block only by ref changes may be another Work's own publication: the operator can have it re-evaluated (never repeated).
-        (reevaluableReasons(decision.reasons) ? ` If the changed refs are another Work's own publication, re-evaluate with \`${reevaluationCommand(work.work_id)}\`.` : '');
+        // Ticket 61 / A14: where a new read may decide differently (another Work's own publication, a corrected marker) the command is named.
+        reevaluationGuidance(decision.reasons, { workId: work.work_id, marker: publication.marker });
       if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep: publication.nextStep });
       const outOfScope = publicationAttempted(work) ? guestEffectOutOfScope(decision.reasons) : [];
       if (outOfScope.length && !work.impediments.some(item => item.code === guestEffectImpediment)) work.impediments.push({ code: guestEffectImpediment, scope: 'work', since: at,
@@ -397,7 +397,7 @@ export function markReconciliationExecution(work: WorkRecord, execution: Executi
 
 /**
  * Ticket 61 "Aceitar comando" for `reevaluate-publication <work> --reason`: records ONE pending re-evaluation of a publication blocked ONLY by
- * unexpected ref changes after an attempt (deduplicated by request identity). Nothing is read or decided here: the next discovery pass re-reads
+ * unexpected ref changes and/or unknown pull requests (A14) after an attempt (deduplicated by request identity). Nothing is read or decided here: the next discovery pass re-reads
  * the remote (complete read required) and re-applies the discovery rule to the persisted window with the current Control state. It never
  * repeats the publication nor adopts anything the rule does not accept.
  */

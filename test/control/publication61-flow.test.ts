@@ -144,3 +144,58 @@ test('ticket 61: two concurrent own publications of the same installation — ne
   assert.deepEqual(await h.accept(request('re-3')), { kind: 'durable', request_id: 're-3', operation: 'reevaluate-publication', work_id: three.work_id,
     outcome: 'not-applied', reason: 'PUBLICATION_NOT_BLOCKED', nextStep: null });
 });
+
+// Acceptance finding A14 (window 11, Work efc54451 / PR #136): the publish session created the Work's own PR with the marker mistyped by one
+// character. One Work, one implementation and one publication activation; the human corrects the PR body on GitHub afterwards.
+test('A14: a publication blocked by its own PR with a mistyped marker is re-evaluated by the operator once the marker is corrected', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'factory-publication-a14-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const github = githubDoubles(remote);
+  const mistype = (body: string, workId: string) => body.replace(workId, `${workId.slice(0, -1)}${workId.endsWith('0') ? '1' : '0'}`);
+  const execution = executionDoubles(remote, [{ kind: 'implement', head: 'd'.repeat(40) }, { kind: 'publish', end: 'success', publish: (target, activation) => {
+    const { workId, branch, head } = facts(activation.prompt);
+    (target.refs ??= {})[branch] = head;
+    const pull = ownPull(workId, branch, head);
+    target.pulls[3] = [{ ...pull, body: mistype(pull.body!, workId) }];
+  } }]);
+  const time = manualClock();
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'], factoryApp: async () => app },
+    polling: { intervalSeconds: 60, clock: time.clock } });
+  const stop = new AbortController();
+  const running = control.run(stop.signal);
+  t.after(async () => { stop.abort(); await running; });
+  const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView;
+  const settle = (predicate: () => Promise<boolean>, label: string) => untilHolds(label, async () => {
+    if (await predicate()) return true;
+    if (time.isSleeping()) time.advance();
+    return false;
+  }, 5);
+  await settle(async () => (await work())?.publication?.state === 'blocked', 'blocked by the unknown pull request');
+  let shown = await work();
+  const marker = `<!-- software-factory:work:${shown.work_id} -->`;
+  assert.deepEqual(shown.publication!.reasons, ['UNKNOWN_PULL_REQUEST:4']);
+  assert.deepEqual(shown.publication!.discoveries.at(-1)!.candidates.map(item => [item.own, item.reasons]), [[false, ['MARKER_ABSENT']]]);
+  assert.equal(shown.publication!.attempts!.length, 1);
+  assert.ok(shown.publication!.refsBefore, 'the request snapshot of the window is recorded');
+  assert.equal(shown.pullRequest ?? null, null, 'nothing is adopted');
+  assert.deepEqual(shown.impediments.map(item => item.code), ['PUBLICATION_BLOCKED']);
+  assert.ok(shown.impediments[0]!.nextStep.endsWith(` If pull request #4 is this Work's own publication with a wrong marker, correct the marker line of its body to exactly ` +
+    `\`${marker}\` and re-evaluate with \`factory reevaluate-publication ${shown.work_id} --reason <text>\`.`), shown.impediments[0]!.nextStep);
+  const request = (request_id: string): ControlInput => ({ request_id, operation: 'reevaluate-publication', work_id: shown.work_id, reason: 'PR #4 is the own publication.', origin: 'local-cli' });
+  // Body not corrected yet: the command adopts nothing; the block stays with this read's reasons.
+  assert.equal((await control.accept(request('a14-1')) as { outcome: string }).outcome, 'accepted');
+  await settle(async () => (await work()).publication!.reevaluation?.state === 'still-blocked', 're-evaluated: still blocked');
+  shown = await work();
+  assert.deepEqual([shown.publication!.state, shown.publication!.reasons, shown.pullRequest ?? null], ['blocked', ['UNKNOWN_PULL_REQUEST:4'], null]);
+  assert.deepEqual(shown.impediments.map(item => item.code), ['PUBLICATION_BLOCKED']);
+  // The human corrects the marker line: the same rule now classifies the PR as own and links it; nothing is published again.
+  remote.pulls[3]![0]!.body = ownPull(shown.work_id, shown.branch!, 'd'.repeat(40)).body;
+  assert.equal((await control.accept(request('a14-2')) as { outcome: string }).outcome, 'accepted');
+  await settle(async () => (await work()).publication!.state === 'published', 're-evaluated: published');
+  shown = await work();
+  assert.deepEqual([shown.publication!.reevaluation!.state, shown.publication!.reevaluation!.outcome, shown.publication!.reasons], ['accepted', 'linked', []]);
+  assert.deepEqual([shown.pullRequest, shown.publication!.linkedHeads, shown.impediments], [{ number: 4, url: 'https://github.com/acme/project/pull/4' }, ['d'.repeat(40)], []]);
+  assert.equal(execution.calls.filter(call => call.kind === 'activate').length, 2, 'one implementation and one publication activation: never repeated');
+});

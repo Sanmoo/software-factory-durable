@@ -216,16 +216,22 @@ export function unsettledConcurrentPushes(changed: readonly string[], now: Recor
 }
 
 const refChange = /^UNEXPECTED_REF_CHANGE:/;
-/** Ticket 61: a block whose ONLY reasons are unexpected ref changes (the ones the corrected rule may now attribute to another Work). */
-export const reevaluableReasons = (reasons: readonly string[]) => reasons.length > 0 && reasons.every(reason => refChange.test(reason));
+const unknownPull = /^UNKNOWN_PULL_REQUEST:/;
+const reevaluable = (reason: string) => refChange.test(reason) || unknownPull.test(reason);
 /**
- * Ticket 61: whether an operator may ask for a re-evaluation of the blocked publication: blocked ONLY by unexpected ref changes, after an
+ * Ticket 61: a block whose ONLY reasons are ones a new read may decide differently without repeating anything — unexpected ref changes (the
+ * corrected rule may attribute them to another Work) and, acceptance finding A14, unknown pull requests (a human may have corrected the
+ * marker of the Work's own PR; the classification is re-applied in full, nothing is adopted by the request).
+ */
+export const reevaluableReasons = (reasons: readonly string[]) => reasons.length > 0 && reasons.every(reevaluable);
+/**
+ * Ticket 61: whether an operator may ask for a re-evaluation of the blocked publication: blocked ONLY by re-evaluable reasons, after an
  * attempt of the verified head, with the request's refs snapshot (the window the rule is re-applied to). Anything else: the code.
  */
 export function reevaluationEligibility(publication: Pick<PublicationView, 'state' | 'reasons' | 'refsBefore' | 'verified' | 'attempts' | 'reconciliation'>):
   { ok: true } | { ok: false; code: string } {
   if (publication.state !== 'blocked') return { ok: false, code: 'PUBLICATION_NOT_BLOCKED' };
-  const other = publication.reasons.filter(reason => !refChange.test(reason));
+  const other = publication.reasons.filter(reason => !reevaluable(reason));
   if (!reevaluableReasons(publication.reasons)) return { ok: false, code: `NOT_REEVALUABLE:${other.join(',') || 'NO_REASON'}`.slice(0, 200) };
   if (!publication.refsBefore) return { ok: false, code: 'REFS_SNAPSHOT_ABSENT' };
   if (!publication.verified || attemptsOf(publication, publication.verified.head).length === 0) return { ok: false, code: 'PUBLICATION_NOT_ATTEMPTED' };
@@ -233,6 +239,18 @@ export function reevaluationEligibility(publication: Pick<PublicationView, 'stat
 }
 /** Ticket 61: the operator command named by a block it applies to. */
 export const reevaluationCommand = (workId: string) => `factory reevaluate-publication ${workId} --reason <text>`;
+/**
+ * What a block's next step adds when the operator may have it re-evaluated ('' when the command does not apply): per reason, what makes a
+ * new read decide differently, and the exact command. A14: the exact marker is printed, since one mistyped character is what blocked.
+ */
+export function reevaluationGuidance(reasons: readonly string[], work: { workId: string; marker: string }): string {
+  if (!reevaluableReasons(reasons)) return '';
+  const command = `re-evaluate with \`${reevaluationCommand(work.workId)}\`.`;
+  const pulls = reasons.filter(reason => unknownPull.test(reason)).map(reason => reason.replace(unknownPull, '').split(',').map(number => `#${number}`).join(', ')).join(', ');
+  const conditions = [...(pulls ? [`pull request ${pulls} is this Work's own publication with a wrong marker, correct the marker line of its body to exactly \`${work.marker}\``] : []),
+    ...(reasons.some(reason => refChange.test(reason)) ? ['the changed refs are another Work\'s own publication'] : [])];
+  return ` If ${conditions.join('; if ')}${pulls ? ' and ' : ', '}${command}`;
+}
 
 /**
  * Spec §9.1 recovery: a correlated own publication is linked, never recreated. A publication is requested only from a COMPLETE read, when
