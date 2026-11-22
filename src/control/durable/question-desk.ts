@@ -7,6 +7,58 @@ import type { Session } from './store.js';
 
 const maxKnownFailures = 5;
 
+type QuestionSearch = Awaited<ReturnType<IssueTracker['findQuestion']>> | undefined;
+type ReplySearch = Awaited<ReturnType<NonNullable<IssueTracker['findReply']>>> | undefined;
+type PostResult = Awaited<ReturnType<IssueTracker['postComment']>> | undefined;
+type PublicationUpdate = Parameters<typeof recordPublication>[2];
+type ReplyUpdate = Parameters<typeof recordReplyPublication>[3];
+
+/** The discovery of a Question's marker, as its publication records it: only one complete candidate is a discovery. */
+function questionDiscoveryUpdate(search: QuestionSearch): PublicationUpdate {
+  if (!search || search.kind !== 'observed')
+    return { kind: 'discovery' as const, outcome: 'discovery-incomplete' as const, code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' };
+  if (search.candidates.length === 1)
+    return {
+      kind: 'discovery' as const,
+      outcome: 'discovered' as const,
+      comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url },
+    };
+  return search.candidates.length === 0
+    ? { kind: 'discovery' as const, outcome: 'absent' as const }
+    : { kind: 'discovery' as const, outcome: 'multiple' as const };
+}
+
+/** The outcome of a Question's POST, as its publication records it; no answer from the adapter is an unknown outcome. */
+function questionPublicationResult(result: PostResult, revocation: { revocation?: string }): PublicationUpdate {
+  if (!result)
+    return { kind: 'result', outcome: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE', nextStep: 'Unexpected adapter failure; discover before republishing.' };
+  if (result.kind === 'published') return { kind: 'result', outcome: 'published', comment: { commentId: result.commentId, url: result.url }, ...revocation };
+  return { kind: 'result', outcome: result.kind === 'failed' ? 'failed' : 'unknown', code: result.code, nextStep: result.nextStep, ...revocation };
+}
+
+/** Ticket 23: the discovery of a reply's marker, as its publication records it. */
+function replyDiscoveryUpdate(search: ReplySearch): ReplyUpdate {
+  if (!search || search.kind !== 'observed') return { kind: 'undetermined', code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' };
+  if (search.candidates.length === 1) return { kind: 'discovered', comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url } };
+  return search.candidates.length === 0 ? { kind: 'absent' } : { kind: 'undetermined', code: 'REPLY_MULTIPLE_CANDIDATES' };
+}
+
+/** Ticket 23: the outcome of a reply's POST, as its publication records it. */
+function replyPublicationResult(result: PostResult): ReplyUpdate {
+  if (!result) return { kind: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE' };
+  if (result.kind === 'published') return { kind: 'published', comment: { commentId: result.commentId, url: result.url } };
+  return { kind: result.kind, code: result.code };
+}
+
+/** Ticket 23: a Work that has run at least once (own PR, correction or Execution) may carry `/factory repair` on its Ticket. */
+const hasRun = (work: WorkRecord) => Boolean(work.pullRequest || work.correction || work.execution);
+
+/** The comment-listing cursor the Work recorded, when it is one. */
+function inputsCursorOf(work: WorkRecord) {
+  const cursor = work.inputs?.cursor ?? null;
+  return typeof cursor === 'number' ? cursor : null;
+}
+
 /**
  * Question publication and answer ingestion inside the existing owner loop (after each polling iteration; no scheduler/broker).
  * Publication: intent (already committed with the Question) -> attempt commit -> postComment -> observation commit. After an
@@ -40,18 +92,7 @@ export function createQuestionDesk(deps: {
         const ticket = question.destination.ticket;
         if (questionNeedsDiscovery(state)) {
           const search = await tracker.findQuestion(ticket, question.questionId).catch(unexpected);
-          const update =
-            !search || search.kind !== 'observed'
-              ? { kind: 'discovery' as const, outcome: 'discovery-incomplete' as const, code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' }
-              : search.candidates.length === 1
-                ? {
-                    kind: 'discovery' as const,
-                    outcome: 'discovered' as const,
-                    comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url },
-                  }
-                : search.candidates.length === 0
-                  ? { kind: 'discovery' as const, outcome: 'absent' as const }
-                  : { kind: 'discovery' as const, outcome: 'multiple' as const };
+          const update = questionDiscoveryUpdate(search);
           const next = await recordPublication(session, question.questionId, update);
           if (next === 'stale') continue;
           state = next;
@@ -74,15 +115,7 @@ export function createQuestionDesk(deps: {
           )
           .catch(unexpected);
         const revocation = result?.revocation ? { revocation: result.revocation } : {};
-        await recordPublication(
-          session,
-          question.questionId,
-          !result
-            ? { kind: 'result', outcome: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE', nextStep: 'Unexpected adapter failure; discover before republishing.' }
-            : result.kind === 'published'
-              ? { kind: 'result', outcome: 'published', comment: { commentId: result.commentId, url: result.url }, ...revocation }
-              : { kind: 'result', outcome: result.kind === 'failed' ? 'failed' : 'unknown', code: result.code, nextStep: result.nextStep, ...revocation },
-        );
+        await recordPublication(session, question.questionId, questionPublicationResult(result, revocation));
       }
     }
   }
@@ -98,34 +131,14 @@ export function createQuestionDesk(deps: {
         if (state === 'attempting' || state === 'ambiguous') {
           if (!tracker.findReply) continue; // no discovery composed: never republish blindly
           const search = await tracker.findReply(ticket, reply.replyId).catch(unexpected);
-          state = await recordReplyPublication(
-            session,
-            work.work_id,
-            reply.replyId,
-            !search || search.kind !== 'observed'
-              ? { kind: 'undetermined', code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' }
-              : search.candidates.length === 1
-                ? { kind: 'discovered', comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url } }
-                : search.candidates.length === 0
-                  ? { kind: 'absent' }
-                  : { kind: 'undetermined', code: 'REPLY_MULTIPLE_CANDIDATES' },
-          );
+          state = await recordReplyPublication(session, work.work_id, reply.replyId, replyDiscoveryUpdate(search));
         }
         if (!(state === 'intended' || (state === 'failed' && reply.publication.failures < maxKnownFailures)) || deps.stopped()) continue;
         if ((await recordReplyPublication(session, work.work_id, reply.replyId, { kind: 'begin' })) !== 'attempting') continue;
         const result = await tracker
           .postComment(ticket, { kind: 'reply', replyId: reply.replyId, body: reply.body }, { effectId: reply.publication.effectId, replyId: reply.replyId })
           .catch(unexpected);
-        await recordReplyPublication(
-          session,
-          work.work_id,
-          reply.replyId,
-          !result
-            ? { kind: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE' }
-            : result.kind === 'published'
-              ? { kind: 'published', comment: { commentId: result.commentId, url: result.url } }
-              : { kind: result.kind, code: result.code },
-        );
+        await recordReplyPublication(session, work.work_id, reply.replyId, replyPublicationResult(result));
       }
     }
   }
@@ -137,10 +150,9 @@ export function createQuestionDesk(deps: {
       // Ticket 23: the Ticket also carries `/factory repair` once the Work has run at least once (answered, refused with its next step when
       // there is no own PR yet). A Work only admitted reads no comments (admission stays read-minimal); its later command is still eligible.
       const open = (await readQuestions(session, work)).some(question => question.state === 'open');
-      if (!open && !work.pullRequest && !work.correction && !work.execution) continue;
+      if (!open && !hasRun(work)) continue;
 
-      const cursor = work.inputs?.cursor ?? null;
-      const inputs = await tracker.readInputs(work.ticket, typeof cursor === 'number' ? cursor : null).catch(unexpected);
+      const inputs = await tracker.readInputs(work.ticket, inputsCursorOf(work)).catch(unexpected);
       // Unavailable/partial listing: no conclusion and the cursor does not move.
       if (!inputs || inputs.kind !== 'observed') continue;
       // The single ingestion of `/factory` comments (answers and repairs; ticket 23); unauthorized ones leave a bounded summary only.

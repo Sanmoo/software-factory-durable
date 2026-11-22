@@ -340,6 +340,26 @@ export type ReadinessDeskOptions = {
   perPass?: number;
 };
 
+/** The fresh dependency evaluation before a recheck. Jira ticket 08: a Jira Work's dependencies are its Card's visible blockers at its origin (never the GitHub graph). */
+async function freshDependencies(deps: ReadinessDeskOptions, work: WorkRecord, dependencyAttempt: string) {
+  const { evaluation } =
+    work.ticket.tracker === 'jira'
+      ? await evaluateJiraWorkOf(deps.access, work.ticket, dependencyAttempt)
+      : await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, githubOnly(work.ticket), dependencyAttempt);
+  return evaluation;
+}
+
+/** The attempt of a draft conversion, as GitHub answered it. */
+function conversionAttempt(result: Awaited<ReturnType<AccessDependencies['repository']['setDraft']>>): NonNullable<ReadinessEffect['attempt']> {
+  return {
+    at: new Date().toISOString(),
+    outcome: result.kind,
+    code: result.kind === 'applied' ? null : result.code,
+    revocation: result.revocation,
+    headSha: result.kind === 'applied' ? result.headSha : null,
+  };
+}
+
 /** The readiness pass, run by the owner loop AFTER the checks pass. Memory-only cadence (rebuilt after restart); the durable effect record decides. */
 export function createReadinessDesk(deps: ReadinessDeskOptions) {
   const clock = deps.clock ?? { monotonic: () => performance.now() };
@@ -421,11 +441,7 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
         const dependencyAttempt = randomUUID();
         let dependenciesRead = false;
         try {
-          // Jira ticket 08: a Jira Work's dependencies are its Card's visible blockers at its origin (never the GitHub graph).
-          const { evaluation } =
-            work.ticket.tracker === 'jira'
-              ? await evaluateJiraWorkOf(deps.access, work.ticket, dependencyAttempt)
-              : await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, githubOnly(work.ticket), dependencyAttempt);
+          const evaluation = await freshDependencies(deps, work, dependencyAttempt);
           await deps.dependencies.record(work.work_id, evaluation);
           dependenciesRead = true;
         } catch {
@@ -466,13 +482,7 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
             decided.action === 'convert-to-draft',
             { effectId: effect.effectId },
           );
-          attempt = {
-            at: new Date().toISOString(),
-            outcome: result.kind,
-            code: result.kind === 'applied' ? null : result.code,
-            revocation: result.revocation,
-            headSha: result.kind === 'applied' ? result.headSha : null,
-          };
+          attempt = conversionAttempt(result);
         } catch {
           attempt = { at: new Date().toISOString(), outcome: 'unknown', code: 'DRAFT_CONVERSION_FAILED', revocation: 'unknown' };
         }
