@@ -9,7 +9,10 @@ import { realSteps } from './steps.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const usage = 'usage: scripts/test-runner/run fast|ci|full [--report <file>] [--seed <n>] [filter...]';
-const fail = (message: string): never => { process.stderr.write(`${message}\n`); process.exit(2); };
+const fail = (message: string): never => {
+  process.stderr.write(`${message}\n`);
+  process.exit(2);
+};
 
 const pinned = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { engines: { node: string } }).engines.node;
 if (process.versions.node !== pinned) fail(`NODE_VERSION_MISMATCH: running Node ${process.versions.node}, the project pins ${pinned}`);

@@ -10,8 +10,15 @@ for (const change of ['grow', 'withdraw', 'missing'] as const) {
     const root = await mkdtemp(join(tmpdir(), 'rp-'));
     try {
       const records = await createRecords({ root });
-      const context = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder' as const,
-        environmentRef: 'environment', bootRef: 'boot', callId: 'call' };
+      const context = {
+        workId: 'work',
+        executionId: 'execution',
+        invocationId: 'invocation',
+        role: 'builder' as const,
+        environmentRef: 'environment',
+        bootRef: 'boot',
+        callId: 'call',
+      };
       const output = await records.openOutput(context);
       await output.write(Buffer.from('all data'));
       const done = await output.finish();
@@ -22,6 +29,8 @@ for (const change of ['grow', 'withdraw', 'missing'] as const) {
       else await unlink(join(directory, change === 'withdraw' ? 'complete.json' : 'output'));
       await assert.rejects(projection.chunks.next(), RecordsError);
       assert.equal(projection.state, 'failed');
-    } finally { await rm(root, { recursive: true, force: true }); }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 }

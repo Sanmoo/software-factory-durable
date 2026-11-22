@@ -30,7 +30,11 @@ test('no phase of the three recipes composes the Factory over the shared root: e
     const text = source(name).replace('export const sharedCache = `${root}/cache`;', '');
     assert.doesNotMatch(text, /fs\.[a-zA-Z]+\([^)]*sharedCache/, `${name}: an I/O call on the shared cache`);
     assert.doesNotMatch(text, /create(Sandbox|Workers)\(\{ root[,} ]/, `${name}: Sandbox/Workers over the shared root`);
-    assert.doesNotMatch(text, /(inventoryRuntime|reconcileInterruptedCaches|observeHostCapacity)\(root\)/, `${name}: inventory/cache reconciliation of the shared root`);
+    assert.doesNotMatch(
+      text,
+      /(inventoryRuntime|reconcileInterruptedCaches|observeHostCapacity)\(root\)/,
+      `${name}: inventory/cache reconciliation of the shared root`,
+    );
     assert.doesNotMatch(text, /workerRuntimeDirectory\(root,/, name);
     assert.doesNotMatch(text, /\$\{root\}\/(cache|environments|r\/)/, `${name}: a path in the shared root`);
     assert.doesNotMatch(text, /\$\{root\}\/\$\{work/, `${name}: Records of the shared root`);

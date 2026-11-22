@@ -12,14 +12,34 @@ import { syncBuiltinESMExports } from 'node:module';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import { builderBash } from '../../dist/src/workers/bash.js';
-import { asyncBashFiles, imageMimeFacade, lexicalQueueFiles, prepareDevelopmentSdk, sdkProfile, sdkStagingDirectory } from '../../dist/src/workers/sdk-profile.js';
+import {
+  asyncBashFiles,
+  imageMimeFacade,
+  lexicalQueueFiles,
+  prepareDevelopmentSdk,
+  sdkProfile,
+  sdkStagingDirectory,
+} from '../../dist/src/workers/sdk-profile.js';
 import { connectReadTools } from '../../dist/src/sandbox/read-tools.js';
 import { nativeOwner } from '../../dist/test/sandbox/native-owner.fixture.js';
 import { remainingMs } from '../../dist/test/runner/budget.js';
 
-const context = { workId: 'v3-work', executionId: 'v3-exec', invocationId: 'v3-invocation',
-  role: 'builder', environmentRef: 'v3-env', bootRef: 'v3-boot', phaseId: 'v3-phase' };
-const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const context = {
+  workId: 'v3-work',
+  executionId: 'v3-exec',
+  invocationId: 'v3-invocation',
+  role: 'builder',
+  environmentRef: 'v3-env',
+  bootRef: 'v3-boot',
+  phaseId: 'v3-phase',
+};
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(r => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
 
 test('new private development profile v3 preserves prior read correction and MIME facade', { timeout: remainingMs() }, async () => {
   assert.equal(sdkProfile.id, 'factory-development-pi-1.5.2-read-async-bash-lexical-v3');
@@ -37,26 +57,36 @@ test('v3 preparation refuses unexpected bytes, unsafe links and missing metadata
     await writeFile(extra, 'OWNED_DRIFT', { flag: 'wx', mode: 0o600 });
     await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_DRIFT/);
     assert.equal(await readFile(extra, 'utf8'), 'OWNED_DRIFT');
-  } finally { await unlink(extra); }
+  } finally {
+    await unlink(extra);
+  }
   const readme = root + '/sdk/README.md';
   await rename(readme, readme + '.task105-held');
   try {
     await symlink(process.cwd() + '/node_modules/@earendil-works/pi-coding-agent/README.md', readme);
     await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_NOT_OWNED/);
-  } finally { await unlink(readme); await rename(readme + '.task105-held', readme); }
+  } finally {
+    await unlink(readme);
+    await rename(readme + '.task105-held', readme);
+  }
   await rename(readme, readme + '.task105-held');
   try {
     await link(readme + '.task105-held', readme);
     await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_NOT_OWNED/);
     assert.equal((await lstat(readme)).nlink, 2, 'no repair of hardlinked file');
-  } finally { await unlink(readme); await rename(readme + '.task105-held', readme); }
+  } finally {
+    await unlink(readme);
+    await rename(readme + '.task105-held', readme);
+  }
   const profile = root + '/profile.json';
   const profileBytes = await readFile(profile);
   await unlink(profile);
   try {
     await assert.rejects(prepareDevelopmentSdk(), { code: 'ENOENT' });
     await assert.rejects(readFile(profile), { code: 'ENOENT' });
-  } finally { await writeFile(profile, profileBytes, { mode: 0o600, flag: 'wx' }); }
+  } finally {
+    await writeFile(profile, profileBytes, { mode: 0o600, flag: 'wx' });
+  }
   assert.deepEqual(await prepareDevelopmentSdk(), await prepareDevelopmentSdk());
 });
 
@@ -88,19 +118,27 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
     const offered = deferred();
     const expected = source.toString().replace('synthetic-secret', '█');
     let guestCalls = 0;
-    const owner = await nativeOwner(context, { exec(argv, options) {
-      guestCalls++;
-      assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', 'FIXED_DATA_ONLY']);
-      assert.equal(options.windowBytes, 65536);
-      return { async *output() {
-        try {
-          for (let offset = 0; offset < source.length; offset += 8192) {
-            if (offset >= 256 * 1024) offered.resolve();
-            yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
-          }
-        } finally { offered.resolve(); produced.resolve(); }
-      }, result: Promise.resolve({ exitCode: 0 }) };
-    } });
+    const owner = await nativeOwner(context, {
+      exec(argv, options) {
+        guestCalls++;
+        assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', 'FIXED_DATA_ONLY']);
+        assert.equal(options.windowBytes, 65536);
+        return {
+          async *output() {
+            try {
+              for (let offset = 0; offset < source.length; offset += 8192) {
+                if (offset >= 256 * 1024) offered.resolve();
+                yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
+              }
+            } finally {
+              offered.resolve();
+              produced.resolve();
+            }
+          },
+          result: Promise.resolve({ exitCode: 0 }),
+        };
+      },
+    });
     const client = await connectReadTools(owner.owner.endpoint, context);
     const original = fs.createWriteStream;
     const oldTmp = process.env.TMPDIR;
@@ -109,9 +147,11 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
     const streams = [];
     fs.createWriteStream = (path, options) => {
       assert.ok(path.startsWith(owner.root + '/'));
-      assert.equal(options.flags, 'wx'); assert.equal(options.mode, 0o600);
+      assert.equal(options.flags, 'wx');
+      assert.equal(options.mode, 0o600);
       const stream = original(path, { ...options, highWaterMark: 16384 });
-      const entry = { stream, path, writes: [], closed: deferred() }; streams.push(entry);
+      const entry = { stream, path, writes: [], closed: deferred() };
+      streams.push(entry);
       stream.once('close', entry.closed.resolve);
       // Keep deliberate stream errors observed even against the unpatched RED SDK.
       stream.on('error', () => {});
@@ -127,13 +167,24 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
     };
     syncBuiltinESMExports();
     const controller = new AbortController();
-    let settled = false, critical = 0;
-    const tool = builderBash(context, { executeTool: (_context, call, onData, signal) => client.executeTool(call, onData, signal) }, () => { critical++; });
-    const running = tool.execute('v3-call', { command: 'FIXED_DATA_ONLY' }, controller.signal)
-      .then(value => ({ value }), error => ({ error })).finally(() => { settled = true; });
+    let settled = false,
+      critical = 0;
+    const tool = builderBash(context, { executeTool: (_context, call, onData, signal) => client.executeTool(call, onData, signal) }, () => {
+      critical++;
+    });
+    const running = tool
+      .execute('v3-call', { command: 'FIXED_DATA_ONLY' }, controller.signal)
+      .then(
+        value => ({ value }),
+        error => ({ error }),
+      )
+      .finally(() => {
+        settled = true;
+      });
     try {
       const entry = await held.promise;
-      await setImmediate(); await setImmediate();
+      await setImmediate();
+      await setImmediate();
       assert.equal(settled, false, 'native completion must wait for private stream');
       assert.equal(entry.stream.bytesWritten, 0);
       const admitted = entry.writes.length;
@@ -154,7 +205,10 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
       const outcome = await running;
       await entry.closed.promise;
       assert.equal(guestCalls, 1);
-      assert.ok(entry.writes.every(write => write.pending <= 40960), 'all native writes respect HWM + one application chunk');
+      assert.ok(
+        entry.writes.every(write => write.pending <= 40960),
+        'all native writes respect HWM + one application chunk',
+      );
       assert.equal(entry.stream.listenerCount('drain'), 0);
       if (mode === 'release' || mode === 'bounded-resume') {
         await produced.promise;
@@ -168,14 +222,19 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
         await assert.rejects(tool.execute('later', { command: 'FIXED_DATA_ONLY' }), /BASH_INVOCATION_REVOKED/);
         assert.equal(guestCalls, 1);
       }
-      t.diagnostic(`source=${source.length}, native max pending=${Math.max(...entry.writes.map(write => write.pending))}; ${mode === 'bounded-resume' ? 'valid >256KiB stream resumes losslessly after held native capture' : mode}`);
+      t.diagnostic(
+        `source=${source.length}, native max pending=${Math.max(...entry.writes.map(write => write.pending))}; ${mode === 'bounded-resume' ? 'valid >256KiB stream resumes losslessly after held native capture' : mode}`,
+      );
     } finally {
       for (const { stream } of streams) stream.uncork();
       await running;
       for (const { stream } of streams) stream.destroy();
-      fs.createWriteStream = original; syncBuiltinESMExports();
-      if (oldTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = oldTmp;
-      client.close(); await owner.close();
+      fs.createWriteStream = original;
+      syncBuiltinESMExports();
+      if (oldTmp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = oldTmp;
+      client.close();
+      await owner.close();
     }
   });
 }
@@ -184,12 +243,17 @@ for (const mode of ['release', 'abort', 'stream-error']) {
   test(`new Node24 v3 worker projection/session JSONL: held native stream ${mode}`, { timeout: remainingMs() }, async t => {
     const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(8000) + 'tail π');
     const produced = deferred();
-    const owner = await nativeOwner(context, { exec() {
-      return { async *output() {
-        for (let offset = 0; offset < source.length; offset += 8192) yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
-        produced.resolve();
-      }, result: Promise.resolve({ exitCode: 0 }) };
-    } });
+    const owner = await nativeOwner(context, {
+      exec() {
+        return {
+          async *output() {
+            for (let offset = 0; offset < source.length; offset += 8192) yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
+            produced.resolve();
+          },
+          result: Promise.resolve({ exitCode: 0 }),
+        };
+      },
+    });
     const directory = join(owner.root, 'profile');
     const recordsRoot = join(owner.root, 'worker-records');
     for (const path of [directory, join(directory, 'sessions'), recordsRoot, join(owner.root, 't'), join(owner.root, 'c')]) {
@@ -202,9 +266,15 @@ for (const mode of ['release', 'abort', 'stream-error']) {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
     const messages = [];
-    const held = deferred(); const snapshot = deferred();
+    const held = deferred();
+    const snapshot = deferred();
     let output = '';
-    child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
+    child.stdout.on('data', data => {
+      output += data;
+    });
+    child.stderr.on('data', data => {
+      output += data;
+    });
     child.on('message', message => {
       messages.push(message);
       if (message.kind === 'test-native-held') held.resolve(message);
@@ -212,14 +282,36 @@ for (const mode of ['release', 'abort', 'stream-error']) {
     });
     const exited = once(child, 'exit');
     try {
-      child.send({ version: 1, context, endpoint: owner.owner.endpoint, recordsRoot, knownSecrets: ['synthetic-secret', 'synthetic-key'],
+      child.send({
+        version: 1,
+        context,
+        endpoint: owner.owner.endpoint,
+        recordsRoot,
+        knownSecrets: ['synthetic-secret', 'synthetic-key'],
         prompt: mode === 'release' ? 'Run Bash output.' : 'blocked-bash output.',
-        profile: { id: sdkProfile.id, directory, systemPrompt: 'Private v3 bounded async Bash fixture.',
-          providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
-          provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
-            { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 },
-          ] } },
+        profile: {
+          id: sdkProfile.id,
+          directory,
+          systemPrompt: 'Private v3 bounded async Bash fixture.',
+          providerId: 'offline-fixture',
+          modelId: 'reader',
+          apiKey: 'synthetic-key',
+          provider: {
+            api: 'openai-completions',
+            baseUrl: 'https://offline.invalid',
+            models: [
+              {
+                id: 'reader',
+                name: 'Reader',
+                reasoning: false,
+                input: ['text'],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 100000,
+                maxTokens: 1000,
+              },
+            ],
+          },
+        },
       });
       const first = await held.promise;
       await produced.promise;
@@ -229,11 +321,17 @@ for (const mode of ['release', 'abort', 'stream-error']) {
       assert.equal(state.pending, first.pending);
       assert.equal(state.bytesWritten, 0);
       assert.ok(state.pending <= 40960);
-      assert.equal(messages.some(message => message.kind === 'worker-result'), false);
+      assert.equal(
+        messages.some(message => message.kind === 'worker-result'),
+        false,
+      );
       child.send({ kind: mode === 'release' ? 'test-native-release' : mode === 'abort' ? 'abort' : 'test-native-fail' });
       const [code, signal] = await exited;
-      assert.equal(code, 0, output); assert.equal(signal, null); assert.equal(output, '');
-      const result = messages.find(message => message.kind === 'worker-result'); assert.ok(result);
+      assert.equal(code, 0, output);
+      assert.equal(signal, null);
+      assert.equal(output, '');
+      const result = messages.find(message => message.kind === 'worker-result');
+      assert.ok(result);
       assert.equal(result.status, mode === 'release' ? 'completed' : 'interrupted');
       assert.equal(messages.filter(message => message.kind === 'provider-request').length, mode === 'release' ? 2 : 1);
       const session = SessionManager.open(result.sessionFile, join(directory, 'sessions'));
@@ -247,9 +345,14 @@ for (const mode of ['release', 'abort', 'stream-error']) {
         const path = tools[0].details.fullOutputPath;
         assert.equal(await readFile(path, 'utf8'), source.toString().replace('synthetic-secret', '█'));
       }
-      t.diagnostic(`held native writes=${state.writes}, pending=${state.pending}, bytesWritten=0; source=${source.length} bytes (< protocol cap); outcome=${result.status}`);
+      t.diagnostic(
+        `held native writes=${state.writes}, pending=${state.pending}, bytesWritten=0; source=${source.length} bytes (< protocol cap); outcome=${result.status}`,
+      );
     } finally {
-      if (child.exitCode === null) { child.kill(); await exited; }
+      if (child.exitCode === null) {
+        child.kill();
+        await exited;
+      }
       await owner.close();
     }
   });
@@ -259,32 +362,43 @@ test('v3 entire copied tree has exactly eleven corrections and unchanged MIME fa
   const sha = bytes => createHash('sha256').update(bytes).digest('hex');
   const upstream = 'node_modules/@earendil-works/pi-coding-agent';
   const target = sdkStagingDirectory + '/sdk';
-  const corrected = { ...asyncBashFiles, ...lexicalQueueFiles,
-    'dist/core/tools/read.js': { before: sdkProfile.upstreamSHA256, after: sdkProfile.resultSHA256 } };
+  const corrected = {
+    ...asyncBashFiles,
+    ...lexicalQueueFiles,
+    'dist/core/tools/read.js': { before: sdkProfile.upstreamSHA256, after: sdkProfile.resultSHA256 },
+  };
   const changed = [];
   const tree = createHash('sha256');
   const root = await lstat(sdkStagingDirectory);
-  assert.equal(root.uid, process.getuid()); assert.equal(root.mode & 0o777, 0o700);
+  assert.equal(root.uid, process.getuid());
+  assert.equal(root.mode & 0o777, 0o700);
   assert.equal(await realpath(sdkStagingDirectory), process.cwd() + '/' + sdkStagingDirectory);
   async function verify(relative = '') {
-    const source = join(upstream, relative), dest = join(target, relative);
-    const original = await lstat(source), copy = await lstat(dest);
+    const source = join(upstream, relative),
+      dest = join(target, relative);
+    const original = await lstat(source),
+      copy = await lstat(dest);
     assert.equal(copy.uid, process.getuid());
     if (original.isDirectory()) {
-      assert.equal(copy.isDirectory(), true); assert.equal(copy.isSymbolicLink(), false);
+      assert.equal(copy.isDirectory(), true);
+      assert.equal(copy.isSymbolicLink(), false);
       tree.update(JSON.stringify([relative, 'directory']) + '\n');
       const names = (await readdir(source)).sort();
       assert.deepEqual((await readdir(dest)).sort(), names);
       for (const name of names) await verify(join(relative, name));
     } else if (original.isSymbolicLink()) {
       assert.equal(copy.isSymbolicLink(), true);
-      const link = await readlink(source); assert.equal(await readlink(dest), link);
+      const link = await readlink(source);
+      assert.equal(await readlink(dest), link);
       tree.update(JSON.stringify([relative, 'symlink', link]) + '\n');
     } else {
-      assert.equal(copy.isFile(), true); assert.equal(copy.nlink, 1);
-      const before = sha(await readFile(source)), after = sha(await readFile(dest));
+      assert.equal(copy.isFile(), true);
+      assert.equal(copy.nlink, 1);
+      const before = sha(await readFile(source)),
+        after = sha(await readFile(dest));
       if (corrected[relative]) {
-        assert.equal(before, corrected[relative].before); assert.equal(after, corrected[relative].after);
+        assert.equal(before, corrected[relative].before);
+        assert.equal(after, corrected[relative].after);
       } else assert.equal(after, before);
       if (before !== after) changed.push(relative);
       tree.update(JSON.stringify([relative, 'file', after]) + '\n');

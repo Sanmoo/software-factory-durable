@@ -9,8 +9,15 @@ import { createSecretPublisher, createOwnerSecretReceiver, secretSyncLimit, type
 import { reviewerBudgetV1 } from '../../src/contracts/index.js';
 import { remainingMs } from '../runner/budget.js';
 
-const context = { workId: 'work', executionId: 'exec', invocationId: 'invocation', role: 'spec' as const,
-  environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
+const context = {
+  workId: 'work',
+  executionId: 'exec',
+  invocationId: 'invocation',
+  role: 'spec' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  phaseId: 'phase',
+};
 const values = ['synthetic-access-168', 'synthetic-refresh-168', 'synthetic-client-168'];
 // Ticket 59: the owner's sync bound of this (spec reviewer) context, derived from its request budget as the launcher derives it.
 const limit = secretSyncLimit(reviewerBudgetV1.requests);
@@ -25,20 +32,23 @@ class Wire extends EventEmitter {
   }
 }
 function setup(timeoutMs = 1000) {
-  const wire = new Wire(), abort = new AbortController();
+  const wire = new Wire(),
+    abort = new AbortController();
   const publisher = createSecretPublisher(wire, context, abort.signal, timeoutMs);
   publisher.protectedStarted();
   return { wire, abort, publisher };
 }
 const ack = (request: Record<string, unknown>) => ({ kind: 'worker-secret-ack', version: 1, id: request.id, context: request.context });
-const denied = (promise: Promise<unknown>) => assert.rejects(promise, error => {
-  assert.deepEqual(error, { code: 'SECRET_SYNC_DENIED' });
-  assert.doesNotMatch(JSON.stringify(error), /synthetic-/);
-  return true;
-});
+const denied = (promise: Promise<unknown>) =>
+  assert.rejects(promise, error => {
+    assert.deepEqual(error, { code: 'SECRET_SYNC_DENIED' });
+    assert.doesNotMatch(JSON.stringify(error), /synthetic-/);
+    return true;
+  });
 
 test('protected start, one pending, held ACK and post-await original-signal fence', async () => {
-  const wire = new Wire(), abort = new AbortController();
+  const wire = new Wire(),
+    abort = new AbortController();
   const early = createSecretPublisher(wire, context, abort.signal);
   await denied(early.acknowledgeSecrets(values));
   early.protectedStarted();
@@ -46,7 +56,9 @@ test('protected start, one pending, held ACK and post-await original-signal fenc
   assert.equal(wire.sent.length, 0);
   const f = setup();
   let uses = 0;
-  const pending = f.publisher.acknowledgeSecrets(values).then(() => { uses++; });
+  const pending = f.publisher.acknowledgeSecrets(values).then(() => {
+    uses++;
+  });
   await Promise.resolve();
   assert.equal(uses, 0);
   await denied(f.publisher.acknowledgeSecrets(values));
@@ -64,11 +76,14 @@ test('protected start, one pending, held ACK and post-await original-signal fenc
 test('ticket 37: the production ACK wait is 5000 ms when no Host policy shortens it (undefined is the default, as the worker passes it)', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   for (const timeoutMs of [undefined, 5000]) {
-    const wire = new Wire(), abort = new AbortController();
+    const wire = new Wire(),
+      abort = new AbortController();
     const publisher = createSecretPublisher(wire, context, abort.signal, timeoutMs);
     publisher.protectedStarted();
     let settled = false;
-    const pending = publisher.acknowledgeSecrets(values).finally(() => { settled = true; });
+    const pending = publisher.acknowledgeSecrets(values).finally(() => {
+      settled = true;
+    });
     void pending.catch(() => {});
     t.mock.timers.tick(4999);
     await Promise.resolve();
@@ -83,8 +98,10 @@ test('all seven context fields, wrong UUID/version, unknown fields and malformed
   const mutations: ((reply: Record<string, unknown>) => unknown)[] = [
     ...Object.keys(context).map(key => (reply: Record<string, unknown>) => ({ ...reply, context: { ...context, [key]: 'other' } })),
     reply => ({ ...reply, id: '00000000-0000-4000-8000-000000000000' }),
-    reply => ({ ...reply, id: 'not-uuid' }), reply => ({ ...reply, version: 2 }),
-    reply => ({ ...reply, value: values[0] }), () => null,
+    reply => ({ ...reply, id: 'not-uuid' }),
+    reply => ({ ...reply, version: 2 }),
+    reply => ({ ...reply, value: values[0] }),
+    () => null,
     reply => ({ ...reply, kind: 'worker-secret-error', code: values[0] }),
   ];
   for (const mutate of mutations) {
@@ -119,7 +136,14 @@ test('unsolicited, duplicate, late, EOF, exit, abort, send failures and deadline
 });
 
 test('full serialized UTF8 budget includes JSON escaping, NUL and non-ASCII; invalid values never send', async () => {
-  for (const input of [[], ['', 'x'], ['x'.repeat(4097)], ['a', 'b', 'c', 'd'], Array(3).fill('\0'.repeat(4096)), ['\0'.repeat(4096), '\0'.repeat(4096), '漢'.repeat(4096)]]) {
+  for (const input of [
+    [],
+    ['', 'x'],
+    ['x'.repeat(4097)],
+    ['a', 'b', 'c', 'd'],
+    Array(3).fill('\0'.repeat(4096)),
+    ['\0'.repeat(4096), '\0'.repeat(4096), '漢'.repeat(4096)],
+  ]) {
     const f = setup();
     await denied(f.publisher.acknowledgeSecrets(input));
     assert.equal(f.wire.sent.length, 0);
@@ -135,18 +159,40 @@ test('full serialized UTF8 budget includes JSON escaping, NUL and non-ASCII; inv
 
 test('owner readiness, context, duplicate, capacity and send failures revoke only bound lifetime, each with its closed reason', async () => {
   // Ticket 59: the reason the owner closed the channel is recorded (closed set, never a value).
-  const expected: Record<string, SecretChannelFailure> = { early: 'not-started', context: 'context', version: 'schema', unknown: 'schema', id: 'schema',
-    duplicate: 'replay', capacity: 'register', send: 'send', closed: 'abort' };
+  const expected: Record<string, SecretChannelFailure> = {
+    early: 'not-started',
+    context: 'context',
+    version: 'schema',
+    unknown: 'schema',
+    id: 'schema',
+    duplicate: 'replay',
+    capacity: 'register',
+    send: 'send',
+    closed: 'abort',
+  };
   for (const mode of ['early', 'context', 'version', 'unknown', 'id', 'duplicate', 'capacity', 'send', 'closed']) {
-    const wire = new Wire(), abort = new AbortController();
-    let registrations = 0, failures = 0;
+    const wire = new Wire(),
+      abort = new AbortController();
+    let registrations = 0,
+      failures = 0;
     const reasons: SecretChannelFailure[] = [];
-    const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => mode !== 'early', value => {
-      registrations++;
-      if (mode === 'capacity') throw new Error(value);
-    }, reason => { failures++; reasons.push(reason); abort.abort(); }, limit);
-    let request: Record<string, unknown> = { kind: 'worker-secret-register', version: 1,
-      id: '00000000-0000-4000-8000-000000000000', context, values };
+    const receiver = createOwnerSecretReceiver(
+      wire,
+      context,
+      abort.signal,
+      () => mode !== 'early',
+      value => {
+        registrations++;
+        if (mode === 'capacity') throw new Error(value);
+      },
+      reason => {
+        failures++;
+        reasons.push(reason);
+        abort.abort();
+      },
+      limit,
+    );
+    let request: Record<string, unknown> = { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000', context, values };
     if (mode === 'context') request = { ...request, context: { ...context, bootRef: 'different' } };
     if (mode === 'version') request.version = 2;
     if (mode === 'unknown') request.extra = values[0];
@@ -174,9 +220,20 @@ test('the owner secret receiver lets every lifecycle result the launcher accepts
     { kind: 'worker-result', status: 'boot-swap', receipt, sessionFile: 'sessions/a.jsonl', sessionTools: ['bash', 'read'] },
     { kind: 'worker-result', status: 'failure', code: 'WORKER_FAILED' },
   ]) {
-    const wire = new Wire(), abort = new AbortController();
+    const wire = new Wire(),
+      abort = new AbortController();
     const reasons: SecretChannelFailure[] = [];
-    const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => {}, reason => { reasons.push(reason); }, 4);
+    const receiver = createOwnerSecretReceiver(
+      wire,
+      context,
+      abort.signal,
+      () => true,
+      () => {},
+      reason => {
+        reasons.push(reason);
+      },
+      4,
+    );
     wire.emit('message', { kind: 'worker-started', receipt });
     wire.emit('message', result);
     assert.deepEqual(reasons, [], result.status);
@@ -185,10 +242,16 @@ test('the owner secret receiver lets every lifecycle result the launcher accepts
 });
 
 test('source context and values snapshot survive caller mutation and async send; malformed lifecycle is denied', async () => {
-  const wire = new Wire(), abort = new AbortController();
-  const source = { ...context }, secrets = [...values];
+  const wire = new Wire(),
+    abort = new AbortController();
+  const source = { ...context },
+    secrets = [...values];
   let sendCallback!: (error: Error | null) => void;
-  wire.send = (message, callback) => { wire.sent.push(message); sendCallback = callback; return true; };
+  wire.send = (message, callback) => {
+    wire.sent.push(message);
+    sendCallback = callback;
+    return true;
+  };
   const publisher = createSecretPublisher(wire, source, abort.signal);
   publisher.protectedStarted();
   source.phaseId = 'mutated';
@@ -205,34 +268,75 @@ test('source context and values snapshot survive caller mutation and async send;
 
 test('send throws are contained; closed error ACK denies; bounded correlation tombstones refuse replay and overflow', async () => {
   const f = setup();
-  f.wire.send = () => { throw new Error(values[0]); };
+  f.wire.send = () => {
+    throw new Error(values[0]);
+  };
   await denied(f.publisher.acknowledgeSecrets(values));
   const g = setup();
   const pending = g.publisher.acknowledgeSecrets(values);
   g.wire.emit('message', { ...ack(g.wire.sent[0]!), kind: 'worker-secret-error', code: 'SECRET_SYNC_DENIED' });
   await denied(pending);
-  const wire = new Wire(), abort = new AbortController();
-  let registrations = 0, failures = 0;
+  const wire = new Wire(),
+    abort = new AbortController();
+  let registrations = 0,
+    failures = 0;
   const reasons: SecretChannelFailure[] = [];
-  createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, reason => { failures++; reasons.push(reason); }, limit);
+  createOwnerSecretReceiver(
+    wire,
+    context,
+    abort.signal,
+    () => true,
+    () => {
+      registrations++;
+    },
+    reason => {
+      failures++;
+      reasons.push(reason);
+    },
+    limit,
+  );
   // Ticket 59: the bound is the context's derived `limit` (was a fixed 128): `limit` syncs are acknowledged, the next one is refused.
-  for (let i = 0; i <= limit; i++) wire.emit('message', { kind: 'worker-secret-register', version: 1,
-    id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, context, values });
-  assert.equal(registrations, limit * 3); assert.equal(failures, 1); assert.equal(wire.sent.length, limit);
+  for (let i = 0; i <= limit; i++)
+    wire.emit('message', { kind: 'worker-secret-register', version: 1, id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, context, values });
+  assert.equal(registrations, limit * 3);
+  assert.equal(failures, 1);
+  assert.equal(wire.sent.length, limit);
   assert.deepEqual(reasons, ['limit']);
 });
 
 test('owner all-seven context matrix rejects before registration; other child cannot settle pending ACK', async () => {
   for (const key of Object.keys(context)) {
-    const wire = new Wire(), signal = new AbortController();
-    let attempts = 0, failures = 0;
-    const receiver = createOwnerSecretReceiver(wire, context, signal.signal, () => true, () => { attempts++; }, () => { failures++; }, limit);
-    wire.emit('message', { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000',
-      context: { ...context, [key]: key === 'role' ? 'standards' : 'other' }, values });
-    assert.equal(attempts, 0); assert.equal(failures, 1); assert.equal(wire.sent.length, 0);
+    const wire = new Wire(),
+      signal = new AbortController();
+    let attempts = 0,
+      failures = 0;
+    const receiver = createOwnerSecretReceiver(
+      wire,
+      context,
+      signal.signal,
+      () => true,
+      () => {
+        attempts++;
+      },
+      () => {
+        failures++;
+      },
+      limit,
+    );
+    wire.emit('message', {
+      kind: 'worker-secret-register',
+      version: 1,
+      id: '00000000-0000-4000-8000-000000000000',
+      context: { ...context, [key]: key === 'role' ? 'standards' : 'other' },
+      values,
+    });
+    assert.equal(attempts, 0);
+    assert.equal(failures, 1);
+    assert.equal(wire.sent.length, 0);
     receiver.close();
   }
-  const a = setup(5), b = setup();
+  const a = setup(5),
+    b = setup();
   const pending = a.publisher.acknowledgeSecrets(values);
   b.wire.emit('message', ack(a.wire.sent[0]!));
   await denied(pending);
@@ -243,14 +347,31 @@ test('actual registry128 exhaustion produces only closed error, no ACK, and reta
   const root = await mkdtemp('/tmp/s168c-');
   const records = await createRecords({ root });
   for (let i = 0; i < 127; i++) records.registerSecret(`capacity-token-${i}`);
-  const wire = new Wire(), abort = new AbortController();
-  let attempts = 0, failures = 0;
-  const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => true, value => {
-    attempts++; records.registerSecret(value);
-  }, () => { failures++; }, limit);
+  const wire = new Wire(),
+    abort = new AbortController();
+  let attempts = 0,
+    failures = 0;
+  const receiver = createOwnerSecretReceiver(
+    wire,
+    context,
+    abort.signal,
+    () => true,
+    value => {
+      attempts++;
+      records.registerSecret(value);
+    },
+    () => {
+      failures++;
+    },
+    limit,
+  );
   wire.emit('message', { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000', context, values });
-  assert.equal(attempts, 2); assert.equal(failures, 1);
-  assert.deepEqual(wire.sent.map(frame => frame.kind), ['worker-secret-error']);
+  assert.equal(attempts, 2);
+  assert.equal(failures, 1);
+  assert.deepEqual(
+    wire.sent.map(frame => frame.kind),
+    ['worker-secret-error'],
+  );
   assert.doesNotMatch(JSON.stringify(wire.sent), /synthetic-/);
   records.registerSecret(values[0]!); // retained even though later registration failed
   assert.throws(() => records.registerSecret('another-token'), /PROTECTED_CAPTURE_UNAVAILABLE/);
@@ -260,11 +381,33 @@ test('actual registry128 exhaustion produces only closed error, no ACK, and reta
 test('owner pending ACK callback deadline, concurrent request, and post-abort late send cannot resurrect', async () => {
   const expected: Record<string, SecretChannelFailure> = { deadline: 'timeout', concurrent: 'busy', abort: 'abort' };
   for (const mode of ['deadline', 'concurrent', 'abort']) {
-    const wire = new Wire(), abort = new AbortController();
-    let callback!: (error: Error | null) => void, failures = 0, registrations = 0, sends = 0;
+    const wire = new Wire(),
+      abort = new AbortController();
+    let callback!: (error: Error | null) => void,
+      failures = 0,
+      registrations = 0,
+      sends = 0;
     const reasons: SecretChannelFailure[] = [];
-    wire.send = (_message, cb) => { sends++; callback = cb; return true; };
-    createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, reason => { failures++; reasons.push(reason); }, limit, 5);
+    wire.send = (_message, cb) => {
+      sends++;
+      callback = cb;
+      return true;
+    };
+    createOwnerSecretReceiver(
+      wire,
+      context,
+      abort.signal,
+      () => true,
+      () => {
+        registrations++;
+      },
+      reason => {
+        failures++;
+        reasons.push(reason);
+      },
+      limit,
+      5,
+    );
     const request = { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000', context, values };
     wire.emit('message', request);
     if (mode === 'concurrent') wire.emit('message', { ...request, id: '00000000-0000-4000-8000-000000000001' });
@@ -272,7 +415,9 @@ test('owner pending ACK callback deadline, concurrent request, and post-abort la
     if (mode === 'deadline') await new Promise(resolve => setTimeout(resolve, 10));
     callback(null);
     wire.emit('message', { ...request, id: '00000000-0000-4000-8000-000000000002' });
-    assert.equal(failures, 1); assert.equal(sends, 1); assert.equal(registrations, 3);
+    assert.equal(failures, 1);
+    assert.equal(sends, 1);
+    assert.equal(registrations, 3);
     assert.deepEqual(reasons, [expected[mode]], mode);
     assert.equal(wire.listenerCount('message'), 0);
   }
@@ -280,21 +425,46 @@ test('owner pending ACK callback deadline, concurrent request, and post-abort la
 
 test('actual fixed standalone child denies dependent use on real IPC EOF, forged ACK and owner registry exhaustion', { timeout: remainingMs() }, async () => {
   for (const mode of ['eof', 'forged', 'capacity']) {
-    const root = await mkdtemp('/tmp/s168n-'), workerRoot = join(root, 'w');
+    const root = await mkdtemp('/tmp/s168n-'),
+      workerRoot = join(root, 'w');
     await mkdir(workerRoot, { mode: 0o700 });
     const owner = await createRecords({ root });
     if (mode === 'capacity') for (let i = 0; i < 128; i++) owner.registerSecret(`full-registry-${i}`);
     const child = fork(new URL('./secret-ipc.fixture.js', import.meta.url), [], {
-      execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node', execArgv: [],
-      env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node',
+      execArgv: [],
+      env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
-    let output = '', requests = 0, uses = 0, failures = 0, registrations = 0;
-    child.stdout!.on('data', chunk => { output += String(chunk); });
-    child.stderr!.on('data', chunk => { output += String(chunk); });
+    let output = '',
+      requests = 0,
+      uses = 0,
+      failures = 0,
+      registrations = 0;
+    child.stdout!.on('data', chunk => {
+      output += String(chunk);
+    });
+    child.stderr!.on('data', chunk => {
+      output += String(chunk);
+    });
     const abort = new AbortController();
-    const receiver = mode === 'capacity' ? createOwnerSecretReceiver(child, context, abort.signal, () => true, value => {
-      registrations++; owner.registerSecret(value);
-    }, () => { failures++; }, limit) : undefined;
+    const receiver =
+      mode === 'capacity'
+        ? createOwnerSecretReceiver(
+            child,
+            context,
+            abort.signal,
+            () => true,
+            value => {
+              registrations++;
+              owner.registerSecret(value);
+            },
+            () => {
+              failures++;
+            },
+            limit,
+          )
+        : undefined;
     child.on('message', message => {
       const frame = message as Record<string, unknown>;
       if (frame.kind === 'fixture-result') uses += Number(frame.uses);
@@ -308,15 +478,20 @@ test('actual fixed standalone child denies dependent use on real IPC EOF, forged
     child.send({ root: workerRoot, context, values });
     const [code] = await exited;
     receiver?.close();
-    assert.equal(requests, 1); assert.equal(uses, 0); assert.equal(output, ''); assert.equal(code, 0);
-    assert.equal(registrations, mode === 'capacity' ? 1 : 0); assert.equal(failures, mode === 'capacity' ? 1 : 0);
+    assert.equal(requests, 1);
+    assert.equal(uses, 0);
+    assert.equal(output, '');
+    assert.equal(code, 0);
+    assert.equal(registrations, mode === 'capacity' ? 1 : 0);
+    assert.equal(failures, mode === 'capacity' ? 1 : 0);
     assert.deepEqual(await readdir(workerRoot), [], 'no dependent local evidence/use after failed ACK');
   }
 });
 
 test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry fence precedes held ACK', { timeout: remainingMs() }, async () => {
   const root = await mkdtemp('/tmp/s168-'); // mkdtemp is 0700; never touch pre-existing fixtures
-  const workerRoot = join(root, 'w'); await mkdir(workerRoot, { mode: 0o700 });
+  const workerRoot = join(root, 'w');
+  await mkdir(workerRoot, { mode: 0o700 });
   const owner = await createRecords({ root });
   const { phaseId: _phase, ...recordContext } = context;
   const outputContext = { ...recordContext, callId: 'owner-proof' };
@@ -324,36 +499,60 @@ test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry 
   await capture.write(Buffer.from('public projection'));
   const completed = await capture.finish();
   const projection = owner.projectText({ context: outputContext, reference: completed.reference, expectedBytes: completed.bytes });
-  for await (const _ of projection.chunks) { /* drain */ }
+  for await (const _ of projection.chunks) {
+    /* drain */
+  }
   const raw = await owner.openOutput({ ...outputContext, callId: 'raw-proof' }, { format: 'raw', maxBytes: 100 });
   await raw.write(Buffer.from('safe bytes'));
   const child = fork(new URL('./secret-ipc.fixture.js', import.meta.url), [], {
-    execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node', execArgv: [],
-    env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node',
+    execArgv: [],
+    env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  let stdio = '', dependentUses = 0, registrations = 0;
-  child.stdout!.on('data', chunk => { stdio += String(chunk); });
-  child.stderr!.on('data', chunk => { stdio += String(chunk); });
+  let stdio = '',
+    dependentUses = 0,
+    registrations = 0;
+  child.stdout!.on('data', chunk => {
+    stdio += String(chunk);
+  });
+  child.stderr!.on('data', chunk => {
+    stdio += String(chunk);
+  });
   const abort = new AbortController();
   let release!: () => void;
   let ackObserved!: () => void;
-  const ackReady = new Promise<void>(resolve => { ackObserved = resolve; });
+  const ackReady = new Promise<void>(resolve => {
+    ackObserved = resolve;
+  });
   // Real child transport, held outbound ACK only. Production uses child.send directly.
-  const held = Object.assign(new EventEmitter(), { connected: true,
+  const held = Object.assign(new EventEmitter(), {
+    connected: true,
     send(message: Record<string, unknown>, callback: (error: Error | null) => void) {
       assert.equal(registrations, 3);
       assert.throws(() => projection.assertCompleteAndCurrent(), /PROTECTED_CAPTURE_UNAVAILABLE/);
       assert.doesNotMatch(JSON.stringify(message), /synthetic-/);
       release = () => child.send(message, callback);
-      ackObserved(); return true;
-    } });
+      ackObserved();
+      return true;
+    },
+  });
   child.on('message', message => {
     if ((message as { kind: string }).kind === 'fixture-result') dependentUses += (message as { uses: number }).uses;
     else held.emit('message', message);
   });
-  const receiver = createOwnerSecretReceiver(held, context, abort.signal, () => true, value => {
-    registrations++; owner.registerSecret(value);
-  }, () => abort.abort(), limit);
+  const receiver = createOwnerSecretReceiver(
+    held,
+    context,
+    abort.signal,
+    () => true,
+    value => {
+      registrations++;
+      owner.registerSecret(value);
+    },
+    () => abort.abort(),
+    limit,
+  );
   const result = once(child, 'message').then(async () => {
     await ackReady;
     assert.equal(dependentUses, 0);
@@ -366,13 +565,18 @@ test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry 
   const local = await result;
   await exited;
   receiver.close();
-  assert.equal(local.uses, 1); assert.equal(dependentUses, 1); assert.equal(stdio, '');
+  assert.equal(local.uses, 1);
+  assert.equal(dependentUses, 1);
+  assert.equal(stdio, '');
   const stored = await readFile(join(workerRoot, local.reference.workId, 'evidence', local.reference.id, 'output'), 'utf8');
-  assert.doesNotMatch(stored, /synthetic-/); assert.match(stored, /█/);
+  assert.doesNotMatch(stored, /synthetic-/);
+  assert.match(stored, /█/);
   const filtered = await owner.record({ ...outputContext, callId: 'filtered' }, { value: values[0] });
   assert.doesNotMatch((await owner.read({ reference: filtered, offset: 0, limit: 4096 })).data.toString(), /synthetic-/);
   const fresh = owner.projectText({ context: outputContext, reference: completed.reference, expectedBytes: completed.bytes });
-  for await (const _ of fresh.chunks) { /* drain */ }
+  for await (const _ of fresh.chunks) {
+    /* drain */
+  }
   owner.registerSecret(values[0]!);
   fresh.assertCompleteAndCurrent(); // duplicate is a revision no-op
 });

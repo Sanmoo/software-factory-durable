@@ -1,0 +1,6 @@
+# Traversal exclusions of the Format quality gate: build output, third-party code, worktrees, and the planning tree
+# (.scratch holds no source; its staged SDK copies are third-party).
+dist/
+node_modules/
+.worktrees/
+.scratch/

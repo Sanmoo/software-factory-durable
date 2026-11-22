@@ -22,7 +22,9 @@ export type Observation = {
 const environmentRef = z.string().regex(/^env-[a-f0-9]{64}$/);
 const bootRef = z.string().regex(/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
 export const ownerSchema = z.strictObject({
-  version: z.literal(1), workId: z.string().min(1).max(512), environment: environmentRef,
+  version: z.literal(1),
+  workId: z.string().min(1).max(512),
+  environment: environmentRef,
   configuration: configurationSchema,
   guestAssets: z.strictObject({ directory: z.string(), manifestSha256: z.string().regex(/^[a-f0-9]{64}$/) }),
   /** Ticket 44: the environment base this environment's root disk was copied from (absent: generic guest, before ticket 44). */
@@ -30,30 +32,65 @@ export const ownerSchema = z.strictObject({
 });
 const readySchema = z.strictObject({ environment: environmentRef });
 export const currentSchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef });
-export const identitySchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef,
-  unit: z.string(), hostBoot: z.uuid(), configuration: configurationSchema });
-export const startedSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
-  unit: z.string(), invocation: z.string().regex(/^[a-f0-9]{32}$/), cgroup: z.string(),
+export const identitySchema = z.strictObject({
+  version: z.literal(1),
+  environment: environmentRef,
+  boot: bootRef,
+  unit: z.string(),
+  hostBoot: z.uuid(),
+  configuration: configurationSchema,
+});
+export const startedSchema = z.strictObject({
+  version: z.literal(1),
+  boot: bootRef,
+  unit: z.string(),
+  invocation: z.string().regex(/^[a-f0-9]{32}$/),
+  cgroup: z.string(),
   cgroupNamespace: z.string().regex(/^cgroup:\[[0-9]+\]$/),
-  mountNamespace: z.string().regex(/^mnt:\[[0-9]+\]$/) });
+  mountNamespace: z.string().regex(/^mnt:\[[0-9]+\]$/),
+});
 export const startupFailureCodeSchema = z.enum([
-  'GUEST_READINESS_TIMEOUT', 'SDK_START_DISABLED', 'GUEST_PROFILE_NOT_OPERATIONAL',
-  'GUEST_ASSETS_INVALID', 'ADAPTER_RUNTIME_MISMATCH', 'VMM_IDENTITY_UNAVAILABLE', 'VMM_SUPERVISION_MISMATCH',
-  'ENOENT', 'EACCES', 'EPERM', 'ENAMETOOLONG', 'EADDRINUSE', 'ENOSPC', 'EIO', 'EINVAL',
-  'EMFILE', 'ENFILE', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'UNCLASSIFIED_STARTUP_FAILURE',
+  'GUEST_READINESS_TIMEOUT',
+  'SDK_START_DISABLED',
+  'GUEST_PROFILE_NOT_OPERATIONAL',
+  'GUEST_ASSETS_INVALID',
+  'ADAPTER_RUNTIME_MISMATCH',
+  'VMM_IDENTITY_UNAVAILABLE',
+  'VMM_SUPERVISION_MISMATCH',
+  'ENOENT',
+  'EACCES',
+  'EPERM',
+  'ENAMETOOLONG',
+  'EADDRINUSE',
+  'ENOSPC',
+  'EIO',
+  'EINVAL',
+  'EMFILE',
+  'ENFILE',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EPIPE',
+  'UNCLASSIFIED_STARTUP_FAILURE',
 ]);
-export const startupFailureSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
+export const startupFailureSchema = z.strictObject({
+  version: z.literal(1),
+  boot: bootRef,
   phase: z.enum(['runtime', 'assets', 'sdk-import', 'vm-create', 'vm-start', 'guest-profile', 'operational-evidence']),
-  code: startupFailureCodeSchema });
+  code: startupFailureCodeSchema,
+});
 export type StartupFailure = Pick<z.infer<typeof startupFailureSchema>, 'phase' | 'code'>;
-const operationalSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
-  session: z.string().min(1).max(256), vmmPid: z.number().int().positive().max(2147483647),
-  vmmStartTicks: z.string().regex(/^[0-9]{1,20}$/) });
+const operationalSchema = z.strictObject({
+  version: z.literal(1),
+  boot: bootRef,
+  session: z.string().min(1).max(256),
+  vmmPid: z.number().int().positive().max(2147483647),
+  vmmStartTicks: z.string().regex(/^[0-9]{1,20}$/),
+});
 const metadataLimit = 65536;
 
 export async function privateDirectory(path: string) {
   const info = await lstat(path);
-  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) {
+  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || info.mode & 0o077) {
     throw new Error('PRIVATE_ENVIRONMENT_DIRECTORY_REQUIRED');
   }
 }
@@ -62,13 +99,19 @@ export async function metadata<T>(path: string, schema: z.ZodType<T>, options?: 
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat();
-    if (!before.isFile() || before.nlink !== 1 || before.uid !== process.getuid?.() ||
-        (before.mode & 0o077) || before.size > metadataLimit) throw new Error('UNSAFE_RESOURCE_METADATA');
+    if (!before.isFile() || before.nlink !== 1 || before.uid !== process.getuid?.() || before.mode & 0o077 || before.size > metadataLimit)
+      throw new Error('UNSAFE_RESOURCE_METADATA');
     const buffer = Buffer.alloc(metadataLimit + 1);
     const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
     const after = await file.stat();
-    if (bytesRead !== before.size || before.dev !== after.dev || before.ino !== after.ino ||
-        before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+    if (
+      bytesRead !== before.size ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs
+    ) {
       throw new Error('RESOURCE_METADATA_CHANGED');
     }
     const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
@@ -77,7 +120,7 @@ export async function metadata<T>(path: string, schema: z.ZodType<T>, options?: 
       const directory = await open(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
       try {
         const parent = await directory.stat();
-        if (!parent.isDirectory() || parent.uid !== process.getuid?.() || (parent.mode & 0o077)) {
+        if (!parent.isDirectory() || parent.uid !== process.getuid?.() || parent.mode & 0o077) {
           throw new Error('PRIVATE_ENVIRONMENT_DIRECTORY_REQUIRED');
         }
         // A readable existing record may belong to a publisher whose sync failed
@@ -86,14 +129,25 @@ export async function metadata<T>(path: string, schema: z.ZodType<T>, options?: 
         await directory.sync();
         const published = await lstat(path);
         const current = await file.stat();
-        if (!published.isFile() || published.nlink !== 1 || published.dev !== before.dev || published.ino !== before.ino ||
-            current.size !== before.size || current.mtimeMs !== before.mtimeMs || current.ctimeMs !== before.ctimeMs) {
+        if (
+          !published.isFile() ||
+          published.nlink !== 1 ||
+          published.dev !== before.dev ||
+          published.ino !== before.ino ||
+          current.size !== before.size ||
+          current.mtimeMs !== before.mtimeMs ||
+          current.ctimeMs !== before.ctimeMs
+        ) {
           throw new Error('RESOURCE_METADATA_CHANGED');
         }
-      } finally { await directory.close(); }
+      } finally {
+        await directory.close();
+      }
     }
     return parsed;
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
 }
 
 export async function ownedEnvironment(root: string, environment: EnvironmentRef) {
@@ -113,8 +167,8 @@ export async function ownedEnvironment(root: string, environment: EnvironmentRef
 
 export async function supervisionHierarchy(started: Pick<z.infer<typeof startedSchema>, 'cgroupNamespace' | 'mountNamespace'>) {
   const root = '/sys/fs/cgroup';
-  if (await readlink('/proc/self/ns/cgroup') !== started.cgroupNamespace ||
-      await readlink('/proc/self/ns/mnt') !== started.mountNamespace) throw new Error('SUPERVISION_NAMESPACE_CHANGED');
+  if ((await readlink('/proc/self/ns/cgroup')) !== started.cgroupNamespace || (await readlink('/proc/self/ns/mnt')) !== started.mountNamespace)
+    throw new Error('SUPERVISION_NAMESPACE_CHANGED');
   const directory = await lstat(root);
   if (!directory.isDirectory() || directory.isSymbolicLink() || (await statfs(root)).type !== 0x63677270) {
     throw new Error('CGROUP_V2_UNAVAILABLE');
@@ -183,14 +237,18 @@ export async function observeBootEnvironment(root: string, environment: Environm
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) return unknown;
       // A group that still exists but lacks readable events is unavailable, not empty.
-      try { await lstat(`/sys/fs/cgroup${cgroup}`); return unknown; }
-      catch (groupError) {
+      try {
+        await lstat(`/sys/fs/cgroup${cgroup}`);
+        return unknown;
+      } catch (groupError) {
         if (!(groupError instanceof Error && 'code' in groupError && groupError.code === 'ENOENT')) return unknown;
       }
       await supervisionHierarchy(started);
     }
     return { condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable' };
-  } catch { return unknown; }
+  } catch {
+    return unknown;
+  }
 }
 
 /**
@@ -202,13 +260,15 @@ export async function currentBoot(root: string, environment: EnvironmentRef): Pr
     const { directory } = await ownedEnvironment(root, environment);
     try {
       const current = await metadata(join(directory, 'current.json'), currentSchema);
-      return current.environment === environment ? current.boot as BootRef : undefined;
+      return current.environment === environment ? (current.boot as BootRef) : undefined;
     } catch (error) {
       // A boot directory or an unrenamed `current-<boot>.json` without the published current boot never reached systemd-run.
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
       return undefined;
     }
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 /** Removal evidence is not cessation by itself: verify every recorded boot and absence. */
@@ -217,19 +277,26 @@ export async function observeEnvironment(root: string, environment: EnvironmentR
   try {
     const { directory, owner } = await ownedEnvironment(root, environment);
     let removed;
-    try { removed = await metadata(join(directory, 'removed.json'), removedSchema); }
-    catch (e) {
+    try {
+      removed = await metadata(join(directory, 'removed.json'), removedSchema);
+    } catch (e) {
       if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) return unknown;
       return observeBootEnvironment(root, environment, boot);
     }
     const request = await metadata(join(directory, 'cleanup-request.json'), cleanupRequestSchema);
     const current = await metadata(join(directory, 'current.json'), currentSchema);
     const inventory = (await readdir(directory)).filter(name => name.startsWith('boot-')).sort();
-    if (current.environment !== environment || !removed.boots.includes(current.boot) ||
-        JSON.stringify(inventory) !== JSON.stringify(removed.boots)) return unknown;
-    if (removed.environment !== environment || removed.workId !== owner.workId || request.environment !== environment ||
-        request.workId !== owner.workId || JSON.stringify(removed.boots) !== JSON.stringify(request.boots) ||
-        (boot !== undefined && !removed.boots.includes(boot))) return unknown;
+    if (current.environment !== environment || !removed.boots.includes(current.boot) || JSON.stringify(inventory) !== JSON.stringify(removed.boots))
+      return unknown;
+    if (
+      removed.environment !== environment ||
+      removed.workId !== owner.workId ||
+      request.environment !== environment ||
+      request.workId !== owner.workId ||
+      JSON.stringify(removed.boots) !== JSON.stringify(request.boots) ||
+      (boot !== undefined && !removed.boots.includes(boot))
+    )
+      return unknown;
     for (const ref of removed.boots) {
       if (!(await observeBootEnvironment(root, environment, ref as BootRef)).cessationConfirmed) return unknown;
     }
@@ -237,9 +304,15 @@ export async function observeEnvironment(root: string, environment: EnvironmentR
     const paths = ['root.qcow2', 'workspace', 'artifacts'].map(name => join(directory, name));
     paths.push(...removed.boots.map(ref => cleanupRuntime(canonical, ref)));
     for (const path of paths) {
-      try { await lstat(path); return unknown; }
-      catch (e) { if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) return unknown; }
+      try {
+        await lstat(path);
+        return unknown;
+      } catch (e) {
+        if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) return unknown;
+      }
     }
     return { condition: 'removed', cessationConfirmed: true, consumption: 'unavailable' };
-  } catch { return unknown; }
+  } catch {
+    return unknown;
+  }
 }

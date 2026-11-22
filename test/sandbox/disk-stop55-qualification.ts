@@ -24,20 +24,35 @@ import type { BootRef } from '../../src/sandbox/lifecycle.js';
 
 const run = promisify(execFile);
 const tool = { timeout: 1_800_000, maxBuffer: 16 * 1024 * 1024, env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } };
-const assets = { directory: '/home/sanmoo/software-factory-test/assets35/assets',
-  manifestSha256: '72e00546beba8e1c8b4b6f9d7a17de635e27fe2de79ffa85688bb2bdeebb5c12' };
+const assets = {
+  directory: '/home/sanmoo/software-factory-test/assets35/assets',
+  manifestSha256: '72e00546beba8e1c8b4b6f9d7a17de635e27fe2de79ffa85688bb2bdeebb5c12',
+};
 const size = 40n * 1073741824n;
 const [root, mode, load] = process.argv.slice(2);
-if (!root?.startsWith('/home/sanmoo/software-factory-test/fix55-') || !['adapter', 'adapter-sigkill', 'sigkill'].includes(mode ?? '') ||
-    !['light', 'heavy'].includes(load ?? '')) throw new Error('USAGE: <new /home/sanmoo/software-factory-test/fix55-* root> <adapter|adapter-sigkill|sigkill> <light|heavy>');
+if (
+  !root?.startsWith('/home/sanmoo/software-factory-test/fix55-') ||
+  !['adapter', 'adapter-sigkill', 'sigkill'].includes(mode ?? '') ||
+  !['light', 'heavy'].includes(load ?? '')
+)
+  throw new Error('USAGE: <new /home/sanmoo/software-factory-test/fix55-* root> <adapter|adapter-sigkill|sigkill> <light|heavy>');
 
-const sha256 = (path: string) => new Promise<string>((resolve, reject) => {
-  const hash = createHash('sha256');
-  createReadStream(path).on('data', chunk => hash.update(chunk)).on('end', () => resolve(hash.digest('hex'))).on('error', reject);
-});
+const sha256 = (path: string) =>
+  new Promise<string>((resolve, reject) => {
+    const hash = createHash('sha256');
+    createReadStream(path)
+      .on('data', chunk => hash.update(chunk))
+      .on('end', () => resolve(hash.digest('hex')))
+      .on('error', reject);
+  });
 const exitOf = async (file: string, args: string[]) => {
-  try { const out = await run(file, args, tool); return { code: 0, stdout: out.stdout }; }
-  catch (error) { const e = error as { code?: unknown; stdout?: unknown }; return { code: typeof e.code === 'number' ? e.code : -1, stdout: typeof e.stdout === 'string' ? e.stdout : '' }; }
+  try {
+    const out = await run(file, args, tool);
+    return { code: 0, stdout: out.stdout };
+  } catch (error) {
+    const e = error as { code?: unknown; stdout?: unknown };
+    return { code: typeof e.code === 'number' ? e.code : -1, stdout: typeof e.stdout === 'string' ? e.stdout : '' };
+  }
 };
 const debugfs = async (raw: string, request: string) => (await run('/usr/sbin/debugfs', ['-R', request, raw], tool)).stdout;
 
@@ -56,14 +71,38 @@ async function main() {
   await buildRootDisk(join(assets.directory, manifest.assets.rootfs), join(root!, 'template.ext4'), disk, size);
   at('disk built');
   const { VM, RealFSProvider } = await loadDevelopmentGondolinSdk();
-  const vm = await VM.create({ autoStart: true, memory: '2048M', cpus: 2, tmpfs: {}, startTimeoutMs: 60000, sessionLabel: boot, debugLog: null,
-    dns: { mode: 'synthetic' }, allowWebSockets: false,
-    sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host', imagePath: assets.directory,
-      rootDiskPath: disk, rootDiskFormat: 'qcow2', rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false,
-      autoRestart: false, console: 'none', debug: false,
-      virtioSocketPath: join(runtime, 'v'), virtioFsSocketPath: join(runtime, 'f'), virtioSshSocketPath: join(runtime, 'h'),
-      virtioIngressSocketPath: join(runtime, 'i'), netSocketPath: join(runtime, 'n') },
-    vfs: { mounts: { '/workspace': new RealFSProvider(join(runtime, 'workspace')), '/artifacts': new RealFSProvider(join(runtime, 'artifacts')) } } });
+  const vm = await VM.create({
+    autoStart: true,
+    memory: '2048M',
+    cpus: 2,
+    tmpfs: {},
+    startTimeoutMs: 60000,
+    sessionLabel: boot,
+    debugLog: null,
+    dns: { mode: 'synthetic' },
+    allowWebSockets: false,
+    sandbox: {
+      vmm: 'qemu',
+      qemuPath: '/usr/bin/qemu-system-x86_64',
+      accel: 'kvm',
+      cpu: 'host',
+      imagePath: assets.directory,
+      rootDiskPath: disk,
+      rootDiskFormat: 'qcow2',
+      rootDiskReadOnly: false,
+      rootDiskDeleteOnClose: false,
+      netEnabled: false,
+      autoRestart: false,
+      console: 'none',
+      debug: false,
+      virtioSocketPath: join(runtime, 'v'),
+      virtioFsSocketPath: join(runtime, 'f'),
+      virtioSshSocketPath: join(runtime, 'h'),
+      virtioIngressSocketPath: join(runtime, 'i'),
+      netSocketPath: join(runtime, 'n'),
+    },
+    vfs: { mounts: { '/workspace': new RealFSProvider(join(runtime, 'workspace')), '/artifacts': new RealFSProvider(join(runtime, 'artifacts')) } },
+  });
   let closed = false;
   try {
     await vm.start();
@@ -78,8 +117,12 @@ async function main() {
     await exec(`set -eu; mkdir -p /fix55/dir; printf '%s' '${marker}' > /fix55/marker; sync`);
     let bigSha: string | undefined;
     if (load === 'heavy') {
-      bigSha = (await exec('set -eu; dd if=/dev/urandom of=/fix55/big bs=1M count=1024 2>/dev/null; mkdir -p /fix55/small; ' +
-        'i=0; while [ $i -lt 5000 ]; do printf "%s" "$i" > /fix55/small/f$i; i=$((i+1)); done; sha256sum /fix55/big')).split(' ')[0];
+      bigSha = (
+        await exec(
+          'set -eu; dd if=/dev/urandom of=/fix55/big bs=1M count=1024 2>/dev/null; mkdir -p /fix55/small; ' +
+            'i=0; while [ $i -lt 5000 ]; do printf "%s" "$i" > /fix55/small/f$i; i=$((i+1)); done; sha256sum /fix55/big',
+        )
+      ).split(' ')[0];
       await exec('setsid sh -c "while :; do dd if=/dev/zero of=/fix55/bg bs=1M count=64 conv=fsync 2>/dev/null; done" > /dev/null 2>&1 < /dev/null &');
     } else if (mode === 'sigkill') {
       await exec('setsid sh -c "while :; do dd if=/dev/zero of=/fix55/bg bs=1M count=64 2>/dev/null; done" > /dev/null 2>&1 < /dev/null &');
@@ -88,9 +131,15 @@ async function main() {
     const pid = vm.getHostPid();
     if (!pid) throw new Error('VMM_IDENTITY_UNAVAILABLE');
     let stop: unknown = 'none';
-    if (mode !== 'sigkill') { stop = await stopGuestCleanly((argv, options) => vm.exec(argv, options), 30); at(`guest stop ${JSON.stringify(stop)}`); }
+    if (mode !== 'sigkill') {
+      stop = await stopGuestCleanly((argv, options) => vm.exec(argv, options), 30);
+      at(`guest stop ${JSON.stringify(stop)}`);
+    }
     if (mode === 'adapter') await vm.close();
-    else { process.kill(pid, 'SIGKILL'); await vm.close(); }
+    else {
+      process.kill(pid, 'SIGKILL');
+      await vm.close();
+    }
     closed = true;
     at('vmm ended');
     const check = await checkDiskFilesystem(root!, disk, size);
@@ -110,12 +159,34 @@ async function main() {
       await rm(dumped);
       smallFiles = (await debugfs(raw, 'ls -p /fix55/small')).split('\n').filter(line => /\/f\d+\//.test(line)).length;
     }
-    const result = { mode, load, stop, check, journalPendingAfterStop: journal.needsRecovery, replayExit: replay, e2fsckExit: fsck.code,
-      e2fsckFindings: fsck.code === 0 ? [] : fsck.stdout.split('\n').filter(line => /\?|count|checksum|unused/i.test(line)).slice(0, 12),
-      markerReadBack: readBack === marker, bigSha256ReadBack: load === 'heavy' ? bigReadBack === bigSha : null, smallFiles };
-    const pass = (mode === 'sigkill') || (check.ok && fsck.code === 0 && result.markerReadBack && (load !== 'heavy' || (result.bigSha256ReadBack && smallFiles === 5000)));
+    const result = {
+      mode,
+      load,
+      stop,
+      check,
+      journalPendingAfterStop: journal.needsRecovery,
+      replayExit: replay,
+      e2fsckExit: fsck.code,
+      e2fsckFindings:
+        fsck.code === 0
+          ? []
+          : fsck.stdout
+              .split('\n')
+              .filter(line => /\?|count|checksum|unused/i.test(line))
+              .slice(0, 12),
+      markerReadBack: readBack === marker,
+      bigSha256ReadBack: load === 'heavy' ? bigReadBack === bigSha : null,
+      smallFiles,
+    };
+    const pass =
+      mode === 'sigkill' || (check.ok && fsck.code === 0 && result.markerReadBack && (load !== 'heavy' || (result.bigSha256ReadBack && smallFiles === 5000)));
     const file = await open(join(root!, 'result.json'), 'wx', 0o600);
-    try { await file.writeFile(`${JSON.stringify({ ...result, pass }, null, 2)}\n`); await file.sync(); } finally { await file.close(); }
+    try {
+      await file.writeFile(`${JSON.stringify({ ...result, pass }, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await rm(raw);
     console.log(JSON.stringify({ ...result, pass }));
     if (!pass) process.exitCode = 1;

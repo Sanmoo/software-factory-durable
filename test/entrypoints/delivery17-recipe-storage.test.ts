@@ -10,8 +10,14 @@ import { prepareAuthority } from './delivery17-qualification.js';
 
 // Ticket 17 recipe, storage path only (temporary fixtures, never the real root): a format-1 source (written before ticket 33) is COPIED and
 // only the copy is migrated explicitly with ticket 33's digest-checked migrateStorage; the source stays byte-identical at format 1.
-const sha = async (path: string) => createHash('sha256').update(await readFile(path)).digest('hex');
-const storage = (inspection: StorageInspection) => { assert.equal(inspection.kind, 'storage'); return inspection as Extract<StorageInspection, { kind: 'storage' }>; };
+const sha = async (path: string) =>
+  createHash('sha256')
+    .update(await readFile(path))
+    .digest('hex');
+const storage = (inspection: StorageInspection) => {
+  assert.equal(inspection.kind, 'storage');
+  return inspection as Extract<StorageInspection, { kind: 'storage' }>;
+};
 
 test('recipe preflight storage: a format-1 source is copied, ONLY the copy is migrated to the current format with the preserved digest checked and recorded', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'q17-storage-'));

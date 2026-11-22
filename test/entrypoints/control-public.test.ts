@@ -12,8 +12,20 @@ async function message(child: ChildProcess): Promise<Record<string, unknown>> {
   return (await once(child, 'message'))[0] as Record<string, unknown>;
 }
 function fixture(root: string, mode = 'control') {
-  return spawn('flock', ['--exclusive', '--nonblock', '--no-fork', join(root, 'data/control.lock'),
-    process.execPath, resolve('dist/test/entrypoints/control-fixture.js'), root, mode], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  return spawn(
+    'flock',
+    [
+      '--exclusive',
+      '--nonblock',
+      '--no-fork',
+      join(root, 'data/control.lock'),
+      process.execPath,
+      resolve('dist/test/entrypoints/control-fixture.js'),
+      root,
+      mode,
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] },
+  );
 }
 
 test('Control.accept/inspect/run never expose dispatch or a raw Session, before or after unpause', { timeout: remainingMs() }, async t => {
@@ -23,7 +35,11 @@ test('Control.accept/inspect/run never expose dispatch or a raw Session, before 
   const child = fixture(root);
   child.stderr?.resume();
   const ended = once(child, 'exit');
-  t.after(async () => { child.kill('SIGKILL'); await ended; await rm(root, { recursive: true, force: true }); });
+  t.after(async () => {
+    child.kill('SIGKILL');
+    await ended;
+    await rm(root, { recursive: true, force: true });
+  });
   const first = await message(child);
   assert.deepEqual(first.surface, ['accept', 'inspect', 'run']);
   assert.equal((first.initial as Record<string, unknown>).dispatch, 'closed');
@@ -49,8 +65,15 @@ test('a surviving real Node subprocess does not inherit the no-fork owner lock d
   const ended = once(owner, 'exit');
   let survivor: number | undefined = undefined;
   t.after(async () => {
-    owner.kill('SIGKILL'); await ended;
-    if (survivor) { try { process.kill(survivor, 'SIGKILL'); } catch { /* already ceased */ } }
+    owner.kill('SIGKILL');
+    await ended;
+    if (survivor) {
+      try {
+        process.kill(survivor, 'SIGKILL');
+      } catch {
+        /* already ceased */
+      }
+    }
     await rm(root, { recursive: true, force: true });
   });
   const reply = await message(owner);
@@ -59,6 +82,8 @@ test('a surviving real Node subprocess does not inherit the no-fork owner lock d
   owner.kill('SIGKILL');
   await ended;
   process.kill(survivor, 0); // The subprocess really outlived its owning process.
-  const replacement = spawnSync('flock', ['--exclusive', '--nonblock', '--no-fork', join(root, 'data/control.lock'), process.execPath, '-e', ''], { timeout: remainingMs() });
+  const replacement = spawnSync('flock', ['--exclusive', '--nonblock', '--no-fork', join(root, 'data/control.lock'), process.execPath, '-e', ''], {
+    timeout: remainingMs(),
+  });
   assert.equal(replacement.status, 0, replacement.stderr?.toString());
 });

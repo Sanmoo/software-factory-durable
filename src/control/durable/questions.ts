@@ -9,21 +9,32 @@ import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './ad
 import type { Session } from './store.js';
 
 /** Durable Question records (spec §3.2), one document per worker-assigned identity. */
-export const questions = defineDocFamily<{ question: QuestionView | null }, null>({ kind: 'factory.question', version: 1, scope: 'session', family: true,
-  initial: () => ({ question: null }), checkpointWhen: () => true });
+export const questions = defineDocFamily<{ question: QuestionView | null }, null>({
+  kind: 'factory.question',
+  version: 1,
+  scope: 'session',
+  family: true,
+  initial: () => ({ question: null }),
+  checkpointWhen: () => true,
+});
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 /** Canonical content hash of an ask_user request (worker and Control compute the same value). */
 export const questionSha256 = (question: string, context: string) => sha256(JSON.stringify({ question, context }));
 const keep = <T>(items: T[]) => items.slice(-50);
-const pendingStep = (questionId: string) => `Answer with a comment \`/factory answer ${questionId} <text>\` by a configured operator on the Ticket, or locally with ` +
+const pendingStep = (questionId: string) =>
+  `Answer with a comment \`/factory answer ${questionId} <text>\` by a configured operator on the Ticket, or locally with ` +
   `\`factory answer ${questionId} <text>\`. The Work then returns to its queue position; nothing starts directly.`;
 
 export type RegisterOutcome = { kind: 'recorded' | 'known' } | { kind: 'refused'; code: string };
 /** Whether a worker request is intact: valid shape, matching hash and a preserved-evidence reference of the same Work. */
 export function intactRequest(request: WorkerQuestion, workId: string): boolean {
-  return validateQuestionRequest(request).valid && questionSha256(request.question, request.context) === request.sha256 &&
-    request.reference?.workId === workId && typeof request.reference.id === 'string';
+  return (
+    validateQuestionRequest(request).valid &&
+    questionSha256(request.question, request.context) === request.sha256 &&
+    request.reference?.workId === workId &&
+    typeof request.reference.id === 'string'
+  );
 }
 
 /**
@@ -31,11 +42,14 @@ export function intactRequest(request: WorkerQuestion, workId: string): boolean 
  * for the CURRENT started Execution of an open, current Work. Same identity + same content returns `known` (lost ACK); same identity with
  * other content is a conflict and never replaces the record. Cessation and Slot release come later, separately.
  */
-export async function registerQuestion(session: Session, input: { work_id: string; executionId: string; invocationId: string; request: WorkerQuestion;
-  from: QuestionView['recordedFrom'] }): Promise<RegisterOutcome> {
+export async function registerQuestion(
+  session: Session,
+  input: { work_id: string; executionId: string; invocationId: string; request: WorkerQuestion; from: QuestionView['recordedFrom'] },
+): Promise<RegisterOutcome> {
   const outcome = await registerOnce(session, input);
   // Ticket 27: a live refusal is durable, so the boot never re-records the same request from Records against it.
-  if (outcome.kind === 'refused' && typeof input.request?.questionId === 'string') await recordQuestionRefusal(session, input.work_id, input.executionId, input.request.questionId, outcome.code);
+  if (outcome.kind === 'refused' && typeof input.request?.questionId === 'string')
+    await recordQuestionRefusal(session, input.work_id, input.executionId, input.request.questionId, outcome.code);
   return outcome;
 }
 
@@ -43,7 +57,7 @@ export async function registerQuestion(session: Session, input: { work_id: strin
 export async function recordQuestionRefusal(session: Session, work_id: string, executionId: string, questionId: string, code: string) {
   return session.commit(async tx => {
     const work = (await tx.doc(works, work_id, null)).work;
-    const execution = work ? [work.execution, ...(work.previousExecutions ?? [])].find(item => item?.executionId === executionId) ?? null : null;
+    const execution = work ? ([work.execution, ...(work.previousExecutions ?? [])].find(item => item?.executionId === executionId) ?? null) : null;
     if (!work || !execution || execution.questionRefusals?.some(item => item.questionId === questionId)) return 'stale' as const;
     const at = new Date().toISOString();
     execution.questionRefusals = [...(execution.questionRefusals ?? []), { questionId: questionId.slice(0, 64), code, at }].slice(-10);
@@ -60,17 +74,25 @@ async function registerOnce(session: Session, input: Parameters<typeof registerQ
     if (document.question) {
       const known = document.question;
       return known.workId === input.work_id && known.executionId === input.executionId && known.content.sha256 === request.sha256
-        ? { kind: 'known' as const } : { kind: 'refused' as const, code: 'QUESTION_ID_CONFLICT' };
+        ? { kind: 'known' as const }
+        : { kind: 'refused' as const, code: 'QUESTION_ID_CONFLICT' };
     }
     const index = await tx.doc(ticketIndex);
     const workDocument = await tx.doc(works, input.work_id, null);
     const work = workDocument.work;
     const execution = work?.execution ?? null;
-    if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== input.work_id) return { kind: 'refused' as const, code: 'WORK_NOT_CURRENT' };
+    if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== input.work_id)
+      return { kind: 'refused' as const, code: 'WORK_NOT_CURRENT' };
     if (!execution || execution.executionId !== input.executionId || execution.invocationId !== input.invocationId || execution.state !== 'started') {
       return { kind: 'refused' as const, code: 'STALE_EXECUTION' };
     }
-    return recordQuestionDocument(document, work, { executionId: input.executionId, invocationId: input.invocationId, request, from: input.from, now: new Date().toISOString() });
+    return recordQuestionDocument(document, work, {
+      executionId: input.executionId,
+      invocationId: input.invocationId,
+      request,
+      from: input.from,
+      now: new Date().toISOString(),
+    });
   }, BACKGROUND_CONTEXT);
 }
 
@@ -78,20 +100,38 @@ async function registerOnce(session: Session, input: Parameters<typeof registerQ
  * The Question, its Work impediment and its publication intent, written into the caller's commit (spec §3.4 "Registrar pergunta"). Shared by
  * the live registration and (ticket 27) the boot recovery of a request whose notification/ACK was lost, so both create the same record.
  */
-export function recordQuestionDocument(document: { question: QuestionView | null }, work: WorkRecord, input: { executionId: string; invocationId: string;
-  request: WorkerQuestion; from: QuestionView['recordedFrom']; now: string }): RegisterOutcome {
+export function recordQuestionDocument(
+  document: { question: QuestionView | null },
+  work: WorkRecord,
+  input: { executionId: string; invocationId: string; request: WorkerQuestion; from: QuestionView['recordedFrom']; now: string },
+): RegisterOutcome {
   const { request, now } = input;
   const destination = questionDestination({ ticket: work.ticket, pullRequest: work.pullRequest });
   // Own pull requests do not exist before publication (ticket 14); the PR surface is not reachable in this Factory version.
   if (destination.kind !== 'issue') return { kind: 'refused', code: 'QUESTION_DESTINATION_NOT_ENABLED' };
-  document.question = { questionId: request.questionId, workId: work.work_id, executionId: input.executionId, invocationId: input.invocationId, recordedAt: now,
-    recordedFrom: input.from, content: { question: request.question, context: request.context, sha256: request.sha256, reference: { ...request.reference } },
-    destination, state: 'open',
-    publication: { effectId: randomUUID(), state: 'intended', updatedAt: now, attempts: [], comment: null, nextStep: null }, answer: null, ignored: [] };
+  document.question = {
+    questionId: request.questionId,
+    workId: work.work_id,
+    executionId: input.executionId,
+    invocationId: input.invocationId,
+    recordedAt: now,
+    recordedFrom: input.from,
+    content: { question: request.question, context: request.context, sha256: request.sha256, reference: { ...request.reference } },
+    destination,
+    state: 'open',
+    publication: { effectId: randomUUID(), state: 'intended', updatedAt: now, attempts: [], comment: null, nextStep: null },
+    answer: null,
+    ignored: [],
+  };
   work.impediments.push({ code: 'QUESTION_PENDING', scope: 'work', since: now, questionId: request.questionId, nextStep: pendingStep(request.questionId) });
   work.questions = [...(work.questions ?? []), request.questionId];
-  work.history.push({ at: now, event: 'question-recorded', origin: input.from === 'records-recovery' ? 'records-recovery' : 'controller-dispatch', questionId: request.questionId,
-    detail: input.executionId });
+  work.history.push({
+    at: now,
+    event: 'question-recorded',
+    origin: input.from === 'records-recovery' ? 'records-recovery' : 'controller-dispatch',
+    questionId: request.questionId,
+    detail: input.executionId,
+  });
   return { kind: 'recorded' };
 }
 
@@ -99,30 +139,65 @@ export function recordQuestionDocument(document: { question: QuestionView | null
  * The worker ended with a question that has no record: its content was not intact (`QUESTION_CONTENT_LOST`) or it could not be recorded
  * (`QUESTION_NOT_RECORDED`, e.g. the Work stopped being current). Block explicitly; never invent or publish a question.
  */
-export async function recordContentLost(session: Session, work_id: string, executionId: string, questionId: string,
-  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' | 'QUESTION_ID_CONFLICT' | 'QUESTION_RECORDED_EXECUTION_UNCERTAIN' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact',
-  boundQuestionId?: string) {
+export async function recordContentLost(
+  session: Session,
+  work_id: string,
+  executionId: string,
+  questionId: string,
+  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' | 'QUESTION_ID_CONFLICT' | 'QUESTION_RECORDED_EXECUTION_UNCERTAIN' = 'QUESTION_CONTENT_LOST',
+  reason = 'its complete request was not received intact',
+  boundQuestionId?: string,
+) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     if (!work || work.execution?.executionId !== executionId) return 'stale' as const;
-    if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: new Date().toISOString(), ...(boundQuestionId ? { questionId: boundQuestionId } : {}),
-      nextStep: `Execution ${executionId} reported question ${/^[0-9a-f-]{36}$/.test(questionId) ? questionId : '(invalid id)'} but ${reason}; ` +
-        'nothing was published or invented. Inspect the worker\'s preserved Records evidence and decide explicitly (recovery, ticket 26).' });
+    if (!work.impediments.some(item => item.code === code))
+      work.impediments.push({
+        code,
+        scope: 'work',
+        since: new Date().toISOString(),
+        ...(boundQuestionId ? { questionId: boundQuestionId } : {}),
+        nextStep:
+          `Execution ${executionId} reported question ${/^[0-9a-f-]{36}$/.test(questionId) ? questionId : '(invalid id)'} but ${reason}; ` +
+          "nothing was published or invented. Inspect the worker's preserved Records evidence and decide explicitly (recovery, ticket 26).",
+      });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }
 
-export type AnswerOrigin = { kind: 'local-cli' } |
-  { kind: 'github-comment'; workId: string; comment: { commentId: number; url: string; author: { id: number; login: string; type: string } } } |
+export type AnswerOrigin =
+  | { kind: 'local-cli' }
+  | { kind: 'github-comment'; workId: string; comment: { commentId: number; url: string; author: { id: number; login: string; type: string } } }
   /** Jira ticket 06: an ordinary comment of the Jira Work's origin Card, identified by (siteId, issueId, commentId) and its observed account. */
-  { kind: 'jira-comment'; workId: string; comment: { siteId: string; issueId: string; commentId: string; url: string; accountId: string } };
-type Ingress = { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' | 'github-comment' | 'jira-comment'; commentId?: number;
-  comment?: { siteId: string; issueId: string; commentId: string; accountId: string } };
-const ingressOf = (input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin }): Ingress => ({ request_id: input.request_id, operation: 'answer',
-  question_id: input.question_id, text: input.text, origin: input.origin.kind, ...(input.origin.kind === 'github-comment' ? { commentId: input.origin.comment.commentId } : {}),
-  ...(input.origin.kind === 'jira-comment' ? { comment: { siteId: input.origin.comment.siteId, issueId: input.origin.comment.issueId, commentId: input.origin.comment.commentId,
-    accountId: input.origin.comment.accountId } } : {}) });
+  | { kind: 'jira-comment'; workId: string; comment: { siteId: string; issueId: string; commentId: string; url: string; accountId: string } };
+type Ingress = {
+  request_id: string;
+  operation: 'answer';
+  question_id: string;
+  text: string;
+  origin: 'local-cli' | 'github-comment' | 'jira-comment';
+  commentId?: number;
+  comment?: { siteId: string; issueId: string; commentId: string; accountId: string };
+};
+const ingressOf = (input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin }): Ingress => ({
+  request_id: input.request_id,
+  operation: 'answer',
+  question_id: input.question_id,
+  text: input.text,
+  origin: input.origin.kind,
+  ...(input.origin.kind === 'github-comment' ? { commentId: input.origin.comment.commentId } : {}),
+  ...(input.origin.kind === 'jira-comment'
+    ? {
+        comment: {
+          siteId: input.origin.comment.siteId,
+          issueId: input.origin.comment.issueId,
+          commentId: input.origin.comment.commentId,
+          accountId: input.origin.comment.accountId,
+        },
+      }
+    : {}),
+});
 type AnswerReceipt = Extract<ControlReceipt, { operation: 'answer' }>;
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 
@@ -131,14 +206,18 @@ type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
  * Question's impediment and the history entry share one commit. No queue reordering, no spawn: the Work keeps its category/position and
  * waits for the normal dispatch revalidation. `refusal` carries an authorization failure decided before (bot/third party).
  */
-export async function acceptAnswer(session: Session, input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string }):
-  Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+export async function acceptAnswer(
+  session: Session,
+  input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string },
+): Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   return session.commit(tx => answerIn(tx, input), BACKGROUND_CONTEXT);
 }
 
 /** The body of {@link acceptAnswer} inside the caller's commit (Jira ticket 06 decides the target Question in the same commit). */
-export async function answerIn(tx: Tx, input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string }):
-  Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+export async function answerIn(
+  tx: Tx,
+  input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string },
+): Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   const ingress = ingressOf(input);
   const request = await tx.doc(requests, input.request_id, null);
   if (request.input) {
@@ -150,27 +229,71 @@ export async function answerIn(tx: Tx, input: { request_id: string; question_id:
   const workDocument = question ? await tx.doc(works, question.workId, null) : null;
   const work = workDocument?.work ?? null;
   const index = await tx.doc(ticketIndex);
-  const decision = input.refusal ? { kind: 'refuse' as const, code: input.refusal } : answerDecision({ question, context: input.origin.kind === 'local-cli' ? { kind: 'local-cli' }
-    : { kind: input.origin.kind, workId: input.origin.workId }, work: work ? { work_id: work.work_id, result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id } : null });
+  const decision = input.refusal
+    ? { kind: 'refuse' as const, code: input.refusal }
+    : answerDecision({
+        question,
+        context: input.origin.kind === 'local-cli' ? { kind: 'local-cli' } : { kind: input.origin.kind, workId: input.origin.workId },
+        work: work ? { work_id: work.work_id, result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id } : null,
+      });
   const now = new Date().toISOString();
   const origin = input.origin;
-  const originLabel = origin.kind === 'github-comment' ? `github-comment:${origin.comment.commentId}` : origin.kind === 'jira-comment' ? `jira-comment:${input.request_id}` : `local-cli:${input.request_id}`;
+  const originLabel =
+    origin.kind === 'github-comment'
+      ? `github-comment:${origin.comment.commentId}`
+      : origin.kind === 'jira-comment'
+        ? `jira-comment:${input.request_id}`
+        : `local-cli:${input.request_id}`;
   let receipt: AnswerReceipt;
   if (decision.kind === 'refuse') {
     if (question) question.ignored = keep([...question.ignored, { at: now, origin: originLabel, code: decision.code }]);
-    receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'not-applied', reason: decision.code, work_id: question?.workId ?? null };
+    receipt = {
+      kind: 'durable',
+      request_id: input.request_id,
+      operation: 'answer',
+      question_id: input.question_id,
+      outcome: 'not-applied',
+      reason: decision.code,
+      work_id: question?.workId ?? null,
+    };
   } else {
     question!.state = 'answered';
-    question!.answer = { text: input.text, sha256: sha256(input.text), acceptedAt: now,
-      author: origin.kind === 'github-comment' ? { kind: 'github', id: origin.comment.author.id, login: origin.comment.author.login }
-        : origin.kind === 'jira-comment' ? { kind: 'jira', accountId: origin.comment.accountId } : { kind: 'local-administrator' },
-      origin: origin.kind === 'github-comment' ? { kind: 'github-comment', commentId: origin.comment.commentId, url: origin.comment.url }
-        : origin.kind === 'jira-comment' ? { kind: 'jira-comment', siteId: origin.comment.siteId, issueId: origin.comment.issueId, commentId: origin.comment.commentId,
-          url: origin.comment.url, request_id: input.request_id } : { kind: 'local-cli', request_id: input.request_id } };
+    question!.answer = {
+      text: input.text,
+      sha256: sha256(input.text),
+      acceptedAt: now,
+      author:
+        origin.kind === 'github-comment'
+          ? { kind: 'github', id: origin.comment.author.id, login: origin.comment.author.login }
+          : origin.kind === 'jira-comment'
+            ? { kind: 'jira', accountId: origin.comment.accountId }
+            : { kind: 'local-administrator' },
+      origin:
+        origin.kind === 'github-comment'
+          ? { kind: 'github-comment', commentId: origin.comment.commentId, url: origin.comment.url }
+          : origin.kind === 'jira-comment'
+            ? {
+                kind: 'jira-comment',
+                siteId: origin.comment.siteId,
+                issueId: origin.comment.issueId,
+                commentId: origin.comment.commentId,
+                url: origin.comment.url,
+                request_id: input.request_id,
+              }
+            : { kind: 'local-cli', request_id: input.request_id },
+    };
     // Only THIS Question's impediment; authorization, dependencies, other Questions and limits are untouched.
     work!.impediments = work!.impediments.filter(item => !(item.code === 'QUESTION_PENDING' && item.questionId === input.question_id));
     work!.history.push({ at: now, event: 'question-answered', origin: origin.kind, questionId: input.question_id, detail: originLabel });
-    receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'accepted', reason: null, work_id: work!.work_id };
+    receipt = {
+      kind: 'durable',
+      request_id: input.request_id,
+      operation: 'answer',
+      question_id: input.question_id,
+      outcome: 'accepted',
+      reason: null,
+      work_id: work!.work_id,
+    };
   }
   request.input = ingress as never;
   request.receipt = receipt;
@@ -179,11 +302,18 @@ export async function answerIn(tx: Tx, input: { request_id: string; question_id:
   return JSON.parse(JSON.stringify(receipt)) as typeof receipt;
 }
 
-type PublicationUpdate = { kind: 'begin' } | { kind: 'result'; outcome: 'published'; comment: { commentId: number; url: string }; revocation?: string } |
-  { kind: 'result'; outcome: 'failed' | 'unknown'; code: string; nextStep: string; revocation?: string } |
-  { kind: 'discovery'; outcome: 'discovered'; comment: { commentId: number; url: string } } | { kind: 'discovery'; outcome: 'absent' | 'discovery-incomplete' | 'multiple'; code?: string };
+type PublicationUpdate =
+  | { kind: 'begin' }
+  | { kind: 'result'; outcome: 'published'; comment: { commentId: number; url: string }; revocation?: string }
+  | { kind: 'result'; outcome: 'failed' | 'unknown'; code: string; nextStep: string; revocation?: string }
+  | { kind: 'discovery'; outcome: 'discovered'; comment: { commentId: number; url: string } }
+  | { kind: 'discovery'; outcome: 'absent' | 'discovery-incomplete' | 'multiple'; code?: string };
 /** Publication effect transitions (intent -> attempt -> observation; discovery after uncertainty). Returns the new state or `stale`. */
-export async function recordPublication(session: Session, questionId: string, update: PublicationUpdate): Promise<QuestionView['publication']['state'] | 'stale'> {
+export async function recordPublication(
+  session: Session,
+  questionId: string,
+  update: PublicationUpdate,
+): Promise<QuestionView['publication']['state'] | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(questions, questionId, null);
     const question = document.question;
@@ -196,7 +326,9 @@ export async function recordPublication(session: Session, questionId: string, up
       publication.updatedAt = now;
     };
     const published = async (comment: { commentId: number; url: string }) => {
-      publication.state = 'published'; publication.comment = comment; publication.nextStep = null;
+      publication.state = 'published';
+      publication.comment = comment;
+      publication.nextStep = null;
       const work = (await tx.doc(works, question.workId, null)).work;
       work?.history.push({ at: now, event: 'question-published', origin: 'controller-publication', questionId, detail: comment.url });
       // Comments up to the Question's own comment can never answer it: start reading after it.
@@ -207,16 +339,24 @@ export async function recordPublication(session: Session, questionId: string, up
       if (publication.state !== 'intended' && publication.state !== 'failed') return 'stale' as const;
       // Ticket 27/25: the attempt commit re-checks the Work: after a cancellation (or any closure) nothing new is sent.
       if ((await tx.doc(works, question.workId, null)).work?.result !== 'open') return 'stale' as const;
-      publication.state = 'attempting'; attempt('attempting');
+      publication.state = 'attempting';
+      attempt('attempting');
     } else if (update.kind === 'result') {
       if (publication.state !== 'attempting') return 'stale' as const;
       attempt(update.outcome, update.outcome === 'published' ? undefined : update.code);
       if (update.outcome === 'published') await published(update.comment);
-      else { publication.state = update.outcome === 'failed' ? 'failed' : 'ambiguous'; publication.nextStep = update.nextStep; }
+      else {
+        publication.state = update.outcome === 'failed' ? 'failed' : 'ambiguous';
+        publication.nextStep = update.nextStep;
+      }
     } else {
       if (!questionNeedsDiscovery(publication.state)) return 'stale' as const;
-      const next = questionDiscoveryNext(publication.state, update.outcome === 'discovery-incomplete' ? { kind: 'incomplete' }
-        : { kind: 'observed', candidates: update.outcome === 'discovered' ? 1 : update.outcome === 'multiple' ? 2 : 0 });
+      const next = questionDiscoveryNext(
+        publication.state,
+        update.outcome === 'discovery-incomplete'
+          ? { kind: 'incomplete' }
+          : { kind: 'observed', candidates: update.outcome === 'discovered' ? 1 : update.outcome === 'multiple' ? 2 : 0 },
+      );
       // Still unconfirmed after another complete empty listing (re-discovered every cycle): no new attempt entry.
       if (next === 'unconfirmed' && publication.state === 'unconfirmed' && publication.attempts.at(-1)?.outcome === 'absent') return publication.state;
       attempt(update.outcome, update.outcome === 'discovered' ? undefined : update.code);
@@ -226,7 +366,8 @@ export async function recordPublication(session: Session, questionId: string, up
         publication.nextStep = 'Several comments carry this Question marker; none is chosen. Operator must inspect the Ticket (keep one, decide explicitly).';
       } else if (next === 'unconfirmed') {
         publication.state = 'unconfirmed';
-        publication.nextStep = `A POST of this Question may have reached GitHub, but a complete listing does not show its marker: it is NOT reposted automatically ` +
+        publication.nextStep =
+          `A POST of this Question may have reached GitHub, but a complete listing does not show its marker: it is NOT reposted automatically ` +
           `(a lost answer or a lagging listing never proves absence); the marker is searched again on every cycle. Operator: inspect the Ticket; the Question ` +
           `stays answerable locally with \`factory answer ${questionId} <text>\`.`;
       } else publication.state = next;

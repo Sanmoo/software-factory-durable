@@ -18,17 +18,31 @@ import type { LambdaListedMicrovm, LambdaService, LambdaServiceFailure } from '.
  * build log group. The command is the Operator's and runs beside a controller: a Prepare that starts using an image between the plan
  * and the deletion is not excluded by any lock, so it is meant for images whose Works ended.
  */
-export type ImageCleanupItem = { imageName: string; imageArn: string; state: string;
-  /** Works whose environment records the image. */ works: string[]; /** MicroVMs of the image that have not ended. */ running: number;
+export type ImageCleanupItem = {
+  imageName: string;
+  imageArn: string;
+  state: string;
+  /** Works whose environment records the image. */ works: string[];
+  /** MicroVMs of the image that have not ended. */ running: number;
   decision: 'in-use' | 'removable' | 'unverifiable';
-  outcome?: 'removed' | 'kept' | 'failed'; /** `failed`: the step that did not complete and why. */ detail?: string };
+  outcome?: 'removed' | 'kept' | 'failed';
+  /** `failed`: the step that did not complete and why. */ detail?: string;
+};
 
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Pure rule of the cleanup: which images of the installation may be removed. `tags: null`: the image's tags could not be read. */
-export function planImageCleanup({ installation, images, works, microvms }: { installation: string;
+export function planImageCleanup({
+  installation,
+  images,
+  works,
+  microvms,
+}: {
+  installation: string;
   images: readonly { name: string; imageArn: string; state: string; tags: Readonly<Record<string, string>> | null }[];
-  works: readonly { workId: string; imageArn: string }[]; microvms: readonly Pick<LambdaListedMicrovm, 'microvmId' | 'state' | 'imageArn'>[] }): ImageCleanupItem[] {
+  works: readonly { workId: string; imageArn: string }[];
+  microvms: readonly Pick<LambdaListedMicrovm, 'microvmId' | 'state' | 'imageArn'>[];
+}): ImageCleanupItem[] {
   const named = new RegExp(`^factory-${escaped(installation)}-[a-f0-9]{32}$`);
   const items: ImageCleanupItem[] = [];
   for (const image of images) {
@@ -41,13 +55,28 @@ export function planImageCleanup({ installation, images, works, microvms }: { in
   return items.sort((left, right) => left.imageName.localeCompare(right.imageName));
 }
 
-export type ImageCleanupResult = { status: 'planned' | 'cleaned' | 'refused' | 'unavailable';
-  code?: 'IMAGE_IN_USE' | 'IMAGE_NOT_FOUND' | 'IMAGE_NOT_VERIFIABLE' | 'IMAGE_INVENTORY_UNAVAILABLE' | 'IMAGE_CLEANUP_INCOMPLETE'; detail?: string; images: ImageCleanupItem[] };
+export type ImageCleanupResult = {
+  status: 'planned' | 'cleaned' | 'refused' | 'unavailable';
+  code?: 'IMAGE_IN_USE' | 'IMAGE_NOT_FOUND' | 'IMAGE_NOT_VERIFIABLE' | 'IMAGE_INVENTORY_UNAVAILABLE' | 'IMAGE_CLEANUP_INCOMPLETE';
+  detail?: string;
+  images: ImageCleanupItem[];
+};
 
 const describe = (failure: LambdaServiceFailure) => [failure.kind, failure.action, failure.detail].filter(Boolean).join(': ').slice(0, 400);
 
-export async function cleanupInstallationImages({ root, service, profile, image, confirm }: { root: string; service: LambdaService; profile: LambdaProfile;
-  /** One image by name; absent: every removable image of the installation. */ image?: string | undefined; confirm: boolean }): Promise<ImageCleanupResult> {
+export async function cleanupInstallationImages({
+  root,
+  service,
+  profile,
+  image,
+  confirm,
+}: {
+  root: string;
+  service: LambdaService;
+  profile: LambdaProfile;
+  /** One image by name; absent: every removable image of the installation. */ image?: string | undefined;
+  confirm: boolean;
+}): Promise<ImageCleanupResult> {
   const unavailable = (detail: string): ImageCleanupResult => ({ status: 'unavailable', code: 'IMAGE_INVENTORY_UNAVAILABLE', detail, images: [] });
   // Everything that decides "in use" is read before anything is deleted; one unreadable part plans nothing.
   const listed = await service.listImages();
@@ -63,7 +92,9 @@ export async function cleanupInstallationImages({ root, service, profile, image,
       const record = await readWorkImage(root, environment);
       if (record) works.push({ workId: record.workId, imageArn: record.imageArn });
     }
-  } catch { return unavailable('an image record of a Work is unreadable'); }
+  } catch {
+    return unavailable('an image record of a Work is unreadable');
+  }
   const named = new RegExp(`^factory-${escaped(profile.installation)}-[a-f0-9]{32}$`);
   const images: Parameters<typeof planImageCleanup>[0]['images'][number][] = [];
   const versions = new Map<string, string | undefined>();
@@ -81,20 +112,34 @@ export async function cleanupInstallationImages({ root, service, profile, image,
   if (image !== undefined) {
     const [only] = selected;
     if (!only) return { status: 'refused', code: 'IMAGE_NOT_FOUND', detail: `${image} is not an image of this installation.`, images: [] };
-    if (only.decision === 'in-use') return { status: 'refused', code: 'IMAGE_IN_USE', images: selected,
-      detail: only.works.length > 0 ? `held by Work ${only.works.join(', ')}` : only.running > 0 ? `${only.running} MicroVM(s) still run from it` : 'it is still being built' };
+    if (only.decision === 'in-use')
+      return {
+        status: 'refused',
+        code: 'IMAGE_IN_USE',
+        images: selected,
+        detail:
+          only.works.length > 0
+            ? `held by Work ${only.works.join(', ')}`
+            : only.running > 0
+              ? `${only.running} MicroVM(s) still run from it`
+              : 'it is still being built',
+      };
     if (only.decision === 'unverifiable') return { status: 'refused', code: 'IMAGE_NOT_VERIFIABLE', detail: 'its tags could not be read', images: selected };
   }
   if (!confirm) return { status: 'planned', images: selected };
   let failed = false;
   for (const item of selected) {
-    if (item.decision !== 'removable') { item.outcome = 'kept'; continue; }
+    if (item.decision !== 'removable') {
+      item.outcome = 'kept';
+      continue;
+    }
     const gone = (result: { ok: true } | { ok: false; failure: LambdaServiceFailure }) => result.ok || result.failure.kind === 'not-found';
     const steps: [string, () => Promise<{ ok: true } | { ok: false; failure: LambdaServiceFailure }>][] = [
       // Acceptance finding A18: the service refuses to delete an image's last version ("delete the entire image"); the image goes whole.
       ['deleting the image', () => service.deleteImage(item.imageArn)],
       ['deleting the build artifact', () => service.deleteBuildArtifact({ bucket: resources.artifactBucket, key: `${item.imageName}.zip` })],
-      ['deleting the build log', () => service.deleteBuildLog(`/aws/lambda-microvms/${item.imageName}`)]];
+      ['deleting the build log', () => service.deleteBuildLog(`/aws/lambda-microvms/${item.imageName}`)],
+    ];
     item.outcome = 'removed';
     for (const [step, run] of steps) {
       const result = await run();

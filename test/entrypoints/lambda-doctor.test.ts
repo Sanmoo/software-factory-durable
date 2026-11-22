@@ -31,13 +31,34 @@ async function diagnose(t: { after(fn: () => unknown): void }, yaml: string, fak
   return { report, fake, check: (id: string) => report.checks.find(item => item.id === id) };
 }
 
-test('doctor accepts a Lambda installation, shows its effective profile and diagnoses the account instead of this host\'s virtualization', async t => {
+test("doctor accepts a Lambda installation, shows its effective profile and diagnoses the account instead of this host's virtualization", async t => {
   const { report, check, fake } = await diagnose(t, configuration('{adapter: lambda, schemaVersion: 1, awsProfile: factory, installation: acme}', 2));
   assert.equal(report.configuration.valid, true);
   if (!report.configuration.valid) return;
-  assert.deepEqual(report.configuration.effective.sandbox, { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme', region: 'us-east-1',
-    architecture: 'arm64', baselineMemoryMiB: 1024, additionalOsCapabilities: ['ALL'], maxBootSeconds: 3600, rotationMarginSeconds: 600, observationIntervalSeconds: 30 });
-  for (const id of ['lambda-ssh', 'lambda-websocat', 'lambda-identity', 'lambda-region', 'lambda-permissions', 'lambda-build-role', 'lambda-artifact-bucket', 'lambda-quota']) assert.equal(check(id)?.status, 'ok', id);
+  assert.deepEqual(report.configuration.effective.sandbox, {
+    adapter: 'lambda',
+    schemaVersion: 1,
+    awsProfile: 'factory',
+    installation: 'acme',
+    region: 'us-east-1',
+    architecture: 'arm64',
+    baselineMemoryMiB: 1024,
+    additionalOsCapabilities: ['ALL'],
+    maxBootSeconds: 3600,
+    rotationMarginSeconds: 600,
+    observationIntervalSeconds: 30,
+  });
+  for (const id of [
+    'lambda-ssh',
+    'lambda-websocat',
+    'lambda-identity',
+    'lambda-region',
+    'lambda-permissions',
+    'lambda-build-role',
+    'lambda-artifact-bucket',
+    'lambda-quota',
+  ])
+    assert.equal(check(id)?.status, 'ok', id);
   for (const id of ['kvm-access', 'qemu-system-x86_64', 'capacity', 'environment-identity']) assert.equal(check(id), undefined, id);
   assert.deepEqual(fake.mutations, []);
 });
@@ -55,7 +76,12 @@ test('doctor diagnoses the configured Builder concurrency against the account qu
 });
 
 test('doctor blocks a Lambda installation whose host lacks a tool of the channel, before any boot is tried', async t => {
-  const { report, check, fake } = await diagnose(t, configuration('{adapter: lambda, schemaVersion: 1, awsProfile: factory, installation: acme}'), lambdaAccountFake(), ['ssh']);
+  const { report, check, fake } = await diagnose(
+    t,
+    configuration('{adapter: lambda, schemaVersion: 1, awsProfile: factory, installation: acme}'),
+    lambdaAccountFake(),
+    ['ssh'],
+  );
   assert.equal(report.code, 'PREREQUISITES_MISSING');
   assert.equal(check('lambda-ssh')?.status, 'ok');
   assert.equal(check('lambda-websocat')?.status, 'blocked');

@@ -2,7 +2,18 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ConfiguredRepository, RepairReason } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { exhaustionCodes } from '../rules/budget.js';
-import { correctionClosure, correctionNextStep, fingerprint, observationDriven, repairCodes, repairDecision, repairTriggers, repeatedImpediment, type RepairDecision, type TriggerOutcome } from '../rules/repair.js';
+import {
+  correctionClosure,
+  correctionNextStep,
+  fingerprint,
+  observationDriven,
+  repairCodes,
+  repairDecision,
+  repairTriggers,
+  repeatedImpediment,
+  type RepairDecision,
+  type TriggerOutcome,
+} from '../rules/repair.js';
 import { humanReasons, isHumanReason, undeliveredHuman } from '../rules/feedback.js';
 import { markInCorrection } from './feedback.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
@@ -18,7 +29,11 @@ import type { Session } from './store.js';
 
 type Limits = Pick<ConfiguredRepository, 'correctionLimit' | 'recoveryLimit'>;
 export type RepairObservation = { outcome: 'stale' | 'busy' | 'closed' | 'continued' | RepairDecision['kind']; correctionId: string | null; reasons: string[] };
-const summary = (reasons: readonly RepairReason[]) => reasons.map(item => `${item.code}${item.subject ? `:${item.subject}` : ''}`).join(',').slice(0, 200);
+const summary = (reasons: readonly RepairReason[]) =>
+  reasons
+    .map(item => `${item.code}${item.subject ? `:${item.subject}` : ''}`)
+    .join(',')
+    .slice(0, 200);
 
 /**
  * One repair observation of a Work, in ONE commit, from its durable facts only: close a correction whose work is reconciled; otherwise
@@ -29,12 +44,19 @@ export async function observeRepair(session: Session, work_id: string, limits: (
     const index = await tx.doc(ticketIndex);
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
-    if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work_id) return { outcome: 'stale' as const, correctionId: null, reasons: [] };
+    if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work_id)
+      return { outcome: 'stale' as const, correctionId: null, reasons: [] };
     // An active (reserved/started/held/not ceased) Execution: new facts wait for its next safe activation (no parallel writer).
     if (activeExecution(work.execution ?? null)) return { outcome: 'busy' as const, correctionId: work.correction?.correctionId ?? null, reasons: [] };
     const now = new Date().toISOString();
     const event = (name: 'repair-consolidated' | 'repair-withdrawn' | 'repair-repeated' | 'repair-continued', detail: string) =>
-      work.history.push({ at: now, event: name, origin: 'controller-repair', correctionId: work.correction?.correctionId ?? null, detail: detail.slice(0, 512) });
+      work.history.push({
+        at: now,
+        event: name,
+        origin: 'controller-repair',
+        correctionId: work.correction?.correctionId ?? null,
+        detail: detail.slice(0, 512),
+      });
     const executions = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
     const head = work.publication?.verified?.head ?? work.checks?.latest.pullRequest.headSha ?? '';
     const requests = work.feedback?.requests ?? [];
@@ -42,7 +64,11 @@ export async function observeRepair(session: Session, work_id: string, limits: (
     // correction/charge; nothing reaches its running activity. They wait for its next safe activation (`continuing`).
     if (work.correction?.consumed) {
       const known = new Set((work.correction.reasons ?? []).map(fingerprint));
-      const added = humanReasons(requests.filter(item => item.state === 'pending'), null, head).filter(item => !known.has(fingerprint(item)));
+      const added = humanReasons(
+        requests.filter(item => item.state === 'pending'),
+        null,
+        head,
+      ).filter(item => !known.has(fingerprint(item)));
       if (added.length) {
         work.correction.reasons = [...(work.correction.reasons ?? []), ...added].slice(0, 32);
         markInCorrection(work, work.correction, head || null);
@@ -50,8 +76,13 @@ export async function observeRepair(session: Session, work_id: string, limits: (
         event('repair-consolidated', `+${summary(added)} (for its next safe activation)`);
       }
     }
-    const closure = correctionClosure({ correction: work.correction, execution: work.execution, previousExecutions: work.previousExecutions, publication: work.publication,
-      queuePending: work.queue.pending });
+    const closure = correctionClosure({
+      correction: work.correction,
+      execution: work.execution,
+      previousExecutions: work.previousExecutions,
+      publication: work.publication,
+      queuePending: work.queue.pending,
+    });
     if (closure.kind === 'close') {
       const correctionId = work.correction!.correctionId;
       const undelivered = undeliveredHuman(work.correction, executions);
@@ -75,19 +106,34 @@ export async function observeRepair(session: Session, work_id: string, limits: (
     const combined = [...(observed.kind === 'triggers' ? observed.reasons : []), ...human];
     // The checks' certainty decides only impediment reasons: a correction of human requests only, none of them left, is certainly empty.
     const humanOnlyCorrection = Boolean(work.correction?.reasons?.length) && (work.correction?.reasons ?? []).every(isHumanReason);
-    const triggers: TriggerOutcome = combined.length ? { kind: 'triggers', reasons: combined }
-      : observed.kind === 'none' && humanOnlyCorrection ? { ...observed, certain: true } : observed;
+    const triggers: TriggerOutcome = combined.length
+      ? { kind: 'triggers', reasons: combined }
+      : observed.kind === 'none' && humanOnlyCorrection
+        ? { ...observed, certain: true }
+        : observed;
     const decision = repairDecision({ triggers, correction: work.correction, closed: work.corrections ?? [] });
     // A repeated-event block lasts while the repeated reasons are still observed; only a CERTAIN read (a new head/result) lifts it.
     const certain = triggers.kind === 'triggers' || triggers.certain;
-    if (decision.kind !== 'repeated' && certain && work.impediments.some(item => item.code === repairCodes.repeated)) work.impediments = work.impediments.filter(item => item.code !== repairCodes.repeated);
+    if (decision.kind !== 'repeated' && certain && work.impediments.some(item => item.code === repairCodes.repeated))
+      work.impediments = work.impediments.filter(item => item.code !== repairCodes.repeated);
     switch (decision.kind) {
       case 'open': {
         const publication = work.publication!;
         const wasPending = work.queue.pending;
         const humanOnly = decision.reasons.every(isHumanReason);
-        openCorrectionPending(work, index, now, `${humanOnly ? 'human feedback' : 'effective impediment'}: ${summary(decision.reasons)}`, limits(work.repository.repository),
-          { reasons: decision.reasons, headSha: head || decision.reasons[0]!.headSha, basisExecutionId: publication.basisExecutionId, trigger: humanOnly ? 'human-feedback' : 'effective-impediment' });
+        openCorrectionPending(
+          work,
+          index,
+          now,
+          `${humanOnly ? 'human feedback' : 'effective impediment'}: ${summary(decision.reasons)}`,
+          limits(work.repository.repository),
+          {
+            reasons: decision.reasons,
+            headSha: head || decision.reasons[0]!.headSha,
+            basisExecutionId: publication.basisExecutionId,
+            trigger: humanOnly ? 'human-feedback' : 'effective-impediment',
+          },
+        );
         if (work.correction) work.correction.queueWasPending = wasPending;
         markInCorrection(work, work.correction!, head || null);
         break;
@@ -118,7 +164,8 @@ export async function observeRepair(session: Session, work_id: string, limits: (
           event('repair-repeated', `${decision.reasons.map(fingerprint).join(',')}<-${decision.correctionIds.join(',')}`);
         }
         break;
-      case 'none': break;
+      case 'none':
+        break;
     }
     if (work.correction && work.correction.trigger !== 'internal' && (decision.kind === 'open' || decision.kind === 'consolidate')) {
       work.correction.nextStep = correctionNextStep(work.correction.reasons ?? [], work.budget?.corrections);
@@ -135,7 +182,8 @@ function adoptHuman(work: WorkRecord) {
   correction.trigger = 'human-feedback';
   correction.basisExecutionId ??= work.publication?.basisExecutionId ?? null;
 }
-const waitingStep = 'Human requests are recorded and wait for this Work\'s published own pull request; they enter a correction on the next published result. ' +
+const waitingStep =
+  "Human requests are recorded and wait for this Work's published own pull request; they enter a correction on the next published result. " +
   'Nothing is retried meanwhile. Inspect with `factory show <work>`; to change the request instead, use `factory update-scope <work> --reason <text>`.';
 /** Non-blocking note (no history growth): pending human requests with no correction and no published own PR to fold them into. */
 function noteWaiting(work: WorkRecord, now: string) {
@@ -147,17 +195,28 @@ function noteWaiting(work: WorkRecord, now: string) {
 }
 
 /** History of the fresh revalidation that let the repair proceed to admission (its reasons, as read immediately before). */
-export const recordRepairRevalidation = (session: Session, work_id: string, correctionId: string, detail: string) => session.commit(async tx => {
-  const document = await tx.doc(works, work_id, null);
-  // Deduplicated: a revalidation repeated because admission was refused (e.g. no Slot) appends nothing new.
-  const last = [...(document.work?.history ?? [])].reverse().find(item => item.event === 'repair-revalidated');
-  if (last && 'correctionId' in last && last.correctionId === correctionId && last.detail === detail.slice(0, 512)) return;
-  document.work?.history.push({ at: new Date().toISOString(), event: 'repair-revalidated', origin: 'controller-repair', correctionId, detail: detail.slice(0, 512) });
-}, BACKGROUND_CONTEXT);
+export const recordRepairRevalidation = (session: Session, work_id: string, correctionId: string, detail: string) =>
+  session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    // Deduplicated: a revalidation repeated because admission was refused (e.g. no Slot) appends nothing new.
+    const last = [...(document.work?.history ?? [])].reverse().find(item => item.event === 'repair-revalidated');
+    if (last && 'correctionId' in last && last.correctionId === correctionId && last.detail === detail.slice(0, 512)) return;
+    document.work?.history.push({
+      at: new Date().toISOString(),
+      event: 'repair-revalidated',
+      origin: 'controller-repair',
+      correctionId,
+      detail: detail.slice(0, 512),
+    });
+  }, BACKGROUND_CONTEXT);
 
 /** The repair pass of the owner loop (after checks and readiness): one observation per open published Work not running in this owner. */
-export function createRepairDesk(deps: { session: Session; readWorks(): Promise<WorkRecord[]>; busy(work_id: string): boolean;
-  limits(repository: string): Limits | undefined }) {
+export function createRepairDesk(deps: {
+  session: Session;
+  readWorks(): Promise<WorkRecord[]>;
+  busy(work_id: string): boolean;
+  limits(repository: string): Limits | undefined;
+}) {
   return {
     async pass(signal: AbortSignal) {
       for (const work of await deps.readWorks()) {

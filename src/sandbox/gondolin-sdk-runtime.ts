@@ -22,8 +22,12 @@ export async function loadDevelopmentGondolinSdk(): Promise<RuntimeExports> {
   // above keeps the Sandbox SDK ownership edge visible to dependency-cruiser.
   // eslint-disable-next-line no-restricted-syntax -- Closed canonical profile entry, verified immediately above; no caller URL.
   const sdk: RuntimeExports = await import(entry);
-  if (typeof sdk.VM !== 'function' || typeof sdk.VM.create !== 'function' || typeof sdk.RealFSProvider !== 'function' ||
-      typeof sdk.createHttpHooks !== 'function') {
+  if (
+    typeof sdk.VM !== 'function' ||
+    typeof sdk.VM.create !== 'function' ||
+    typeof sdk.RealFSProvider !== 'function' ||
+    typeof sdk.createHttpHooks !== 'function'
+  ) {
     throw new Error('GONDOLIN_RUNTIME_EXPORTS');
   }
   return { VM: sdk.VM, RealFSProvider: sdk.RealFSProvider, createHttpHooks: sdk.createHttpHooks };

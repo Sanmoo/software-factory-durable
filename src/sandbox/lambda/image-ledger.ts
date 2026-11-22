@@ -3,17 +3,30 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 const instant = z.string().min(1);
-const buildEntrySchema = z.strictObject({ version: z.literal(1), at: instant, event: z.enum(['requested', 'created', 'failed']),
-  key: z.string().regex(/^[a-f0-9]{64}$/), name: z.string().min(1), workId: z.string().min(1) });
+const buildEntrySchema = z.strictObject({
+  version: z.literal(1),
+  at: instant,
+  event: z.enum(['requested', 'created', 'failed']),
+  key: z.string().regex(/^[a-f0-9]{64}$/),
+  name: z.string().min(1),
+  workId: z.string().min(1),
+});
 export type LambdaImageBuildEntry = z.infer<typeof buildEntrySchema>;
 const ledgerPath = async (root: string) => join(await realpath(root), 'lambda', 'image-builds.jsonl');
 
 /** Every recorded fact, oldest first; `null` when this installation never recorded a build. An unreadable line throws. */
 export async function readLambdaImageBuilds(root: string): Promise<LambdaImageBuildEntry[] | null> {
   let text: string;
-  try { text = await readFile(await ledgerPath(root), 'utf8'); }
-  catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; }
-  return text.split('\n').filter(Boolean).map(line => buildEntrySchema.parse(JSON.parse(line)));
+  try {
+    text = await readFile(await ledgerPath(root), 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map(line => buildEntrySchema.parse(JSON.parse(line)));
 }
 
 /**

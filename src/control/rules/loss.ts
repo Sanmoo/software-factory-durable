@@ -7,7 +7,8 @@ import type { LossRecord, OriginObservation, PreservationView } from '../types.j
 
 /** Losses kept on one Work; older ones are dropped first (the history keeps the event of each). */
 export const lossLimit = 16;
-export type LostMarkersRead = { state: 'complete'; observedAt: string; markers: { ref: string; boot: string; sha: string }[] } | { state: 'unknown'; code: string };
+export type LostMarkersRead =
+  { state: 'complete'; observedAt: string; markers: { ref: string; boot: string; sha: string }[] } | { state: 'unknown'; code: string };
 
 /**
  * The marker of ONE boot, from Control's own listing of the Work's marker refs. Only the exact ref of that Work and boot counts; an
@@ -25,10 +26,15 @@ export function markerOf(input: { workId: string; boot: string; read: LostMarker
  * The last commit known to be on `origin`: the Work branch tip Control read at the loss; when that read did not conclude, the last
  * commit a preservation gate confirmed. The marker is never a source: it is not preservation.
  */
-export function confirmedAt(input: { branch: string; origin: OriginObservation; preservation: Pick<PreservationView, 'commit' | 'branch'> | null }): LossRecord['confirmed'] {
+export function confirmedAt(input: {
+  branch: string;
+  origin: OriginObservation;
+  preservation: Pick<PreservationView, 'commit' | 'branch'> | null;
+}): LossRecord['confirmed'] {
   const { branch, origin, preservation } = input;
   if (origin.state === 'present') return { commit: origin.sha, source: 'origin-read', branch, origin };
-  if (origin.state === 'unknown' && preservation && preservation.branch === branch) return { commit: preservation.commit, source: 'preservation-gate', branch, origin };
+  if (origin.state === 'unknown' && preservation && preservation.branch === branch)
+    return { commit: preservation.commit, source: 'preservation-gate', branch, origin };
   return { commit: null, source: 'none', branch, origin };
 }
 
@@ -37,6 +43,11 @@ export const recordLossOn = (losses: LossRecord[] | undefined, loss: LossRecord)
 
 /** One line for the history and the operator. */
 export function lossDetail(loss: LossRecord): string {
-  const marker = loss.marker.state === 'present' ? `marker ${loss.marker.ref} at ${loss.marker.commit} (not preservation)` : loss.marker.state === 'absent' ? 'no marker ref' : `marker unknown (${loss.marker.code})`;
+  const marker =
+    loss.marker.state === 'present'
+      ? `marker ${loss.marker.ref} at ${loss.marker.commit} (not preservation)`
+      : loss.marker.state === 'absent'
+        ? 'no marker ref'
+        : `marker unknown (${loss.marker.code})`;
   return `${loss.boot}: local work after ${loss.confirmed.commit ?? 'the start (nothing confirmed on origin)'} is lost; ${marker}`.slice(0, 512);
 }

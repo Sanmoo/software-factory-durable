@@ -39,7 +39,9 @@ async function read(yaml: string) {
   try {
     await writeFile(join(root, 'config.yaml'), yaml);
     return (await readConfiguration(root)).configuration;
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 test('YAML v1 keeps every executable repository as a GitHub Ticket source with its own label', async () => {
@@ -47,11 +49,17 @@ test('YAML v1 keeps every executable repository as a GitHub Ticket source with i
   assert.equal(configuration.valid, true);
   if (!configuration.valid) return;
   assert.equal(configuration.effective.schemaVersion, 1);
-  assert.deepEqual(configuration.effective.repositories.map(item => [item.repository, item.label]),
-    [['equipe/checkout-web', 'ready-for-agent'], ['equipe/payments-api', 'implement-me']]);
+  assert.deepEqual(
+    configuration.effective.repositories.map(item => [item.repository, item.label]),
+    [
+      ['equipe/checkout-web', 'ready-for-agent'],
+      ['equipe/payments-api', 'implement-me'],
+    ],
+  );
   assert.deepEqual(configuration.effective.ticketSources, [
     { tracker: 'github', repository: 'equipe/checkout-web', discover: true },
-    { tracker: 'github', repository: 'equipe/payments-api', discover: true }]);
+    { tracker: 'github', repository: 'equipe/payments-api', discover: true },
+  ]);
 });
 
 test('YAML v1 refuses a ticketSources section (only v2 separates sources)', async () => {
@@ -64,20 +72,53 @@ test('YAML v2 keeps sources and destinations independent', async () => {
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) return;
   assert.equal(configuration.effective.schemaVersion, 2);
-  assert.deepEqual(configuration.effective.repositories.map(item => item.repository), ['equipe/checkout-web', 'equipe/payments-api']);
+  assert.deepEqual(
+    configuration.effective.repositories.map(item => item.repository),
+    ['equipe/checkout-web', 'equipe/payments-api'],
+  );
   assert.deepEqual(configuration.effective.ticketSources, [
     { tracker: 'github', repository: 'equipe/payments-api', discover: true },
-    { tracker: 'jira', discover: true, siteId: 'site-A', url: 'https://equipe.atlassian.net', email: 'fabrica@example.org', tokenFile: 'credentials/jira-token',
-      projectId: '10010', label: 'factory-ready', routes: [{ componentId: '10021', repository: 'equipe/checkout-web' }, { componentId: '10022', repository: 'equipe/payments-api' }], linkTypes: [] }]);
+    {
+      tracker: 'jira',
+      discover: true,
+      siteId: 'site-A',
+      url: 'https://equipe.atlassian.net',
+      email: 'fabrica@example.org',
+      tokenFile: 'credentials/jira-token',
+      projectId: '10010',
+      label: 'factory-ready',
+      routes: [
+        { componentId: '10021', repository: 'equipe/checkout-web' },
+        { componentId: '10022', repository: 'equipe/payments-api' },
+      ],
+      linkTypes: [],
+    },
+  ]);
 });
 
 test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming the path and echoing nothing', async () => {
   const cases: [string, string, string][] = [
     ['route to an unknown repository', v2.replace('repository: equipe/checkout-web}', 'repository: equipe/unknown}'), 'ticketSources.1.routes.0.repository'],
-    ['route to a dependency-only repository', v2.replace('repository: equipe/checkout-web}', 'repository: equipe/shared-docs}'), 'ticketSources.1.routes.0.repository'],
-    ['GitHub source on an unknown repository', v2.replace('{tracker: github, repository: equipe/payments-api', '{tracker: github, repository: equipe/unknown'), 'ticketSources.0.repository'],
-    ['GitHub source on a dependency-only repository', v2.replace('{tracker: github, repository: equipe/payments-api', '{tracker: github, repository: equipe/shared-docs'), 'ticketSources.0.repository'],
-    ['duplicate GitHub source', v2.replace('ticketSources:\n', 'ticketSources:\n  - {tracker: github, repository: EQUIPE/PAYMENTS-API, discover: false}\n'), 'ticketSources'],
+    [
+      'route to a dependency-only repository',
+      v2.replace('repository: equipe/checkout-web}', 'repository: equipe/shared-docs}'),
+      'ticketSources.1.routes.0.repository',
+    ],
+    [
+      'GitHub source on an unknown repository',
+      v2.replace('{tracker: github, repository: equipe/payments-api', '{tracker: github, repository: equipe/unknown'),
+      'ticketSources.0.repository',
+    ],
+    [
+      'GitHub source on a dependency-only repository',
+      v2.replace('{tracker: github, repository: equipe/payments-api', '{tracker: github, repository: equipe/shared-docs'),
+      'ticketSources.0.repository',
+    ],
+    [
+      'duplicate GitHub source',
+      v2.replace('ticketSources:\n', 'ticketSources:\n  - {tracker: github, repository: EQUIPE/PAYMENTS-API, discover: false}\n'),
+      'ticketSources',
+    ],
     ['plain HTTP origin', v2.replace('https://equipe.atlassian.net', 'http://equipe.atlassian.net'), 'ticketSources.1.url'],
     ['origin with a path', v2.replace('https://equipe.atlassian.net', 'https://equipe.atlassian.net/jira'), 'ticketSources.1.url'],
     ['origin with a query', v2.replace('https://equipe.atlassian.net', 'https://equipe.atlassian.net?x=1'), 'ticketSources.1.url'],
@@ -90,12 +131,26 @@ test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming t
     ['token value instead of file', v2.replace('tokenFile: credentials/jira-token', 'tokenFile: ATATT3xFfGF0SYNTHETIC_SECRET'), 'ticketSources.1.tokenFile'],
     ['inline token', v2.replace('    label: factory-ready\n', '    label: factory-ready\n    token: ATATT3xFfGF0SYNTHETIC_SECRET\n'), 'ticketSources.1'],
     ['invalid e-mail', v2.replace('email: fabrica@example.org', 'email: fabrica'), 'ticketSources.1.email'],
-    ['site with two origins', v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('https://equipe.atlassian.net', 'https://other.atlassian.net')), 'ticketSources'],
+    [
+      'site with two origins',
+      v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('https://equipe.atlassian.net', 'https://other.atlassian.net')),
+      'ticketSources',
+    ],
     ['same project twice', v2.replace(jira, jira + jira), 'ticketSources'],
-    ['site with two accounts', v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('email: fabrica@example.org', 'email: other@example.org')), 'ticketSources'],
+    [
+      'site with two accounts',
+      v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('email: fabrica@example.org', 'email: other@example.org')),
+      'ticketSources',
+    ],
     ['Jira source without routes', v2.replace(/ {4}routes:\n(?: {6}- .*\n)+/, '    routes: []\n'), 'ticketSources.1.routes'],
-    ['label on a GitHub source (the v2 repository keeps its label)', v2.replace('{tracker: github, repository: equipe/payments-api, discover: true}',
-      '{tracker: github, repository: equipe/payments-api, discover: true, label: other}'), 'ticketSources.0'],
+    [
+      'label on a GitHub source (the v2 repository keeps its label)',
+      v2.replace(
+        '{tracker: github, repository: equipe/payments-api, discover: true}',
+        '{tracker: github, repository: equipe/payments-api, discover: true, label: other}',
+      ),
+      'ticketSources.0',
+    ],
     ['ticketSources missing', v2.slice(0, v2.indexOf('ticketSources:')), 'ticketSources'],
   ];
   for (const [name, yaml, path] of cases) {
@@ -103,31 +158,50 @@ test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming t
     const configuration = await read(yaml);
     assert.equal(configuration.valid, false, name);
     if (configuration.valid) continue;
-    assert.ok(configuration.errors.some(error => error.code === 'CONFIGURATION_INVALID' && error.path === path),
-      `${name}: expected ${path} in ${JSON.stringify(configuration.errors)}`);
+    assert.ok(
+      configuration.errors.some(error => error.code === 'CONFIGURATION_INVALID' && error.path === path),
+      `${name}: expected ${path} in ${JSON.stringify(configuration.errors)}`,
+    );
     assert.doesNotMatch(JSON.stringify(configuration), /SYNTHETIC_SECRET/, name);
   }
 });
 
 test('YAML v2 accepts sources with discovery off', async () => {
-  const configuration = await read(v2.replace('    discover: true\n', '    discover: false\n')
-    .replace('{tracker: github, repository: equipe/payments-api, discover: true}', '{tracker: github, repository: equipe/payments-api, discover: false}'));
+  const configuration = await read(
+    v2
+      .replace('    discover: true\n', '    discover: false\n')
+      .replace('{tracker: github, repository: equipe/payments-api, discover: true}', '{tracker: github, repository: equipe/payments-api, discover: false}'),
+  );
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) return;
-  assert.deepEqual(configuration.effective.ticketSources.map(source => [source.tracker, source.discover]), [['github', false], ['jira', false]]);
+  assert.deepEqual(
+    configuration.effective.ticketSources.map(source => [source.tracker, source.discover]),
+    [
+      ['github', false],
+      ['jira', false],
+    ],
+  );
 });
 
-test('YAML v2 takes the operator\'s indication of custom link types by ID; a bad, repeated or site-inconsistent indication is refused', async () => {
+test("YAML v2 takes the operator's indication of custom link types by ID; a bad, repeated or site-inconsistent indication is refused", async () => {
   const indicated = v2.replace('    routes:\n', "    linkTypes:\n      - {id: '10500', blocks: inward}\n      - {id: '10501', blocks: none}\n    routes:\n");
   const configuration = await read(indicated);
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) return;
   const source = configuration.effective.ticketSources.find(item => item.tracker === 'jira');
-  assert.deepEqual(source?.tracker === 'jira' && source.linkTypes, [{ id: '10500', blocks: 'inward' }, { id: '10501', blocks: 'none' }]);
-  const refused = async (yaml: string) => { const result = await read(yaml); return result.valid ? [] : result.errors.map(error => error.path); };
+  assert.deepEqual(source?.tracker === 'jira' && source.linkTypes, [
+    { id: '10500', blocks: 'inward' },
+    { id: '10501', blocks: 'none' },
+  ]);
+  const refused = async (yaml: string) => {
+    const result = await read(yaml);
+    return result.valid ? [] : result.errors.map(error => error.path);
+  };
   assert.ok((await refused(indicated.replace('blocks: inward', 'blocks: both'))).includes('ticketSources.1.linkTypes.0.blocks'));
   assert.ok((await refused(indicated.replace("id: '10500'", "id: 'Depends'"))).includes('ticketSources.1.linkTypes.0.id'));
   assert.ok((await refused(indicated.replace("id: '10501'", "id: '10500'"))).includes('ticketSources.1.linkTypes'));
-  const second = jira.replace("projectId: '10010'", "projectId: '10011'").replace(/routes:\n.*\n.*\n/, "routes:\n      - {componentId: '10031', repository: equipe/checkout-web}\n");
+  const second = jira
+    .replace("projectId: '10010'", "projectId: '10011'")
+    .replace(/routes:\n.*\n.*\n/, "routes:\n      - {componentId: '10031', repository: equipe/checkout-web}\n");
   assert.ok((await refused(`${indicated}${second}`)).includes('ticketSources.2.linkTypes'), 'two sources of one site disagree on the catalogue meaning');
 });

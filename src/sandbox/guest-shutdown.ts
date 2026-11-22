@@ -8,13 +8,11 @@ import { metadata, type BootRef } from './lifecycle.js';
  * `forced` = anything else (finalization failed or ran out of the grace period; no record: never operational, crash, kill, host loss).
  */
 export type GuestStopResult = 'clean' | 'forced';
-export const guestStopReasons = ['GUEST_ROOT_READ_ONLY', 'GUEST_FINALIZATION_TIMEOUT', 'GUEST_FINALIZATION_FAILED',
-  'NO_GUEST_STOP_RECORD'] as const;
-export type GuestStopReason = typeof guestStopReasons[number];
+export const guestStopReasons = ['GUEST_ROOT_READ_ONLY', 'GUEST_FINALIZATION_TIMEOUT', 'GUEST_FINALIZATION_FAILED', 'NO_GUEST_STOP_RECORD'] as const;
+export type GuestStopReason = (typeof guestStopReasons)[number];
 export type GuestStop = { result: GuestStopResult; reason: GuestStopReason };
 const bootRef = z.string().regex(/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
-export const guestStopSchema = z.strictObject({ version: z.literal(1), boot: bootRef, result: z.enum(['clean', 'forced']),
-  reason: z.enum(guestStopReasons) });
+export const guestStopSchema = z.strictObject({ version: z.literal(1), boot: bootRef, result: z.enum(['clean', 'forced']), reason: z.enum(guestStopReasons) });
 /** Name of the per-boot record written by the adapter when it stops its VM (never by a worker or the guest). */
 export const guestStopRecord = 'guest-stop.json';
 
@@ -134,6 +132,8 @@ export async function readGuestStop(bootDirectory: string, boot: BootRef): Promi
   try {
     const record = await metadata(join(bootDirectory, guestStopRecord), guestStopSchema);
     if (record.boot === boot) return { result: record.result, reason: record.reason };
-  } catch { /* Missing, unsafe or uncorrelated evidence is an abrupt end. */ }
+  } catch {
+    /* Missing, unsafe or uncorrelated evidence is an abrupt end. */
+  }
   return { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' };
 }

@@ -7,14 +7,34 @@ import { createJiraHttpTransport, type JiraHttpExchange, type JiraHttpResult } f
 // injected so these tests record every request in process.
 const sentinel = 'synthetic-jira-token-SENTINEL';
 const now = () => new Date('2026-11-21T10:00:00.000Z');
-const json = (status: number, body: unknown, headers: Record<string, string> = {}): JiraHttpResult =>
-  ({ kind: 'response', status, headers: { 'content-type': 'application/json;charset=UTF-8', ...headers }, body: JSON.stringify(body) });
+const json = (status: number, body: unknown, headers: Record<string, string> = {}): JiraHttpResult => ({
+  kind: 'response',
+  status,
+  headers: { 'content-type': 'application/json;charset=UTF-8', ...headers },
+  body: JSON.stringify(body),
+});
 
 function site(respond: (exchange: JiraHttpExchange) => JiraHttpResult, credential: () => Promise<string> = async () => sentinel) {
   const exchanges: JiraHttpExchange[] = [];
   let reads = 0;
-  const transport = createJiraHttpTransport({ siteId: 'site-A', url: 'https://equipe.atlassian.net', email: 'fabrica@example.org',
-    credential: () => { reads += 1; return credential(); } }, { now, send: async exchange => { exchanges.push(exchange); return respond(exchange); } });
+  const transport = createJiraHttpTransport(
+    {
+      siteId: 'site-A',
+      url: 'https://equipe.atlassian.net',
+      email: 'fabrica@example.org',
+      credential: () => {
+        reads += 1;
+        return credential();
+      },
+    },
+    {
+      now,
+      send: async exchange => {
+        exchanges.push(exchange);
+        return respond(exchange);
+      },
+    },
+  );
   return { transport, exchanges, reads: () => reads };
 }
 
@@ -37,8 +57,17 @@ test('a request goes only to the configured HTTPS origin with basic auth, and a 
 });
 
 test('a path outside the REST v3 API is refused before the credential is read or anything is sent', async () => {
-  for (const path of ['/rest/api/2/issue/1', 'https://evil.example/rest/api/3/issue/1', '/rest/api/3/../../x', '/rest/api/3//evil', '/rest/api/3/issue/1?x=1',
-    '//evil.example/rest/api/3/issue', '/rest/api/3/issue/1#f', '/rest/api/3/%2e%2e/2/issue/1', '/rest/api/3/issue/%2E%2E/%2e%2e/x']) {
+  for (const path of [
+    '/rest/api/2/issue/1',
+    'https://evil.example/rest/api/3/issue/1',
+    '/rest/api/3/../../x',
+    '/rest/api/3//evil',
+    '/rest/api/3/issue/1?x=1',
+    '//evil.example/rest/api/3/issue',
+    '/rest/api/3/issue/1#f',
+    '/rest/api/3/%2e%2e/2/issue/1',
+    '/rest/api/3/issue/%2E%2E/%2e%2e/x',
+  ]) {
     const { transport, exchanges, reads } = site(() => json(200, {}));
     const response = await transport.request({ method: 'GET', path });
     assert.equal(response.ok === false && response.code, 'JIRA_REQUEST_REFUSED', path);
@@ -78,7 +107,12 @@ test('HTTP failures are typed with a safe next step; 429 and 5xx honour Retry-Af
 });
 
 test('a credential that cannot be read sends nothing and is reported without its detail', async () => {
-  const { transport, exchanges } = site(() => json(200, {}), async () => { throw new Error(`UNSAFE_CREDENTIAL_FILE ${sentinel}`); });
+  const { transport, exchanges } = site(
+    () => json(200, {}),
+    async () => {
+      throw new Error(`UNSAFE_CREDENTIAL_FILE ${sentinel}`);
+    },
+  );
   const response = await transport.request({ method: 'GET', path: '/rest/api/3/issue/81017' });
   assert.equal(response.ok === false && response.code, 'JIRA_CREDENTIAL_UNAVAILABLE');
   assert.doesNotMatch(JSON.stringify(response), /SENTINEL/);

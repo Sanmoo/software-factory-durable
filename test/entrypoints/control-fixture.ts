@@ -20,8 +20,16 @@ if (process.argv[3] === 'lock-probe') {
     void (async () => {
       const parsed = input.safeParse(message);
       if (parsed.success) process.send?.({ receipt: await control.accept(parsed.data), status: await control.inspect({ kind: 'status' }) });
-      else if (message === 'stop') { stop.abort(); process.send?.(await running); process.disconnect?.(); }
-    })().catch(() => { process.exitCode = 1; stop.abort(); process.disconnect?.(); });
+      else if (message === 'stop') {
+        stop.abort();
+        process.send?.(await running);
+        process.disconnect?.();
+      }
+    })().catch(() => {
+      process.exitCode = 1;
+      stop.abort();
+      process.disconnect?.();
+    });
   });
   process.send?.({ initial, surface: Object.keys(control) });
 }

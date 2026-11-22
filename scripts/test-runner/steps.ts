@@ -18,18 +18,33 @@ export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = { ...env, NODE_DISABLE_COMPILE_CACHE: '1' };
   // Real-disk sandbox tests run only in full, against a fresh private root (never an inherited one).
   // The run's deadline and shared directory come only from this run (fileEnvironment), never from an enclosing one.
-  for (const name of ['NODE_OPTIONS', 'NODE_COMPILE_CACHE', 'FACTORY_SANDBOX_TEST_ROOT', 'FACTORY_TEST_ROOT', 'FACTORY_TEST_DEADLINE', 'FACTORY_TEST_RUN_DIRECTORY']) delete result[name];
+  for (const name of [
+    'NODE_OPTIONS',
+    'NODE_COMPILE_CACHE',
+    'FACTORY_SANDBOX_TEST_ROOT',
+    'FACTORY_TEST_ROOT',
+    'FACTORY_TEST_DEADLINE',
+    'FACTORY_TEST_RUN_DIRECTORY',
+  ])
+    delete result[name];
   return result;
 }
 
 /** The environment of one test file: the child environment plus what its run gives it (see FileRun). */
 export function fileEnvironment(childEnv: NodeJS.ProcessEnv, run: FileRun): NodeJS.ProcessEnv {
-  return { ...childEnv, ...(run.sandboxRoot ? { FACTORY_SANDBOX_TEST_ROOT: run.sandboxRoot } : {}),
+  return {
+    ...childEnv,
+    ...(run.sandboxRoot ? { FACTORY_SANDBOX_TEST_ROOT: run.sandboxRoot } : {}),
     ...(run.deadline === undefined ? {} : { FACTORY_TEST_DEADLINE: String(run.deadline) }),
-    ...(run.shared ? { FACTORY_TEST_RUN_DIRECTORY: run.shared } : {}) };
+    ...(run.shared ? { FACTORY_TEST_RUN_DIRECTORY: run.shared } : {}),
+  };
 }
 
-interface Exit { code: number | null; output: string; ms: number }
+interface Exit {
+  code: number | null;
+  output: string;
+  ms: number;
+}
 
 export function execute(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<Exit> {
   const started = Date.now();
@@ -39,7 +54,13 @@ export function execute(command: string, args: readonly string[], cwd: string, e
     const chunks: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const kill = () => { try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } };
+    const kill = () => {
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    };
     signal.addEventListener('abort', kill, { once: true });
     child.once('error', reject);
     // A finished test file leaves nothing behind: leaked processes in its group would otherwise hold the pipes open.
@@ -55,7 +76,7 @@ async function testSources(directory: string, root: string): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...await testSources(path, root));
+    if (entry.isDirectory()) found.push(...(await testSources(path, root)));
     else if (entry.name.endsWith('.test.ts')) found.push(relative(root, path));
   }
   return found;
@@ -78,13 +99,19 @@ export interface StaticParts {
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, pointed, avoided, suppressed] = await Promise.all([compiling, parts.lint(),
-    compiling.then(() => parts.depcruise()), parts.pointers(), parts.avoided(), parts.suppressions()]);
+  const [compiled, linted, cruised, pointed, avoided, suppressed] = await Promise.all([
+    compiling,
+    parts.lint(),
+    compiling.then(() => parts.depcruise()),
+    parts.pointers(),
+    parts.avoided(),
+    parts.suppressions(),
+  ]);
   return [...compiled, linted, ...cruised, pointed, avoided, suppressed];
 }
 
 /** The files a changed-set step analyzed, named in its report line so a Gate Proof can record them. */
-export const analyzedNames = (files: readonly string[]) => files.length <= 10 ? files.join(', ') : `${files.length} files`;
+export const analyzedNames = (files: readonly string[]) => (files.length <= 10 ? files.join(', ') : `${files.length} files`);
 
 const distFile = (source: string) => join('dist', source.replace(/\.ts$/, '.js'));
 
@@ -97,10 +124,15 @@ export function tscFindings(output: string): { rule: string; location: string }[
 export function eslintFindings(output: string, root: string): { rule: string; location: string }[] | undefined {
   try {
     const results = JSON.parse(output) as { filePath: string; messages: { ruleId: string | null; message: string; line: number }[] }[];
-    return results.flatMap(result => result.messages.map(message => ({
-      rule: `${message.ruleId ?? 'parse-error'}${message.message.startsWith('Pure Control rules') ? ':pure-rules' : ''}`,
-      location: `${relative(root, result.filePath)}:${message.line}` })));
-  } catch { return undefined; }
+    return results.flatMap(result =>
+      result.messages.map(message => ({
+        rule: `${message.ruleId ?? 'parse-error'}${message.message.startsWith('Pure Control rules') ? ':pure-rules' : ''}`,
+        location: `${relative(root, result.filePath)}:${message.line}`,
+      })),
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 /** The documentary checker's JSON (scripts/agent-checks/check.mjs). */
@@ -108,12 +140,14 @@ export function pointerFindings(output: string): { rule: string; location: strin
   try {
     const result = JSON.parse(output.slice(output.indexOf('{'))) as { findings: { code: string; path: string; target?: string }[] };
     return result.findings.map(finding => ({ rule: finding.code, location: finding.target ? `${finding.path} → ${finding.target}` : finding.path }));
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 /** Where integral validation records its last result, so validation by change can read it. */
-export const integralRecordPath = (env: NodeJS.ProcessEnv) => env.FACTORY_INTEGRAL_RECORD
-  || join(env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'software-factory/nightly-tests/integral-result.json');
+export const integralRecordPath = (env: NodeJS.ProcessEnv) =>
+  env.FACTORY_INTEGRAL_RECORD || join(env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'software-factory/nightly-tests/integral-result.json');
 
 export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: string) => void): Steps {
   const childEnv = childEnvironment(env);
@@ -126,7 +160,12 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
   const prepare = async (signal: AbortSignal): Promise<StepResult> => {
     const steps = [await tool('prepare-sdk', ['dist/src/workers/sdk-profile.js'], signal)];
     if (steps[0]!.ok) steps.push(await tool('prepare-sdk', ['dist/src/sandbox/gondolin-sdk-profile.js'], signal));
-    return { name: 'prepare-sdk', ms: steps.reduce((sum, step) => sum + step.ms, 0), ok: steps.every(step => step.ok), output: steps.map(step => step.output).join('') };
+    return {
+      name: 'prepare-sdk',
+      ms: steps.reduce((sum, step) => sum + step.ms, 0),
+      ok: steps.every(step => step.ok),
+      output: steps.map(step => step.output).join(''),
+    };
   };
   /** Compile once. A fresh tree needs tsc → prepare:sdk → tsc (the #factory-pi types live in the staged SDK). */
   const compile = async (tier: Tier, signal: AbortSignal): Promise<StepResult[]> => {
@@ -140,8 +179,8 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
     return [{ ...first, name: 'tsc (bootstrap)', ok: true, output: '' }, staged, second];
   };
   const changedLintable = async (signal: AbortSignal): Promise<string[] | 'all'> => {
-    const git = (args: string[]) => execute('git', args, root, childEnv, signal).then(exit => exit.code === 0 ? exit.output.split('\n').filter(Boolean) : []);
-    const changed = [...await git(['diff', '--name-only', '--diff-filter=d', 'HEAD']), ...await git(['ls-files', '--others', '--exclude-standard'])];
+    const git = (args: string[]) => execute('git', args, root, childEnv, signal).then(exit => (exit.code === 0 ? exit.output.split('\n').filter(Boolean) : []));
+    const changed = [...(await git(['diff', '--name-only', '--diff-filter=d', 'HEAD'])), ...(await git(['ls-files', '--others', '--exclude-standard']))];
     if (changed.some(file => /^(eslint\.config\.mjs|package(-lock)?\.json)$/.test(file))) return 'all';
     return [...new Set(changed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file))))];
   };
@@ -172,47 +211,99 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
         return linted(files === 'all' ? 'eslint' : `eslint (changed: ${analyzedNames(files)})`, [...eslint, ...(files === 'all' ? ['.'] : files)]);
       };
       const depcruise = async (): Promise<StepResult[]> => {
-        const step = await tool('depcruise', ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'json', '.'], signal);
+        const step = await tool(
+          'depcruise',
+          ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'json', '.'],
+          signal,
+        );
         try {
           const { violations, graph } = readCruise(step.output ?? '');
-          const findings = [...violations.map(item => ({ rule: item.rule, location: `${item.from} → ${item.to}` })),
+          const findings = [
+            ...violations.map(item => ({ rule: item.rule, location: `${item.from} → ${item.to}` })),
             // The Unit tests level: a declared unit test reaches no runtime I/O (test/levels.json; reported under Unit tests).
-            ...await readLevels(root).then(levels => impureUnits(step.output ?? '', levels.unit),
-              (error: Error) => [{ rule: 'unit-levels-invalid', location: `test/levels.json: ${error.message}` }])];
-          return [{ ...step, ok: step.ok && !findings.length, check: 'boundaries', findings, graph,
-            output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') }];
-        } catch { return [{ ...step, ok: false, check: 'boundaries', findings: [{ rule: 'cruise-unreadable', location: '.dependency-cruiser.cjs' }] }]; }
+            ...(await readLevels(root).then(
+              levels => impureUnits(step.output ?? '', levels.unit),
+              (error: Error) => [{ rule: 'unit-levels-invalid', location: `test/levels.json: ${error.message}` }],
+            )),
+          ];
+          return [
+            {
+              ...step,
+              ok: step.ok && !findings.length,
+              check: 'boundaries',
+              findings,
+              graph,
+              output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+            },
+          ];
+        } catch {
+          return [{ ...step, ok: false, check: 'boundaries', findings: [{ rule: 'cruise-unreadable', location: '.dependency-cruiser.cjs' }] }];
+        }
       };
-      const compiled = async (): Promise<StepResult[]> => (await compile(tier, signal)).map(step => step.name.startsWith('tsc')
-        ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step);
+      const compiled = async (): Promise<StepResult[]> =>
+        (await compile(tier, signal)).map(step => (step.name.startsWith('tsc') ? { ...step, check: 'types', findings: tscFindings(step.output ?? '') } : step));
       const avoided = async (): Promise<StepResult> => {
         const started = Date.now();
         const findings = await scanAvoidedTerms(root);
-        return { name: 'avoided-terms', ms: Date.now() - started, ok: !findings.length, check: 'avoided-terms', findings,
-          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
+        return {
+          name: 'avoided-terms',
+          ms: Date.now() - started,
+          ok: !findings.length,
+          check: 'avoided-terms',
+          findings,
+          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+        };
       };
       // Every ESLint suppression is a tolerated Lint finding, matched against its policy over the whole tree in both Entry Points.
       const suppressions = async (): Promise<StepResult> => {
         const started = Date.now();
         const findings = await scanSuppressions(root).catch(error => [{ rule: 'lint-tolerance-unreadable', location: String((error as Error).message) }]);
-        return { name: 'lint-suppressions', ms: Date.now() - started, ok: !findings.length, check: 'lint', findings,
-          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
+        return {
+          name: 'lint-suppressions',
+          ms: Date.now() - started,
+          ok: !findings.length,
+          check: 'lint',
+          findings,
+          output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+        };
       };
-      return composeStatic({ staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
-        compile: compiled, lint, depcruise, pointers, avoided, suppressions });
+      return composeStatic({
+        staged: existsSync(join(root, '.scratch/factory-development-sdk-v3')),
+        compile: compiled,
+        lint,
+        depcruise,
+        pointers,
+        avoided,
+        suppressions,
+      });
     },
     audit: async signal => {
-      const step = await execute('npm', ['audit', '--audit-level=high', '--json'], root, childEnv, signal)
-        .catch(error => ({ code: null, output: String(error), ms: 0 }));
+      const step = await execute('npm', ['audit', '--audit-level=high', '--json'], root, childEnv, signal).catch(error => ({
+        code: null,
+        output: String(error),
+        ms: 0,
+      }));
       const findings = auditFindings(step.output);
-      if (findings === undefined) return { name: 'npm audit', ms: step.ms, ok: false, check: 'vulnerabilities',
-        findings: [{ rule: 'audit-unavailable', location: step.output.slice(0, 160) }] };
-      return { name: 'npm audit', ms: step.ms, ok: !findings.length, check: 'vulnerabilities', findings,
-        output: findings.map(f => `${f.rule}: ${f.location}`).join('\n') };
+      if (findings === undefined)
+        return {
+          name: 'npm audit',
+          ms: step.ms,
+          ok: false,
+          check: 'vulnerabilities',
+          findings: [{ rule: 'audit-unavailable', location: step.output.slice(0, 160) }],
+        };
+      return {
+        name: 'npm audit',
+        ms: step.ms,
+        ok: !findings.length,
+        check: 'vulnerabilities',
+        findings,
+        output: findings.map(f => `${f.rule}: ${f.location}`).join('\n'),
+      };
     },
     loadLevels: async () => {
       const unit = new Set((await readLevels(root)).unit);
-      return file => unit.has(file) ? 'unit' : 'integration';
+      return file => (unit.has(file) ? 'unit' : 'integration');
     },
     loadPolicy: async () => {
       const text = await readFile(join(root, 'scripts/test-runner/policy.json'), 'utf8');
@@ -220,7 +311,11 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
     },
     changedSet: async base => changedSet(root, env.VALIDATION_BASE || base, gitIn(root)),
     loadIntegral: async () => {
-      try { return JSON.parse(await readFile(integralRecordPath(env), 'utf8')) as IntegralRecord; } catch { return undefined; }
+      try {
+        return JSON.parse(await readFile(integralRecordPath(env), 'utf8')) as IntegralRecord;
+      } catch {
+        return undefined;
+      }
     },
     saveIntegral: async record => {
       const path = integralRecordPath(env);
@@ -228,11 +323,17 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       await writeFile(path, JSON.stringify(record, null, 1) + '\n');
     },
     headCommit: async () => gitIn(root)(['rev-parse', 'HEAD'])?.trim() ?? 'unknown',
-    listTests: async () => (await testSources(join(root, 'test'), root))
-      // Only sources with a compiled output; stale dist files of deleted tests never run.
-      .filter(source => existsSync(join(root, distFile(source)))).sort(),
+    listTests: async () =>
+      (await testSources(join(root, 'test'), root))
+        // Only sources with a compiled output; stale dist files of deleted tests never run.
+        .filter(source => existsSync(join(root, distFile(source))))
+        .sort(),
     loadTimings: async () => {
-      try { return JSON.parse(await readFile(timingsPath, 'utf8')) as Record<string, number>; } catch { return {}; }
+      try {
+        return JSON.parse(await readFile(timingsPath, 'utf8')) as Record<string, number>;
+      } catch {
+        return {};
+      }
     },
     saveTimings: async timings => {
       await mkdir(dirname(timingsPath), { recursive: true });
@@ -254,8 +355,13 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       return { path, cleanup: () => rm(path, { recursive: true, force: true }) };
     },
     runFile: async (file, run, signal) => {
-      const args = ['--experimental-test-module-mocks', '--test', '--test-reporter=tap',
-        ...(run.randomSeed === undefined ? [] : ['--test-randomize', `--test-random-seed=${run.randomSeed}`]), distFile(file)];
+      const args = [
+        '--experimental-test-module-mocks',
+        '--test',
+        '--test-reporter=tap',
+        ...(run.randomSeed === undefined ? [] : ['--test-randomize', `--test-random-seed=${run.randomSeed}`]),
+        distFile(file),
+      ];
       const exit = await execute(node, args, root, fileEnvironment(childEnv, run), signal);
       const result: FileResult = { file, ms: exit.ms, ok: exit.code === 0 && !signal.aborted, counts: parseTapCounts(exit.output) };
       if (!result.ok) result.output = signal.aborted ? `${file}: stopped by the tier budget` : exit.output;
@@ -285,7 +391,10 @@ export async function readLevels(root: string): Promise<{ unit: string[] }> {
 /** The ESLint suppression directives of the code under src/, test/ and scripts/ against scripts/test-runner/lint-tolerated.json. */
 export async function scanSuppressions(root: string): Promise<{ rule: string; location: string }[]> {
   const entries = parseLintTolerance(JSON.parse(await readFile(join(root, 'scripts/test-runner/lint-tolerated.json'), 'utf8')));
-  const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', 'src', 'test', 'scripts', 'eslint.config.mjs'], { cwd: root, encoding: 'utf8' }).split('\0');
+  const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', 'src', 'test', 'scripts', 'eslint.config.mjs'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).split('\0');
   const files = listed.filter(file => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && existsSync(join(root, file)));
   const directives = [];
   for (const file of files) directives.push(...directivesOf(file, await readFile(join(root, file), 'utf8')));
@@ -297,8 +406,13 @@ export function auditFindings(output: string): { rule: string; location: string 
   try {
     const report = JSON.parse(output) as { vulnerabilities?: Record<string, { severity: string; via: (string | { url?: string; title?: string })[] }> };
     if (!report.vulnerabilities) return undefined;
-    return Object.entries(report.vulnerabilities).filter(([, item]) => item.severity === 'high' || item.severity === 'critical')
-      .map(([name, item]) => ({ rule: item.severity,
-        location: `${name} (${item.via.map(via => typeof via === 'string' ? via : via.url ?? via.title ?? '?').join(', ')})` }));
-  } catch { return undefined; }
+    return Object.entries(report.vulnerabilities)
+      .filter(([, item]) => item.severity === 'high' || item.severity === 'critical')
+      .map(([name, item]) => ({
+        rule: item.severity,
+        location: `${name} (${item.via.map(via => (typeof via === 'string' ? via : (via.url ?? via.title ?? '?'))).join(', ')})`,
+      }));
+  } catch {
+    return undefined;
+  }
 }

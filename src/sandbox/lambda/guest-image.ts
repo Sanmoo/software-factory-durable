@@ -17,18 +17,28 @@ export const lambdaGuestPin = Object.freeze({
   version: 1,
   /** Managed base MicroVM image (kernel and VM runtime); the ARN is built per region. */
   baseImage: Object.freeze({ name: 'al2023-1', version: '3' }),
-  alpine: Object.freeze({ image: 'public.ecr.aws/docker/library/alpine@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2',
-    mirror: 'https://dl-cdn.alpinelinux.org/alpine', branch: 'v3.23' }),
+  alpine: Object.freeze({
+    image: 'public.ecr.aws/docker/library/alpine@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2',
+    mirror: 'https://dl-cdn.alpinelinux.org/alpine',
+    branch: 'v3.23',
+  }),
   packages: Object.freeze([
-    { name: 'docker', version: '29.5.2-r0' }, { name: 'docker-cli-compose', version: '2.40.3-r6' }, { name: 'docker-cli-buildx', version: '0.30.1-r6' },
-    { name: 'openssh', version: '10.2_p1-r1' }, { name: 'git', version: '2.52.1-r0' }, { name: 'python3', version: '3.12.16-r0' },
-    { name: 'bash', version: '5.3.3-r1' }, { name: 'websocat', version: '1.14.0-r1' }, { name: 'iptables', version: '1.8.11-r1' },
+    { name: 'docker', version: '29.5.2-r0' },
+    { name: 'docker-cli-compose', version: '2.40.3-r6' },
+    { name: 'docker-cli-buildx', version: '0.30.1-r6' },
+    { name: 'openssh', version: '10.2_p1-r1' },
+    { name: 'git', version: '2.52.1-r0' },
+    { name: 'python3', version: '3.12.16-r0' },
+    { name: 'bash', version: '5.3.3-r1' },
+    { name: 'websocat', version: '1.14.0-r1' },
+    { name: 'iptables', version: '1.8.11-r1' },
     { name: 'curl', version: '8.23.0-r0' },
     // v2 ticket 06 (Operator decision, 2026-11-21): the Builder opens the pull request itself in the boot that verified the content, so
     // `gh` is part of the template. Its token still arrives only as process environment of one command. NOT observed in a proof: the
     // version is the one the `community` aarch64 index of the pinned branch listed on 2026-11-21 (`2.83.0-r0` was no longer there; a wrong
     // pin fails the build with that cause; there is never a fallback version).
-    { name: 'github-cli', version: '2.83.0-r6' }] as readonly { name: string; version: string }[]),
+    { name: 'github-cli', version: '2.83.0-r6' },
+  ] as readonly { name: string; version: string }[]),
   /** `ready` is mandatory whenever a lifecycle hook is enabled (first Lambda proof, finding 3). */
   hooks: Object.freeze({ port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 }),
   user: 'builder',
@@ -40,13 +50,16 @@ export type LambdaGuestPin = typeof lambdaGuestPin;
 
 /** The release pin as one hash: the pin values and the exact bytes of the fixed guest files. */
 export function guestPinSha256(pin: LambdaGuestPin = lambdaGuestPin, files: Readonly<Record<string, string>> = guestFiles): string {
-  return createHash('sha256').update(JSON.stringify({ pin, files: Object.entries(files).sort(([left], [right]) => left < right ? -1 : 1) })).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify({ pin, files: Object.entries(files).sort(([left], [right]) => (left < right ? -1 : 1)) }))
+    .digest('hex');
 }
 
 /** ARN of the managed base image of the pin in `region`. */
 export const managedBaseImageArn = (region: string, pin: LambdaGuestPin = lambdaGuestPin) => `arn:aws:lambda:${region}:aws:microvm-image:${pin.baseImage.name}`;
 
-export type GuestImageFiles = { ok: true; declaration: EnvironmentDeclaration; files: { name: string; content: string }[] } | { ok: false; errors: EnvironmentDeclarationError[] };
+export type GuestImageFiles =
+  { ok: true; declaration: EnvironmentDeclaration; files: { name: string; content: string }[] } | { ok: false; errors: EnvironmentDeclarationError[] };
 
 /**
  * The build context of a MicroVM image, mounted by the host ONLY from validated values. The declaration is re-validated here with the
@@ -61,7 +74,8 @@ export function renderGuestImage(declaration: unknown, pin: LambdaGuestPin = lam
   const repository = `${pin.alpine.mirror}/${pin.alpine.branch}`;
   const add = `RUN apk add --no-cache --repositories-file /dev/null --repository ${repository}/main --repository ${repository}/community`;
   const pairs = (packages: readonly { name: string; version: string }[]) => packages.map(entry => `'${entry.name}=${entry.version}'`).join(' ');
-  const user = pin.user, reviewer = pin.reviewer;
+  const user = pin.user,
+    reviewer = pin.reviewer;
   const dockerfile = [
     `FROM ${pin.alpine.image}`,
     `${add} ${pairs(pin.packages)}`,
@@ -70,11 +84,19 @@ export function renderGuestImage(declaration: unknown, pin: LambdaGuestPin = lam
     `RUN adduser -D -s /bin/bash ${reviewer} && sed -i 's/^${reviewer}:!/${reviewer}:*/' /etc/shadow`,
     `COPY hook-agent.py start.sh sshd_config declared-images ${pin.directory}/`,
     `CMD ["python3", "-u", "${pin.directory}/hook-agent.py"]`,
-    ''].join('\n');
-  return { ok: true, declaration: checked.declaration, files: [
-    { name: 'Dockerfile', content: dockerfile },
-    { name: 'declared-images', content: checked.declaration.images.map(image => `${image.reference}\n`).join('') },
-    ...Object.entries(guestFiles).sort(([left], [right]) => left < right ? -1 : 1).map(([name, content]) => ({ name, content }))] };
+    '',
+  ].join('\n');
+  return {
+    ok: true,
+    declaration: checked.declaration,
+    files: [
+      { name: 'Dockerfile', content: dockerfile },
+      { name: 'declared-images', content: checked.declaration.images.map(image => `${image.reference}\n`).join('') },
+      ...Object.entries(guestFiles)
+        .sort(([left], [right]) => (left < right ? -1 : 1))
+        .map(([name, content]) => ({ name, content })),
+    ],
+  };
 }
 
 /** What of the adapter profile is a property of the IMAGE (not of a boot): a change of any of it needs another image. */
@@ -85,10 +107,32 @@ export type LambdaImageProfile = Pick<LambdaProfile, 'architecture' | 'baselineM
  * (architecture, baseline memory, OS capabilities: fixed at image creation by the service) is part of what the image was built for, so it
  * is hashed with them. Works with the same key share one image; a new declaration or a new release pin is a new key and a new image.
  */
-export function lambdaImageKey({ repositoryId, declarationSha256, profile, pinSha256 = guestPinSha256() }:
-  { repositoryId: number; declarationSha256: string; profile: LambdaImageProfile; pinSha256?: string }): string {
-  return createHash('sha256').update(JSON.stringify({ version: 1, repositoryId, declarationSha256, pinSha256,
-    image: { architecture: profile.architecture, baselineMemoryMiB: profile.baselineMemoryMiB, additionalOsCapabilities: [...profile.additionalOsCapabilities] } })).digest('hex');
+export function lambdaImageKey({
+  repositoryId,
+  declarationSha256,
+  profile,
+  pinSha256 = guestPinSha256(),
+}: {
+  repositoryId: number;
+  declarationSha256: string;
+  profile: LambdaImageProfile;
+  pinSha256?: string;
+}): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        version: 1,
+        repositoryId,
+        declarationSha256,
+        pinSha256,
+        image: {
+          architecture: profile.architecture,
+          baselineMemoryMiB: profile.baselineMemoryMiB,
+          additionalOsCapabilities: [...profile.additionalOsCapabilities],
+        },
+      }),
+    )
+    .digest('hex');
 }
 
 /** Image name of a key under the installation prefix (`installationResources().imagePrefix`): at most 61 characters. */

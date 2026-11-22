@@ -11,9 +11,16 @@ import { lambdaGuestFake } from './lambda-guest-fake.js';
 // use. Over the in-memory account; no AWS call.
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 const sha = (letter: string) => letter.repeat(64);
-const declaration = (version: string) => ({ path: '.factory/environment.yaml', commit: 'c'.repeat(40), sha256: sha(version), repository: 'acme/shop', repositoryId: 42,
-  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: `3.9.1${version}-r0` }], images: [] } });
-const first = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01', second = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a02';
+const declaration = (version: string) => ({
+  path: '.factory/environment.yaml',
+  commit: 'c'.repeat(40),
+  sha256: sha(version),
+  repository: 'acme/shop',
+  repositoryId: 42,
+  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: `3.9.1${version}-r0` }], images: [] },
+});
+const first = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01',
+  second = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a02';
 const remote = 'https://github.com/acme/shop.git';
 const checkout = { repository: 'acme/shop', commit: '1'.repeat(40), credential: { token: 'ghs_builderTokenOfThisExecution' } };
 
@@ -24,15 +31,25 @@ async function installation(t: TestContext) {
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [checkout.commit], token: checkout.credential.token };
   const clock = accountClock(fake);
-  const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock, lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
+  const sandbox = createSandbox({
+    root,
+    lambdaService: fake.service,
+    lambdaTransport: guest.transport,
+    lambdaBootClock: clock,
+    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep },
+  });
   const prepare = async (workId: string, version: string) => {
     const prepared = await sandbox.prepare({ workId, configuration, environment: declaration(version) });
     assert.equal(prepared.status, 'success', JSON.stringify(prepared));
     return (prepared as { environment: EnvironmentRef }).environment;
   };
-  const remove = async (workId: string, environment: EnvironmentRef) => assert.equal((await sandbox.remove({ environment,
-    cleanup: { workId, workDisposition: 'delivered', confirmed: true, evidencePreserved: true } })).status, 'success');
-  const cleanup = async (input: { image?: string; confirm?: boolean } = {}) => (await cleanupLambdaImages({ root, configuration, lambdaService: fake.service, confirm: false, ...input }))!;
+  const remove = async (workId: string, environment: EnvironmentRef) =>
+    assert.equal(
+      (await sandbox.remove({ environment, cleanup: { workId, workDisposition: 'delivered', confirmed: true, evidencePreserved: true } })).status,
+      'success',
+    );
+  const cleanup = async (input: { image?: string; confirm?: boolean } = {}) =>
+    (await cleanupLambdaImages({ root, configuration, lambdaService: fake.service, confirm: false, ...input }))!;
   const deletions = () => fake.mutations.map(call => call.operation).filter(operation => operation.startsWith('delete'));
   return { root, fake, sandbox, prepare, remove, cleanup, deletions };
 }
@@ -55,7 +72,8 @@ test('an image is in use while the environment of a Work holds it: the cleanup p
 
 test('once every Work that held it had its environment removed, the image leaves ONLY by the confirmed cleanup, with its build artifact and build log', async t => {
   const { fake, prepare, remove, cleanup, deletions } = await installation(t);
-  const one = await prepare(first, 'a'), two = await prepare(second, 'a');
+  const one = await prepare(first, 'a'),
+    two = await prepare(second, 'a');
   assert.equal(fake.account.images.length, 1, 'both Works share the image of the key');
   const name = fake.account.images[0]!.name;
   await remove(first, one);
@@ -70,7 +88,10 @@ test('once every Work that held it had its environment removed, the image leaves
   const cleaned = await cleanup({ confirm: true });
   assert.deepEqual([cleaned.status, cleaned.images.map(image => [image.imageName, image.outcome])], ['cleaned', [[name, 'removed']]]);
   assert.deepEqual(deletions(), ['deleteImage', 'deleteBuildArtifact', 'deleteBuildLog']);
-  assert.deepEqual([fake.account.images, Object.values(fake.account.objects).flatMap(bucket => Object.keys(bucket)), Object.keys(fake.account.logs)], [[], [], []]);
+  assert.deepEqual(
+    [fake.account.images, Object.values(fake.account.objects).flatMap(bucket => Object.keys(bucket)), Object.keys(fake.account.logs)],
+    [[], [], []],
+  );
 });
 
 test('the cleanup leaves the build ledger alone: the builds per environment key are still reported after the image is gone (ticket 14)', async t => {
@@ -79,7 +100,10 @@ test('the cleanup leaves the build ledger alone: the builds per environment key 
   const ledger = join(root, 'lambda', 'image-builds.jsonl');
   const before = [await readFile(ledger, 'utf8'), await sandbox.environmentBuilds()];
   assert.ok((before[0] as string).includes('"requested"'), 'the Prepare recorded its build');
-  assert.deepEqual((await cleanup({ confirm: true })).images.map(image => image.outcome), ['removed']);
+  assert.deepEqual(
+    (await cleanup({ confirm: true })).images.map(image => image.outcome),
+    ['removed'],
+  );
   assert.deepEqual([await readFile(ledger, 'utf8'), await sandbox.environmentBuilds()], before);
 });
 
@@ -91,14 +115,23 @@ test('an image a MicroVM still runs from, or that is still being built, is in us
   await rm(join(root, 'lambda', 'works', environment, 'image.json'));
   const name = fake.account.images[0]!.name;
   const planned = await cleanup();
-  assert.deepEqual(planned.images.map(image => [image.decision, image.works, image.running]), [['in-use', [], 1]]);
+  assert.deepEqual(
+    planned.images.map(image => [image.decision, image.works, image.running]),
+    [['in-use', [], 1]],
+  );
   assert.equal((await cleanup({ image: name, confirm: true })).code, 'IMAGE_IN_USE');
   // A build in flight belongs to a Prepare that has not recorded its Work yet.
   const building = fake.service({ awsProfile: 'factory', region: 'us-east-1' });
   const other = `factory-acme-${'e'.repeat(32)}`;
   const source = fake.account.images[0]!.request!;
   assert.equal((await building.createImage({ ...source, name: other })).ok, true);
-  assert.deepEqual((await cleanup()).images.map(image => [image.imageName, image.state, image.decision]), [[name, 'CREATED', 'in-use'], [other, 'CREATING', 'in-use']]);
+  assert.deepEqual(
+    (await cleanup()).images.map(image => [image.imageName, image.state, image.decision]),
+    [
+      [name, 'CREATED', 'in-use'],
+      [other, 'CREATING', 'in-use'],
+    ],
+  );
 });
 
 test('images of another installation are never listed for cleanup nor deleted, and an unreadable account plans nothing', async t => {
@@ -107,23 +140,64 @@ test('images of another installation are never listed for cleanup nor deleted, a
   const other = fake.plantOtherInstallation('acme-2');
   fake.account.terminateSeconds = 0;
   const planned = await cleanup();
-  assert.equal(planned.images.some(image => image.imageArn === other.imageArn), false);
+  assert.equal(
+    planned.images.some(image => image.imageArn === other.imageArn),
+    false,
+  );
   fake.account.denied.push('lambda:ListMicrovms');
   assert.deepEqual([(await cleanup({ confirm: true })).status, fake.account.images.length], ['unavailable', 2]);
   fake.account.denied.length = 0;
   assert.equal((await cleanup({ confirm: true })).status, 'cleaned');
-  assert.deepEqual(fake.account.images.map(image => image.imageArn), [other.imageArn]);
-  assert.deepEqual(await cleanup({ image: 'factory-acme-2-' + '9'.repeat(32), confirm: true }).then(result => [result.status, result.code]), ['refused', 'IMAGE_NOT_FOUND']);
+  assert.deepEqual(
+    fake.account.images.map(image => image.imageArn),
+    [other.imageArn],
+  );
+  assert.deepEqual(await cleanup({ image: 'factory-acme-2-' + '9'.repeat(32), confirm: true }).then(result => [result.status, result.code]), [
+    'refused',
+    'IMAGE_NOT_FOUND',
+  ]);
 });
 
 // Pure rule.
 const arn = (name: string) => `arn:aws:lambda:us-east-1:123456789012:microvm-image:${name}`;
-const image = (letter: string, change: object = {}) => ({ name: `factory-acme-${letter.repeat(32)}`, imageArn: arn(`factory-acme-${letter.repeat(32)}`), state: 'CREATED', tags: { [installationTagKey]: 'acme' } as Record<string, string> | null, ...change });
+const image = (letter: string, change: object = {}) => ({
+  name: `factory-acme-${letter.repeat(32)}`,
+  imageArn: arn(`factory-acme-${letter.repeat(32)}`),
+  state: 'CREATED',
+  tags: { [installationTagKey]: 'acme' } as Record<string, string> | null,
+  ...change,
+});
 test('rule: in use = held by a Work environment, run by a MicroVM that has not ended, or still building; a name alone never makes an image ours', () => {
-  const planned = planImageCleanup({ installation: 'acme', images: [image('a'), image('b'), image('c', { state: 'CREATING' }), image('d'), image('e', { state: 'CREATE_FAILED' }),
-    image('f', { tags: { [installationTagKey]: 'someone-else' } }), image('0', { tags: null }), { ...image('a'), name: 'factory-acme-2-' + 'a'.repeat(32), imageArn: arn('factory-acme-2-' + 'a'.repeat(32)) }],
-  works: [{ workId: 'work-1', imageArn: arn('factory-acme-' + 'a'.repeat(32)) }, { workId: 'work-2', imageArn: arn('factory-acme-' + 'a'.repeat(32)) }],
-  microvms: [{ microvmId: 'm-1', state: 'RUNNING', imageArn: arn('factory-acme-' + 'b'.repeat(32)) }, { microvmId: 'm-2', state: 'TERMINATED', imageArn: arn('factory-acme-' + 'd'.repeat(32)) }] });
-  assert.deepEqual(planned.map(item => [item.imageName.slice(13, 14), item.decision, item.works, item.running]), [
-    ['0', 'unverifiable', [], 0], ['a', 'in-use', ['work-1', 'work-2'], 0], ['b', 'in-use', [], 1], ['c', 'in-use', [], 0], ['d', 'removable', [], 0], ['e', 'removable', [], 0]]);
+  const planned = planImageCleanup({
+    installation: 'acme',
+    images: [
+      image('a'),
+      image('b'),
+      image('c', { state: 'CREATING' }),
+      image('d'),
+      image('e', { state: 'CREATE_FAILED' }),
+      image('f', { tags: { [installationTagKey]: 'someone-else' } }),
+      image('0', { tags: null }),
+      { ...image('a'), name: 'factory-acme-2-' + 'a'.repeat(32), imageArn: arn('factory-acme-2-' + 'a'.repeat(32)) },
+    ],
+    works: [
+      { workId: 'work-1', imageArn: arn('factory-acme-' + 'a'.repeat(32)) },
+      { workId: 'work-2', imageArn: arn('factory-acme-' + 'a'.repeat(32)) },
+    ],
+    microvms: [
+      { microvmId: 'm-1', state: 'RUNNING', imageArn: arn('factory-acme-' + 'b'.repeat(32)) },
+      { microvmId: 'm-2', state: 'TERMINATED', imageArn: arn('factory-acme-' + 'd'.repeat(32)) },
+    ],
+  });
+  assert.deepEqual(
+    planned.map(item => [item.imageName.slice(13, 14), item.decision, item.works, item.running]),
+    [
+      ['0', 'unverifiable', [], 0],
+      ['a', 'in-use', ['work-1', 'work-2'], 0],
+      ['b', 'in-use', [], 1],
+      ['c', 'in-use', [], 0],
+      ['d', 'removable', [], 0],
+      ['e', 'removable', [], 0],
+    ],
+  );
 });

@@ -1,8 +1,19 @@
 // Common tracker contract and GitHub tracker types, re-exported by the module's index (Jira's own types are in jira-types.ts).
 import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
 import type { TokenRevocation } from '../platform/github/index.js';
-import type { JiraAccessDiagnostic, JiraBlockersObservation, JiraCandidateObservation, JiraCommentAuthor, JiraCommentResult, JiraInputCursor, JiraInputsObservation,
-  JiraQuestionSearch, JiraTicketObservation, JiraTicketRef, JiraTrackerScope } from './jira-types.js';
+import type {
+  JiraAccessDiagnostic,
+  JiraBlockersObservation,
+  JiraCandidateObservation,
+  JiraCommentAuthor,
+  JiraCommentResult,
+  JiraInputCursor,
+  JiraInputsObservation,
+  JiraQuestionSearch,
+  JiraTicketObservation,
+  JiraTicketRef,
+  JiraTrackerScope,
+} from './jira-types.js';
 
 /** Origin of GitHub Tickets: one configured repository plus its effective entry label (shape unchanged since v1). */
 export type GitHubTrackerScope = GitHubScope & { label: string };
@@ -15,19 +26,55 @@ export type GitHubTicketRef = { tracker: 'github'; repository: string; repositor
 /** Identity of a Ticket at its origin, discriminated by `tracker`. */
 export type TicketRef = GitHubTicketRef | JiraTicketRef;
 export type TrackerKind = TicketRef['tracker'];
-export type TrackerUnavailable = { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete';
-  code: string; waitSeconds?: number; nextStep: string };
+export type TrackerUnavailable = {
+  kind: 'unavailable';
+  source: 'github-rest';
+  observedAt: string;
+  repository: string;
+  completeness: 'incomplete';
+  code: string;
+  waitSeconds?: number;
+  nextStep: string;
+};
 /** A listing never admits Work; an unavailable listing never proves the absence of candidates. */
-export type CandidateObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number; label: string;
-  completeness: 'complete'; candidates: GitHubTicketRef[]; limitations: string[] } | TrackerUnavailable;
+export type CandidateObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      repository: string;
+      repositoryId: number;
+      label: string;
+      completeness: 'complete';
+      candidates: GitHubTicketRef[];
+      limitations: string[];
+    }
+  | TrackerUnavailable;
 /** Entry facts only: no body/spec ingestion and no persistent authorization. */
-export type TicketObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; completeness: 'complete'; ticket: GitHubTicketRef;
-  state: 'open' | 'closed'; stateReason: string | null; labels: { id: number; name: string }[]; pullRequest: boolean } | TrackerUnavailable;
+export type TicketObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      completeness: 'complete';
+      ticket: GitHubTicketRef;
+      state: 'open' | 'closed';
+      stateReason: string | null;
+      labels: { id: number; name: string }[];
+      pullRequest: boolean;
+    }
+  | TrackerUnavailable;
 
 /** One issue reached through native blocked_by; identity = GitHub issue id (globally unique) plus its repository. */
 export type DependencyNode = {
-  issueId: number; nodeId: string; repository: string; repositoryId: number | null; number: number; url: string;
-  state: 'open' | 'closed'; stateReason: string | null;
+  issueId: number;
+  nodeId: string;
+  repository: string;
+  repositoryId: number | null;
+  number: number;
+  url: string;
+  state: 'open' | 'closed';
+  stateReason: string | null;
   /** 'read' = issue and ALL its blocked_by pages read under its own repository grant; 'edge-only' = its own blockers are unknown. */
   access: 'read' | 'edge-only';
   repositoryRole: 'executable' | 'dependency-only' | 'not-configured';
@@ -35,36 +82,81 @@ export type DependencyNode = {
 };
 export type DependencyProblem = { code: string; issueId?: number; repository?: string; observedCode?: string; waitSeconds?: number; nextStep: string };
 /** Principal/scope of each read used (installation, repository, purpose, permissions); never a token. */
-export type DependencyPrincipal = { installationId: number; repository: string; repositoryId: number | null; role: 'executable' | 'dependency-only';
-  purpose: 'dependency-read'; permissions: Readonly<Record<string, 'read'>> };
+export type DependencyPrincipal = {
+  installationId: number;
+  repository: string;
+  repositoryId: number | null;
+  role: 'executable' | 'dependency-only';
+  purpose: 'dependency-read';
+  permissions: Readonly<Record<string, 'read'>>;
+};
 /**
  * Reachable native blocked_by graph from one Ticket. Satisfaction (own cycles/merge) is NOT decided here. Any problem makes it incomplete;
  * a complete graph is not an atomic remote snapshot and does not certify the absence of relations GitHub does not show.
  */
-export type DependencyGraphObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; root: GitHubTicketRef; completeness: 'complete' | 'incomplete';
-  principals: DependencyPrincipal[]; nodes: DependencyNode[]; problems: DependencyProblem[]; limitations: string[] };
+export type DependencyGraphObservation = {
+  kind: 'observed';
+  source: 'github-rest';
+  observedAt: string;
+  root: GitHubTicketRef;
+  completeness: 'complete' | 'incomplete';
+  principals: DependencyPrincipal[];
+  nodes: DependencyNode[];
+  problems: DependencyProblem[];
+  limitations: string[];
+};
 
 /** Author of a comment as GitHub reports it (id is the identity; login/type are evidence for authorization by the Control). */
 export type CommentAuthorRef = { id: number; login: string; type: string };
 /** One issue comment. `viaApp`: id of the GitHub App that performed it (null for human/other comments). Never interpreted here. */
-export type TrackerComment = { commentId: number; nodeId: string; url: string; author: CommentAuthorRef; body: string; createdAt: string; updatedAt: string; viaApp: number | null };
+export type TrackerComment = {
+  commentId: number;
+  nodeId: string;
+  url: string;
+  author: CommentAuthorRef;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  viaApp: number | null;
+};
 /** Comments after `cursor` (ascending id), from a COMPLETE listing only; an unavailable read never proves the absence of comments. */
-export type InputsObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; ticket: GitHubTicketRef; completeness: 'complete';
-  comments: TrackerComment[]; cursor: number | null; limitations: string[] } | TrackerUnavailable;
+export type InputsObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      ticket: GitHubTicketRef;
+      completeness: 'complete';
+      comments: TrackerComment[];
+      cursor: number | null;
+      limitations: string[];
+    }
+  | TrackerUnavailable;
 /** Comments of THIS installation's App carrying the stable marker of the Question; several candidates are reported, never chosen. */
-export type QuestionSearch = { kind: 'observed'; source: 'github-rest'; observedAt: string; completeness: 'complete';
-  candidates: { commentId: number; url: string; createdAt: string }[]; limitations: string[] } | TrackerUnavailable;
+export type QuestionSearch =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      completeness: 'complete';
+      candidates: { commentId: number; url: string; createdAt: string }[];
+      limitations: string[];
+    }
+  | TrackerUnavailable;
 /** Concrete authorized Question text; the adapter prepends the stable marker for `questionId`. No arbitrary endpoint or label/state change. */
-export type QuestionComment = { kind: 'question'; questionId: string; body: string } |
+export type QuestionComment =
+  | { kind: 'question'; questionId: string; body: string }
   /** Ticket 23: the controller's reply to a `/factory` command (marker `software-factory:reply:<id>`), on the Work's Ticket. */
-  { kind: 'reply'; replyId: string; body: string };
+  | { kind: 'reply'; replyId: string; body: string };
 /** Identity of the publication effect already persisted by the Control (correlation, not external idempotency). */
 export type CommentEffect = { effectId: string; questionId: string } | { effectId: string; replyId: string };
 /** Known success, known failure (nothing was created) or unknown outcome (the comment may exist: discover before republishing). */
 /** `revocation`: what happened to the single-use write credential after the attempt (never claimed when not observed). */
-export type CommentResult = ({ kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string } |
-  { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
-  { kind: 'unknown'; observedAt: string; code: string; nextStep: string }) & { revocation?: TokenRevocation };
+export type CommentResult = (
+  | { kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string }
+  | { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string }
+  | { kind: 'unknown'; observedAt: string; code: string; nextStep: string }
+) & { revocation?: TokenRevocation };
 
 /** Author of an input, discriminated by provider (GitHub keeps its untagged `{id, login, type}`). */
 export type TrackerCommentAuthor = CommentAuthorRef | JiraCommentAuthor;
@@ -73,10 +165,30 @@ export type InputCursor = number | JiraInputCursor;
 
 /** Per-provider shapes of the common tracker contract. A provider never simulates another's capability (no GitHub remote links). */
 export type TrackerContracts = {
-  github: { scope: GitHubTrackerScope; ticket: GitHubTicketRef; candidates: CandidateObservation; observation: TicketObservation;
-    blockers: DependencyGraphObservation; inputs: InputsObservation; cursor: number; search: QuestionSearch; result: CommentResult; access: AccessDiagnostic };
-  jira: { scope: JiraTrackerScope; ticket: JiraTicketRef; candidates: JiraCandidateObservation; observation: JiraTicketObservation;
-    blockers: JiraBlockersObservation; inputs: JiraInputsObservation; cursor: JiraInputCursor; search: JiraQuestionSearch; result: JiraCommentResult; access: JiraAccessDiagnostic };
+  github: {
+    scope: GitHubTrackerScope;
+    ticket: GitHubTicketRef;
+    candidates: CandidateObservation;
+    observation: TicketObservation;
+    blockers: DependencyGraphObservation;
+    inputs: InputsObservation;
+    cursor: number;
+    search: QuestionSearch;
+    result: CommentResult;
+    access: AccessDiagnostic;
+  };
+  jira: {
+    scope: JiraTrackerScope;
+    ticket: JiraTicketRef;
+    candidates: JiraCandidateObservation;
+    observation: JiraTicketObservation;
+    blockers: JiraBlockersObservation;
+    inputs: JiraInputsObservation;
+    cursor: JiraInputCursor;
+    search: JiraQuestionSearch;
+    result: JiraCommentResult;
+    access: JiraAccessDiagnostic;
+  };
 };
 
 /**

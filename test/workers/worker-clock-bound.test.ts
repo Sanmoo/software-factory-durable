@@ -14,8 +14,11 @@ test('worker-process applies its only activation clock from bootstrap.deadlineMs
   assert.deepEqual(timeouts(source), ['bootstrap.deadlineMs'], 'exactly one time-based abort, fed by the explicit Host policy');
   assert.doesNotMatch(source, /budgetFor\([^)]*\)\.deadlineMs/, 'no budget-derived deadline');
   assert.doesNotMatch(source.replaceAll('bootstrap.deadlineMs', ''), /\.deadlineMs/, 'no other deadline source');
-  assert.match(source, /!\(\x27apiKey\x27 in bootstrap\.profile\) && bootstrap\.deadlineMs !== undefined/,
-    'absent deadline means no cut; the explicit value is the OAuth worker boundary');
+  assert.match(
+    source,
+    /!\(\x27apiKey\x27 in bootstrap\.profile\) && bootstrap\.deadlineMs !== undefined/,
+    'absent deadline means no cut; the explicit value is the OAuth worker boundary',
+  );
   // The explicit value reaches the Invocation (durable start evidence and the session), not only this local signal.
   assert.match(source, /bootstrap\.deadlineMs === undefined \? \{\} : \{ deadlineMs: bootstrap\.deadlineMs \}/);
 });
@@ -27,16 +30,48 @@ test('worker-session never turns the model-budget envelope into an activation cl
   assert.deepEqual(timeouts(source), ['invocation.deadlineMs'], 'only an explicit Host value can bound the session');
 });
 
-const context = { workId: 'work-19', executionId: 'execution-19', invocationId: 'builder-19', role: 'builder' as const,
-  environmentRef: 'environment-19', bootRef: 'boot-19', phaseId: 'builder-initial' };
-const profile = { id: sdkProfile.id, directory: '/private/profile', systemPrompt: 'Factory worker.',
-  auth: 'factory-oauth' as const, providerId: 'openai' as const, modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
-const bootstrap = { version: 1 as const, context, endpoint: '/private/owner.sock', recordsRoot: '/private/records', knownSecrets: [],
-  prompt: '/implement https://github.com/acme/project/issues/1', profile };
+const context = {
+  workId: 'work-19',
+  executionId: 'execution-19',
+  invocationId: 'builder-19',
+  role: 'builder' as const,
+  environmentRef: 'environment-19',
+  bootRef: 'boot-19',
+  phaseId: 'builder-initial',
+};
+const profile = {
+  id: sdkProfile.id,
+  directory: '/private/profile',
+  systemPrompt: 'Factory worker.',
+  auth: 'factory-oauth' as const,
+  providerId: 'openai' as const,
+  modelId: 'gpt-6-luna' as const,
+  api: 'openai-responses' as const,
+};
+const bootstrap = {
+  version: 1 as const,
+  context,
+  endpoint: '/private/owner.sock',
+  recordsRoot: '/private/records',
+  knownSecrets: [],
+  prompt: '/implement https://github.com/acme/project/issues/1',
+  profile,
+};
 
 test('the bootstrap/launch schemas accept deadlineMs only as an explicit bounded positive integer; absent means no cut', () => {
-  const launch = { context, knownSecrets: [], prompt: bootstrap.prompt,
-    profile: { id: profile.id, systemPrompt: profile.systemPrompt, auth: profile.auth, providerId: profile.providerId, modelId: profile.modelId, api: profile.api } };
+  const launch = {
+    context,
+    knownSecrets: [],
+    prompt: bootstrap.prompt,
+    profile: {
+      id: profile.id,
+      systemPrompt: profile.systemPrompt,
+      auth: profile.auth,
+      providerId: profile.providerId,
+      modelId: profile.modelId,
+      api: profile.api,
+    },
+  };
   assert.equal(workerBootstrapSchema.safeParse(bootstrap).success, true, 'deadlineMs is optional');
   assert.equal(workerBootstrapSchema.safeParse(bootstrap).data?.deadlineMs, undefined, 'absent is not defaulted to a cut');
   assert.equal(workerLaunchSchema.safeParse(launch).success, true, 'the Host launch plan also leaves it absent by default');
@@ -51,8 +86,19 @@ test('the bootstrap/launch schemas accept deadlineMs only as an explicit bounded
 });
 
 test('ticket 37: secretAckTimeoutMs may only shorten the secret ACK wait; absent (production) leaves the publisher default', async () => {
-  const launch = { context, knownSecrets: [], prompt: bootstrap.prompt,
-    profile: { id: profile.id, systemPrompt: profile.systemPrompt, auth: profile.auth, providerId: profile.providerId, modelId: profile.modelId, api: profile.api } };
+  const launch = {
+    context,
+    knownSecrets: [],
+    prompt: bootstrap.prompt,
+    profile: {
+      id: profile.id,
+      systemPrompt: profile.systemPrompt,
+      auth: profile.auth,
+      providerId: profile.providerId,
+      modelId: profile.modelId,
+      api: profile.api,
+    },
+  };
   assert.equal(workerBootstrapSchema.safeParse(bootstrap).data?.secretAckTimeoutMs, undefined, 'absent is not defaulted here');
   for (const value of [1, 5000]) {
     assert.equal(workerBootstrapSchema.safeParse({ ...bootstrap, secretAckTimeoutMs: value }).success, true, `bootstrap accepts ${String(value)}`);
@@ -64,7 +110,10 @@ test('ticket 37: secretAckTimeoutMs may only shorten the secret ACK wait; absent
   }
   // The worker passes the bootstrap value straight through (undefined → the publisher's 5000 ms default, see secret-ipc.test.ts),
   // and no production composition sets it.
-  assert.match(await readFile('src/workers/worker-process.ts', 'utf8'), /createSecretPublisher\(process, bootstrap\.context, signal, bootstrap\.secretAckTimeoutMs,/);
+  assert.match(
+    await readFile('src/workers/worker-process.ts', 'utf8'),
+    /createSecretPublisher\(process, bootstrap\.context, signal, bootstrap\.secretAckTimeoutMs,/,
+  );
   for (const file of ['src/entrypoints/controller/composition.ts', 'src/control/durable/dispatch.ts']) {
     assert.doesNotMatch(await readFile(file, 'utf8'), /secretAckTimeoutMs/, file);
   }

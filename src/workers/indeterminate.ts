@@ -14,8 +14,10 @@ export const isIndeterminateResult = (code: string): boolean => Object.hasOwn(wh
 
 /** The model-visible text of an indeterminate result. */
 export function indeterminateResultText(code: string): string {
-  return `RESULT INDETERMINATE (${code}): the connection to the environment dropped while ${what[code] ?? 'this call was running'}. ` +
+  return (
+    `RESULT INDETERMINATE (${code}): the connection to the environment dropped while ${what[code] ?? 'this call was running'}. ` +
     'It started and its effects may have happened, completely or in part; it is not confirmed as executed and not confirmed as not executed. ' +
     'Its process was ended and whatever it printed after the drop is lost. Do not assume the outcome either way: inspect the current state ' +
-    '(files, Git, the external system it touches) before deciding whether to repeat it, and do not repeat an effect that is not safe to apply twice.';
+    '(files, Git, the external system it touches) before deciding whether to repeat it, and do not repeat an effect that is not safe to apply twice.'
+  );
 }

@@ -12,8 +12,12 @@ import type { Session } from './store.js';
 // pending). A comment that merely carries a similar header neither confirms the publication nor closes the Question.
 
 /** The impediment's next step in the Card's syntax: every `/factory answer <uuid>` becomes `/factory q<n>:` (keywords of divergence Questions kept). */
-const cardStep = (nextStep: string, ref: string, questionId: string) => nextStep.split(`/factory answer ${questionId}`).join(`/factory q${ref.slice(2)}:`)
-  .replace(' by a configured operator on the Ticket', ' on the Jira Card (any account allowed to comment)').replace(' on the Ticket,', ' on the Jira Card,');
+const cardStep = (nextStep: string, ref: string, questionId: string) =>
+  nextStep
+    .split(`/factory answer ${questionId}`)
+    .join(`/factory q${ref.slice(2)}:`)
+    .replace(' by a configured operator on the Ticket', ' on the Jira Card (any account allowed to comment)')
+    .replace(' on the Ticket,', ' on the Jira Card,');
 
 /**
  * For every open Question of an open Jira Work without a Jira publication yet: in ONE commit, its short reference and the comment intent
@@ -28,11 +32,17 @@ export async function prepareJiraQuestions(session: Session, readWorks: () => Pr
         const question = (await tx.doc(questions, known.questionId, null)).question;
         const current = (await tx.doc(works, known.workId, null)).work;
         if (!question || question.jira || question.state !== 'open' || !current || current.result !== 'open' || current.ticket.tracker !== 'jira') return;
-        const effect = await intendJiraComment(tx, { destination: current.ticket, purpose: { kind: 'question', questionId: question.questionId, workId: current.work_id },
-          refPrefix: 'Q', sequenced: true, content: ref => jiraQuestionComment({ ref, question: question.content.question, context: question.content.context }) });
+        const effect = await intendJiraComment(tx, {
+          destination: current.ticket,
+          purpose: { kind: 'question', questionId: question.questionId, workId: current.work_id },
+          refPrefix: 'Q',
+          sequenced: true,
+          content: ref => jiraQuestionComment({ ref, question: question.content.question, context: question.content.context }),
+        });
         question.jira = { ref: effect.logicalRef, effectId: effect.effectId, publishedAt: null };
         for (const impediment of current.impediments) {
-          if (impediment.code === 'QUESTION_PENDING' && impediment.questionId === question.questionId) impediment.nextStep = cardStep(impediment.nextStep, effect.logicalRef, question.questionId);
+          if (impediment.code === 'QUESTION_PENDING' && impediment.questionId === question.questionId)
+            impediment.nextStep = cardStep(impediment.nextStep, effect.logicalRef, question.questionId);
         }
       }, BACKGROUND_CONTEXT);
     }
@@ -41,12 +51,18 @@ export async function prepareJiraQuestions(session: Session, readWorks: () => Pr
 
 const publicationState = (effect: JiraCommentEffect): QuestionView['publication']['state'] => {
   switch (effect.state) {
-    case 'intended': return 'intended';
-    case 'attempting': return 'attempting';
-    case 'published': return 'published';
-    case 'unknown': return 'ambiguous';
-    case 'pending': return effect.diagnostic?.code === 'JIRA_COMMENT_MULTIPLE' || effect.diagnostic?.code === 'JIRA_COMMENT_SIMILAR' ? 'conflict' : 'ambiguous';
-    default: return 'failed';
+    case 'intended':
+      return 'intended';
+    case 'attempting':
+      return 'attempting';
+    case 'published':
+      return 'published';
+    case 'unknown':
+      return 'ambiguous';
+    case 'pending':
+      return effect.diagnostic?.code === 'JIRA_COMMENT_MULTIPLE' || effect.diagnostic?.code === 'JIRA_COMMENT_SIMILAR' ? 'conflict' : 'ambiguous';
+    default:
+      return 'failed';
   }
 };
 
@@ -76,12 +92,21 @@ export const jiraConversationOwners: { question: JiraCommentOwner; reply: JiraCo
       const before = publication.state;
       publication.state = publicationState(effect);
       publication.updatedAt = effect.updatedAt;
-      publication.nextStep = effect.state === 'withdrawn' ? 'The Question was no longer open when its Jira comment was due; it was not sent.' : effect.diagnostic?.nextStep ?? null;
+      publication.nextStep =
+        effect.state === 'withdrawn'
+          ? 'The Question was no longer open when its Jira comment was due; it was not sent.'
+          : (effect.diagnostic?.nextStep ?? null);
       if (effect.state === 'published' && effect.comment) {
         publication.comment = { commentId: effect.comment.commentId, url: effect.comment.url };
         question.jira!.publishedAt = effect.comment.createdAt ?? null;
-        if (before !== 'published') work?.history.push({ at: effect.updatedAt, event: 'question-published', origin: 'controller-publication', questionId: question.questionId,
-          detail: effect.comment.url });
+        if (before !== 'published')
+          work?.history.push({
+            at: effect.updatedAt,
+            event: 'question-published',
+            origin: 'controller-publication',
+            questionId: question.questionId,
+            detail: effect.comment.url,
+          });
       }
     },
   },

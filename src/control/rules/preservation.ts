@@ -8,8 +8,14 @@ import type { OriginObservation, PreservationOccasion, PreservationView } from '
 /** V2-07: refusals in a row, in the same return of control, after which the boot is ended as a loss (Operator decision 7 of 2026-11-21). */
 export const gateRefusalLimit = 3;
 export const gateRefusedCode = 'PRESERVATION_GATE_REFUSED';
-export type GateRefusalCode = 'WORKSPACE_MODIFIED' | 'WORKSPACE_UNTRACKED' | 'STASH_PRESENT' | 'HEAD_NOT_PUBLISHED' | 'REMOTE_UNAVAILABLE' | 'REMOTE_UNCONFIRMED' |
-  'GATE_OBSERVATION_UNAVAILABLE';
+export type GateRefusalCode =
+  | 'WORKSPACE_MODIFIED'
+  | 'WORKSPACE_UNTRACKED'
+  | 'STASH_PRESENT'
+  | 'HEAD_NOT_PUBLISHED'
+  | 'REMOTE_UNAVAILABLE'
+  | 'REMOTE_UNCONFIRMED'
+  | 'GATE_OBSERVATION_UNAVAILABLE';
 export type GateRefusal = { code: GateRefusalCode; detail: string };
 export type GateDecision = { outcome: 'accepted'; commit: string } | ({ outcome: 'refused' } & GateRefusal);
 
@@ -30,7 +36,10 @@ export function gateDecision({ observation, origin }: { observation: Preservatio
   if (remote.state === 'absent') return refused('HEAD_NOT_PUBLISHED', `HEAD ${head} is not published: the Work branch does not exist on origin`);
   if (remote.sha !== head) return refused('HEAD_NOT_PUBLISHED', `HEAD ${head} is not the tip of the Work branch on origin (${remote.sha})`);
   if (origin.state !== 'present' || origin.sha !== head) {
-    return refused('REMOTE_UNCONFIRMED', `the Factory's own read of origin does not confirm HEAD ${head} as the Work branch tip (${origin.state === 'present' ? origin.sha : origin.state === 'absent' ? 'branch absent' : origin.code})`);
+    return refused(
+      'REMOTE_UNCONFIRMED',
+      `the Factory's own read of origin does not confirm HEAD ${head} as the Work branch tip (${origin.state === 'present' ? origin.sha : origin.state === 'absent' ? 'branch absent' : origin.code})`,
+    );
   }
   return { outcome: 'accepted', commit: head };
 }
@@ -43,14 +52,22 @@ const occasionText: Record<PreservationOccasion, string> = {
   'ci-wait': 'your activation ended and the environment is about to be shut down while GitHub (CI, readiness) is awaited',
   'planned-swap': 'this environment is about to be replaced by a new one',
   'substitute-end': 'your activation ended and the environment is about to be shut down',
-  'boot-end': 'the environment is about to be shut down' };
+  'boot-end': 'the environment is about to be shut down',
+};
 
 /**
  * V2-07: the refusal returned to the Builder, in the same return of control, for correction. It names the reason, the ONE push the Builder
  * Host allows in this activation, and says that publishing work in progress needs no pull request and never authorizes versioning
  * secrets or improper data.
  */
-export function gateCorrectionPrompt(input: { occasion: PreservationOccasion; refusal: GateRefusal; attempt: number; branch: string; push: string; pullRequest: boolean }): string {
+export function gateCorrectionPrompt(input: {
+  occasion: PreservationOccasion;
+  refusal: GateRefusal;
+  attempt: number;
+  branch: string;
+  push: string;
+  pullRequest: boolean;
+}): string {
   return [
     `Factory preservation gate: ${occasionText[input.occasion]}. This environment keeps NO disk: whatever is not on the Work branch ${input.branch} on origin is lost.`,
     `The gate refused (refusal ${input.attempt} of ${gateRefusalLimit}; after ${gateRefusalLimit} in a row this environment is ended and what is not on origin is LOST): ${input.refusal.code}: ${input.refusal.detail}`,
@@ -72,7 +89,10 @@ export function gateCorrectionPrompt(input: { occasion: PreservationOccasion; re
  * substitute session resumes from the last push through the queue, on one operational recovery.
  */
 export function gateLossReason(input: { occasion: PreservationOccasion; refusal: GateRefusal; refusals: number }): string {
-  return `Ended by the Factory: the preservation gate refused ${input.refusals} time(s) in a row before ${input.occasion} (last: ${input.refusal.code}: ${input.refusal.detail}).`.slice(0, 512);
+  return `Ended by the Factory: the preservation gate refused ${input.refusals} time(s) in a row before ${input.occasion} (last: ${input.refusal.code}: ${input.refusal.detail}).`.slice(
+    0,
+    512,
+  );
 }
 
 /**

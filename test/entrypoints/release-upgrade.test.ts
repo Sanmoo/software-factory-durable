@@ -26,7 +26,9 @@ before(async () => {
   await mkdir(root, { mode: 0o700 });
   for (const name of ['releases', 'assets', 'credentials', 'data', 'environments', 'run']) await mkdir(join(root, name), { mode: 0o700 });
 });
-after(async () => { if (work) await rm(work, { recursive: true, force: true }); });
+after(async () => {
+  if (work) await rm(work, { recursive: true, force: true });
+});
 
 test('built release: extracted next to the previous one, explicit migration, switched selection, paused start, pending Question answered, clean stop', async () => {
   // Previous (pre-33) release selected; storage format 1 with a pending Question, paused, cleanly stopped.
@@ -41,14 +43,36 @@ test('built release: extracted next to the previous one, explicit migration, swi
   await writeFormatOne(source, join(root, 'data', 'control.sqlite'));
   await chmod(join(root, 'data', 'control.sqlite'), 0o600);
   const releasesBefore = JSON.stringify(await inventoryTree(join(root, 'releases', 'mvp-32.1')));
-  const target = (args: string[]) => spawnSync('/usr/bin/env', ['-u', 'NODE_OPTIONS', '-u', 'NODE_PATH', '-u', 'NODE_COMPILE_CACHE', 'NODE_DISABLE_COMPILE_CACHE=1',
-    join(root, 'releases', id, 'node/bin/node'), join(root, 'releases', id, 'dist/src/entrypoints/cli.js'), ...args], { encoding: 'utf8', timeout: remainingMs() });
+  const target = (args: string[]) =>
+    spawnSync(
+      '/usr/bin/env',
+      [
+        '-u',
+        'NODE_OPTIONS',
+        '-u',
+        'NODE_PATH',
+        '-u',
+        'NODE_COMPILE_CACHE',
+        'NODE_DISABLE_COMPILE_CACHE=1',
+        join(root, 'releases', id, 'node/bin/node'),
+        join(root, 'releases', id, 'dist/src/entrypoints/cli.js'),
+        ...args,
+      ],
+      { encoding: 'utf8', timeout: remainingMs() },
+    );
   const checked = target(['upgrade', 'check']);
   assert.equal(checked.status, 0, checked.stderr);
   const report = JSON.parse(checked.stdout);
   assert.equal(report.code, 'UPGRADE_MIGRATION_REQUIRED');
-  assert.deepEqual(report.checks.filter((item: { status: string }) => item.status === 'blocked'), []);
-  assert.equal(report.checks.find((item: { id: string }) => item.id === 'upgrade:target').status, 'ok', 'the built release verifies itself (every byte) before anything');
+  assert.deepEqual(
+    report.checks.filter((item: { status: string }) => item.status === 'blocked'),
+    [],
+  );
+  assert.equal(
+    report.checks.find((item: { id: string }) => item.id === 'upgrade:target').status,
+    'ok',
+    'the built release verifies itself (every byte) before anything',
+  );
   // (Refusals without the explicit request and the rollback refusal are covered against the same logic in upgrade.test.ts.)
   assert.equal(sha(await readFile(join(root, 'factory'))), previous.manifest.launcher.sha256);
   await assert.rejects(stat(join(root, 'data', 'upgrade')), { code: 'ENOENT' }, 'check writes nothing');
@@ -64,14 +88,20 @@ test('built release: extracted next to the previous one, explicit migration, swi
   // Start paused, inspect, answer the pending Question, stop cleanly.
   const run = spawn(join(root, 'factory'), ['run'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
-  run.stderr.on('data', chunk => { stderr += String(chunk); });
+  run.stderr.on('data', chunk => {
+    stderr += String(chunk);
+  });
   const exited = new Promise<number | null>(resolve => run.once('exit', code => resolve(code)));
   try {
     // The owner is up when its status answers: re-probed, bounded by the runner budget instead of 100 x 100 ms.
-    const status = await until(() => `controller status (stderr: ${stderr.slice(-300)})`, async () => {
-      const probe = factory(['status', '--json']);
-      return probe.status === 0 ? probe : undefined;
-    }, 100);
+    const status = await until(
+      () => `controller status (stderr: ${stderr.slice(-300)})`,
+      async () => {
+        const probe = factory(['status', '--json']);
+        return probe.status === 0 ? probe : undefined;
+      },
+      100,
+    );
     const view = JSON.parse(status.stdout).payload ?? JSON.parse(status.stdout);
     assert.deepEqual([view.paused, view.storage.format, view.questions.open], [true, 3, 1]);
     const question = JSON.parse(factory(['question', questionId, '--json']).stdout);
@@ -79,7 +109,9 @@ test('built release: extracted next to the previous one, explicit migration, swi
     const answered = factory(['answer', questionId, 'Use docs/factory.md']);
     assert.equal(answered.status, 0, answered.stderr);
     assert.equal(JSON.parse(factory(['question', questionId, '--json']).stdout).question.state, 'answered');
-  } finally { run.kill('SIGINT'); }
+  } finally {
+    run.kill('SIGINT');
+  }
   assert.equal(await exited, 0, stderr);
   const restarted = spawnSync(join(root, 'factory'), ['upgrade', 'status'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(JSON.parse(restarted.stdout).code, 'UPGRADE_COMPLETED');

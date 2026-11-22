@@ -33,20 +33,38 @@ export async function recordLoss(session: Session, work_id: string, loss: LossRe
  * to reuse; it never becomes the confirmed commit and never satisfies the preservation gate. Used by the dispatch (a boot it saw end or
  * ended itself) and by the boot reconciliation (a boot that ended with the controller down, which nobody could inspect).
  */
-export async function recordLossFrom(deps: { session: Session; access: Pick<AccessDependencies, 'repositories' | 'repository'> }, work: WorkRecord,
-  execution: Pick<ExecutionView, 'executionId' | 'invocationId' | 'request'>, { environment, boot }: { environment: string | null; boot: string },
-  observed: { reason: string | null; terminatedAt: string | null }, executionMs: number | null, cause?: LossRecord['cause']): Promise<{ outcome: 'recorded' | 'stale'; marker: LossRecord['marker']['state'] }> {
+export async function recordLossFrom(
+  deps: { session: Session; access: Pick<AccessDependencies, 'repositories' | 'repository'> },
+  work: WorkRecord,
+  execution: Pick<ExecutionView, 'executionId' | 'invocationId' | 'request'>,
+  { environment, boot }: { environment: string | null; boot: string },
+  observed: { reason: string | null; terminatedAt: string | null },
+  executionMs: number | null,
+  cause?: LossRecord['cause'],
+): Promise<{ outcome: 'recorded' | 'stale'; marker: LossRecord['marker']['state'] }> {
   const branch = execution.request.branch;
   const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
   const origin = await readOriginTip(deps.access, work, branch);
-  const read = !configured ? { state: 'unknown' as const, code: 'REPOSITORY_NOT_CONFIGURED' }
-    : !deps.access.repository.readLostMarkers ? { state: 'unknown' as const, code: 'LOST_MARKER_READ_NOT_COMPOSED' }
-      : await deps.access.repository.readLostMarkers({ repo: configured, repositoryId: work.repository.repositoryId, workId: work.work_id })
-        .catch(() => ({ state: 'unknown' as const, code: 'LOST_MARKER_READ_FAILED' }));
+  const read = !configured
+    ? { state: 'unknown' as const, code: 'REPOSITORY_NOT_CONFIGURED' }
+    : !deps.access.repository.readLostMarkers
+      ? { state: 'unknown' as const, code: 'LOST_MARKER_READ_NOT_COMPOSED' }
+      : await deps.access.repository
+          .readLostMarkers({ repo: configured, repositoryId: work.repository.repositoryId, workId: work.work_id })
+          .catch(() => ({ state: 'unknown' as const, code: 'LOST_MARKER_READ_FAILED' }));
   const current = (await readWork(deps.session, work.work_id)) ?? work;
-  const loss: LossRecord = { at: new Date().toISOString(), executionId: execution.executionId, boot, environment, ...(cause ? { cause } : {}),
-    reason: observed.reason?.slice(0, 512) ?? null, terminatedAt: observed.terminatedAt,
-    confirmed: confirmedAt({ branch, origin, preservation: current.preservation ?? null }), consumption: { executionMs },
-    session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' as const }, marker: markerOf({ workId: work.work_id, boot, read }) };
+  const loss: LossRecord = {
+    at: new Date().toISOString(),
+    executionId: execution.executionId,
+    boot,
+    environment,
+    ...(cause ? { cause } : {}),
+    reason: observed.reason?.slice(0, 512) ?? null,
+    terminatedAt: observed.terminatedAt,
+    confirmed: confirmedAt({ branch, origin, preservation: current.preservation ?? null }),
+    consumption: { executionMs },
+    session: { invocationId: execution.invocationId, disposition: 'conserved-as-evidence' as const },
+    marker: markerOf({ workId: work.work_id, boot, read }),
+  };
   return { outcome: await recordLoss(deps.session, work.work_id, loss), marker: loss.marker.state };
 }

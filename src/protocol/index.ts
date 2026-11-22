@@ -23,7 +23,9 @@ export interface Channel {
   close(): void;
 }
 export class ProtocolError extends Error {
-  constructor(readonly code: 'INVALID_FRAME' | 'FRAME_TOO_LARGE' | 'PEER_CLOSED' | 'PRIVATE_ENDPOINT_REQUIRED') { super(code); }
+  constructor(readonly code: 'INVALID_FRAME' | 'FRAME_TOO_LARGE' | 'PEER_CLOSED' | 'PRIVATE_ENDPOINT_REQUIRED') {
+    super(code);
+  }
 }
 
 async function privateDirectory(endpoint: string): Promise<void> {
@@ -43,8 +45,15 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
   let ended = false;
   let failure: unknown;
   let notify: (() => void) | undefined;
-  const wake = () => { notify?.(); notify = undefined; };
-  const fail = (error: unknown) => { failure ??= error; socket.destroy(); wake(); };
+  const wake = () => {
+    notify?.();
+    notify = undefined;
+  };
+  const fail = (error: unknown) => {
+    failure ??= error;
+    socket.destroy();
+    wake();
+  };
   let inputEnded = false;
   let pumping = false;
   const pump = () => {
@@ -64,30 +73,50 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
             buffer.copyWithin(0, newline + 1, bufferedBytes);
             bufferedBytes -= newline + 1;
             wake();
-          } catch (error) { fail(error instanceof ProtocolError ? error : new ProtocolError('INVALID_FRAME')); return; }
+          } catch (error) {
+            fail(error instanceof ProtocolError ? error : new ProtocolError('INVALID_FRAME'));
+            return;
+          }
           continue;
         }
-        if (bufferedBytes > maxFrameBytes) { fail(new ProtocolError('FRAME_TOO_LARGE')); return; }
+        if (bufferedBytes > maxFrameBytes) {
+          fail(new ProtocolError('FRAME_TOO_LARGE'));
+          return;
+        }
         if (inputEnded && socket.readableLength === 0) {
           if (bufferedBytes) fail(new ProtocolError('INVALID_FRAME'));
-          else { ended = true; wake(); }
+          else {
+            ended = true;
+            wake();
+          }
           return;
         }
         // Reserve a whole possible frame before reading more. No data listener:
         // read(n) cannot hand us an arbitrarily large coalesced chunk.
         if (queuedBytes > maxPendingBytes - maxFrameBytes) return;
         const bytes = Math.min(maxFrameBytes, socket.readableLength, buffer.length - bufferedBytes);
-        if (!bytes) { socket.read(0); return; }
+        if (!bytes) {
+          socket.read(0);
+          return;
+        }
         const chunk: Buffer | null = socket.read(bytes) as Buffer | null;
         if (!chunk) return;
         chunk.copy(buffer, bufferedBytes);
         bufferedBytes += chunk.length;
       }
-    } finally { pumping = false; }
+    } finally {
+      pumping = false;
+    }
   };
   socket.on('readable', pump);
-  socket.on('end', () => { inputEnded = true; pump(); });
-  socket.on('error', error => { failure ??= error; wake(); });
+  socket.on('end', () => {
+    inputEnded = true;
+    pump();
+  });
+  socket.on('error', error => {
+    failure ??= error;
+    wake();
+  });
   socket.on('close', () => {
     if (!inputEnded) {
       ended = true;
@@ -101,31 +130,42 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
       const frame = Buffer.from(JSON.stringify(envelopeSchema.parse(envelope)) + '\n');
       if (frame.length - 1 > maxFrameBytes) throw new ProtocolError('FRAME_TOO_LARGE');
       if (ended || socket.destroyed) throw new ProtocolError('PEER_CLOSED');
-      await new Promise<void>((resolve, reject) => socket.write(frame, error => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => socket.write(frame, error => (error ? reject(error) : resolve())));
     },
     messages: {
       async *[Symbol.asyncIterator]() {
         while (true) {
           if (failure) throw failure;
           const item = queue.shift();
-          if (item) { queuedBytes -= item.bytes; pump(); if (failure) throw failure; yield item.envelope; }
-          else if (ended) return;
-          else await new Promise<void>(resolve => { notify = resolve; });
+          if (item) {
+            queuedBytes -= item.bytes;
+            pump();
+            if (failure) throw failure;
+            yield item.envelope;
+          } else if (ended) return;
+          else
+            await new Promise<void>(resolve => {
+              notify = resolve;
+            });
         }
       },
     },
-    close() { socket.destroy(); },
+    close() {
+      socket.destroy();
+    },
   };
 }
 
 /** Peer association comes from host-owned endpoint composition, never a frame or
  * connect() role claim. Private same-account endpoints are the trust boundary. */
-export async function listen<P extends ExpectedPeer>(endpoint: string,
+export async function listen<P extends ExpectedPeer>(
+  endpoint: string,
   handler: {
     message(envelope: Envelope, channel: Channel, peer: P): Promise<void>;
     closed?(error: unknown, peer: P, channel: Channel): void;
   },
-  expectedPeers: P) {
+  expectedPeers: P,
+) {
   await privateDirectory(endpoint);
   const channels = new Set<Channel>();
   const server = createServer(socket => {
@@ -133,25 +173,37 @@ export async function listen<P extends ExpectedPeer>(endpoint: string,
     // EOF must reach the owner even while a message handler is awaiting guest
     // I/O. Decode/truncated-EOF failures are established by channel first.
     const connection = channel(socket, transportError => {
-      channels.delete(connection); handler.closed?.(failure ?? transportError, expectedPeers, connection);
+      channels.delete(connection);
+      handler.closed?.(failure ?? transportError, expectedPeers, connection);
     });
     channels.add(connection);
     void (async () => {
-      try { for await (const envelope of connection.messages) await handler.message(envelope, connection, expectedPeers); }
-      catch (error) { failure = error; }
-      finally { connection.close(); }
+      try {
+        for await (const envelope of connection.messages) await handler.message(envelope, connection, expectedPeers);
+      } catch (error) {
+        failure = error;
+      } finally {
+        connection.close();
+      }
     })();
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(endpoint, () => { server.off('error', reject); resolve(); });
+    server.listen(endpoint, () => {
+      server.off('error', reject);
+      resolve();
+    });
   });
-  try { await chmod(endpoint, 0o600); }
-  catch (error) { server.close(); throw error; }
+  try {
+    await chmod(endpoint, 0o600);
+  } catch (error) {
+    server.close();
+    throw error;
+  }
   return {
     async close() {
       for (const connection of channels) connection.close();
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     },
   };
 }
@@ -166,7 +218,10 @@ export async function connect(endpoint: string, _invocation: ExpectedPeer): Prom
   const connection = channel(socket);
   await new Promise<void>((resolve, reject) => {
     socket.once('error', reject);
-    socket.once('connect', () => { socket.off('error', reject); resolve(); });
+    socket.once('connect', () => {
+      socket.off('error', reject);
+      resolve();
+    });
   });
   return connection;
 }

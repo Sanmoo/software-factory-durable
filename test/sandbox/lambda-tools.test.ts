@@ -17,14 +17,28 @@ import { remainingMs } from '../runner/budget.js';
 // owner transport and tool programs, with an in-process guest behind the channel. No AWS call, no ssh, no VM.
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 const sha = (letter: string) => letter.repeat(64);
-const pinned = { path: '.factory/environment.yaml', commit: 'c'.repeat(40), sha256: sha('d'), repository: 'acme/shop', repositoryId: 42,
-  declaration: { schemaVersion: 1 as const, apk: [], images: [] } };
+const pinned = {
+  path: '.factory/environment.yaml',
+  commit: 'c'.repeat(40),
+  sha256: sha('d'),
+  repository: 'acme/shop',
+  repositoryId: 42,
+  declaration: { schemaVersion: 1 as const, apk: [], images: [] },
+};
 const workId = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01';
 const remote = 'https://github.com/acme/shop.git';
 const startingCommit = '1'.repeat(40);
 const builderToken = 'ghs_builderTokenOfThisExecution';
 
-type Bind = Partial<{ role: ToolContext['role']; invocationId: string; credential: { current(): string | undefined }; editSourceMaxBytes: number; copyOutput: boolean; selectedOutputCopies: string[]; records: Awaited<ReturnType<typeof createRecords>> }>;
+type Bind = Partial<{
+  role: ToolContext['role'];
+  invocationId: string;
+  credential: { current(): string | undefined };
+  editSourceMaxBytes: number;
+  copyOutput: boolean;
+  selectedOutputCopies: string[];
+  records: Awaited<ReturnType<typeof createRecords>>;
+}>;
 
 async function activeBoot(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-tools-'));
@@ -33,13 +47,22 @@ async function activeBoot(t: TestContext) {
   const guests = lambdaGuestFake(fake);
   guests.world.origins[remote] = { commits: [startingCommit], token: builderToken };
   const clock = accountClock(fake);
-  const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guests.transport, lambdaBootClock: clock,
-    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
+  const sandbox = createSandbox({
+    root,
+    lambdaService: fake.service,
+    lambdaTransport: guests.transport,
+    lambdaBootClock: clock,
+    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep },
+  });
   const prepared = await sandbox.prepare({ workId, configuration, environment: pinned });
   assert.equal(prepared.status, 'success', JSON.stringify(prepared));
   const environment = (prepared as { environment: EnvironmentRef }).environment;
   const boot = async () => {
-    const started = await sandbox.start({ environment, configuration, checkout: { repository: 'acme/shop', commit: startingCommit, branch: 'factory/work-1', credential: { token: builderToken } } });
+    const started = await sandbox.start({
+      environment,
+      configuration,
+      checkout: { repository: 'acme/shop', commit: startingCommit, branch: 'factory/work-1', credential: { token: builderToken } },
+    });
     assert.equal(started.status, 'success', JSON.stringify(started));
     return (started as { boot: BootRef }).boot;
   };
@@ -56,12 +79,12 @@ async function activeBoot(t: TestContext) {
   const invocation = async ({ role = 'builder', invocationId = `invocation-${sockets}`, ...policy }: Bind = {}) => {
     const context: ToolContext = { workId, executionId: 'execution-1', invocationId, role, environmentRef: environment, bootRef: first, phaseId: 'phase-1' };
     const authority = new AbortController();
-    const bound = await tools.bind({ endpoint: join(root, `t${sockets += 1}`), context, signal: authority.signal, records, ...policy });
+    const bound = await tools.bind({ endpoint: join(root, `t${(sockets += 1)}`), context, signal: authority.signal, records, ...policy });
     assert.equal(bound.status, 'bound', JSON.stringify(bound));
     const client = createSandbox({ root, toolEndpoint: (bound as { endpoint: string }).endpoint });
     let calls = 0;
     const call = (input: Record<string, unknown>, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> =>
-      client.executeTool(context, { callId: `call-${calls += 1}`, ...input } as ToolCall, onData, signal);
+      client.executeTool(context, { callId: `call-${(calls += 1)}`, ...input } as ToolCall, onData, signal);
     /** The whole text of a file as the `read` tool gives it: a capture, then its pages. */
     const read = async (path: string) => {
       const capture = await call({ name: 'read', operation: 'capture', path });
@@ -87,7 +110,10 @@ test('a reviewer reads a file of the checkout cloned in the Lambda guest, as the
   const reviewer = await invocation({ role: 'standards' });
   assert.equal(await reviewer.read('/workspace/checkout/README.md'), '# Shop\nA file of the starting commit.\n');
   const ran = guest.executions.at(-1)!;
-  assert.deepEqual({ program: ran.program, user: ran.user, environmentNames: ran.environmentNames }, { program: 'tool', user: 'reviewer', environmentNames: [] });
+  assert.deepEqual(
+    { program: ran.program, user: ran.user, environmentNames: ran.environmentNames },
+    { program: 'tool', user: 'reviewer', environmentNames: [] },
+  );
   assert.equal(await reviewer.read('/workspace/checkout/absent.md'), 'READ_NOT_FOUND');
   assert.equal(await reviewer.read('/workspace/checkout'), 'READ_IS_DIRECTORY');
   assert.equal(await reviewer.read('/etc/shadow'), 'READ_PATH_DENIED');
@@ -105,19 +131,50 @@ test('a Builder writes and edits files in the guest with the MVP results and cod
   const source = await builder.call({ name: 'edit-source', operation: 'capture', path: notes });
   assert.equal(source.status, 'success', JSON.stringify(source));
   const version = source as Extract<ReadResult, { format: 'text' }>;
-  const page = await builder.call({ name: 'edit-source', operation: 'page', path: notes, reference: version.reference, sourceVersion: version.sourceVersion, offset: 0 });
+  const page = await builder.call({
+    name: 'edit-source',
+    operation: 'page',
+    path: notes,
+    reference: version.reference,
+    sourceVersion: version.sourceVersion,
+    offset: 0,
+  });
   assert.equal(page.status === 'success' && Buffer.from(page.data, 'base64').toString(), 'first\n');
-  assert.equal((await builder.call({ name: 'edit-source', operation: 'commit', path: notes, reference: version.reference, sourceVersion: version.sourceVersion, replacement: 'second\n' })).status, 'success');
+  assert.equal(
+    (
+      await builder.call({
+        name: 'edit-source',
+        operation: 'commit',
+        path: notes,
+        reference: version.reference,
+        sourceVersion: version.sourceVersion,
+        replacement: 'second\n',
+      })
+    ).status,
+    'success',
+  );
   assert.equal(guest.files.get(notes), 'second\n');
 
   // The file changed in the guest after its source was captured: the edit is not applied, with the MVP's code.
-  const stale = await builder.call({ name: 'edit-source', operation: 'capture', path: notes }) as Extract<ReadResult, { format: 'text' }>;
+  const stale = (await builder.call({ name: 'edit-source', operation: 'capture', path: notes })) as Extract<ReadResult, { format: 'text' }>;
   guest.files.set(notes, 'changed behind the edit\n');
-  assert.deepEqual(await builder.call({ name: 'edit-source', operation: 'commit', path: notes, reference: stale.reference, sourceVersion: stale.sourceVersion, replacement: 'third\n' }),
-    { status: 'failure', code: 'EDIT_SOURCE_CHANGED' });
+  assert.deepEqual(
+    await builder.call({
+      name: 'edit-source',
+      operation: 'commit',
+      path: notes,
+      reference: stale.reference,
+      sourceVersion: stale.sourceVersion,
+      replacement: 'third\n',
+    }),
+    { status: 'failure', code: 'EDIT_SOURCE_CHANGED' },
+  );
   assert.equal(guest.files.get(notes), 'changed behind the edit\n');
 
-  assert.deepEqual(await builder.call({ name: 'write', operation: 'create', path: '/etc/passwd', content: 'x' }), { status: 'failure', code: 'WRITE_PATH_DENIED' });
+  assert.deepEqual(await builder.call({ name: 'write', operation: 'create', path: '/etc/passwd', content: 'x' }), {
+    status: 'failure',
+    code: 'WRITE_PATH_DENIED',
+  });
   // As in the MVP, the Builder's `read` is for its output copies and skill pack; it reads the checkout with Bash.
   assert.equal(await builder.read(notes), 'READ_PATH_DENIED');
   assert.ok(guest.executions.filter(execution => execution.program === 'tool').every(execution => execution.user === 'builder'));
@@ -129,7 +186,9 @@ test('a Builder writes and edits files in the guest with the MVP results and cod
 test('Builder Bash runs in the guest with progress while the command still runs, the fixed command environment and its exit status', async t => {
   const { guests, guest, invocation } = await activeBoot(t);
   let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
+  const held = new Promise<void>(resolve => {
+    release = resolve;
+  });
   let seen: Record<string, string> = {};
   guests.world.commands['make test'] = async (_guest, run) => {
     seen = run.environment;
@@ -140,14 +199,27 @@ test('Builder Bash runs in the guest with progress while the command still runs,
   };
   const builder = await invocation();
   const progress: string[] = [];
-  const result = await builder.call({ name: 'bash', command: 'make test' }, data => { progress.push(data.toString()); release(); });
+  const result = await builder.call({ name: 'bash', command: 'make test' }, data => {
+    progress.push(data.toString());
+    release();
+  });
   // The first output reached the worker BEFORE the command ended: the command only ends after that delivery released it.
   assert.deepEqual(progress, ['compiling\n', '2 tests failed\n']);
-  assert.deepEqual({ status: result.status, exitCode: result.status === 'success' && 'exitCode' in result && result.exitCode, bytes: result.status === 'success' && result.bytes },
-    { status: 'success', exitCode: 2, bytes: 25 });
-  assert.deepEqual(seen, { GIT_AUTHOR_NAME: 'Software Factory Builder', GIT_AUTHOR_EMAIL: 'software-factory-builder@users.noreply.invalid',
-    GIT_COMMITTER_NAME: 'Software Factory Builder', GIT_COMMITTER_EMAIL: 'software-factory-builder@users.noreply.invalid',
-    PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' });
+  assert.deepEqual(
+    {
+      status: result.status,
+      exitCode: result.status === 'success' && 'exitCode' in result && result.exitCode,
+      bytes: result.status === 'success' && result.bytes,
+    },
+    { status: 'success', exitCode: 2, bytes: 25 },
+  );
+  assert.deepEqual(seen, {
+    GIT_AUTHOR_NAME: 'Software Factory Builder',
+    GIT_AUTHOR_EMAIL: 'software-factory-builder@users.noreply.invalid',
+    GIT_COMMITTER_NAME: 'Software Factory Builder',
+    GIT_COMMITTER_EMAIL: 'software-factory-builder@users.noreply.invalid',
+    PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+  });
   const ran = guest.executions.at(-1)!;
   assert.deepEqual({ user: ran.user, environmentNames: ran.environmentNames }, { user: 'builder', environmentNames: [] });
   assert.match(ran.script, /^echo \$\$ > '\/tmp\/factory-call-[0-9a-f-]{36}' && cd '\/workspace' && exec /);
@@ -173,16 +245,35 @@ test('the Builder token reaches a command as explicit process environment only, 
   await push();
   held.token = undefined;
   await push();
-  assert.deepEqual(seen.map(entry => [entry.token, entry.stdin]), [[builderToken, ''], ['ghs_renewedTokenOfThisExecution', ''], [undefined, '']]);
+  assert.deepEqual(
+    seen.map(entry => [entry.token, entry.stdin]),
+    [
+      [builderToken, ''],
+      ['ghs_renewedTokenOfThisExecution', ''],
+      [undefined, ''],
+    ],
+  );
   assert.deepEqual(guest.executions.at(-1)!.environmentNames, []);
 
   // Sweep of the guest after use: no file, no program text (the argument vectors) and no log holds either token.
-  const everything = [...guest.files.entries()].flat().concat(guest.executions.map(execution => execution.script), Object.values(guest.logs)).join('\n');
+  const everything = [...guest.files.entries()]
+    .flat()
+    .concat(
+      guest.executions.map(execution => execution.script),
+      Object.values(guest.logs),
+    )
+    .join('\n');
   for (const token of [builderToken, 'ghs_renewedTokenOfThisExecution']) assert.ok(!everything.includes(token));
-  assert.deepEqual([...guest.files.keys()].filter(path => /credential|token|\.netrc|gitconfig|history/i.test(path)), []);
+  assert.deepEqual(
+    [...guest.files.keys()].filter(path => /credential|token|\.netrc|gitconfig|history/i.test(path)),
+    [],
+  );
 
   // A reviewer never receives a credential, whatever the host held for the Execution.
-  guests.world.programs.tool = (_guest, request) => { assert.deepEqual(request.environment, {}); return { exitCode: 4 }; };
+  guests.world.programs.tool = (_guest, request) => {
+    assert.deepEqual(request.environment, {});
+    return { exitCode: 4 };
+  };
   const reviewer = await invocation({ role: 'standards', credential: { current: () => builderToken } });
   assert.equal(await reviewer.read('/workspace/checkout/README.md'), 'READ_NOT_FOUND');
 });
@@ -191,7 +282,9 @@ test('interrupting a Builder command closes its connection to the guest; a timeo
   const { guests, invocation } = await activeBoot(t);
   const closed: string[] = [];
   let notify!: () => void;
-  let waiting = new Promise<void>(resolve => { notify = resolve; });
+  let waiting = new Promise<void>(resolve => {
+    notify = resolve;
+  });
   guests.world.commands['sleep 600'] = async (_guest, run) => {
     run.emit('started\n');
     await run.disconnected;
@@ -201,17 +294,31 @@ test('interrupting a Builder command closes its connection to the guest; a timeo
   };
   const interrupted = await invocation();
   const abort = new AbortController();
-  assert.deepEqual(await interrupted.call({ name: 'bash', command: 'sleep 600' }, () => abort.abort(), abort.signal), { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' });
+  assert.deepEqual(await interrupted.call({ name: 'bash', command: 'sleep 600' }, () => abort.abort(), abort.signal), {
+    status: 'failure',
+    code: 'TOOL_CHANNEL_CLOSED',
+  });
   await waiting;
   assert.deepEqual(closed, ['builder']);
-  assert.deepEqual(guests.connections.filter(connection => connection.open), []);
+  assert.deepEqual(
+    guests.connections.filter(connection => connection.open),
+    [],
+  );
 
-  waiting = new Promise<void>(resolve => { notify = resolve; });
+  waiting = new Promise<void>(resolve => {
+    notify = resolve;
+  });
   const timed = await invocation();
   // The tool's own argument under test: a command that outlives its timeout.
-  assert.deepEqual(await timed.call({ name: 'bash', command: 'sleep 600', timeout: 0.02 }, () => {}), { status: 'failure', code: 'BASH_TIMEOUT_EFFECTS_UNKNOWN' });
+  assert.deepEqual(await timed.call({ name: 'bash', command: 'sleep 600', timeout: 0.02 }, () => {}), {
+    status: 'failure',
+    code: 'BASH_TIMEOUT_EFFECTS_UNKNOWN',
+  });
   await waiting;
-  assert.deepEqual(guests.connections.filter(connection => connection.open), []);
+  assert.deepEqual(
+    guests.connections.filter(connection => connection.open),
+    [],
+  );
   assert.deepEqual(await timed.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
 });
 
@@ -220,8 +327,14 @@ test('the role of each call is the one the host bound: a reviewer has only read,
   const reviewer = await invocation({ role: 'standards', editSourceMaxBytes: 8192, copyOutput: true });
   const before = guest.executions.length;
   assert.deepEqual(await reviewer.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'BASH_ROLE_DENIED' });
-  assert.deepEqual(await reviewer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/x', content: 'x' }), { status: 'failure', code: 'WRITE_ROLE_DENIED' });
-  assert.deepEqual(await reviewer.call({ name: 'edit-source', operation: 'capture', path: '/workspace/checkout/x' }), { status: 'failure', code: 'EDIT_SOURCE_DENIED' });
+  assert.deepEqual(await reviewer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/x', content: 'x' }), {
+    status: 'failure',
+    code: 'WRITE_ROLE_DENIED',
+  });
+  assert.deepEqual(await reviewer.call({ name: 'edit-source', operation: 'capture', path: '/workspace/checkout/x' }), {
+    status: 'failure',
+    code: 'EDIT_SOURCE_DENIED',
+  });
 
   // A worker that presents another context at the reviewer's endpoint (claiming to be a Builder) gets nothing.
   const claimed: ToolContext = { ...reviewer.context, invocationId: 'claimed-builder', role: 'builder' };
@@ -231,7 +344,13 @@ test('the role of each call is the one the host bound: a reviewer has only read,
 
   // The host binds only invocations of THIS Work on THIS boot, once.
   const signal = new AbortController().signal;
-  const bind = (change: Partial<ToolContext>) => tools.bind({ endpoint: join(root, `refused-${Object.keys(change).join('-')}`), context: { ...reviewer.context, invocationId: 'fresh', ...change }, signal, records });
+  const bind = (change: Partial<ToolContext>) =>
+    tools.bind({
+      endpoint: join(root, `refused-${Object.keys(change).join('-')}`),
+      context: { ...reviewer.context, invocationId: 'fresh', ...change },
+      signal,
+      records,
+    });
   assert.deepEqual(await bind({ invocationId: reviewer.context.invocationId }), { status: 'refused', code: 'STALE_TOOL_CONTEXT' });
   assert.deepEqual(await bind({ bootRef: 'boot-00000000-0000-4000-8000-000000000000' }), { status: 'refused', code: 'STALE_TOOL_CONTEXT' });
   assert.deepEqual(await bind({ environmentRef: `env-${sha('0')}` }), { status: 'refused', code: 'STALE_TOOL_CONTEXT' });
@@ -246,13 +365,19 @@ test('the role of each call is the one the host bound: a reviewer has only read,
   assert.equal(served.status, 'serving');
   if (served.status !== 'serving') return;
   t.after(() => served.tools.close());
-  assert.deepEqual(await served.tools.bind({ endpoint: join(root, 'previous-boot'), context: { ...reviewer.context, invocationId: 'fresh' }, signal, records }), { status: 'refused', code: 'STALE_TOOL_CONTEXT' });
+  assert.deepEqual(
+    await served.tools.bind({ endpoint: join(root, 'previous-boot'), context: { ...reviewer.context, invocationId: 'fresh' }, signal, records }),
+    { status: 'refused', code: 'STALE_TOOL_CONTEXT' },
+  );
 });
 
 test('second layer: inside the guest, the reviewer user can neither write in the workspace nor talk to Docker, and its account has no group and no forwarding', async t => {
   const { guests, guest, invocation } = await activeBoot(t);
   const builder = await invocation();
-  assert.equal((await builder.call({ name: 'write', operation: 'create', path: '/workspace/checkout/owned.txt', content: 'by the builder\n' })).status, 'success');
+  assert.equal(
+    (await builder.call({ name: 'write', operation: 'create', path: '/workspace/checkout/owned.txt', content: 'by the builder\n' })).status,
+    'success',
+  );
   await builder.call({ name: 'bash', command: 'docker ps' }, () => {});
   const [write, docker] = guest.executions.slice(-2);
   // The very programs that worked for the Builder, run by a process of the reviewer user: only the guest's own permissions decide.
@@ -267,7 +392,7 @@ test('second layer: inside the guest, the reviewer user can neither write in the
   // What the image itself states about that account (the part of the second layer the adapter owns).
   const image = renderGuestImage({ schemaVersion: 1, apk: [], images: [] });
   assert.equal(image.ok, true);
-  const text = (name: string) => image.ok ? image.files.find(file => file.name === name)!.content : '';
+  const text = (name: string) => (image.ok ? image.files.find(file => file.name === name)!.content : '');
   assert.match(text('Dockerfile'), /^RUN adduser -D -s \/bin\/bash reviewer && sed -i 's\/\^reviewer:!\/reviewer:\*\/' \/etc\/shadow$/m);
   assert.doesNotMatch(text('Dockerfile'), /addgroup reviewer|chown[^\n]*reviewer|reviewer[^\n]*(wheel|sudo|docker)/);
   assert.match(text('sshd_config'), /\nMatch User reviewer\n {4}DisableForwarding yes\n {4}PermitTTY no\n$/);
@@ -276,18 +401,31 @@ test('second layer: inside the guest, the reviewer user can neither write in the
 
 test('a call whose connection ends because the environment died is never reported as a result: it answers "environment ended" and the boot serves nothing more', async t => {
   const { fake, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
-  guests.world.commands['mvn verify'] = (_guest, run) => { run.emit('building\n'); fake.kill(guest.microvmId); return 0; };
+  guests.world.commands['mvn verify'] = (_guest, run) => {
+    run.emit('building\n');
+    fake.kill(guest.microvmId);
+    return 0;
+  };
   const builder = await invocation();
   const writer = await invocation();
   // v2 tickets 11 and 10: the dropped call asks the service, which says the environment ended. Nothing is reconnected, no orphan is
   // looked for, the started call is an uncertain effect, the boot is recorded as lost and every later call is denied (V2-15).
   assert.deepEqual(await builder.call({ name: 'bash', command: 'mvn verify' }, () => {}), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
-  assert.deepEqual(await writer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
-  assert.deepEqual(guest.executions.filter(execution => execution.program === 'end-call'), []);
+  assert.deepEqual(await writer.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), {
+    status: 'failure',
+    code: 'SANDBOX_ENVIRONMENT_ENDED',
+  });
+  assert.deepEqual(
+    guest.executions.filter(execution => execution.program === 'end-call'),
+    [],
+  );
   assert.deepEqual(await builder.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'SANDBOX_ENVIRONMENT_ENDED' });
   assert.equal((await sandbox.bootRecord({ environment, boot }))?.end?.reason, 'loss');
   const report = await sandbox.channelReport({ environment, boot });
-  assert.deepEqual(report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome]), [['bash', 'mvn verify', 'environment-ended']]);
+  assert.deepEqual(
+    report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome]),
+    [['bash', 'mvn verify', 'environment-ended']],
+  );
   assert.equal(report.unrecoverable, null);
 });
 
@@ -302,21 +440,45 @@ test('the channel prelude of a Builder command, run by a real bash: only the fix
   assert.deepEqual([withToken.status, withToken.stderr], [7, '']);
   const lines = withToken.stdout.split('\n');
   assert.ok(lines.includes('to-stderr'));
-  const names = lines.filter(line => /^[A-Z_0-9]+=/.test(line)).map(line => line.slice(0, line.indexOf('='))).filter(name => !['PWD', 'SHLVL', '_', 'OLDPWD'].includes(name)).sort();
-  assert.deepEqual(names, ['GH_CONFIG_DIR', 'GH_HOST', 'GH_NO_UPDATE_NOTIFIER', 'GH_PROMPT_DISABLED', 'GH_TOKEN', 'GIT_AUTHOR_EMAIL', 'GIT_AUTHOR_NAME', 'GIT_COMMITTER_EMAIL',
-    'GIT_COMMITTER_NAME', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_TERMINAL_PROMPT', 'PATH']);
+  const names = lines
+    .filter(line => /^[A-Z_0-9]+=/.test(line))
+    .map(line => line.slice(0, line.indexOf('=')))
+    .filter(name => !['PWD', 'SHLVL', '_', 'OLDPWD'].includes(name))
+    .sort();
+  assert.deepEqual(names, [
+    'GH_CONFIG_DIR',
+    'GH_HOST',
+    'GH_NO_UPDATE_NOTIFIER',
+    'GH_PROMPT_DISABLED',
+    'GH_TOKEN',
+    'GIT_AUTHOR_EMAIL',
+    'GIT_AUTHOR_NAME',
+    'GIT_COMMITTER_EMAIL',
+    'GIT_COMMITTER_NAME',
+    'GIT_CONFIG_COUNT',
+    'GIT_CONFIG_KEY_0',
+    'GIT_CONFIG_VALUE_0',
+    'GIT_TERMINAL_PROMPT',
+    'PATH',
+  ]);
   assert.ok(lines.includes(`GH_TOKEN=${builderToken}`) && lines.includes('GIT_AUTHOR_NAME=Software Factory Builder') && lines.includes(`PATH=${guestPath}`));
   // Git asks the in-memory helper and gets the token of this command's environment; nothing is configured in any file.
   const filled = run("printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill", { ...ambient, GH_TOKEN: builderToken });
   assert.match(filled.stdout, new RegExp(`^username=x-access-token$[\\s\\S]*^password=${builderToken}$`, 'm'));
   const without = run('env', ambient);
-  assert.deepEqual(without.stdout.split('\n').filter(line => /^(GH_|GIT_CONFIG|GIT_TERMINAL|STRAY|HOME|SSH_)/.test(line)), []);
+  assert.deepEqual(
+    without.stdout.split('\n').filter(line => /^(GH_|GIT_CONFIG|GIT_TERMINAL|STRAY|HOME|SSH_)/.test(line)),
+    [],
+  );
 });
 
 test('a Builder copies a command output into /artifacts and reads it; a reviewer reads that copy only when the host selected it', async t => {
   const { guests, guest, invocation } = await activeBoot(t);
   const output = 'Tests run: 12, Failures: 1\n'.repeat(40);
-  guests.world.commands['mvn -q test'] = (_guest, run) => { run.emit(output); return 1; };
+  guests.world.commands['mvn -q test'] = (_guest, run) => {
+    run.emit(output);
+    return 1;
+  };
   const builder = await invocation({ copyOutput: true });
   const ran = await builder.call({ name: 'bash', command: 'mvn -q test' }, () => {});
   assert.equal(ran.status, 'success', JSON.stringify(ran));
@@ -347,10 +509,15 @@ test('a channel drop with the MicroVM alive: the adapter reconnects with the boo
   };
   const builder = await invocation();
   const progress: string[] = [];
-  const result = await builder.call({ name: 'bash', command: 'mvn deploy' }, data => { progress.push(data.toString()); });
+  const result = await builder.call({ name: 'bash', command: 'mvn deploy' }, data => {
+    progress.push(data.toString());
+  });
   // Never "not executed", never a result: the effect may have happened.
   assert.deepEqual(result, { status: 'failure', code: 'BASH_RESULT_INDETERMINATE' });
-  assert.deepEqual(guest.processes.map(process => [process.user, process.state]), [['builder', 'killed']]);
+  assert.deepEqual(
+    guest.processes.map(process => [process.user, process.state]),
+    [['builder', 'killed']],
+  );
   assert.deepEqual(after, ['killed']);
   // No reattachment: nothing the orphan wrote after the drop reaches the session.
   assert.deepEqual(progress, ['uploading\n']);
@@ -361,8 +528,10 @@ test('a channel drop with the MicroVM alive: the adapter reconnects with the boo
   assert.equal(end!.hostKey, guest.hostKey);
   // The boot's record says what the one attempt met and how the end of the orphan answered.
   const steps = (await readLambdaChannelLog(root, environment, boot)).filter(entry => entry.kind === 'recovery');
-  assert.deepEqual(steps.map(({ at: _at, call: _call, ...step }) => step), [
-    { kind: 'recovery', cause: 'drop', attempt: 1, condition: 'active', action: 'end-call', status: 'exited', exitCode: 0, outcome: 'call-ended' }]);
+  assert.deepEqual(
+    steps.map(({ at: _at, call: _call, ...step }) => step),
+    [{ kind: 'recovery', cause: 'drop', attempt: 1, condition: 'active', action: 'end-call', status: 'exited', exitCode: 0, outcome: 'call-ended' }],
+  );
   assert.match(steps[0]!.call, /^[0-9a-f-]{36}$/);
   // The boot was not ended and the same invocation runs its next command.
   assert.equal((await sandbox.observe({ environment, boot })).condition, 'active');
@@ -373,31 +542,63 @@ test('a channel drop with the MicroVM alive: the adapter reconnects with the boo
 
 test('the uncertain effect of a dropped call is on the host before the call answers; a write and an edit dropped mid-way are indeterminate too', async t => {
   const { guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
-  guests.world.commands['terraform apply'] = async (_guest, run) => { guests.drop(); await run.killed; return 0; };
+  guests.world.commands['terraform apply'] = async (_guest, run) => {
+    guests.drop();
+    await run.killed;
+    return 0;
+  };
   const builder = await invocation({ editSourceMaxBytes: 8192 });
-  assert.deepEqual((await sandbox.channelReport({ environment, boot })), { indeterminateEffects: [], unrecoverable: null });
+  assert.deepEqual(await sandbox.channelReport({ environment, boot }), { indeterminateEffects: [], unrecoverable: null });
   await builder.call({ name: 'bash', command: 'terraform apply' }, () => {});
   const notes = '/workspace/checkout/notes.md';
   assert.equal((await builder.call({ name: 'write', operation: 'create', path: notes, content: 'first\n' })).status, 'success');
-  const source = await builder.call({ name: 'edit-source', operation: 'capture', path: notes }) as Extract<ReadResult, { format: 'text' }>;
+  const source = (await builder.call({ name: 'edit-source', operation: 'capture', path: notes })) as Extract<ReadResult, { format: 'text' }>;
   // From here on every mutation program loses its connection after it started; whether it wrote is unknown to the host.
   const real = guests.world.programs.tool;
-  guests.world.programs.tool = async (_guest, _request, run) => { guests.drop(); await run.killed; return { exitCode: 0 }; };
-  assert.deepEqual(await builder.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), { status: 'failure', code: 'WRITE_RESULT_INDETERMINATE' });
-  assert.deepEqual(await builder.call({ name: 'edit-source', operation: 'commit', path: notes, reference: source.reference, sourceVersion: source.sourceVersion, replacement: 'second\n' }),
-    { status: 'failure', code: 'EDIT_SOURCE_RESULT_INDETERMINATE' });
-  if (real) guests.world.programs.tool = real; else delete guests.world.programs.tool;
-  assert.deepEqual(guest.processes.map(process => process.state), ['killed', 'exited', 'exited', 'killed', 'killed']);
+  guests.world.programs.tool = async (_guest, _request, run) => {
+    guests.drop();
+    await run.killed;
+    return { exitCode: 0 };
+  };
+  assert.deepEqual(await builder.call({ name: 'write', operation: 'create', path: '/workspace/checkout/late.txt', content: 'x' }), {
+    status: 'failure',
+    code: 'WRITE_RESULT_INDETERMINATE',
+  });
+  assert.deepEqual(
+    await builder.call({
+      name: 'edit-source',
+      operation: 'commit',
+      path: notes,
+      reference: source.reference,
+      sourceVersion: source.sourceVersion,
+      replacement: 'second\n',
+    }),
+    { status: 'failure', code: 'EDIT_SOURCE_RESULT_INDETERMINATE' },
+  );
+  if (real) guests.world.programs.tool = real;
+  else delete guests.world.programs.tool;
+  assert.deepEqual(
+    guest.processes.map(process => process.state),
+    ['killed', 'exited', 'exited', 'killed', 'killed'],
+  );
   const report = await sandbox.channelReport({ environment, boot });
-  assert.deepEqual(report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome, effect.invocationId, effect.executionId, effect.role]), [
-    ['bash', 'terraform apply', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder'],
-    ['write', 'create /workspace/checkout/late.txt', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder'],
-    ['edit-source', 'commit /workspace/checkout/notes.md', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder']]);
+  assert.deepEqual(
+    report.indeterminateEffects.map(effect => [effect.tool, effect.description, effect.outcome, effect.invocationId, effect.executionId, effect.role]),
+    [
+      ['bash', 'terraform apply', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder'],
+      ['write', 'create /workspace/checkout/late.txt', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder'],
+      ['edit-source', 'commit /workspace/checkout/notes.md', 'orphan-ended', builder.context.invocationId, 'execution-1', 'builder'],
+    ],
+  );
   assert.ok(report.indeterminateEffects.every(effect => !Number.isNaN(Date.parse(effect.at)) && effect.callId.length > 0));
   // The invocation survived the three of them.
   assert.equal((await builder.call({ name: 'write', operation: 'create', path: '/workspace/checkout/after.txt', content: 'y' })).status, 'success');
   // A reviewer's read has no effect to be uncertain about: it fails as a read and nothing is recorded.
-  guests.world.programs.tool = async (_guest, _request, run) => { guests.drop(); await run.killed; return { exitCode: 0 }; };
+  guests.world.programs.tool = async (_guest, _request, run) => {
+    guests.drop();
+    await run.killed;
+    return { exitCode: 0 };
+  };
   const reviewer = await invocation({ role: 'standards' });
   assert.equal(await reviewer.read(notes), 'GUEST_READ_FAILED');
   assert.equal((await sandbox.channelReport({ environment, boot })).indeterminateEffects.length, 3);
@@ -406,7 +607,12 @@ test('the uncertain effect of a dropped call is on the host before the call answ
 
 test('reconnection that keeps failing with the MicroVM alive stops at its limit: the call is not a result, the boot serves no more calls and nothing loops', async t => {
   const { fake, guests, guest, sandbox, environment, boot, tools, records, root, invocation } = await activeBoot(t);
-  guests.world.commands['make release'] = async (_guest, run) => { guests.world.channelDown = true; guests.drop(); await run.killed; return 0; };
+  guests.world.commands['make release'] = async (_guest, run) => {
+    guests.world.channelDown = true;
+    guests.drop();
+    await run.killed;
+    return 0;
+  };
   const builder = await invocation();
   const other = await invocation();
   const reads = () => fake.calls.filter(call => call.operation === 'microvm').length;
@@ -417,21 +623,34 @@ test('reconnection that keeps failing with the MicroVM alive stops at its limit:
   assert.equal(fake.account.clock.now - before.now, 4 * 5000);
   assert.equal(fake.account.microvms.at(-1)!.state, 'RUNNING');
   // The orphan could not be reached: it is still running, and the record says so.
-  assert.deepEqual(guest.processes.map(process => process.state), ['running']);
+  assert.deepEqual(
+    guest.processes.map(process => process.state),
+    ['running'],
+  );
   const report = await sandbox.channelReport({ environment, boot });
-  assert.deepEqual(report.indeterminateEffects.map(effect => [effect.description, effect.outcome]), [['make release', 'channel-unrecoverable']]);
+  assert.deepEqual(
+    report.indeterminateEffects.map(effect => [effect.description, effect.outcome]),
+    [['make release', 'channel-unrecoverable']],
+  );
   assert.equal(report.unrecoverable?.attempts, 5);
   // Each of the five attempts is in the boot's record, before the limit: the service said the environment lived, the connection was refused.
   const log = await readLambdaChannelLog(root, environment, boot);
-  assert.deepEqual(log.map(entry => entry.kind), ['recovery', 'recovery', 'recovery', 'recovery', 'recovery', 'unrecoverable', 'effect']);
-  assert.deepEqual(log.flatMap(entry => entry.kind === 'recovery' ? [[entry.cause, entry.attempt, entry.condition, entry.action, entry.status, entry.code]] : []),
-    [1, 2, 3, 4, 5].map(attempt => ['drop', attempt, 'active', 'end-call', 'refused', 'UNREACHABLE']));
+  assert.deepEqual(
+    log.map(entry => entry.kind),
+    ['recovery', 'recovery', 'recovery', 'recovery', 'recovery', 'unrecoverable', 'effect'],
+  );
+  assert.deepEqual(
+    log.flatMap(entry => (entry.kind === 'recovery' ? [[entry.cause, entry.attempt, entry.condition, entry.action, entry.status, entry.code]] : [])),
+    [1, 2, 3, 4, 5].map(attempt => ['drop', attempt, 'active', 'end-call', 'refused', 'UNREACHABLE']),
+  );
   // The channel came back too late: this boot serves nothing more, and no further call consults the service or waits.
   guests.world.channelDown = false;
   const settled = { reads: reads(), now: fake.account.clock.now };
   assert.deepEqual(await builder.call({ name: 'bash', command: 'docker ps' }, () => {}), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
-  assert.deepEqual(await tools.bind({ endpoint: join(root, 'late'), context: { ...builder.context, invocationId: 'late' }, signal: new AbortController().signal, records }),
-    { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' });
+  assert.deepEqual(
+    await tools.bind({ endpoint: join(root, 'late'), context: { ...builder.context, invocationId: 'late' }, signal: new AbortController().signal, records }),
+    { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' },
+  );
   guests.world.channelDown = true;
   assert.equal((await other.call({ name: 'bash', command: 'docker ps' }, () => {})).status, 'failure');
   assert.deepEqual([reads(), fake.account.clock.now], [settled.reads, settled.now]);
@@ -440,25 +659,47 @@ test('reconnection that keeps failing with the MicroVM alive stops at its limit:
   assert.equal(again.status, 'serving');
   if (again.status !== 'serving') return;
   t.after(() => again.tools.close());
-  assert.deepEqual(await again.tools.bind({ endpoint: join(root, 'later'), context: { ...builder.context, invocationId: 'later' }, signal: new AbortController().signal, records }),
-    { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' });
+  assert.deepEqual(
+    await again.tools.bind({
+      endpoint: join(root, 'later'),
+      context: { ...builder.context, invocationId: 'later' },
+      signal: new AbortController().signal,
+      records,
+    }),
+    { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' },
+  );
 });
 
-test('an orphan the guest still reports alive is asked to end again; every attempt and its answer are in the boot\'s record, and nothing of a tool\'s output is', async t => {
+test("an orphan the guest still reports alive is asked to end again; every attempt and its answer are in the boot's record, and nothing of a tool's output is", async t => {
   const { root, guests, guest, sandbox, environment, boot, invocation } = await activeBoot(t);
   const secret = 'ghs_outputOfTheCommandItself';
-  guests.world.commands['make publish'] = async (_guest, run) => { run.emit(`${secret}\n`); guests.drop(); await run.killed; return 0; };
+  guests.world.commands['make publish'] = async (_guest, run) => {
+    run.emit(`${secret}\n`);
+    guests.drop();
+    await run.killed;
+    return 0;
+  };
   // The guest answers twice that the group still runs (exit 5); the third time its own program ends it.
   let asked = 0;
-  guests.world.programs['end-call'] = () => { if ((asked += 1) === 2) delete guests.world.programs['end-call']; return { exitCode: 5, stdout: `call-alive\n${secret}\n` }; };
+  guests.world.programs['end-call'] = () => {
+    if ((asked += 1) === 2) delete guests.world.programs['end-call'];
+    return { exitCode: 5, stdout: `call-alive\n${secret}\n` };
+  };
   const builder = await invocation();
   assert.deepEqual(await builder.call({ name: 'bash', command: 'make publish' }, () => {}), { status: 'failure', code: 'BASH_RESULT_INDETERMINATE' });
-  assert.deepEqual(guest.processes.map(process => process.state), ['killed']);
+  assert.deepEqual(
+    guest.processes.map(process => process.state),
+    ['killed'],
+  );
   const log = await readLambdaChannelLog(root, environment, boot);
-  assert.deepEqual(log.flatMap(entry => entry.kind === 'recovery' ? [[entry.attempt, entry.condition, entry.action, entry.status, entry.exitCode, entry.outcome]] : []), [
-    [1, 'active', 'end-call', 'exited', 5, 'call-alive'],
-    [2, 'active', 'end-call', 'exited', 5, 'call-alive'],
-    [3, 'active', 'end-call', 'exited', 0, 'call-ended']]);
+  assert.deepEqual(
+    log.flatMap(entry => (entry.kind === 'recovery' ? [[entry.attempt, entry.condition, entry.action, entry.status, entry.exitCode, entry.outcome]] : [])),
+    [
+      [1, 'active', 'end-call', 'exited', 5, 'call-alive'],
+      [2, 'active', 'end-call', 'exited', 5, 'call-alive'],
+      [3, 'active', 'end-call', 'exited', 0, 'call-ended'],
+    ],
+  );
   assert.ok(!JSON.stringify(log).includes(secret));
   // The report Control reads is unchanged by the diagnostics: one uncertain effect, no limit reached.
   const report = await sandbox.channelReport({ environment, boot });
@@ -482,31 +723,62 @@ test('a reconnection accepts only the host key pinned at the boot; a call that n
   assert.equal(listed.status === 'success' && 'exitCode' in listed && listed.exitCode, 0, JSON.stringify(listed));
   assert.equal(consulted, 2);
   // A call that never started is run again, and the record says how each rerun ended (never what it printed).
-  assert.deepEqual((await readLambdaChannelLog(root, environment, boot)).flatMap(entry => entry.kind === 'recovery' ? [[entry.attempt, entry.action, entry.status, entry.code, entry.exitCode, entry.outcome]] : []),
-    [[1, 'rerun', 'refused', 'UNREACHABLE', undefined, undefined], [2, 'rerun', 'exited', undefined, 0, undefined]]);
+  assert.deepEqual(
+    (await readLambdaChannelLog(root, environment, boot)).flatMap(entry =>
+      entry.kind === 'recovery' ? [[entry.attempt, entry.action, entry.status, entry.code, entry.exitCode, entry.outcome]] : [],
+    ),
+    [
+      [1, 'rerun', 'refused', 'UNREACHABLE', undefined, undefined],
+      [2, 'rerun', 'exited', undefined, 0, undefined],
+    ],
+  );
   assert.deepEqual((await sandbox.channelReport({ environment, boot })).indeterminateEffects, []);
 
   // After a drop, something else answers at the endpoint with another host key: the adapter never talks to it.
-  guests.world.commands['make deploy'] = async (_guest, run) => { guest.hostKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAnotTheGuestThatWasPinnedAtBoot000000000000'; guests.drop(); await run.killed; return 0; };
+  guests.world.commands['make deploy'] = async (_guest, run) => {
+    guest.hostKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAnotTheGuestThatWasPinnedAtBoot000000000000';
+    guests.drop();
+    await run.killed;
+    return 0;
+  };
   assert.deepEqual(await builder.call({ name: 'bash', command: 'make deploy' }, () => {}), { status: 'failure', code: 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' });
-  assert.deepEqual(guest.executions.filter(execution => execution.program === 'end-call'), []);
-  assert.deepEqual(guest.processes.map(process => process.state), ['exited', 'running']);
+  assert.deepEqual(
+    guest.executions.filter(execution => execution.program === 'end-call'),
+    [],
+  );
+  assert.deepEqual(
+    guest.processes.map(process => process.state),
+    ['exited', 'running'],
+  );
   assert.ok(guests.connections.every(connection => connection.hostKey === pinned));
   assert.equal((await sandbox.channelReport({ environment, boot })).unrecoverable?.attempts, 5);
 });
 
-test('MVP §12.2: the command text of an uncertain effect passes the Records secret filter before it reaches the boot\'s host record; a write names its path only', async t => {
+test("MVP §12.2: the command text of an uncertain effect passes the Records secret filter before it reaches the boot's host record; a write names its path only", async t => {
   const { guests, sandbox, environment, boot, records, invocation } = await activeBoot(t);
   const secret = 'ghs_synthetic0123456789abcdefSECRET';
   records.registerSecret(secret);
   const command = `curl -H "Authorization: Bearer ${secret}" https://deploy.example/release`;
-  guests.world.commands[command] = async (_guest, run) => { guests.drop(); await run.killed; return 0; };
+  guests.world.commands[command] = async (_guest, run) => {
+    guests.drop();
+    await run.killed;
+    return 0;
+  };
   const builder = await invocation({});
   await builder.call({ name: 'bash', command }, () => {});
   const [effect] = (await sandbox.channelReport({ environment, boot })).indeterminateEffects;
   assert.equal(effect!.description, 'curl -H "Authorization: Bearer █" https://deploy.example/release');
   // A filter that fails never releases the raw text by another path: the record says the text was withheld.
-  const failing = await invocation({ records: { ...records, filterText() { throw new Error('filter'); } } as typeof records });
+  const failing = await invocation({
+    records: {
+      ...records,
+      filterText() {
+        throw new Error('filter');
+      },
+    } as typeof records,
+  });
   await failing.call({ name: 'bash', command }, () => {});
-  assert.deepEqual((await sandbox.channelReport({ environment, boot })).indeterminateEffects.map(item => item.description).slice(1), ['(text withheld: the secret filter could not be applied)']);
+  assert.deepEqual((await sandbox.channelReport({ environment, boot })).indeterminateEffects.map(item => item.description).slice(1), [
+    '(text withheld: the secret filter could not be applied)',
+  ]);
 });

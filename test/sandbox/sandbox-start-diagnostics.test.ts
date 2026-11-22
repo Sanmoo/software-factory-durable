@@ -27,34 +27,60 @@ async function failedBoot(diagnostic?: unknown) {
   await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration, guestAssets });
   await json(join(directory, 'ready.json'), { environment });
   await json(join(directory, 'current.json'), { version: 1, environment, boot });
-  await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, configuration,
-    hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() });
-  await json(join(path, 'started.json'), { version: 1, boot, unit, invocation: 'a'.repeat(32),
+  await json(join(path, 'identity.json'), {
+    version: 1,
+    environment,
+    boot,
+    unit,
+    configuration,
+    hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
+  });
+  await json(join(path, 'started.json'), {
+    version: 1,
+    boot,
+    unit,
+    invocation: 'a'.repeat(32),
     cgroup: `/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}`,
-    cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') });
+    cgroupNamespace: await readlink('/proc/self/ns/cgroup'),
+    mountNamespace: await readlink('/proc/self/ns/mnt'),
+  });
   if (diagnostic !== undefined) await json(join(path, 'failure.json'), diagnostic);
   const response = `LoadState=loaded\nActiveState=failed\nInvocationID=${'a'.repeat(32)}\nControlGroup=\nResult=exit-code\n`;
-  await writeFile(join(bin, 'systemctl'), `#!${process.execPath}
+  await writeFile(
+    join(bin, 'systemctl'),
+    `#!${process.execPath}
 const args = process.argv.slice(2);
 if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(unit)} || args.length !== 4) process.exit(77);
 process.stdout.write(${JSON.stringify(response)});
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const previousPath = process.env.PATH;
   process.env.PATH = bin;
-  return { root, path, sandbox: createSandbox({ root, guestAssets }), async cleanup() {
-    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
-    await rm(root, { recursive: true, force: true });
-  } };
+  return {
+    root,
+    path,
+    sandbox: createSandbox({ root, guestAssets }),
+    async cleanup() {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      await rm(root, { recursive: true, force: true });
+    },
+  };
 }
 
 test('Sandbox.start reports a bounded previous-startup diagnostic without permitting disk reuse (manager double)', async () => {
   const fixture = await failedBoot({ version: 1, boot, phase: 'vm-start', code: 'GUEST_READINESS_TIMEOUT' });
   try {
     assert.deepEqual(await fixture.sandbox.start({ environment, configuration }), {
-      status: 'failure', code: 'PRESERVED_DISK_CHECK_REQUIRED', boot,
+      status: 'failure',
+      code: 'PRESERVED_DISK_CHECK_REQUIRED',
+      boot,
       failure: { phase: 'vm-start', code: 'GUEST_READINESS_TIMEOUT' },
     });
-  } finally { await fixture.cleanup(); }
+  } finally {
+    await fixture.cleanup();
+  }
 });
 
 for (const [label, record] of [
@@ -70,6 +96,8 @@ for (const [label, record] of [
       const result = await fixture.sandbox.start({ environment, configuration });
       assert.deepEqual(result, { status: 'failure', code: 'PRESERVED_DISK_CHECK_REQUIRED', boot });
       assert.equal(JSON.stringify(result).includes('PRIVATE_TOKEN_CANARY'), false);
-    } finally { await fixture.cleanup(); }
+    } finally {
+      await fixture.cleanup();
+    }
   });
 }

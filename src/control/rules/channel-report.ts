@@ -14,7 +14,11 @@ export const indeterminateEffectsLimit = 64;
  * The Execution's record after a report: effects already recorded are kept as they were (first record wins, by call), new ones are
  * appended in the report's order, up to the limit. `executionId` of the record is always the Execution Control read the report for.
  */
-export function mergeEffects(recorded: readonly IndeterminateEffectRecord[], report: ChannelReport, context: { executionId: string; boot: string; recordedAt: string }): IndeterminateEffectRecord[] {
+export function mergeEffects(
+  recorded: readonly IndeterminateEffectRecord[],
+  report: ChannelReport,
+  context: { executionId: string; boot: string; recordedAt: string },
+): IndeterminateEffectRecord[] {
   const merged = [...recorded];
   for (const effect of report.indeterminateEffects) {
     if (merged.length >= indeterminateEffectsLimit) break;

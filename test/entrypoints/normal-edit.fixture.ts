@@ -5,18 +5,51 @@ import { createWorkers } from '../../src/workers/index.js';
 import { SessionManager } from '#factory-pi';
 
 /** Several modes may share one boot (ticket 37): each is its own activation (`invocationId`), found by its own receipt. */
-export async function normalEdit(root: string, context: { workId: string; environmentRef: string; bootRef: string }, mode = process.env.TASK114_EDIT!, invocationId = 'edit-worker') {
-  const workers = createWorkers({ root, knownSecrets: ['synthetic-secret'], profile: {
-    id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', systemPrompt: 'Private Edit fixture.',
-    providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
-    provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
-      { id: 'reader', name: 'Reader', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 },
-    ] },
-  } });
+export async function normalEdit(
+  root: string,
+  context: { workId: string; environmentRef: string; bootRef: string },
+  mode = process.env.TASK114_EDIT!,
+  invocationId = 'edit-worker',
+) {
+  const workers = createWorkers({
+    root,
+    knownSecrets: ['synthetic-secret'],
+    profile: {
+      id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3',
+      systemPrompt: 'Private Edit fixture.',
+      providerId: 'offline-fixture',
+      modelId: 'reader',
+      apiKey: 'synthetic-key',
+      provider: {
+        api: 'openai-completions',
+        baseUrl: 'https://offline.invalid',
+        models: [
+          {
+            id: 'reader',
+            name: 'Reader',
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 100000,
+            maxTokens: 1000,
+          },
+        ],
+      },
+    },
+  });
   const abort = new AbortController();
-  const invocation = { context: { ...context, executionId: 'edit-exec', invocationId,
-    role: (mode === 'standards' || mode === 'spec' ? mode : 'builder') as 'standards' | 'spec' | 'builder', phaseId: 'edit-phase' },
-    prompt: mode, signal: abort.signal, ...(mode === 'absent' ? {} : { editSourceMaxBytes: mode === 'budget' || mode === 'empty' ? 0 : 8192 }) };
+  const invocation = {
+    context: {
+      ...context,
+      executionId: 'edit-exec',
+      invocationId,
+      role: (mode === 'standards' || mode === 'spec' ? mode : 'builder') as 'standards' | 'spec' | 'builder',
+      phaseId: 'edit-phase',
+    },
+    prompt: mode,
+    signal: abort.signal,
+    ...(mode === 'absent' ? {} : { editSourceMaxBytes: mode === 'budget' || mode === 'empty' ? 0 : 8192 }),
+  };
   if (mode === 'invalid') {
     for (const value of [-1, 8193, 0.5, NaN, Infinity, '8192', null]) {
       await assert.rejects(workers.activate({ ...invocation, editSourceMaxBytes: value } as never), /WORKER_LAUNCH_INVALID/);
@@ -51,7 +84,10 @@ export async function normalEdit(root: string, context: { workId: string; enviro
       assert.ok(messages.some(m => m.role === 'toolResult'));
       if (mode === 'empty') assert.match(transcript, /Could not find|empty/i);
       const refused = mode === 'secret' || mode === 'budget';
-      if (refused) { assert.match(transcript, /EDIT_SOURCE_NOT_LOSSLESS/); assert.doesNotMatch(transcript, /Successfully replaced/); }
+      if (refused) {
+        assert.match(transcript, /EDIT_SOURCE_NOT_LOSSLESS/);
+        assert.doesNotMatch(transcript, /Successfully replaced/);
+      }
       if (!interrupted && mode !== 'empty' && !refused) {
         assert.match(transcript, /Successfully replaced/);
         assert.match(transcript, /diff/);
@@ -59,5 +95,7 @@ export async function normalEdit(root: string, context: { workId: string; enviro
       }
     }
     return { pid: receipt.observedProcess.pid, status: completed.status };
-  } finally { worker.close(); }
+  } finally {
+    worker.close();
+  }
 }

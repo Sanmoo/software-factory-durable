@@ -12,11 +12,18 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * unchanged and no source is retained, so they are ordinary tool errors with an actionable reason, never critical(). Every
  * other capture failure (channel, protected Records, stale context, version limit) keeps effects or state unknown: critical. */
 const captureRefusals = new Map<string, (limit: number) => string>([
-  ['EDIT_SOURCE_NOT_LOSSLESS', limit => `the file exceeds the edit source limit of ${limit} bytes or is not plain UTF-8 text (or holds protected content), ` +
-    'so edit cannot change it. Change it with bash instead (for example an in-place python3 or sed patch); write accepts at most 8192 characters'],
+  [
+    'EDIT_SOURCE_NOT_LOSSLESS',
+    limit =>
+      `the file exceeds the edit source limit of ${limit} bytes or is not plain UTF-8 text (or holds protected content), ` +
+      'so edit cannot change it. Change it with bash instead (for example an in-place python3 or sed patch); write accepts at most 8192 characters',
+  ],
   ['READ_BINARY_UNSUPPORTED', () => 'the file is binary, so edit cannot change it'],
   ['READ_PATH_DENIED', () => 'the path is not a plain path under /workspace or /artifacts'],
-  ['GUEST_READ_FAILED', () => 'the file could not be read (missing, a directory, a symbolic link or unreadable); check the path or create it with write or bash'],
+  [
+    'GUEST_READ_FAILED',
+    () => 'the file could not be read (missing, a directory, a symbolic link or unreadable); check the path or create it with write or bash',
+  ],
 ]);
 /** Pure rule (ticket 46): the model-visible reason of a capture refusal without effect, or undefined when the failure is critical. */
 export function captureRefusal(code: string, sourceMaxBytes = 8192): string | undefined {
@@ -56,9 +63,13 @@ function boundedInput(input: unknown) {
 /** Private adapter; normal Builder sessions require explicit trusted Host policy.
  * The SDK owns schema, lexical queue, matching, BOM/EOL engine and diff. Q5 owns
  * source identity, confined existing-FD comparison and mutation evidence. */
-export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {},
+export function builderEdit(
+  context: ToolContext,
+  sandbox: ToolProjection,
+  onCritical: () => void = () => {},
   /** The Host's edit source limit, named in the refusal the model sees (the owner enforces it). */
-  sourceMaxBytes = 8192): ToolDefinition {
+  sourceMaxBytes = 8192,
+): ToolDefinition {
   const bound = Object.freeze({ ...context });
   let revoked = false;
   // Technical admission bound: at most 16 retained executions/captures (owner
@@ -67,24 +78,35 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
   let rpcBusy = false;
   const waiters: (() => void)[] = [];
   const dispatch = async <T>(operation: () => Promise<T>): Promise<T> => {
-    if (rpcBusy) await new Promise<void>(resolve => { waiters.push(resolve); });
+    if (rpcBusy)
+      await new Promise<void>(resolve => {
+        waiters.push(resolve);
+      });
     else rpcBusy = true;
-    try { return await operation(); }
-    finally {
+    try {
+      return await operation();
+    } finally {
       const next = waiters.shift();
       if (next) next();
       else rpcBusy = false;
     }
   };
-  const critical = () => { if (!revoked) { revoked = true; onCritical(); } };
+  const critical = () => {
+    if (!revoked) {
+      revoked = true;
+      onCritical();
+    }
+  };
   // Metadata/preparation only: even this never-executed native instance has no
   // default host filesystem callbacks. Actual operations are fresh below.
-  const inactive = async (): Promise<never> => { throw new Error('EDIT_OPERATIONS_UNBOUND'); };
-  const metadataOptions: LexicalEditOptions = { mutationQueueMode: 'lexical',
-    operations: { access: inactive, readFile: inactive, writeFile: inactive } };
+  const inactive = async (): Promise<never> => {
+    throw new Error('EDIT_OPERATIONS_UNBOUND');
+  };
+  const metadataOptions: LexicalEditOptions = { mutationQueueMode: 'lexical', operations: { access: inactive, readFile: inactive, writeFile: inactive } };
   const definition = createEditTool('/workspace', metadataOptions);
   // Fixed host composition: the shared channel admits one tool at a time.
-  return { ...definition,
+  return {
+    ...definition,
     executionMode: 'sequential',
     prepareArguments(input) {
       const bounded = boundedInput(input);
@@ -94,7 +116,10 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
       if (bound.role !== 'builder') throw new Error('EDIT_ROLE_DENIED');
       if (revoked) throw new Error('EDIT_INVOCATION_REVOKED');
       const check = () => {
-        if (signal?.aborted) { critical(); throw new Error('Operation aborted'); }
+        if (signal?.aborted) {
+          critical();
+          throw new Error('Operation aborted');
+        }
         if (revoked) throw new Error('EDIT_INVOCATION_REVOKED');
       };
       check();
@@ -103,71 +128,110 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
       let capture: { path: string; result: TextResult & { sourceVersion: string } } | undefined;
       let spent = false;
       let originalError = false;
-      const unavailable = (): never => { critical(); throw new Error('EDIT_SOURCE_UNAVAILABLE'); };
+      const unavailable = (): never => {
+        critical();
+        throw new Error('EDIT_SOURCE_UNAVAILABLE');
+      };
       const validReference = (result: Extract<ReadResult, { status: 'success' }>) =>
         result.reference?.workId === bound.workId && uuid.test(result.reference.id);
-      const rpc = (call: Parameters<ToolProjection['executeTool']>[1]) => dispatch(async () => {
-        check(); // Recheck at dispatch, not merely when entering the FIFO.
-        // Consume only at dispatch; a denied queued commit still owns an unused
-        // capture. Once dispatched, never release, retry or replay that source.
-        if (call.name === 'edit-source' && call.operation === 'commit') spent = true;
-        try { return await sandbox.executeTool(bound, call, undefined, signal); }
-        catch (error) { critical(); throw error; }
-        finally { if (signal?.aborted) critical(); }
-      });
+      const rpc = (call: Parameters<ToolProjection['executeTool']>[1]) =>
+        dispatch(async () => {
+          check(); // Recheck at dispatch, not merely when entering the FIFO.
+          // Consume only at dispatch; a denied queued commit still owns an unused
+          // capture. Once dispatched, never release, retry or replay that source.
+          if (call.name === 'edit-source' && call.operation === 'commit') spent = true;
+          try {
+            return await sandbox.executeTool(bound, call, undefined, signal);
+          } catch (error) {
+            critical();
+            throw error;
+          } finally {
+            if (signal?.aborted) critical();
+          }
+        });
       const binding = (path: string) => {
         if (!capture || path !== capture.path || spent) return unavailable();
         return { name: 'edit-source' as const, path: capture.path, reference: capture.result.reference, sourceVersion: capture.result.sourceVersion };
       };
-      const options: LexicalEditOptions = { mutationQueueMode: 'lexical', operations: {
-        async access(path) {
-          if (path.length > 4096) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
-          const result = await rpc({ name: 'edit-source', operation: 'capture', path, callId: randomUUID() });
-          if (result.status !== 'success') {
+      const options: LexicalEditOptions = {
+        mutationQueueMode: 'lexical',
+        operations: {
+          async access(path) {
+            if (path.length > 4096) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
+            const result = await rpc({ name: 'edit-source', operation: 'capture', path, callId: randomUUID() });
+            if (result.status !== 'success') {
+              check();
+              const refusal = captureRefusal(result.code, sourceMaxBytes);
+              if (refusal !== undefined) throw new Error(refusal);
+              critical();
+              throw new Error(result.code);
+            }
+            if (result.format !== 'text' || !validReference(result) || !result.sourceVersion || !uuid.test(result.sourceVersion)) return unavailable();
+            capture = { path, result: { ...result, sourceVersion: result.sourceVersion } };
             check();
-            const refusal = captureRefusal(result.code, sourceMaxBytes);
-            if (refusal !== undefined) throw new Error(refusal);
-            critical(); throw new Error(result.code);
-          }
-          if (result.format !== 'text' || !validReference(result) || !result.sourceVersion || !uuid.test(result.sourceVersion)) return unavailable();
-          capture = { path, result: { ...result, sourceVersion: result.sourceVersion } };
-          check();
-          if (!Number.isSafeInteger(result.bytes) || result.bytes < 0 || result.bytes > 8192 ||
-              result.encoding !== 'base64' || result.nextOffset !== 0 || result.data !== '') return unavailable();
+            if (
+              !Number.isSafeInteger(result.bytes) ||
+              result.bytes < 0 ||
+              result.bytes > 8192 ||
+              result.encoding !== 'base64' ||
+              result.nextOffset !== 0 ||
+              result.data !== ''
+            )
+              return unavailable();
+          },
+          async readFile(path) {
+            const trusted = binding(path);
+            const result = await rpc({ ...trusted, operation: 'page', offset: 0, callId: randomUUID() });
+            check();
+            if (result.status !== 'success') {
+              critical();
+              throw new Error(result.code);
+            }
+            // Bound encoded size BEFORE decoding/allocation; no concat/second reader.
+            if (
+              result.format !== 'text' ||
+              result.encoding !== 'base64' ||
+              result.reference?.id !== trusted.reference.id ||
+              result.reference.workId !== bound.workId ||
+              result.sourceVersion !== trusted.sourceVersion ||
+              result.bytes !== capture?.result.bytes ||
+              typeof result.data !== 'string' ||
+              result.data.length > 10924 ||
+              result.nextOffset !== result.bytes
+            )
+              return unavailable();
+            const buffer = Buffer.from(result.data, 'base64');
+            if (buffer.length !== result.bytes || buffer.toString('base64') !== result.data || !Buffer.from(buffer.toString('utf8'), 'utf8').equals(buffer))
+              return unavailable();
+            // Buffer.toString retains BOM; native alone removes/reinserts it.
+            return buffer;
+          },
+          async writeFile(path, replacement) {
+            const trusted = binding(path);
+            if (replacement.length > 8192 || Buffer.byteLength(replacement, 'utf8') > 8192) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
+            const call = { ...trusted, operation: 'commit' as const, replacement, callId: randomUUID() };
+            if (Buffer.byteLength(JSON.stringify(call)) > 49152) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
+            check();
+            const result = await rpc(call);
+            check();
+            if (result.status !== 'success') {
+              // v2 ticket 11: the commit's channel dropped and its process was ended; the source is spent, the session goes on.
+              if (isIndeterminateResult(result.code)) throw new Error(indeterminateResultText(result.code));
+              if (result.code !== 'EDIT_SOURCE_CHANGED') critical();
+              throw new Error(result.code);
+            }
+            if (
+              result.format !== 'text' ||
+              !validReference(result) ||
+              result.bytes !== 0 ||
+              result.encoding !== 'base64' ||
+              result.data !== '' ||
+              result.nextOffset !== 0
+            )
+              return unavailable();
+          },
         },
-        async readFile(path) {
-          const trusted = binding(path);
-          const result = await rpc({ ...trusted, operation: 'page', offset: 0, callId: randomUUID() });
-          check();
-          if (result.status !== 'success') { critical(); throw new Error(result.code); }
-          // Bound encoded size BEFORE decoding/allocation; no concat/second reader.
-          if (result.format !== 'text' || result.encoding !== 'base64' || result.reference?.id !== trusted.reference.id ||
-              result.reference.workId !== bound.workId || result.sourceVersion !== trusted.sourceVersion ||
-              result.bytes !== capture?.result.bytes || typeof result.data !== 'string' || result.data.length > 10924 || result.nextOffset !== result.bytes) return unavailable();
-          const buffer = Buffer.from(result.data, 'base64');
-          if (buffer.length !== result.bytes || buffer.toString('base64') !== result.data ||
-              !Buffer.from(buffer.toString('utf8'), 'utf8').equals(buffer)) return unavailable();
-          // Buffer.toString retains BOM; native alone removes/reinserts it.
-          return buffer;
-        },
-        async writeFile(path, replacement) {
-          const trusted = binding(path);
-          if (replacement.length > 8192 || Buffer.byteLength(replacement, 'utf8') > 8192) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
-          const call = { ...trusted, operation: 'commit' as const, replacement, callId: randomUUID() };
-          if (Buffer.byteLength(JSON.stringify(call)) > 49152) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
-          check();
-          const result = await rpc(call);
-          check();
-          if (result.status !== 'success') {
-            // v2 ticket 11: the commit's channel dropped and its process was ended; the source is spent, the session goes on.
-            if (isIndeterminateResult(result.code)) throw new Error(indeterminateResultText(result.code));
-            if (result.code !== 'EDIT_SOURCE_CHANGED') critical();
-            throw new Error(result.code);
-          }
-          if (result.format !== 'text' || !validReference(result) || result.bytes !== 0 || result.encoding !== 'base64' ||
-              result.data !== '' || result.nextOffset !== 0) return unavailable();
-        },
-      } };
+      };
       if (admitted >= 16) throw new Error('EDIT_ADMISSION_FULL');
       admitted++;
       try {
@@ -186,16 +250,26 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
             try {
               const call = { ...binding(capture.path), operation: 'release' as const, callId: randomUUID() };
               const result = await dispatch(() => sandbox.executeTool(bound, call));
-              if (result.status !== 'success' || result.format !== 'text' || result.sourceVersion !== capture.result.sourceVersion ||
-                  result.reference.id !== capture.result.reference.id || result.reference.workId !== bound.workId ||
-                  result.bytes !== capture.result.bytes || result.encoding !== 'base64' || result.data !== '' || result.nextOffset !== 0)
+              if (
+                result.status !== 'success' ||
+                result.format !== 'text' ||
+                result.sourceVersion !== capture.result.sourceVersion ||
+                result.reference.id !== capture.result.reference.id ||
+                result.reference.workId !== bound.workId ||
+                result.bytes !== capture.result.bytes ||
+                result.encoding !== 'base64' ||
+                result.data !== '' ||
+                result.nextOffset !== 0
+              )
                 throw new Error('EDIT_RELEASE_UNAVAILABLE');
             } catch (error) {
               critical();
               if (!originalError) throw error;
             }
           }
-        } finally { admitted--; }
+        } finally {
+          admitted--;
+        }
       }
     },
   };

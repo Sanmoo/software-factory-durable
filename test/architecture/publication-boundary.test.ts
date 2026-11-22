@@ -10,7 +10,7 @@ async function sources(directory = 'src'): Promise<{ path: string; text: string 
   const result: { path: string; text: string }[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) result.push(...await sources(path));
+    if (entry.isDirectory()) result.push(...(await sources(path)));
     else if (entry.name.endsWith('.ts')) result.push({ path, text: await readFile(path, 'utf8') });
   }
   return result;
@@ -20,8 +20,13 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   const files = await sources();
   // Host git runs only to prepare/inspect the checkout, never to push. Heuristic (review LOW): ANY file that spawns a process and names
   // git (any path or a bare `git`) must not carry a push argument or a lease.
-  const spawns = files.filter(item => /\b(execFile|execFileSync|spawn|spawnSync|exec|execSync|fork)\s*\(/.test(item.text) && /['"`](?:[^'"`\s]*\/)?git['"`]/.test(item.text));
-  assert.ok(spawns.some(item => item.path === 'src/sandbox/checkout.ts'), 'the heuristic sees the known host git');
+  const spawns = files.filter(
+    item => /\b(execFile|execFileSync|spawn|spawnSync|exec|execSync|fork)\s*\(/.test(item.text) && /['"`](?:[^'"`\s]*\/)?git['"`]/.test(item.text),
+  );
+  assert.ok(
+    spawns.some(item => item.path === 'src/sandbox/checkout.ts'),
+    'the heuristic sees the known host git',
+  );
   for (const file of spawns) assert.doesNotMatch(file.text, /['"`]push['"`]|--force-with-lease|\bgit push\b/, `${file.path}: host git never pushes`);
   // The only Host git files: the Work checkout preparation/inspection, and the release build reading the Factory's OWN source metadata.
   for (const file of spawns.filter(item => /['"`](?:\/usr\/bin\/)?git['"`]\s*,/.test(item.text))) {
@@ -37,18 +42,33 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   const contract = /export interface CodeRepository \{([\s\S]*?)\n\}/.exec(repository)![1]!;
   // Ticket 15 adds Q4B `readPullRequest`, a GET-only read under the reduced `checks-read` grant (no write permission).
   // Ticket 16 adds Q4B `setDraft`: the draft/ready flag only, a controller effect decided by Control's readiness evaluation.
-  assert.deepEqual([...contract.matchAll(/^\s+(\w+)\(/gm)].map(match => match[1]), ['checkAccess', 'findPublication', 'readPullRequest', 'setDraft']);
+  assert.deepEqual(
+    [...contract.matchAll(/^\s+(\w+)\(/gm)].map(match => match[1]),
+    ['checkAccess', 'findPublication', 'readPullRequest', 'setDraft'],
+  );
   // The controller's only GraphQL documents are the two fixed draft mutations, (ticket 17) the atomic conditional deletion of the Work's OWN
   // delivered branch and (ticket 25) the operator-requested reopen of the Work's OWN pull request closed without merge; never review,
   // approval, merge or any other mutation.
-  assert.deepEqual([...github.matchAll(/mutation\([^)]*\) \{ (\w+)\(input:/g)].map(match => match[1]).sort(), ['convertPullRequestToDraft', 'markPullRequestReadyForReview', 'reopenPullRequest', 'updateRefs']);
+  assert.deepEqual([...github.matchAll(/mutation\([^)]*\) \{ (\w+)\(input:/g)].map(match => match[1]).sort(), [
+    'convertPullRequestToDraft',
+    'markPullRequestReadyForReview',
+    'reopenPullRequest',
+    'updateRefs',
+  ]);
   assert.match(github, /'pull-request-reopen': \{ metadata: 'read', pull_requests: 'write' \}/);
-  assert.equal((github.match(/issue\(scope, field === 'reopenPullRequest' \? 'pull-request-reopen' : 'readiness-write'\)/g) ?? []).length, 1, 'one fresh pull request mutation grant site');
+  assert.equal(
+    (github.match(/issue\(scope, field === 'reopenPullRequest' \? 'pull-request-reopen' : 'readiness-write'\)/g) ?? []).length,
+    1,
+    'one fresh pull request mutation grant site',
+  );
   // Ticket 17: updateRefs only deletes ONE ref conditionally (beforeOid, afterOid zero, force false), under the single-use branch-cleanup grant.
   // v2 ticket 12 (V2-02 Remover): the same closed deletion also takes ONE loss marker ref of the Factory's own namespace
   // (`refs/factory/lost/<work>/<boot>`, checked against the contract's pattern); every other name is a validated branch under `refs/heads/`.
   assert.match(github, /refUpdates: \[\{ name, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
-  assert.match(github, /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\) : \/[^ ]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/);
+  assert.match(
+    github,
+    /const name = 'lostMarker' in input \? \(lostMarkerPattern\.test\(input\.lostMarker\) \? input\.lostMarker : null\) : \/[^ ]+\/\.test\(input\.branch\) \? `refs\/heads\/\$\{input\.branch\}` : null;/,
+  );
   assert.equal((github.match(/refUpdates: \[\{/g) ?? []).length, 1, 'one ref update site');
   assert.match(github, /'branch-cleanup': \{ metadata: 'read', contents: 'write', pull_requests: 'read' \}/);
   assert.equal((github.match(/issue\(scope, 'branch-cleanup'\)/g) ?? []).length, 1, 'one fresh cleanup grant site');
@@ -57,7 +77,10 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   assert.match(github, /'readiness-write': \{ metadata: 'read', pull_requests: 'write' \}/);
   const reader = files.find(item => item.path === 'src/code-repository/pull-request.ts')!.text;
   assert.doesNotMatch(reader, /comment\(|transient\(|revoke\(|'POST'|'PATCH'|'PUT'|'DELETE'/, 'readPullRequest never writes');
-  assert.match(github, /'checks-read': \{ metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' \}/);
+  assert.match(
+    github,
+    /'checks-read': \{ metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' \}/,
+  );
   // No shell parsing of Builder commands or effect-registration tool for push/PR (Q7): the Workers and Sandbox never look for them.
   // Ticket 21 review (supervisor/operator decision): ONE Builder-Host REFUSAL policy (`src/workers/push-policy.ts`) names the exact leased push
   // Control allows; it never publishes, registers effects or wraps git/gh, it only refuses other push forms before the guest sees them.
@@ -65,9 +88,14 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // trigger: the committed HEAD to the boot's loss marker ref. It is not a publication: the ref is no branch, the program takes no
   // parameter from the agent, and the ref it is given must match the marker pattern.
   const marker = files.find(item => item.path === 'src/sandbox/lambda/loss-marker.ts')!.text;
-  assert.deepEqual([...marker.matchAll(/ push --[^\n]*/g)].map(match => match[0].replace(/`,$/, '')), [' push --quiet --force -- "$FACTORY_MARKER_REMOTE" "$head:$FACTORY_MARKER_REF"']);
+  assert.deepEqual(
+    [...marker.matchAll(/ push --[^\n]*/g)].map(match => match[0].replace(/`,$/, '')),
+    [' push --quiet --force -- "$FACTORY_MARKER_REMOTE" "$head:$FACTORY_MARKER_REF"'],
+  );
   assert.match(marker, /if \(!lostMarkerPattern\.test\(ref\)/);
-  for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path) && !['src/workers/push-policy.ts', 'src/sandbox/lambda/loss-marker.ts'].includes(item.path))) {
+  for (const file of files.filter(
+    item => /^src\/(workers|sandbox|platform)\//.test(item.path) && !['src/workers/push-policy.ts', 'src/sandbox/lambda/loss-marker.ts'].includes(item.path),
+  )) {
     assert.doesNotMatch(file.text, /registrar_efeito|register_effect|git push|gh pr create|pr create/, file.path);
   }
 });

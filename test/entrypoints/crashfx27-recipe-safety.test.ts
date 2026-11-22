@@ -56,20 +56,70 @@ const qid = '0b9c6a52-3d3e-4c8f-9a51-000000000277';
 const head = 'b'.repeat(40);
 const push = `git -C /workspace/checkout push --force-with-lease=refs/heads/factory/9-abc: ${configuredRemote} ${head}:refs/heads/factory/9-abc`;
 const execution = (extra: Record<string, unknown>) => ({ executionId: 'e', request: {}, recovery: [{ cessation: { result: 'confirmed' } }], ...extra });
-function world(overrides: { posts?: number; reposts?: number; comments?: number | null; pulls?: number | null; pushes?: string[]; cutB?: boolean; postKind?: string;
-  census?: boolean; answers?: number; askSettledLive?: boolean; askCessation?: 'confirmed' | 'unconfirmed' } = {}) {
-  const question = { questionId: qid, state: 'answered', answer: { origin: { kind: 'github-comment' } },
-    publication: { state: 'published', attempts: [{ outcome: 'attempting' }, { outcome: 'discovered' }], comment: { commentId: 77 } } } as unknown as QuestionView;
-  const work = { questions: [qid], history: Array.from({ length: overrides.answers ?? 1 }, () => ({ event: 'question-answered', questionId: qid })), publication: { state: 'published', branch: 'factory/9-abc', verified: { head }, pullRequest: { headSha: head }, attempts: [{ head, expectedRemote: { state: 'absent' } }] },
-    previousExecutions: [execution({ executionId: 'e1', end: { outcome: 'question', questionId: qid, cessation: overrides.askCessation ?? 'confirmed' },
-      ...(overrides.askSettledLive ? { recovery: [] } : {}) }), execution({ executionId: 'e2', end: { outcome: 'completed' } })],
-    execution: execution({ executionId: 'e3', request: { publication: { head } }, end: { outcome: 'failure' } }) } as unknown as WorkView;
-  const events = [{ at: 't', step: 'a-ask' as const, call: 'post-returned', kind: overrides.postKind ?? 'published', commentId: 77 },
+function world(
+  overrides: {
+    posts?: number;
+    reposts?: number;
+    comments?: number | null;
+    pulls?: number | null;
+    pushes?: string[];
+    cutB?: boolean;
+    postKind?: string;
+    census?: boolean;
+    answers?: number;
+    askSettledLive?: boolean;
+    askCessation?: 'confirmed' | 'unconfirmed';
+  } = {},
+) {
+  const question = {
+    questionId: qid,
+    state: 'answered',
+    answer: { origin: { kind: 'github-comment' } },
+    publication: { state: 'published', attempts: [{ outcome: 'attempting' }, { outcome: 'discovered' }], comment: { commentId: 77 } },
+  } as unknown as QuestionView;
+  const work = {
+    questions: [qid],
+    history: Array.from({ length: overrides.answers ?? 1 }, () => ({ event: 'question-answered', questionId: qid })),
+    publication: {
+      state: 'published',
+      branch: 'factory/9-abc',
+      verified: { head },
+      pullRequest: { headSha: head },
+      attempts: [{ head, expectedRemote: { state: 'absent' } }],
+    },
+    previousExecutions: [
+      execution({
+        executionId: 'e1',
+        end: { outcome: 'question', questionId: qid, cessation: overrides.askCessation ?? 'confirmed' },
+        ...(overrides.askSettledLive ? { recovery: [] } : {}),
+      }),
+      execution({ executionId: 'e2', end: { outcome: 'completed' } }),
+    ],
+    execution: execution({ executionId: 'e3', request: { publication: { head } }, end: { outcome: 'failure' } }),
+  } as unknown as WorkView;
+  const events = [
+    { at: 't', step: 'a-ask' as const, call: 'post-returned', kind: overrides.postKind ?? 'published', commentId: 77 },
     ...(overrides.cutB === false ? [] : [{ at: 't', step: 'c-publish' as const, call: 'push-observed' }]),
-    ...Array.from({ length: overrides.reposts ?? 0 }, () => ({ at: 't', step: 'b-discover-question' as const, call: 'post-refused' }))];
-  return assess({ work, question, events, exits: { 'a-ask': 'signal:SIGKILL', 'b-discover-question': 'exit:0', 'c-publish': overrides.cutB === false ? 'exit:0' : 'signal:SIGKILL',
-    'd-discover-publication': 'exit:0' }, pushCensusComplete: overrides.census ?? true, pushes: overrides.pushes ?? [push],
-  remote: { questionComments: overrides.comments === undefined ? 1 : overrides.comments, ownPullRequests: overrides.pulls === undefined ? 1 : overrides.pulls, branchTip: head } });
+    ...Array.from({ length: overrides.reposts ?? 0 }, () => ({ at: 't', step: 'b-discover-question' as const, call: 'post-refused' })),
+  ];
+  return assess({
+    work,
+    question,
+    events,
+    exits: {
+      'a-ask': 'signal:SIGKILL',
+      'b-discover-question': 'exit:0',
+      'c-publish': overrides.cutB === false ? 'exit:0' : 'signal:SIGKILL',
+      'd-discover-publication': 'exit:0',
+    },
+    pushCensusComplete: overrides.census ?? true,
+    pushes: overrides.pushes ?? [push],
+    remote: {
+      questionComments: overrides.comments === undefined ? 1 : overrides.comments,
+      ownPullRequests: overrides.pulls === undefined ? 1 : overrides.pulls,
+      branchTip: head,
+    },
+  });
 }
 
 test('AC8 verdict: passed only with every check; a duplicate/repetition is FAILED; a missed cut or incomplete read is INCONCLUSIVE, never passed', () => {
@@ -81,20 +131,45 @@ test('AC8 verdict: passed only with every check; a duplicate/repetition is FAILE
   assert.deepEqual(twice.failures, ['atMostOnePushOfHead'], 'the verified head pushed twice');
   assert.deepEqual(world({ pushes: ['git push --force origin x'] }).failures, ['explicitLeases']);
   assert.deepEqual([world({ cutB: false }).status, world({ cutB: false }).inconclusive], ['inconclusive', ['CUT_B_NOT_REACHED']]);
-  assert.deepEqual([world({ comments: null }).status, world({ comments: null }).inconclusive], ['inconclusive', ['REMOTE_READ_INCOMPLETE']], 'an unreadable listing proves nothing');
-  assert.deepEqual([world({ postKind: 'unknown' }).status, world({ postKind: 'unknown' }).inconclusive], ['inconclusive', ['CUT_A_ENVIRONMENT_FAULT']], 'a GitHub fault at cut A');
-  assert.deepEqual([world({ census: false }).status, world({ census: false }).inconclusive], ['inconclusive', ['PUSH_CENSUS_INCOMPLETE']], 'a capped census may undercount');
+  assert.deepEqual(
+    [world({ comments: null }).status, world({ comments: null }).inconclusive],
+    ['inconclusive', ['REMOTE_READ_INCOMPLETE']],
+    'an unreadable listing proves nothing',
+  );
+  assert.deepEqual(
+    [world({ postKind: 'unknown' }).status, world({ postKind: 'unknown' }).inconclusive],
+    ['inconclusive', ['CUT_A_ENVIRONMENT_FAULT']],
+    'a GitHub fault at cut A',
+  );
+  assert.deepEqual(
+    [world({ census: false }).status, world({ census: false }).inconclusive],
+    ['inconclusive', ['PUSH_CENSUS_INCOMPLETE']],
+    'a capped census may undercount',
+  );
   // Real run v2: the ask Execution ended (question) and its cessation was confirmed LIVE before cut A, so the boot had nothing to reconcile.
   assert.equal(world({ askSettledLive: true }).status, 'passed', 'a settled ask Execution needs no boot reconciliation record');
-  assert.deepEqual([world({ askSettledLive: true, askCessation: 'unconfirmed' }).status, world({ askSettledLive: true, askCessation: 'unconfirmed' }).checks.questionExecutionSettled],
-    ['failed', false], 'an unconfirmed cessation of the ask Execution never passes');
+  assert.deepEqual(
+    [
+      world({ askSettledLive: true, askCessation: 'unconfirmed' }).status,
+      world({ askSettledLive: true, askCessation: 'unconfirmed' }).checks.questionExecutionSettled,
+    ],
+    ['failed', false],
+    'an unconfirmed cessation of the ask Execution never passes',
+  );
   assert.deepEqual([world({ answers: 2 }).status, world({ answers: 2 }).checks.singleAnswerAccepted], ['failed', false], 'two accepted answers');
 });
 
 test('a missing App key source fails loudly with its path before any effect', async () => {
   const asked: string[] = [];
-  await assert.rejects(requireKeySource(async path => { asked.push(path); throw new Error('ENOENT'); }),
-    (error: Error) => error.message.startsWith('APP_KEY_SOURCE_MISSING: /home/sanmoo/software-factory-test/y5/credentials/app.pem is absent') && /nothing was created/.test(error.message));
+  await assert.rejects(
+    requireKeySource(async path => {
+      asked.push(path);
+      throw new Error('ENOENT');
+    }),
+    (error: Error) =>
+      error.message.startsWith('APP_KEY_SOURCE_MISSING: /home/sanmoo/software-factory-test/y5/credentials/app.pem is absent') &&
+      /nothing was created/.test(error.message),
+  );
   assert.deepEqual(asked, [keySource]);
   await requireKeySource(async () => undefined);
 });

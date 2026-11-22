@@ -17,17 +17,22 @@ export type ChannelDropOutcome =
  * "not executed" and must never be repeated on the assumption that it did not run.
  */
 export type IndeterminateEffect = {
-  at: string; executionId: string; invocationId: string; role: string;
+  at: string;
+  executionId: string;
+  invocationId: string;
+  role: string;
   tool: 'bash' | 'write' | 'edit-source';
   callId: string;
   /** What the call asked for, bounded: the Bash command text, or the operation and path of a write. Never file content. */
   description: string;
-  outcome: ChannelDropOutcome };
+  outcome: ChannelDropOutcome;
+};
 
 export type ChannelReport = {
   indeterminateEffects: IndeterminateEffect[];
   /** Set once reconnection failed repeatedly with the environment alive: the boot serves no more tool calls. */
-  unrecoverable: { at: string; attempts: number } | null };
+  unrecoverable: { at: string; attempts: number } | null;
+};
 
 /** Bound of one effect description (a Bash command may be 16 KiB). */
 export const effectDescriptionLimit = 512;

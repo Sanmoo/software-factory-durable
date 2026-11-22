@@ -28,7 +28,9 @@ export async function environmentDependencies(root: string): Promise<Environment
     try {
       const { owner } = await ownedEnvironment(root, name as EnvironmentRef);
       result.push({ environment: name, workId: owner.workId, guestAssets: owner.guestAssets as GuestAssetPin, profile: owner.configuration.profile });
-    } catch { result.push({ environment: name, workId: null, guestAssets: null, profile: null }); }
+    } catch {
+      result.push({ environment: name, workId: null, guestAssets: null, profile: null });
+    }
   }
   return result;
 }

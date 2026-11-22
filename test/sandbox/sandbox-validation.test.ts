@@ -20,14 +20,20 @@ test('Sandbox.validate keeps configuration validity separate from missing explic
   try {
     const report = await createSandbox({ root }).validate(configuration);
     assert.equal(report.configuration.valid, true);
-    assert.deepEqual(report.checks.find(check => check.id === 'guest-assets'), {
-      id: 'guest-assets', status: 'blocked',
-      message: 'Explicit guest asset directory and trusted manifest SHA256 are required; no discovery or download was attempted.',
-      nextStep: 'Supply pinned assets through trusted composition; integrity checks do not qualify a release or prove boot.',
-    });
+    assert.deepEqual(
+      report.checks.find(check => check.id === 'guest-assets'),
+      {
+        id: 'guest-assets',
+        status: 'blocked',
+        message: 'Explicit guest asset directory and trusted manifest SHA256 are required; no discovery or download was attempted.',
+        nextStep: 'Supply pinned assets through trusted composition; integrity checks do not qualify a release or prove boot.',
+      },
+    );
     assert.equal(report.checks.find(check => check.id === 'sandbox-release')?.status, 'unverified');
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.validate verifies explicitly pinned bytes without claiming release or boot qualification', async () => {
@@ -44,26 +50,41 @@ test('Sandbox.validate verifies explicitly pinned bytes without claiming release
       assert.equal(report.checks.find(check => check.id === id)?.status, 'unverified', id);
     }
     assert.deepEqual(await readdir(root), before);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.validate exposes Docker qualification blockers without creating resources or claiming runtime proof', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-docker-diagnostic-'));
   try {
     const report = await createSandbox({ root }).validate(configuration);
-    assert.deepEqual(report.checks.find(check => check.id === 'sandbox-tool-channel'), {
-      id: 'sandbox-tool-channel', status: 'blocked',
-      message: 'The approved boot/invocation/role-bound executeTool channel is not implemented; fixed readiness commands are not a Builder tool interface.',
-      nextStep: 'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.',
-    });
-    assert.deepEqual(report.checks.find(check => check.id === 'sandbox-network-policy'), {
-      id: 'sandbox-network-policy', status: 'unverified',
-      message: 'Native public HTTP(S) mediation, synthetic DNS, no WebSockets/SSH/raw TCP/ingress and a private per-boot CA path are configured, not runtime-qualified. Built-in private-range guards plus known host-interface address exclusions do not identify every public host/Other Work endpoint or special IP range.',
-      nextStep: 'Qualify DNS/connect/redirect isolation and guest/daemon/container TLS under separate authorization; Docker bridge/NAT/ports and container trust remain unproved. No unrestricted networking or insecure TLS fallback.',
-    });
+    assert.deepEqual(
+      report.checks.find(check => check.id === 'sandbox-tool-channel'),
+      {
+        id: 'sandbox-tool-channel',
+        status: 'blocked',
+        message: 'The approved boot/invocation/role-bound executeTool channel is not implemented; fixed readiness commands are not a Builder tool interface.',
+        nextStep:
+          'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.',
+      },
+    );
+    assert.deepEqual(
+      report.checks.find(check => check.id === 'sandbox-network-policy'),
+      {
+        id: 'sandbox-network-policy',
+        status: 'unverified',
+        message:
+          'Native public HTTP(S) mediation, synthetic DNS, no WebSockets/SSH/raw TCP/ingress and a private per-boot CA path are configured, not runtime-qualified. Built-in private-range guards plus known host-interface address exclusions do not identify every public host/Other Work endpoint or special IP range.',
+        nextStep:
+          'Qualify DNS/connect/redirect isolation and guest/daemon/container TLS under separate authorization; Docker bridge/NAT/ports and container trust remain unproved. No unrestricted networking or insecure TLS fallback.',
+      },
+    );
     assert.equal(report.checks.find(check => check.id === 'docker-runtime')?.status, 'unverified');
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.validate distinguishes malformed, incomplete and incompatible pinned manifest metadata', async () => {
@@ -87,7 +108,9 @@ test('Sandbox.validate distinguishes malformed, incomplete and incompatible pinn
       assert.equal(report.checks.find(check => check.id === 'guest-assets:manifest')?.message, expected);
       assert.equal(report.configuration.valid, true);
     }
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.validate reports missing and mismatched bytes independently, without repair', async () => {
@@ -105,7 +128,9 @@ test('Sandbox.validate reports missing and mismatched bytes independently, witho
     const untrusted = await createSandbox({ root, guestAssets: { directory: root, manifestSha256: '0'.repeat(64) } }).validate(configuration);
     assert.equal(untrusted.checks.find(check => check.id === 'guest-assets:manifest')?.message, 'CHECKSUM_MISMATCH');
     assert.ok(!untrusted.checks.some(check => check.id === 'guest-assets:kernel'));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.validate rejects path traversal, symlink and hardlink aliases with real local files', async () => {
@@ -122,9 +147,12 @@ test('Sandbox.validate rejects path traversal, symlink and hardlink aliases with
     await link(join(outside, 'host-secret'), join(root, 'hardlink'));
     await mkdir(join(root, 'directory'));
     for (const [path, expected] of [
-      ['../host-secret', 'UNSAFE_PATH'], [join(outside, 'host-secret'), 'UNSAFE_PATH'],
-      ['linked-parent/host-secret', 'UNSAFE_PATH'], ['linked-file', 'UNSAFE_PATH'],
-      ['hardlink', 'NOT_REGULAR_OR_ALIASED'], ['directory', 'NOT_REGULAR_OR_ALIASED'],
+      ['../host-secret', 'UNSAFE_PATH'],
+      [join(outside, 'host-secret'), 'UNSAFE_PATH'],
+      ['linked-parent/host-secret', 'UNSAFE_PATH'],
+      ['linked-file', 'UNSAFE_PATH'],
+      ['hardlink', 'NOT_REGULAR_OR_ALIASED'],
+      ['directory', 'NOT_REGULAR_OR_ALIASED'],
       ['manifest.json', 'ALIASED_ASSET'],
     ]) {
       const bytes = baseline.replace('"kernel":"vmlinuz-virt"', `"kernel":${JSON.stringify(path)}`);
@@ -161,5 +189,7 @@ test('Sandbox.validate rejects missing, symlinked, oversized manifests and inval
     await writeFile(join(root, 'other.json'), '{}');
     await symlink(join(root, 'other.json'), join(root, 'manifest.json'));
     assert.equal(await diagnose(), 'UNSAFE_PATH');
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -3,8 +3,15 @@ import type { createRecords } from '../records/index.js';
 import type { ChannelDropOutcome, IndeterminateEffect } from '../contracts/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-  role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
+export const contextSchema = z.strictObject({
+  workId: identifier,
+  executionId: identifier,
+  invocationId: identifier,
+  role: z.enum(['standards', 'spec', 'builder']),
+  environmentRef: identifier,
+  bootRef: identifier,
+  phaseId: identifier,
+});
 export type ToolContext = z.infer<typeof contextSchema>;
 /**
  * One guest command's lifetime, linked to its binding by an explicit listener. Not `AbortSignal.any`: its dependent-signal propagation
@@ -13,17 +20,35 @@ export type ToolContext = z.infer<typeof contextSchema>;
 export function commandLifetime(parent: AbortSignal) {
   const controller = new AbortController();
   const forward = () => controller.abort();
-  if (parent.aborted) controller.abort(); else parent.addEventListener('abort', forward, { once: true });
-  return { signal: controller.signal, abort() { controller.abort(); parent.removeEventListener('abort', forward); } };
+  if (parent.aborted) controller.abort();
+  else parent.addEventListener('abort', forward, { once: true });
+  return {
+    signal: controller.signal,
+    abort() {
+      controller.abort();
+      parent.removeEventListener('abort', forward);
+    },
+  };
 }
 export const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
-const successSchema = z.strictObject({ status: z.literal('success'), reference: referenceSchema,
-  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
-  data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const successSchema = z.strictObject({
+  status: z.literal('success'),
+  reference: referenceSchema,
+  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  encoding: z.literal('base64'),
+  data: z
+    .string()
+    .max(32768)
+    .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
 export const readResultSchema = z.union([
-  successSchema.extend({ format: z.literal('text'), exitCode: z.number().int().min(0).max(255).optional(),
-    progressFrames: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), sourceVersion: z.uuid().optional() }),
+  successSchema.extend({
+    format: z.literal('text'),
+    exitCode: z.number().int().min(0).max(255).optional(),
+    progressFrames: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    sourceVersion: z.uuid().optional(),
+  }),
   successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
@@ -31,28 +56,46 @@ export type ReadResult = z.infer<typeof readResultSchema>;
 /** Adapter origins whose exec boundary is accepted for Builder output copies and the Builder Read: the Gondolin development profile and
  * the Lambda SSH channel (v2 ticket 05; the latter was never exercised against a real guest). */
 export const qualifiedProfileOrigins = ['factory-development-gondolin-0.14.0-stdin-capacity-v1', 'factory-lambda-ssh-channel-v1'] as const;
-export type QualifiedProfileOrigin = typeof qualifiedProfileOrigins[number];
-export const profileQualified = (origin: string | undefined): boolean => origin !== undefined && (qualifiedProfileOrigins as readonly string[]).includes(origin);
+export type QualifiedProfileOrigin = (typeof qualifiedProfileOrigins)[number];
+export const profileQualified = (origin: string | undefined): boolean =>
+  origin !== undefined && (qualifiedProfileOrigins as readonly string[]).includes(origin);
 // Structural external VM boundary; production supplier is adapter.ts's SAME instance.
-export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore' | 'pipe'; signal: AbortSignal;
-  windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }): {
-  output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
-  /**
-   * `channel` (v2 ticket 11, only an adapter that recovers a dropped channel sets it, with `exitCode: null`): the program STARTED and
-   * its exit status never arrived. `orphan-ended`: the adapter ended the program's process group, so the result is "indeterminate" and
-   * the binding stays usable; the other outcomes leave the MVP's "effects unknown".
-   */
-  result: Promise<{ exitCode: number | null; signal?: number; channel?: ChannelDropOutcome }>;
-} };
+export type GuestOwner = {
+  exec(
+    argv: string[],
+    options: {
+      stdout: 'pipe';
+      stderr: 'ignore' | 'pipe';
+      signal: AbortSignal;
+      windowBytes: number;
+      env?: Record<string, string>;
+      cwd?: string;
+      stdin?: string | AsyncIterable<Buffer>;
+      stdinCapacity?: { maxChunkBytes: number };
+    },
+  ): {
+    output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
+    /**
+     * `channel` (v2 ticket 11, only an adapter that recovers a dropped channel sets it, with `exitCode: null`): the program STARTED and
+     * its exit status never arrived. `orphan-ended`: the adapter ended the program's process group, so the result is "indeterminate" and
+     * the binding stays usable; the other outcomes leave the MVP's "effects unknown".
+     */
+    result: Promise<{ exitCode: number | null; signal?: number; channel?: ChannelDropOutcome }>;
+  };
+};
 /**
  * v2 ticket 10 (V2-15): the sandbox confirmed that the environment of this binding ended. The call in flight is cancelled and answered
  * with this code, and so is every later call; nothing is sent to the guest any more. Only an adapter that watches its environment emits it.
  */
 export const environmentEndedCode = 'SANDBOX_ENVIRONMENT_ENDED';
-export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
+export type ReadBinding = {
+  endpoint: string;
+  context: ToolContext;
+  signal: AbortSignal;
   /** v2 ticket 10: whether the adapter has CONFIRMED the end of this binding's environment (absent: the adapter does not watch it). */
   environmentEnded?: () => boolean;
-  records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number;
+  records: Awaited<ReturnType<typeof createRecords>>;
+  imageSourceMaxBytes?: number;
   /** Host-only technical whole-source bound; absent disables edit-source. Not a product reservation. */
   editSourceMaxBytes?: number;
   /** Private same-VM adapter qualification, never accepted from tool JSON. */
@@ -77,4 +120,5 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
    * from tool JSON. Absent: nothing is reported (an adapter that never sets `channel`). */
   uncertainEffect?: (effect: Pick<IndeterminateEffect, 'tool' | 'callId' | 'description' | 'outcome'>) => Promise<void>;
   /** Host configuration only: replaces the fixed Factory commit identity of Builder commands (never accepted from tool JSON or the model). */
-  commitIdentity?: Readonly<{ name: string; email: string }> };
+  commitIdentity?: Readonly<{ name: string; email: string }>;
+};

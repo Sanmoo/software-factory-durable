@@ -4,8 +4,20 @@
 // reads the files. Only real comments count (from the TypeScript parser), never text inside strings or templates.
 import ts from 'typescript';
 
-export interface Directive { file: string; line: number; kind: string; rules: string[]; target: string }
-export interface Entry { file: string; rule: string; target: string; reason: string; decision: string }
+export interface Directive {
+  file: string;
+  line: number;
+  kind: string;
+  rules: string[];
+  target: string;
+}
+export interface Entry {
+  file: string;
+  rule: string;
+  target: string;
+  reason: string;
+  decision: string;
+}
 
 /** The comment ranges of a source file, each once: leading and trailing trivia of every node, as the parser sees them. */
 function parse(file: string, text: string): ts.SourceFile {
@@ -14,7 +26,9 @@ function parse(file: string, text: string): ts.SourceFile {
 
 function comments(source: ts.SourceFile, text: string): { pos: number; text: string }[] {
   const seen = new Map<number, string>();
-  const collect = (ranges: readonly ts.CommentRange[] | undefined) => { for (const range of ranges ?? []) seen.set(range.pos, text.slice(range.pos, range.end)); };
+  const collect = (ranges: readonly ts.CommentRange[] | undefined) => {
+    for (const range of ranges ?? []) seen.set(range.pos, text.slice(range.pos, range.end));
+  };
   const visit = (node: ts.Node): void => {
     collect(ts.getLeadingCommentRanges(text, node.getFullStart()));
     collect(ts.getTrailingCommentRanges(text, node.getEnd()));
@@ -27,7 +41,12 @@ function comments(source: ts.SourceFile, text: string): { pos: number; text: str
 
 /** Code text with what a formatter decides (line breaks, indentation, trailing commas) normalized away. */
 export function codeShape(text: string): string {
-  return text.replace(/\s+/g, ' ').replace(/,\s*([)\]}])/g, '$1').replace(/([([{]) /g, '$1').replace(/ ([)\]}])/g, '$1').trim();
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/,\s*([)\]}])/g, '$1')
+    .replace(/([([{]) /g, '$1')
+    .replace(/ ([)\]}])/g, '$1')
+    .trim();
 }
 
 /** The whole statement that starts on 0-based `line` (or the line's text when none starts there), in its code shape. */
@@ -35,7 +54,10 @@ function statementAt(source: ts.SourceFile, line: number, fallback: string): str
   let found: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if (ts.isStatement(node) && !ts.isBlock(node) && source.getLineAndCharacterOfPosition(node.getStart(source)).line === line) { found = node; return; }
+    if (ts.isStatement(node) && !ts.isBlock(node) && source.getLineAndCharacterOfPosition(node.getStart(source)).line === line) {
+      found = node;
+      return;
+    }
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -61,10 +83,20 @@ export function directivesOf(file: string, text: string): Directive[] {
     // A rule-configuring `eslint` comment exists only as a block comment; a line comment that starts with the word is prose.
     if (kind === 'eslint-enable' || (kind === 'eslint' && comment.text.startsWith('//'))) continue;
     const index = text.slice(0, comment.pos).split('\n').length - 1;
-    const body = match[2]!.replace(/\*\/\s*$/, '').split(' -- ')[0]!.trim();
-    const rules = body.split(',').map(item => (kind === 'eslint' ? item.split(':')[0]! : item).trim()).filter(Boolean);
-    const target = kind === 'eslint-disable-next-line' ? statementAt(source, index + 1, lines[index + 1] ?? '')
-      : kind === 'eslint-disable-line' ? statementAt(source, index, lines[index]!.slice(0, comment.pos - text.lastIndexOf('\n', comment.pos - 1) - 1)) : '*';
+    const body = match[2]!
+      .replace(/\*\/\s*$/, '')
+      .split(' -- ')[0]!
+      .trim();
+    const rules = body
+      .split(',')
+      .map(item => (kind === 'eslint' ? item.split(':')[0]! : item).trim())
+      .filter(Boolean);
+    const target =
+      kind === 'eslint-disable-next-line'
+        ? statementAt(source, index + 1, lines[index + 1] ?? '')
+        : kind === 'eslint-disable-line'
+          ? statementAt(source, index, lines[index]!.slice(0, comment.pos - text.lastIndexOf('\n', comment.pos - 1) - 1))
+          : '*';
     found.push({ file, line: index + 1, kind, rules: rules.length ? rules : ['*'], target });
   }
   return found;

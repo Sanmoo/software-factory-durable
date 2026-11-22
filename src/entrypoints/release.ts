@@ -4,7 +4,14 @@ import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { builderBudgetMaximumFactor, builderBudgetV1, continuationsPerWork, reviewerBudgetV1, reviewerRetriesPerRound, type Diagnostic } from '../contracts/index.js';
+import {
+  builderBudgetMaximumFactor,
+  builderBudgetV1,
+  continuationsPerWork,
+  reviewerBudgetV1,
+  reviewerRetriesPerRound,
+  type Diagnostic,
+} from '../contracts/index.js';
 
 /**
  * Self-contained release (spec §11.1/§14, ticket 32): the release tree `releases/<id>/` of a canonical installation root carries
@@ -17,17 +24,27 @@ import { builderBudgetMaximumFactor, builderBudgetV1, continuationsPerWork, revi
 export const releaseManifestName = 'release-manifest.json';
 export const releaseIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
-const relativePath = z.string().min(1).max(1024).refine(path => !path.startsWith('/') && !path.includes('\0') &&
-  path.split('/').every(part => part !== '' && part !== '.' && part !== '..'));
+const relativePath = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine(path => !path.startsWith('/') && !path.includes('\0') && path.split('/').every(part => part !== '' && part !== '.' && part !== '..'));
 const mode = z.number().int().min(0).max(0o7777);
-const uniquePaths = (entries: readonly (readonly unknown[])[]) =>
-  new Set(entries.map(entry => String(entry[0]).toLowerCase())).size === entries.length;
+const uniquePaths = (entries: readonly (readonly unknown[])[]) => new Set(entries.map(entry => String(entry[0]).toLowerCase())).size === entries.length;
 /** `d` directory, `f` regular file (mode, size, sha256), `l` relative symbolic link resolving inside the same tree. */
 export type TreeEntry = [string, 'd', number] | [string, 'f', number, number, string] | [string, 'l', string];
 const entrySchema = z.union([
   z.tuple([relativePath, z.literal('d'), mode]),
   z.tuple([relativePath, z.literal('f'), mode, z.number().int().nonnegative(), sha256]),
-  z.tuple([relativePath, z.literal('l'), z.string().min(1).max(1024).refine(target => !target.startsWith('/') && !target.includes('\0'))]),
+  z.tuple([
+    relativePath,
+    z.literal('l'),
+    z
+      .string()
+      .min(1)
+      .max(1024)
+      .refine(target => !target.startsWith('/') && !target.includes('\0')),
+  ]),
 ]);
 
 /**
@@ -40,8 +57,13 @@ export const productionProfile = Object.freeze({
   sandboxProfile: 'gondolin-qemu-alpine-dev-v1',
   sdkProfileId: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3',
   gondolinSdkProfileId: 'factory-development-gondolin-0.14.0-stdin-capacity-v1',
-  model: Object.freeze({ auth: 'factory-oauth', providerId: 'openai', modelId: 'gpt-6-luna', api: 'openai-responses',
-    credential: 'credentials/chatgpt.json (factory login; never copied, read only by the worker native store)' }),
+  model: Object.freeze({
+    auth: 'factory-oauth',
+    providerId: 'openai',
+    modelId: 'gpt-6-luna',
+    api: 'openai-responses',
+    credential: 'credentials/chatgpt.json (factory login; never copied, read only by the worker native store)',
+  }),
   // The Builder skill pack is derived at composition (latest registered pack with the continuation capability) and recorded in the manifest.
   builder: Object.freeze({ modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 }),
   reviewer: Object.freeze({ modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }),
@@ -51,41 +73,57 @@ export const productionProfile = Object.freeze({
   // Ticket 46 review: write/edit stay at 8192. Each owner RPC (write content, edit commit replacement, edit source page) is ONE protocol
   // frame of at most 64 KiB (protocol maxFrameBytes; tool calls capped at 49152 encoded bytes), so a 64 KiB file cannot cross the channel
   // in one call and there is no chunked write/commit/page protocol. A larger file is changed with bash; the refusal is an ordinary tool error.
-  limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
+  limits: Object.freeze({
+    socketPathBytes: 107,
+    writeMaxBytes: 8192,
+    editSourceMaxBytes: 8192,
     // `modelBudget` governs request/tool/byte limits only. Ticket 51: reviewer-v1 (per reviewer attempt of a round) is 48 requests, 160 tool
     // calls and 30 minutes, which bound each model request (the SDK request timeout); it is not a worker clock cut (spec §4.4, below).
     // Ticket 48: builder-v1 (per Builder Execution) is 150 requests, 300 tool calls and 60 minutes (same per-request meaning); a repository
     // may adjust it up to `repositoryMaximum` (2x; above it the configuration is refused). A budget end WITH Host-observed progress continues
     // in a new Execution charged to the Work's own `continuationsPerWork` counter, not to recoveries.
-    modelBudget: Object.freeze({ builderV1: Object.freeze({ ...builderBudgetV1,
-      repositoryMaximum: Object.freeze({ requests: builderBudgetV1.requests * builderBudgetMaximumFactor, toolCalls: builderBudgetV1.toolCalls * builderBudgetMaximumFactor,
-        requestTimeoutMinutes: builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor }), continuationsPerWork }),
-      reviewerV1: reviewerBudgetV1 }),
+    modelBudget: Object.freeze({
+      builderV1: Object.freeze({
+        ...builderBudgetV1,
+        repositoryMaximum: Object.freeze({
+          requests: builderBudgetV1.requests * builderBudgetMaximumFactor,
+          toolCalls: builderBudgetV1.toolCalls * builderBudgetMaximumFactor,
+          requestTimeoutMinutes: builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor,
+        }),
+        continuationsPerWork,
+      }),
+      reviewerV1: reviewerBudgetV1,
+    }),
     // Ticket 57: automatic retries of one reviewer role per review round, the reviewers' OWN limit (never the Work's recoveries); the next
     // failure stops the Execution REVIEWER_RETRY_LIMIT for the operator (ticket 51). No retry happens inside a session (below).
     reviewerRetriesPerRound,
-    providerRetries: 0, sdkRetries: 0,
+    providerRetries: 0,
+    sdkRetries: 0,
     // Spec §4.4: the production composition sets NO worker clock deadline. Without a configured repository timeout there is no cut; the
     // optional per-repository `timeoutSeconds` is the only deadline (tickets 19) and this release never invents another.
-    deadline: 'not set by production composition; only the optional configured per-repository timeoutSeconds applies' }),
+    deadline: 'not set by production composition; only the optional configured per-repository timeoutSeconds applies',
+  }),
   prompts: Object.freeze({
     // Ticket 18: one Builder system prompt PER SESSION MODE (selected by `productionBuilderPrompt`): each names only the tools that session has.
     // Implementation/review-round session: write, bash, read, edit, ask_user, handoff. Never publishes.
-    builder: 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never push, open pull ' +
+    builder:
+      'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never push, open pull ' +
       'requests, change GitHub state, request broader access or use another credential. When you need information or an approval you do not have, use the ' +
       'ask_user tool instead of working around it. Report blockers instead of working around them. Declare only gates whose exact command the Ticket or the ' +
       'preserved instructions document; never declare a gate to say that none exists. When your proposal is ' +
       'complete, call the handoff tool (alone) for the Factory Standards and Spec reviews and stop; when the results arrive, treat ONLY the findings the results list ' +
       'and follow the skill pack for further rounds (hand off again with your treatments and gates) until the Factory says no new round is needed.',
     // Publish-only session Control requests (ticket 14): write, bash, read, ask_user — no content change tool beyond those, no review round.
-    builderPublication: 'You are the Software Factory Builder in a publish-only session the Factory requested. Follow the Factory publication instruction and ' +
+    builderPublication:
+      'You are the Software Factory Builder in a publish-only session the Factory requested. Follow the Factory publication instruction and ' +
       'the pr skill of the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts and change no content of the checkout. Publish only as ' +
       'instructed: your own branch, the verified commit, the explicit lease, ONE draft pull request (or the description of your own pull request the instruction ' +
       'names). Never merge, approve, mark ready, push to the base or any other branch or tag, request broader access, use another credential or change anything ' +
       'else on GitHub. When you need information or an approval you do not have, use the ask_user tool instead of working around it. Report blockers instead ' +
       'of working around them.',
     // v2 ticket 07 (V2-07): the session a preservation gate refusal is returned to: write, bash, read, edit, ask_user — no handoff, no review.
-    builderPreservation: 'You are the Software Factory Builder in a session the Factory opened because its preservation gate refused: the environment ' +
+    builderPreservation:
+      'You are the Software Factory Builder in a session the Factory opened because its preservation gate refused: the environment ' +
       'keeps no disk and is about to end. Follow the Factory preservation instruction exactly and do nothing else: make the checkout in /workspace/checkout ' +
       'clean and published on your own branch (commit work in progress, remove what is disposable, clear the stash, then the ONE push the instruction names). ' +
       'Never force-push, push to another branch or tag, open, merge or change pull requests, request broader access or use another credential. Never commit ' +
@@ -93,15 +131,18 @@ export const productionProfile = Object.freeze({
       'of forcing the commit. Do not continue the implementation and do not ask questions here.',
     // v2 ticket 09 (V2-13): the swap notice, an activation of the WORKING session before its boot is replaced: write, bash, read, edit,
     // ask_user — no handoff. It only publishes the work in progress; the implementation continues in the next activation.
-    builderSwapNotice: 'You are the Software Factory Builder. The Factory is replacing the environment you work in (planned boot swap) and this turn exists ' +
+    builderSwapNotice:
+      'You are the Software Factory Builder. The Factory is replacing the environment you work in (planned boot swap) and this turn exists ' +
       'only to keep your work: follow the Factory notice exactly. Make the checkout in /workspace/checkout clean and published on your own branch (commit work ' +
       'in progress, remove what is disposable, clear the stash, then the ONE push the notice names). Never force-push, push to another branch or tag, open, ' +
       'merge or change pull requests, request broader access or use another credential. Never commit secrets, credentials or data that must not be versioned: ' +
       'if the work cannot be published safely, say so as your final message instead of forcing the commit. Do not continue the implementation, do not start ' +
       'long commands and do not ask questions in this turn; you continue the work afterwards, in the new environment.',
-    standards: 'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
+    standards:
+      'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
-    spec: 'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +
+    spec:
+      'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +
       'message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
   }),
 });
@@ -118,7 +159,8 @@ export function productionBuilderPrompt(session: { phaseId: string; tools: reado
   if (session.phaseId === 'builder-publication' && !has('handoff') && !has('edit')) return productionProfile.prompts.builderPublication;
   if (session.phaseId === 'builder-preservation' && !has('handoff') && has('edit')) return productionProfile.prompts.builderPreservation;
   if (session.phaseId === 'builder-swap-notice' && !has('handoff') && has('edit')) return productionProfile.prompts.builderSwapNotice;
-  if (['builder-initial', 'builder-recovery', 'builder-continuation'].includes(session.phaseId) && has('handoff') && has('edit') && has('ask_user')) return productionProfile.prompts.builder;
+  if (['builder-initial', 'builder-recovery', 'builder-continuation'].includes(session.phaseId) && has('handoff') && has('edit') && has('ask_user'))
+    return productionProfile.prompts.builder;
   throw new Error('BUILDER_SESSION_MODE_UNSUPPORTED');
 }
 
@@ -128,21 +170,31 @@ export async function latestContinuationPack<T extends string>(ids: readonly T[]
   throw new Error('PRODUCTION_SKILL_PACK_UNAVAILABLE');
 }
 
-const manifestSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  kind: z.literal('software-factory-release'),
-  release: releaseIdSchema,
-  builtAt: z.iso.datetime(),
-  node: z.strictObject({ version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+$/), path: z.literal('node/bin/node'), sha256, license: z.literal('node/LICENSE') }),
-  launcher: z.strictObject({ path: z.literal('factory'), sha256 }),
-  guestAssets: z.strictObject({ path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/), manifestSha256: sha256,
-    files: z.array(entrySchema).min(1).max(64).refine(uniquePaths, 'Duplicate or case-colliding asset paths') }),
-  production: z.strictObject({ id: z.literal(productionProfile.id) }).passthrough(),
-  qualification: z.strictObject({ status: z.literal('unqualified'), statement: z.string().min(1).max(4096) }),
-  /** Informational pins (source, build tooling, runtime packages/licenses, SDK profiles, assets provenance, build host). */
-  metadata: z.record(z.string(), z.unknown()),
-  files: z.array(entrySchema).min(1).max(200000).refine(uniquePaths, 'Duplicate or case-colliding paths'),
-}).refine(value => value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`)
+const manifestSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    kind: z.literal('software-factory-release'),
+    release: releaseIdSchema,
+    builtAt: z.iso.datetime(),
+    node: z.strictObject({
+      version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+$/),
+      path: z.literal('node/bin/node'),
+      sha256,
+      license: z.literal('node/LICENSE'),
+    }),
+    launcher: z.strictObject({ path: z.literal('factory'), sha256 }),
+    guestAssets: z.strictObject({
+      path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/),
+      manifestSha256: sha256,
+      files: z.array(entrySchema).min(1).max(64).refine(uniquePaths, 'Duplicate or case-colliding asset paths'),
+    }),
+    production: z.strictObject({ id: z.literal(productionProfile.id) }).passthrough(),
+    qualification: z.strictObject({ status: z.literal('unqualified'), statement: z.string().min(1).max(4096) }),
+    /** Informational pins (source, build tooling, runtime packages/licenses, SDK profiles, assets provenance, build host). */
+    metadata: z.record(z.string(), z.unknown()),
+    files: z.array(entrySchema).min(1).max(200000).refine(uniquePaths, 'Duplicate or case-colliding paths'),
+  })
+  .refine(value => value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`)
   // The pinned guest manifest is itself a distributed file whose recomputed hash must BE the pin (it anchors kernel/initramfs/rootfs).
   .refine(value => value.guestAssets.files.some(entry => entry[0] === 'manifest.json' && entry[1] === 'f' && entry[4] === value.guestAssets.manifestSha256));
 export type ReleaseManifest = z.infer<typeof manifestSchema>;
@@ -176,12 +228,17 @@ export function releaseStorageSupport(manifest: ReleaseManifest): { format: numb
 export function releaseConfigurationSupport(manifest: ReleaseManifest): number[] | null {
   const declared = (manifest.metadata.formats as { configuration?: unknown } | undefined)?.configuration;
   if (Number.isSafeInteger(declared)) return [declared as number];
-  if (Array.isArray(declared) && declared.length > 0 && declared.every(Number.isSafeInteger)) return [...declared as number[]];
+  if (Array.isArray(declared) && declared.length > 0 && declared.every(Number.isSafeInteger)) return [...(declared as number[])];
   return null;
 }
 
 class ReleaseFailure extends Error {
-  constructor(readonly code: string, readonly path?: string) { super(code); }
+  constructor(
+    readonly code: string,
+    readonly path?: string,
+  ) {
+    super(code);
+  }
 }
 
 /** Root of the running application: the release tree, or the development checkout (compiled `dist/src/entrypoints`). */
@@ -205,7 +262,9 @@ async function explicitDevelopmentCheckout(directory: string): Promise<boolean> 
     const info = await lstat(join(directory, developmentMarkerName));
     if (!info.isFile() || info.nlink !== 1 || info.size > 1024) return false;
     return (JSON.parse(await readFile(join(directory, developmentMarkerName), 'utf8')) as { kind?: unknown }).kind === 'factory-development-checkout';
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /** Root implied by the running application's own location (`<root>/releases/<id>`), independent of any manifest. */
@@ -214,7 +273,7 @@ export function structuralInstallationRoot(application: string): string | undefi
   return basename(parent) === 'releases' && releaseIdSchema.safeParse(basename(application)).success ? dirname(parent) : undefined;
 }
 
-const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 async function hashFile(path: string): Promise<string> {
   const digest = createHash('sha256');
   for await (const chunk of createReadStream(path, { highWaterMark: 1024 * 1024 })) digest.update(chunk as Buffer);
@@ -233,52 +292,63 @@ export async function inventoryTree(directory: string, exclude: readonly string[
   const seenPaths = new Set<string>();
   // Subdirectories are walked concurrently; each directory returns its entries in sorted order, so the result stays deterministic.
   async function visit(relative: string): Promise<TreeEntry[]> {
-    const names = (await readdir(relative ? join(base, relative) : base)).sort(compare)
-      .map(name => relative ? `${relative}/${name}` : name).filter(path => !exclude.includes(path));
+    const names = (await readdir(relative ? join(base, relative) : base))
+      .sort(compare)
+      .map(name => (relative ? `${relative}/${name}` : name))
+      .filter(path => !exclude.includes(path));
     const infos = await Promise.all(names.map(path => lstat(join(base, path))));
-    const parts = await Promise.all(names.map(async (path, index): Promise<TreeEntry[]> => {
-      const absolute = join(base, path), info = infos[index]!;
-      if (seenPaths.has(path.toLowerCase())) throw new ReleaseFailure('RELEASE_CASE_COLLISION', path);
-      seenPaths.add(path.toLowerCase());
-      if (info.uid !== uid) throw new ReleaseFailure('RELEASE_ENTRY_NOT_OWNED', path);
-      if ((info.mode & 0o7022) !== 0 && !info.isSymbolicLink()) throw new ReleaseFailure('RELEASE_ENTRY_WRITABLE', path);
-      if (info.isDirectory()) return [[path, 'd', info.mode & 0o7777], ...await visit(path)];
-      if (info.isFile()) {
-        if (info.nlink !== 1) throw new ReleaseFailure('RELEASE_ENTRY_ALIASED', path);
-        const entry: [string, 'f', number, number, string] = [path, 'f', info.mode & 0o7777, info.size, ''];
-        files.push([entry, absolute]);
-        return [entry];
-      }
-      if (info.isSymbolicLink()) {
-        const target = await readlink(absolute);
-        const resolved = resolve(dirname(absolute), target);
-        const contained = (candidate: string) => candidate === base || candidate.startsWith(base + sep);
-        // Lexical containment AND the resolved target: a chain of in-tree links must not end outside (or dangle).
-        const real = contained(resolved) ? await realpath(absolute).catch(() => undefined) : undefined;
-        if (target.startsWith('/') || !contained(resolved) || real === undefined || !contained(real)) {
-          throw new ReleaseFailure('RELEASE_LINK_ESCAPES', path);
+    const parts = await Promise.all(
+      names.map(async (path, index): Promise<TreeEntry[]> => {
+        const absolute = join(base, path),
+          info = infos[index]!;
+        if (seenPaths.has(path.toLowerCase())) throw new ReleaseFailure('RELEASE_CASE_COLLISION', path);
+        seenPaths.add(path.toLowerCase());
+        if (info.uid !== uid) throw new ReleaseFailure('RELEASE_ENTRY_NOT_OWNED', path);
+        if ((info.mode & 0o7022) !== 0 && !info.isSymbolicLink()) throw new ReleaseFailure('RELEASE_ENTRY_WRITABLE', path);
+        if (info.isDirectory()) return [[path, 'd', info.mode & 0o7777], ...(await visit(path))];
+        if (info.isFile()) {
+          if (info.nlink !== 1) throw new ReleaseFailure('RELEASE_ENTRY_ALIASED', path);
+          const entry: [string, 'f', number, number, string] = [path, 'f', info.mode & 0o7777, info.size, ''];
+          files.push([entry, absolute]);
+          return [entry];
         }
-        return [[path, 'l', target]];
-      }
-      throw new ReleaseFailure('RELEASE_ENTRY_UNSUPPORTED', path);
-    }));
+        if (info.isSymbolicLink()) {
+          const target = await readlink(absolute);
+          const resolved = resolve(dirname(absolute), target);
+          const contained = (candidate: string) => candidate === base || candidate.startsWith(base + sep);
+          // Lexical containment AND the resolved target: a chain of in-tree links must not end outside (or dangle).
+          const real = contained(resolved) ? await realpath(absolute).catch(() => undefined) : undefined;
+          if (target.startsWith('/') || !contained(resolved) || real === undefined || !contained(real)) {
+            throw new ReleaseFailure('RELEASE_LINK_ESCAPES', path);
+          }
+          return [[path, 'l', target]];
+        }
+        throw new ReleaseFailure('RELEASE_ENTRY_UNSUPPORTED', path);
+      }),
+    );
     return parts.flat();
   }
   const entries = await visit('');
   // Shape first (paths, types, modes, sizes, links): a wrong, extra, missing or re-moded entry fails before any content is read.
   if (expected) {
-    const shape = (list: readonly TreeEntry[]) => list.map(entry => entry[1] === 'f' ? entry.slice(0, 4) : entry);
-    if (JSON.stringify(shape(entries)) !== JSON.stringify(shape(expected))) throw new ReleaseFailure('RELEASE_INTEGRITY_MISMATCH', firstDifference(shape(entries) as TreeEntry[], shape(expected) as TreeEntry[]));
+    const shape = (list: readonly TreeEntry[]) => list.map(entry => (entry[1] === 'f' ? entry.slice(0, 4) : entry));
+    if (JSON.stringify(shape(entries)) !== JSON.stringify(shape(expected)))
+      throw new ReleaseFailure('RELEASE_INTEGRITY_MISMATCH', firstDifference(shape(entries) as TreeEntry[], shape(expected) as TreeEntry[]));
   }
   // Hash only after the complete shape is known; bounded parallel reads. Files up to 256 MiB (the private Node) are digested off the main thread (WebCrypto
   // thread pool); larger ones are streamed.
   let next = 0;
-  await Promise.all(Array.from({ length: 32 }, async () => {
-    while (next < files.length) {
-      const [entry, absolute] = files[next++]!;
-      entry[4] = entry[3] <= 256 * 1024 * 1024 ? Buffer.from(await webcrypto.subtle.digest('SHA-256', await readFile(absolute))).toString('hex') : await hashFile(absolute);
-    }
-  }));
+  await Promise.all(
+    Array.from({ length: 32 }, async () => {
+      while (next < files.length) {
+        const [entry, absolute] = files[next++]!;
+        entry[4] =
+          entry[3] <= 256 * 1024 * 1024
+            ? Buffer.from(await webcrypto.subtle.digest('SHA-256', await readFile(absolute))).toString('hex')
+            : await hashFile(absolute);
+      }
+    }),
+  );
   return entries;
 }
 
@@ -286,7 +356,8 @@ function firstDifference(actual: readonly TreeEntry[], expected: readonly TreeEn
   const length = Math.max(actual.length, expected.length);
   for (let index = 0; index < length; index++) {
     if (JSON.stringify(actual[index]) !== JSON.stringify(expected[index])) {
-      const a = actual[index]?.[0], e = expected[index]?.[0];
+      const a = actual[index]?.[0],
+        e = expected[index]?.[0];
       return a === undefined ? e! : e === undefined ? a : compare(a, e) <= 0 ? a : e;
     }
   }
@@ -297,11 +368,13 @@ function firstDifference(actual: readonly TreeEntry[], expected: readonly TreeEn
 export function parseReleaseManifest(bytes: string | Buffer): { manifest: ReleaseManifest; manifestSha256: string } | undefined {
   try {
     return { manifest: manifestSchema.parse(JSON.parse(bytes.toString('utf8'))), manifestSha256: createHash('sha256').update(bytes).digest('hex') };
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
-export type ReleaseVerification = { kind: 'development' } | { kind: 'invalid'; code: string; path?: string } |
-  { kind: 'release'; manifest: ReleaseManifest; manifestSha256: string };
+export type ReleaseVerification =
+  { kind: 'development' } | { kind: 'invalid'; code: string; path?: string } | { kind: 'release'; manifest: ReleaseManifest; manifestSha256: string };
 
 /** Verifies a release tree against its manifest: schema, then the exact inventory (every byte of every distributed file). */
 export async function verifyReleaseTree(release: string): Promise<ReleaseVerification> {
@@ -316,35 +389,50 @@ export async function verifyReleaseTree(release: string): Promise<ReleaseVerific
       // Fail closed (static review): a release launcher without its manifest must refuse; only an explicitly marked
       // development checkout (tracked in the repository, never distributed) is development.
       // A marker inside `<root>/releases/<id>` never turns a release into a development checkout: the location decides.
-      return structuralInstallationRoot(release) === undefined && await explicitDevelopmentCheckout(release) ? { kind: 'development' }
+      return structuralInstallationRoot(release) === undefined && (await explicitDevelopmentCheckout(release))
+        ? { kind: 'development' }
         : { kind: 'invalid', code: 'RELEASE_MANIFEST_MISSING' };
     }
     return { kind: 'invalid', code: 'RELEASE_MANIFEST_UNREADABLE' };
   }
   let manifest: ReleaseManifest;
-  try { manifest = manifestSchema.parse(JSON.parse(bytes.toString('utf8'))); }
-  catch { return { kind: 'invalid', code: 'RELEASE_MANIFEST_INVALID' }; }
+  try {
+    manifest = manifestSchema.parse(JSON.parse(bytes.toString('utf8')));
+  } catch {
+    return { kind: 'invalid', code: 'RELEASE_MANIFEST_INVALID' };
+  }
   try {
     const actual = await inventoryTree(release, [releaseManifestName], manifest.files);
     if (JSON.stringify(actual) !== JSON.stringify(manifest.files)) {
       return { kind: 'invalid', code: 'RELEASE_INTEGRITY_MISMATCH', path: firstDifference(actual, manifest.files) };
     }
   } catch (error) {
-    return error instanceof ReleaseFailure ? { kind: 'invalid', code: error.code, ...(error.path ? { path: error.path } : {}) }
+    return error instanceof ReleaseFailure
+      ? { kind: 'invalid', code: error.code, ...(error.path ? { path: error.path } : {}) }
       : { kind: 'invalid', code: 'RELEASE_TREE_UNREADABLE' };
   }
   return { kind: 'release', manifest, manifestSha256: createHash('sha256').update(bytes).digest('hex') };
 }
 
-const nextStep = 'Extract the published archive unchanged (tar -xpkf) into a new canonical installation root and compare the manifest SHA-256 with the build report; never edit or repair a release in place.';
-export type ReleaseView = { release: string; manifestSha256: string; node: string; production: string; guestAssets: { path: string; manifestSha256: string };
-  qualification: ReleaseManifest['qualification']; metadata: ReleaseManifest['metadata'] };
+const nextStep =
+  'Extract the published archive unchanged (tar -xpkf) into a new canonical installation root and compare the manifest SHA-256 with the build report; never edit or repair a release in place.';
+export type ReleaseView = {
+  release: string;
+  manifestSha256: string;
+  node: string;
+  production: string;
+  guestAssets: { path: string; manifestSha256: string };
+  qualification: ReleaseManifest['qualification'];
+  metadata: ReleaseManifest['metadata'];
+};
 
 async function privateDirectory(path: string) {
   try {
     const info = await lstat(path);
     return info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -353,78 +441,147 @@ async function privateDirectory(path: string) {
  * no release: no pinned assets, no execution composition.
  */
 export async function inspectRelease(installationRoot: string): Promise<{
-  release: ReleaseView | null; guestAssets?: { directory: string; manifestSha256: string }; checks: Diagnostic[];
+  release: ReleaseView | null;
+  guestAssets?: { directory: string; manifestSha256: string };
+  checks: Diagnostic[];
   /** The verified manifest (ticket 33: upgrade decisions use its launcher pin and storage declaration). */
-  manifest?: ReleaseManifest }> {
+  manifest?: ReleaseManifest;
+}> {
   const application = await realpath(applicationRoot());
   const verification = await verifyReleaseTree(application);
   if (verification.kind === 'development') {
-    return { release: null, checks: [{ id: 'release', status: 'unverified',
-      message: 'Development checkout: not a distributed release (no release manifest, private Node or pinned guest assets); execution is not composed.',
-      nextStep: 'Build, extract and verify a self-contained release; a development checkout is not an operator installation.' }] };
+    return {
+      release: null,
+      checks: [
+        {
+          id: 'release',
+          status: 'unverified',
+          message: 'Development checkout: not a distributed release (no release manifest, private Node or pinned guest assets); execution is not composed.',
+          nextStep: 'Build, extract and verify a self-contained release; a development checkout is not an operator installation.',
+        },
+      ],
+    };
   }
   if (verification.kind === 'invalid') {
-    return { release: null, checks: [{ id: 'release:integrity', status: 'blocked',
-      message: `${verification.code}${verification.path ? ` at ${verification.path}` : ''}; the release does not match its manifest.`, nextStep }] };
+    return {
+      release: null,
+      checks: [
+        {
+          id: 'release:integrity',
+          status: 'blocked',
+          message: `${verification.code}${verification.path ? ` at ${verification.path}` : ''}; the release does not match its manifest.`,
+          nextStep,
+        },
+      ],
+    };
   }
   const { manifest, manifestSha256 } = verification;
   const root = await realpath(installationRoot).catch(() => resolve(installationRoot));
-  const checks: Diagnostic[] = [{ id: 'release:integrity', status: 'ok',
-    message: `Release ${manifest.release}: all ${manifest.files.length} distributed entries match manifest ${manifestSha256}. Integrity only, not authenticity or qualification.`, nextStep }];
+  const checks: Diagnostic[] = [
+    {
+      id: 'release:integrity',
+      status: 'ok',
+      message: `Release ${manifest.release}: all ${manifest.files.length} distributed entries match manifest ${manifestSha256}. Integrity only, not authenticity or qualification.`,
+      nextStep,
+    },
+  ];
   const located = application === join(root, 'releases', manifest.release);
-  checks.push({ id: 'release:location', status: located ? 'ok' : 'blocked',
-    message: located ? 'Release lives in releases/<id> of this canonical installation root.' : 'The running release is not releases/<id> of this installation root.',
-    nextStep: 'Run the installation launcher of this root; a release is not relocated by copy and never serves another root.' });
+  checks.push({
+    id: 'release:location',
+    status: located ? 'ok' : 'blocked',
+    message: located
+      ? 'Release lives in releases/<id> of this canonical installation root.'
+      : 'The running release is not releases/<id> of this installation root.',
+    nextStep: 'Run the installation launcher of this root; a release is not relocated by copy and never serves another root.',
+  });
   let selected = false;
   try {
     const info = await lstat(join(root, manifest.launcher.path));
-    selected = info.isFile() && info.uid === process.getuid?.() && (info.mode & 0o022) === 0 &&
-      await hashFile(join(root, manifest.launcher.path)) === manifest.launcher.sha256;
-  } catch { /* Missing or unreadable launcher: not selected. */ }
-  checks.push({ id: 'release:selected', status: selected ? 'ok' : 'blocked',
+    selected =
+      info.isFile() &&
+      info.uid === process.getuid?.() &&
+      (info.mode & 0o022) === 0 &&
+      (await hashFile(join(root, manifest.launcher.path))) === manifest.launcher.sha256;
+  } catch {
+    /* Missing or unreadable launcher: not selected. */
+  }
+  checks.push({
+    id: 'release:selected',
+    status: selected ? 'ok' : 'blocked',
     message: selected ? `<root>/factory explicitly selects release ${manifest.release}.` : `<root>/factory does not select release ${manifest.release}.`,
-    nextStep: 'Selection is explicit: only the launcher shipped with a release selects it; no discovery or implicit switch.' });
+    nextStep: 'Selection is explicit: only the launcher shipped with a release selects it; no discovery or implicit switch.',
+  });
   const node = process.execPath === join(application, manifest.node.path) && process.versions.node === manifest.node.version;
-  checks.push({ id: 'release:node', status: node ? 'ok' : 'blocked',
+  checks.push({
+    id: 'release:node',
+    status: node ? 'ok' : 'blocked',
     message: node ? `Private Node ${manifest.node.version} of the release is running.` : 'The running Node is not the private Node of this release.',
-    nextStep: 'Use the installation launcher; the host Node or a personal version manager is never used by a release.' });
+    nextStep: 'Use the installation launcher; the host Node or a personal version manager is never used by a release.',
+  });
   for (const name of ['releases', 'assets']) {
     const safe = await privateDirectory(join(root, name));
-    checks.push({ id: `permissions:${name}`, status: safe ? 'ok' : 'blocked',
+    checks.push({
+      id: `permissions:${name}`,
+      status: safe ? 'ok' : 'blocked',
       message: safe ? 'Account-owned private directory.' : 'Missing, non-private, non-owned or symlinked directory.',
-      nextStep: 'Administrator must inspect the named installation directory; no recursive chmod or automatic repair.' });
+      nextStep: 'Administrator must inspect the named installation directory; no recursive chmod or automatic repair.',
+    });
   }
   const directory = join(root, manifest.guestAssets.path);
-  let status: Diagnostic['status'] = 'blocked', message = 'Guest assets of this release are missing or differ from the release manifest.';
+  let status: Diagnostic['status'] = 'blocked',
+    message = 'Guest assets of this release are missing or differ from the release manifest.';
   try {
     // Every asset file is re-hashed from its bytes; the manifest hash is never copied as evidence.
     const actual = await inventoryTree(directory, [], manifest.guestAssets.files);
-    message = JSON.stringify(actual) === JSON.stringify(manifest.guestAssets.files)
-      ? `Guest assets ${manifest.guestAssets.manifestSha256} preserved exactly as distributed (no boot performed).`
-      : `RELEASE_INTEGRITY_MISMATCH at ${manifest.guestAssets.path}/${firstDifference(actual, manifest.guestAssets.files)}`;
+    message =
+      JSON.stringify(actual) === JSON.stringify(manifest.guestAssets.files)
+        ? `Guest assets ${manifest.guestAssets.manifestSha256} preserved exactly as distributed (no boot performed).`
+        : `RELEASE_INTEGRITY_MISMATCH at ${manifest.guestAssets.path}/${firstDifference(actual, manifest.guestAssets.files)}`;
     status = message.startsWith('Guest assets') ? 'ok' : 'blocked';
   } catch (error) {
     // Name the divergent path/code; the manifest hash is never used as evidence of content.
     const failure = error as { code?: unknown; path?: unknown };
     if (typeof failure.code === 'string') message = `${failure.code}${typeof failure.path === 'string' ? ` at ${failure.path}` : ''}`;
   }
-  checks.push({ id: 'release:assets', status, message,
-    nextStep: 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.' });
-  checks.push({ id: 'release:qualification', status: 'unverified', message: manifest.qualification.statement,
-    nextStep: 'Qualify the final composition with the separately authorized real groups; checksums and build success are not qualification.' });
-  return { release: { release: manifest.release, manifestSha256, node: manifest.node.version, production: manifest.production.id,
-    guestAssets: { path: manifest.guestAssets.path, manifestSha256: manifest.guestAssets.manifestSha256 }, qualification: manifest.qualification,
-    metadata: manifest.metadata },
-  guestAssets: { directory, manifestSha256: manifest.guestAssets.manifestSha256 }, checks, manifest };
+  checks.push({
+    id: 'release:assets',
+    status,
+    message,
+    nextStep: 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.',
+  });
+  checks.push({
+    id: 'release:qualification',
+    status: 'unverified',
+    message: manifest.qualification.statement,
+    nextStep: 'Qualify the final composition with the separately authorized real groups; checksums and build success are not qualification.',
+  });
+  return {
+    release: {
+      release: manifest.release,
+      manifestSha256,
+      node: manifest.node.version,
+      production: manifest.production.id,
+      guestAssets: { path: manifest.guestAssets.path, manifestSha256: manifest.guestAssets.manifestSha256 },
+      qualification: manifest.qualification,
+      metadata: manifest.metadata,
+    },
+    guestAssets: { directory, manifestSha256: manifest.guestAssets.manifestSha256 },
+    checks,
+    manifest,
+  };
 }
 
 /** Exact configured provider/model of every role against the release's single production worker profile (no fallback). */
 export function productionModelChecks(models: Record<'builder' | 'standards' | 'spec', { provider: string; model: string }>): Diagnostic[] {
   return (['builder', 'standards', 'spec'] as const).map(role => {
     const supported = models[role].provider === productionProfile.model.providerId && models[role].model === productionProfile.model.modelId;
-    return { id: `worker-profile:${role}`, status: supported ? 'ok' as const : 'blocked' as const,
-      message: supported ? `Supported by ${productionProfile.sdkProfileId} (${productionProfile.model.auth}); model access not tested offline.`
+    return {
+      id: `worker-profile:${role}`,
+      status: supported ? ('ok' as const) : ('blocked' as const),
+      message: supported
+        ? `Supported by ${productionProfile.sdkProfileId} (${productionProfile.model.auth}); model access not tested offline.`
         : `This release supports only provider ${productionProfile.model.providerId} with model ${productionProfile.model.modelId} for every role.`,
-      nextStep: 'Configure the supported provider/model explicitly per role; no default, inheritance or silent fallback exists.' };
+      nextStep: 'Configure the supported provider/model explicitly per role; no default, inheritance or silent fallback exists.',
+    };
   });
 }

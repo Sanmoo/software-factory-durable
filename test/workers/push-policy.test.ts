@@ -9,13 +9,39 @@ const context = { workId: 'w', executionId: 'e', invocationId: 'i', role: 'build
 test('the Builder Bash tool refuses a recaptured lease or a ref API write without reaching the guest; the invocation stays usable', async () => {
   const sent: string[] = [];
   let critical = false;
-  const sandbox = { async executeTool(_context: ToolContext, call: { command?: string }) { sent.push(call.command ?? ''); return { status: 'failure', code: 'INVALID_TOOL_CALL' }; } } as unknown as ToolProjection;
+  const sandbox = {
+    async executeTool(_context: ToolContext, call: { command?: string }) {
+      sent.push(call.command ?? '');
+      return { status: 'failure', code: 'INVALID_TOOL_CALL' };
+    },
+  } as unknown as ToolProjection;
   const policy = { branch: 'factory/3-0b9c6a52', expected: 'd'.repeat(40), head: 'e'.repeat(40) };
-  const tool = builderBash(context, sandbox, () => { critical = true; }, false, undefined, undefined, policy);
+  const tool = builderBash(
+    context,
+    sandbox,
+    () => {
+      critical = true;
+    },
+    false,
+    undefined,
+    undefined,
+    policy,
+  );
   const recaptured = allowedPush({ ...policy, expected: '1'.repeat(40) });
-  await assert.rejects(tool.execute('c1', { command: recaptured }, undefined, undefined, undefined as never), /PUSH_POLICY_DENIED: refused LOCALLY.*The only push allowed is exactly/);
-  await assert.rejects(tool.execute('c2', { command: `gh api -X PATCH repos/a/b/git/refs/heads/${policy.branch} -f sha=${policy.head} -F force=true` }, undefined, undefined, undefined as never),
-    /PUSH_POLICY_DENIED/);
+  await assert.rejects(
+    tool.execute('c1', { command: recaptured }, undefined, undefined, undefined as never),
+    /PUSH_POLICY_DENIED: refused LOCALLY.*The only push allowed is exactly/,
+  );
+  await assert.rejects(
+    tool.execute(
+      'c2',
+      { command: `gh api -X PATCH repos/a/b/git/refs/heads/${policy.branch} -f sha=${policy.head} -F force=true` },
+      undefined,
+      undefined,
+      undefined as never,
+    ),
+    /PUSH_POLICY_DENIED/,
+  );
   assert.deepEqual([sent, critical], [[], false], 'nothing reached the guest; not a critical failure');
   const none = builderBash(context, sandbox, () => {}, false, undefined, undefined, undefined);
   await assert.rejects(none.execute('c3', { command: allowedPush(policy) }, undefined, undefined, undefined as never), /no push is allowed/);
@@ -30,9 +56,16 @@ test('review HIGH: the Builder Host refuses every push except the exact leased o
   const policy = { branch, expected: factory, head: local };
   assert.equal(pushDenied(allowedPush(policy), policy), null);
   assert.equal(pushDenied(`  ${allowedPush(policy)}\n`, policy), null);
-  for (const command of [`git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${human} origin ${local}:refs/heads/${branch}`,
-    `git -C /workspace/checkout push --force origin ${local}:refs/heads/${branch}`, `git -C /workspace/checkout push -f origin HEAD:${branch}`, `git push origin +HEAD:refs/heads/${branch}`,
-    `git push -u origin ${branch}`, `git push --force-with-lease origin ${branch}`, `${allowedPush(policy)} && git push origin HEAD:refs/heads/main`, `cd /workspace/checkout && git push`]) {
+  for (const command of [
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${human} origin ${local}:refs/heads/${branch}`,
+    `git -C /workspace/checkout push --force origin ${local}:refs/heads/${branch}`,
+    `git -C /workspace/checkout push -f origin HEAD:${branch}`,
+    `git push origin +HEAD:refs/heads/${branch}`,
+    `git push -u origin ${branch}`,
+    `git push --force-with-lease origin ${branch}`,
+    `${allowedPush(policy)} && git push origin HEAD:refs/heads/main`,
+    `cd /workspace/checkout && git push`,
+  ]) {
     assert.match(pushDenied(command, policy) ?? '', /^PUSH_POLICY_DENIED/, command);
   }
   assert.match(pushDenied(`gh api -X PATCH repos/acme/project/git/refs/heads/${branch} -f sha=${local} -F force=true`, policy) ?? '', /^PUSH_POLICY_DENIED/);
@@ -40,7 +73,11 @@ test('review HIGH: the Builder Host refuses every push except the exact leased o
   assert.equal(pushDenied('gh pr create --repo acme/project --draft --base main --head x --body-file /artifacts/publication/pr-body.md', policy), null);
   assert.equal(pushDenied('git ls-remote origin && git fetch origin', policy), null);
   assert.match(pushDenied(allowedPush(policy), undefined) ?? '', /no push is allowed/, 'outside a publication activation');
-  assert.match(pushDenied(allowedPush({ ...policy, expected: local }), { ...policy, expected: local }) ?? '', /no push is allowed/, 'the PR-only continuation never pushes');
+  assert.match(
+    pushDenied(allowedPush({ ...policy, expected: local }), { ...policy, expected: local }) ?? '',
+    /no push is allowed/,
+    'the PR-only continuation never pushes',
+  );
   assert.equal(pushDenied(allowedPush({ branch, expected: null, head: local }), { branch, expected: null, head: local }), null, 'creation: empty lease');
 });
 
@@ -63,7 +100,11 @@ test('ticket 18 compatibility: the policy accepts exactly the remote token Contr
   assert.equal(pushDenied(allowedPush(policy), policy), null);
   assert.match(pushDenied(allowedPush({ ...policy, remote: 'origin' }), policy) ?? '', /PUSH_POLICY_DENIED/, 'another remote form than the emitted one');
   assert.match(pushDenied(allowedPush({ ...policy, remote: 'https://github.com/other/repo.git' }), policy) ?? '', /PUSH_POLICY_DENIED/);
-  assert.match(pushDenied(allowedPush(policy), { ...policy, remote: 'git@github.com:acme/project.git' }) ?? '', /no push is allowed/, 'unsupported token: nothing allowed');
+  assert.match(
+    pushDenied(allowedPush(policy), { ...policy, remote: 'git@github.com:acme/project.git' }) ?? '',
+    /no push is allowed/,
+    'unsupported token: nothing allowed',
+  );
 });
 
 test('v2 ticket 07: after a preservation gate refusal the only push is HEAD to the own branch without force; nothing can be rewritten or sent elsewhere', () => {
@@ -71,10 +112,15 @@ test('v2 ticket 07: after a preservation gate refusal the only push is HEAD to t
   const allowed = allowedWipPush(policy);
   assert.equal(allowed, `git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/${branch}`);
   assert.equal(pushDenied(allowed, policy), null);
-  for (const command of [`git -C /workspace/checkout push --force https://github.com/acme/project.git HEAD:refs/heads/${branch}`,
-    `git -C /workspace/checkout push https://github.com/acme/project.git +HEAD:refs/heads/${branch}`, 'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/main',
-    `git -C /workspace/checkout push https://github.com/acme/project.git :refs/heads/${branch}`, `${allowed} && git push origin HEAD:refs/heads/main`, allowedPush({ branch, expected: factory, head: local }),
-    `git -C /workspace/checkout push origin HEAD:refs/heads/${branch}`]) {
+  for (const command of [
+    `git -C /workspace/checkout push --force https://github.com/acme/project.git HEAD:refs/heads/${branch}`,
+    `git -C /workspace/checkout push https://github.com/acme/project.git +HEAD:refs/heads/${branch}`,
+    'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/main',
+    `git -C /workspace/checkout push https://github.com/acme/project.git :refs/heads/${branch}`,
+    `${allowed} && git push origin HEAD:refs/heads/main`,
+    allowedPush({ branch, expected: factory, head: local }),
+    `git -C /workspace/checkout push origin HEAD:refs/heads/${branch}`,
+  ]) {
     assert.match(pushDenied(command, policy) ?? '', /^PUSH_POLICY_DENIED/, command);
   }
   assert.match(pushDenied(`gh api -X PATCH repos/acme/project/git/refs/heads/${branch} -f sha=${local}`, policy) ?? '', /^PUSH_POLICY_DENIED/);

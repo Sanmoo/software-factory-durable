@@ -5,8 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 
-const context = { workId: 'raw-work', executionId: 'execution', invocationId: 'invocation', role: 'builder' as const,
-  environmentRef: 'environment', bootRef: 'boot', callId: 'call' };
+const context = {
+  workId: 'raw-work',
+  executionId: 'execution',
+  invocationId: 'invocation',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  callId: 'call',
+};
 const unavailable = /PROTECTED_CAPTURE_UNAVAILABLE/;
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'records-raw-'));
@@ -24,20 +31,28 @@ test('raw byte capture preserves NUL, invalid UTF8, image-like bytes and exact E
     const pages: Buffer[] = [];
     for (let offset = 0; offset < data.length;) {
       const page = await f.records.read({ format: 'raw', reference: out.reference, offset, limit: 24576 });
-      assert.equal(page.format, 'raw'); assert.equal(page.version, 2); assert.equal(page.state, 'complete');
-      pages.push(page.data); offset = page.nextOffset;
+      assert.equal(page.format, 'raw');
+      assert.equal(page.version, 2);
+      assert.equal(page.state, 'complete');
+      pages.push(page.data);
+      offset = page.nextOffset;
     }
     assert.deepEqual(Buffer.concat(pages), data);
     const reopened = await createRecords({ root: f.root });
     assert.deepEqual((await reopened.read({ format: 'raw', reference: out.reference, offset: 0, limit: 100 })).data, data.subarray(0, 100));
     const metadata = JSON.parse(await readFile(join(f.root, context.workId, 'evidence', out.reference.id, 'complete.json'), 'utf8'));
-    assert.equal(metadata.version, 2); assert.equal(metadata.format, 'raw');
+    assert.equal(metadata.version, 2);
+    assert.equal(metadata.format, 'raw');
     const request = { format: 'raw' as const, reference: out.reference, offset: data.length, limit: 1 };
     const eof = await f.records.read(request);
-    const version: 2 = eof.version; assert.equal(version, 2);
-    assert.equal(eof.data.length, 0); assert.equal(eof.nextOffset, data.length);
+    const version: 2 = eof.version;
+    assert.equal(version, 2);
+    assert.equal(eof.data.length, 0);
+    assert.equal(eof.nextOffset, data.length);
     await assert.rejects(f.records.read({ reference: out.reference, offset: 0, limit: 1 }), unavailable);
-  } finally { await f.cleanup(); }
+  } finally {
+    await f.cleanup();
+  }
 });
 
 test('raw matches every nonASCII secret cut and overlap before disk or base64', async () => {
@@ -50,7 +65,10 @@ test('raw matches every nonASCII secret cut and overlap before disk or base64', 
         const out = await f.records.openOutput(context, { format: 'raw', maxBytes: 100 });
         const first = out.write(Buffer.concat([Buffer.from([0, 255]), bytes.subarray(0, cut)]));
         if (cut === bytes.length) await assert.rejects(first, unavailable);
-        else { await first; await assert.rejects(out.write(bytes.subarray(cut)), unavailable); }
+        else {
+          await first;
+          await assert.rejects(out.write(bytes.subarray(cut)), unavailable);
+        }
         await assert.rejects(out.finish(), unavailable);
         const directory = join(f.root, context.workId, 'evidence', out.reference.id);
         const disk = await readFile(join(directory, 'output'));
@@ -60,15 +78,19 @@ test('raw matches every nonASCII secret cut and overlap before disk or base64', 
           assert.equal((await readFile(join(directory, name))).includes(bytes), false, `no literal in ${name}`);
         }
         const page = await f.records.read({ format: 'raw', reference: out.reference, offset: 0, limit: 100 });
-        assert.equal(page.state, 'partial'); assert.equal(page.data.length, 0);
+        assert.equal(page.state, 'partial');
+        assert.equal(page.data.length, 0);
       }
     }
     // Only literal UTF-8 values are matched, not their base64 representations.
     const encoded = Buffer.from(Buffer.from('🔒é密').toString('base64'));
     const out = await f.records.openOutput(context, { format: 'raw', maxBytes: encoded.length });
-    await out.write(encoded); await out.finish();
+    await out.write(encoded);
+    await out.finish();
     assert.deepEqual((await f.records.read({ format: 'raw', reference: out.reference, offset: 0, limit: 100 })).data, encoded);
-  } finally { await f.cleanup(); }
+  } finally {
+    await f.cleanup();
+  }
 });
 
 for (const maxBytes of [0, -1, NaN, Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1, undefined]) {
@@ -79,18 +101,28 @@ for (const maxBytes of [0, -1, NaN, Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1, 
       // @ts-expect-error malformed untrusted raw options
       await assert.rejects(f.records.openOutput(context, { format: 'raw', maxBytes }), unavailable);
       assert.deepEqual(await readdir(f.root), []);
-    } finally { await f.cleanup(); }
+    } finally {
+      await f.cleanup();
+    }
   });
 }
 
-for (const length of [9, 10, 11]) test(`raw caller budget 10 with ${length} bytes`, async () => {
-  const f = await fixture();
-  try {
-    const out = await f.records.openOutput(context, { format: 'raw', maxBytes: 10 });
-    if (length > 10) { await assert.rejects(out.write(Buffer.alloc(length)), unavailable); await assert.rejects(out.finish(), unavailable); }
-    else { await out.write(Buffer.alloc(length)); assert.equal((await out.finish()).bytes, length); }
-  } finally { await f.cleanup(); }
-});
+for (const length of [9, 10, 11])
+  test(`raw caller budget 10 with ${length} bytes`, async () => {
+    const f = await fixture();
+    try {
+      const out = await f.records.openOutput(context, { format: 'raw', maxBytes: 10 });
+      if (length > 10) {
+        await assert.rejects(out.write(Buffer.alloc(length)), unavailable);
+        await assert.rejects(out.finish(), unavailable);
+      } else {
+        await out.write(Buffer.alloc(length));
+        assert.equal((await out.finish()).bytes, length);
+      }
+    } finally {
+      await f.cleanup();
+    }
+  });
 
 test('raw rotation invalidates active captures synchronously, duplicate registration does not', async () => {
   const f = await fixture();
@@ -99,13 +131,17 @@ test('raw rotation invalidates active captures synchronously, duplicate registra
     const a = await f.records.openOutput(context, { format: 'raw', maxBytes: Number.MAX_SAFE_INTEGER });
     const b = await f.records.openOutput(context, { format: 'raw', maxBytes: 10 });
     await a.write(Buffer.from('clean'));
-    f.records.registerSecret('old-secret'); await b.write(Buffer.from('safe'));
+    f.records.registerSecret('old-secret');
+    await b.write(Buffer.from('safe'));
     f.records.registerSecret('new-secret-longer');
-    await assert.rejects(a.write(Buffer.alloc(0)), unavailable); await assert.rejects(a.finish(), unavailable);
+    await assert.rejects(a.write(Buffer.alloc(0)), unavailable);
+    await assert.rejects(a.finish(), unavailable);
     await assert.rejects(b.finish(), unavailable);
     const c = await f.records.openOutput(context, { format: 'raw', maxBytes: 100 });
     await assert.rejects(c.write(Buffer.from('new-secret-longer')), unavailable);
-  } finally { await f.cleanup(); }
+  } finally {
+    await f.cleanup();
+  }
 });
 
 test('raw enforces cumulative retained-input budget, chunk bound and safe page offsets', async () => {
@@ -113,7 +149,8 @@ test('raw enforces cumulative retained-input budget, chunk bound and safe page o
   try {
     f.records.registerSecret('a-long-secret-🔒');
     const out = await f.records.openOutput(context, { format: 'raw', maxBytes: 10 });
-    await out.write(Buffer.alloc(9)); await out.write(Buffer.alloc(1));
+    await out.write(Buffer.alloc(9));
+    await out.write(Buffer.alloc(1));
     await assert.rejects(out.write(Buffer.alloc(1)), unavailable);
     const directory = join(f.root, context.workId, 'evidence', out.reference.id);
     assert.equal((await readFile(join(directory, 'output'))).length, 0, 'budget includes unflushed tail');
@@ -129,7 +166,9 @@ test('raw enforces cumulative retained-input budget, chunk bound and safe page o
       await assert.rejects(f.records.read({ format: 'raw', reference: empty.reference, offset: 0, limit }), unavailable);
     }
     assert.equal((await f.records.read({ format: 'raw', reference: empty.reference, offset: 0, limit: 1 })).data.length, 0);
-  } finally { await f.cleanup(); }
+  } finally {
+    await f.cleanup();
+  }
 });
 
 test('raw longest encoded secret tail matches single-byte chunks and chunk/page-boundary literals', async () => {
@@ -151,5 +190,7 @@ test('raw longest encoded secret tail matches single-byte chunks and chunk/page-
       const disk = await readFile(join(f.root, context.workId, 'evidence', capture.reference.id, 'output'));
       assert.equal(disk.includes(Buffer.from('literal-🔒')), false);
     }
-  } finally { await f.cleanup(); }
+  } finally {
+    await f.cleanup();
+  }
 });

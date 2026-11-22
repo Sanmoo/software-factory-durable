@@ -17,20 +17,26 @@ async function storage(t: { after(fn: () => Promise<void>): void }) {
   const github = githubDoubles({ pulls: {}, issues: [remoteIssue(6)] });
   const time = manualClock();
   const path = join(dir, 'control.sqlite');
-  const control = await openControl({ storagePath: path, runtimeInventory: 'empty', access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
-    polling: { intervalSeconds: 60, clock: time.clock } });
+  const control = await openControl({
+    storagePath: path,
+    runtimeInventory: 'empty',
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   await untilHolds('Work admitted', async () => ((await control.inspect({ kind: 'list' })) as ListView).works.length > 0, 5);
-  stop.abort(); await running;
+  stop.abort();
+  await running;
   return path;
 }
 
 test('diagnosis: after run(aborted) the stored Control session is closed, so a later inspect fails "Session is closed" (the held real inspect)', async t => {
   const path = await storage(t);
   const stored = await openControl({ storagePath: path, runtimeInventory: 'unknown' });
-  const list = await stored.inspect({ kind: 'list' }) as ListView;
-  const stopped = new AbortController(); stopped.abort();
+  const list = (await stored.inspect({ kind: 'list' })) as ListView;
+  const stopped = new AbortController();
+  stopped.abort();
   await stored.run(stopped.signal);
   await assert.rejects(stored.inspect({ kind: 'show', work_id: list.works[0]!.work_id }), /Session is closed/);
 });

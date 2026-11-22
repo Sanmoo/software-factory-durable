@@ -22,27 +22,48 @@ import { composeCrashInstallation, effective, tip } from './lambda-crash-fixture
 // The variations (unrecorded MicroVM, unconfirmed end, unreadable listing, tags listed or not) are `test/sandbox/lambda-reconciliation.test.ts`.
 const pullRequestRule = { type: 'pull_request', ruleset_id: 1, ruleset_source_type: 'Repository', ruleset_source: 'acme/project' };
 
-test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, the next owner inventories the account by tag, ends the MicroVM left without a living Execution with cessation confirmed by GetMicrovm and recorded, and never touches another installation\'s MicroVM', async t => {
-  const world = await githubWorld(t, { issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })], pulls: [], refs: {},
-    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, comments: [], checks: {
+test("v2 ticket 15: after a SIGKILL of the controller with a boot in progress, the next owner inventories the account by tag, ends the MicroVM left without a living Execution with cessation confirmed by GetMicrovm and recorded, and never touches another installation's MicroVM", async t => {
+  const world = await githubWorld(t, {
+    issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })],
+    pulls: [],
+    refs: {},
+    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } },
+    comments: [],
+    checks: {
       branches: { main: { sha: tip, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
-      rules: { main: [pullRequestRule] }, checkRuns: {}, statuses: {}, compare: {} } });
+      rules: { main: [pullRequestRule] },
+      checkRuns: {},
+      statuses: {},
+      compare: {},
+    },
+  });
   const dir = await mkdtemp(join(tmpdir(), 'factory-lambda-crash-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const accountFile = join(dir, 'aws-account.json'), storagePath = join(dir, 'control.sqlite');
+  const accountFile = join(dir, 'aws-account.json'),
+    storagePath = join(dir, 'control.sqlite');
 
   // The controller dies with its boot in progress.
   // Detached and bounded by the runner's budget (docs/guides/testing-strategy.md): past it `ended` kills the child's whole group and names the stage.
-  const child = spawn(process.execPath, [fileURLToPath(new URL('./lambda-crash-child.js', import.meta.url)), world.root, world.executable, accountFile, storagePath], { stdio: ['ignore', 'pipe', 'inherit'], detached: true });
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('./lambda-crash-child.js', import.meta.url)), world.root, world.executable, accountFile, storagePath],
+    { stdio: ['ignore', 'pipe', 'inherit'], detached: true },
+  );
   let output = '';
-  child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('CUT')) child.kill('SIGKILL'); });
+  child.stdout!.on('data', (chunk: Buffer) => {
+    output += chunk;
+    if (output.includes('CUT')) child.kill('SIGKILL');
+  });
   const exit = await ended(child, () => `waiting for the child controller to reach its boot (output so far: ${output || 'none'})`);
   assert.equal(exit.signal, 'SIGKILL', `child exited without crash: ${output}`);
 
   // What the dead controller left in the account: one running MicroVM, tagged with the installation and the Work, and nobody owning it.
   const left = lambdaAccountFake({ stateFile: accountFile });
   left.settle();
-  assert.deepEqual(left.account.microvms.map(microvm => microvm.state), ['RUNNING']);
+  assert.deepEqual(
+    left.account.microvms.map(microvm => microvm.state),
+    ['RUNNING'],
+  );
   const survivor = left.account.microvms[0]!;
   assert.equal(survivor.request.tags[installationTagKey], 'acme');
   const workId = survivor.request.tags[workTagKey]!;
@@ -56,56 +77,114 @@ test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, t
   assert.equal(typeof runtimeInventory, 'object');
   if (typeof runtimeInventory !== 'object') return;
   // The inventory by tag found the survivor and attributed it to its Work; the other installation's MicroVM is not in it.
-  assert.deepEqual(runtimeInventory.environments.map(item => item.workId), [workId]);
+  assert.deepEqual(
+    runtimeInventory.environments.map(item => item.workId),
+    [workId],
+  );
   // Only the account's part is asserted: the killed process may also leave a transient host directory of an in-flight GitHub call
   // (`run/github-*`), which the MVP host inventory reports as its own unknown resource, whatever the adapter.
-  assert.deepEqual(runtimeInventory.unknown.filter(item => item.startsWith('lambda/')), []);
-  assert.equal(next.fake.account.microvms.find(microvm => microvm.microvmId === survivor.microvmId)!.state, 'RUNNING', 'the inventory lists what a boot record holds; Control decides');
+  assert.deepEqual(
+    runtimeInventory.unknown.filter(item => item.startsWith('lambda/')),
+    [],
+  );
+  assert.equal(
+    next.fake.account.microvms.find(microvm => microvm.microvmId === survivor.microvmId)!.state,
+    'RUNNING',
+    'the inventory lists what a boot record holds; Control decides',
+  );
 
   const time = manualClock();
-  const control = await openControl({ storagePath, runtimeInventory, execution: next.ports, access: composeProductionAccess({ github: next.github, effective }), polling: { intervalSeconds: 60, clock: time.clock } });
-  const before = await control.inspect({ kind: 'status' }) as ControlStatus;
+  const control = await openControl({
+    storagePath,
+    runtimeInventory,
+    execution: next.ports,
+    access: composeProductionAccess({ github: next.github, effective }),
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
+  const before = (await control.inspect({ kind: 'status' })) as ControlStatus;
   assert.deepEqual([before.dispatch, before.dispatchReason], ['closed', 'RECONCILIATION_REQUIRED'], 'nothing is dispatched before the reconciliation');
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
-  const crashedOf = (work: WorkView | undefined) => [...(work?.previousExecutions ?? []), ...(work?.execution ? [work.execution] : [])].find(execution => execution.recovery?.length);
-  const work = await until('the interrupted Execution is settled and its loss recorded', async () => {
-    const value = ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-    if (value && crashedOf(value) && value.losses?.length && value.bootLedger?.length) return value;
-    if (time.isSleeping()) time.advance();
-    return undefined;
-  }, 10);
+  t.after(async () => {
+    if (!stop.signal.aborted) {
+      stop.abort();
+      await running;
+    }
+  });
+  const crashedOf = (work: WorkView | undefined) =>
+    [...(work?.previousExecutions ?? []), ...(work?.execution ? [work.execution] : [])].find(execution => execution.recovery?.length);
+  const work = await until(
+    'the interrupted Execution is settled and its loss recorded',
+    async () => {
+      const value = ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
+      if (value && crashedOf(value) && value.losses?.length && value.bootLedger?.length) return value;
+      if (time.isSleeping()) time.advance();
+      return undefined;
+    },
+    10,
+  );
   assert.equal(work.work_id, workId);
 
   // The MicroVM without a living Execution is ended, and the end is the service's own answer (GetMicrovm), not an assumption.
   const terminated = next.fake.account.microvms.find(microvm => microvm.microvmId === survivor.microvmId)!;
   assert.equal(terminated.state, 'TERMINATED');
-  assert.deepEqual(next.fake.mutations.filter(call => call.operation === 'terminateMicrovm').map(call => call.input).slice(0, 1), [survivor.microvmId]);
+  assert.deepEqual(
+    next.fake.mutations
+      .filter(call => call.operation === 'terminateMicrovm')
+      .map(call => call.input)
+      .slice(0, 1),
+    [survivor.microvmId],
+  );
   const operations = next.fake.calls.filter(call => call.input === survivor.microvmId).map(call => call.operation);
   assert.equal(operations.lastIndexOf('microvm') > operations.indexOf('terminateMicrovm'), true, 'cessation was read from the service after the request');
   // The record: Control's durable reconciliation of the Execution, the boot's own record and the inventory's.
   const crashed = crashedOf(work)!;
   const recovery = crashed.recovery![0]!;
-  assert.deepEqual([recovery.trigger, recovery.cessation.result, recovery.cessation.basis, recovery.cessation.boot], ['boot', 'confirmed', 'sandbox-stop', crashed.dispatch.boot]);
+  assert.deepEqual(
+    [recovery.trigger, recovery.cessation.result, recovery.cessation.basis, recovery.cessation.boot],
+    ['boot', 'confirmed', 'sandbox-stop', crashed.dispatch.boot],
+  );
   assert.deepEqual([crashed.state, crashed.end?.code, crashed.end?.cessation, crashed.slot.held], ['ended', 'CONTROLLER_CRASH', 'confirmed', false]);
-  const boot = JSON.parse(await readFile(join(world.root, 'lambda', 'works', crashed.dispatch.environment!, 'boots', crashed.dispatch.boot!, 'boot.json'), 'utf8')) as {
-    phase: string; microvmId: string; stop: { reason: string; detail: string }; end: { reason: string; terminatedAt: string } };
+  const boot = JSON.parse(
+    await readFile(join(world.root, 'lambda', 'works', crashed.dispatch.environment!, 'boots', crashed.dispatch.boot!, 'boot.json'), 'utf8'),
+  ) as {
+    phase: string;
+    microvmId: string;
+    stop: { reason: string; detail: string };
+    end: { reason: string; terminatedAt: string };
+  };
   // Final review, must-fix 1 (items 10, 18, 26): the Builder was at work in that boot and nobody could inspect it, so its end is a LOSS in
   // the adapter's record and in Control's (from its own reads of origin), and the boot is in the Work's ledger.
-  assert.deepEqual([boot.phase, boot.microvmId, boot.stop.reason, boot.end.reason, boot.end.terminatedAt], ['ended', survivor.microvmId, 'loss', 'loss', new Date(terminated.terminatedAt!).toISOString()]);
-  assert.deepEqual(work.losses?.map(item => [item.executionId, item.boot, item.cause, item.confirmed.commit]), [[crashed.executionId, crashed.dispatch.boot, 'not-inspected', null]]);
-  assert.deepEqual(work.bootLedger?.map(item => [item.boot, item.end]), [[crashed.dispatch.boot, 'loss']]);
+  assert.deepEqual(
+    [boot.phase, boot.microvmId, boot.stop.reason, boot.end.reason, boot.end.terminatedAt],
+    ['ended', survivor.microvmId, 'loss', 'loss', new Date(terminated.terminatedAt!).toISOString()],
+  );
+  assert.deepEqual(
+    work.losses?.map(item => [item.executionId, item.boot, item.cause, item.confirmed.commit]),
+    [[crashed.executionId, crashed.dispatch.boot, 'not-inspected', null]],
+  );
+  assert.deepEqual(
+    work.bootLedger?.map(item => [item.boot, item.end]),
+    [[crashed.dispatch.boot, 'loss']],
+  );
   const inventories = await readdir(join(world.root, 'lambda', 'reconciliations'));
   assert.equal(inventories.length, 1);
-  const inventory = JSON.parse(await readFile(join(world.root, 'lambda', 'reconciliations', inventories[0]!), 'utf8')) as { evidence: string; otherInstallations: number;
-    microvms: { microvmId: string; workId: string; action: string }[] };
-  assert.deepEqual([inventory.evidence, inventory.otherInstallations, inventory.microvms.map(item => [item.microvmId, item.workId, item.action])],
-    ['GetMicrovm', 1, [[survivor.microvmId, workId, 'listed']]]);
+  const inventory = JSON.parse(await readFile(join(world.root, 'lambda', 'reconciliations', inventories[0]!), 'utf8')) as {
+    evidence: string;
+    otherInstallations: number;
+    microvms: { microvmId: string; workId: string; action: string }[];
+  };
+  assert.deepEqual(
+    [inventory.evidence, inventory.otherInstallations, inventory.microvms.map(item => [item.microvmId, item.workId, item.action])],
+    ['GetMicrovm', 1, [[survivor.microvmId, workId, 'listed']]],
+  );
 
   // The other installation's MicroVM was never touched, read or named.
   assert.equal(next.fake.account.microvms.find(microvm => microvm.microvmId === other.microvmId)!.state, 'RUNNING');
-  assert.equal(next.fake.calls.some(call => call.input === other.microvmId || call.input === other.imageArn), false);
+  assert.equal(
+    next.fake.calls.some(call => call.input === other.microvmId || call.input === other.imageArn),
+    false,
+  );
   assert.equal(JSON.stringify(inventory).includes(other.microvmId), false);
 
   stop.abort();

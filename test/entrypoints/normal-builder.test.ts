@@ -10,14 +10,27 @@ import { remainingMs } from '../runner/budget.js';
 
 test('public normal Builder activation -> same VM owner -> new Node24 -> native regular overwrite result/session', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp('/tmp/nw-');
-  t.after(async () => { try { t.diagnostic(await readFile(join(root, 'audit'), 'utf8')); } catch { /* startup may fail */ } await rm(root, { recursive: true, force: true }); });
+  t.after(async () => {
+    try {
+      t.diagnostic(await readFile(join(root, 'audit'), 'utf8'));
+    } catch {
+      /* startup may fail */
+    }
+    await rm(root, { recursive: true, force: true });
+  });
   const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;
   const child = fork(fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), [root, environment, `boot-${randomUUID()}`], {
     execArgv: ['--experimental-test-module-mocks', '--import', fileURLToPath(new URL('../sandbox/adapter-diagnostics-fixture.js', import.meta.url))],
     env: { ...process.env, ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'normal-worker', TASK83_NATIVE_BUILDER: '1', NODE_DISABLE_COMPILE_CACHE: '1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  let output = ''; child.stdout?.on('data', data => { output += data; }); child.stderr?.on('data', data => { output += data; });
+  let output = '';
+  child.stdout?.on('data', data => {
+    output += data;
+  });
+  child.stderr?.on('data', data => {
+    output += data;
+  });
   const [code] = await once(child, 'exit');
   assert.equal(code, 0, output);
   const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');

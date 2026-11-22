@@ -42,15 +42,29 @@ ticketSources:
 
 const blocks = { id: '10000', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
 const blockedBy = (id: string, key: string) => ({ id: `9${id}`, type: blocks, inwardIssue: { id, key } });
-const issue = (id: string, key: string, fields: { labels?: string[]; components?: string[]; issuelinks?: unknown[] }) => ({ id, key, fields: {
-  labels: fields.labels ?? ['factory-ready'], components: (fields.components ?? ['10022']).map(component => ({ id: component, name: `c${component}` })),
-  issuelinks: fields.issuelinks ?? [], summary: `Summary ${key}`, project: { id: '10010' }, status: { statusCategory: { key: 'new' } } } });
+const issue = (id: string, key: string, fields: { labels?: string[]; components?: string[]; issuelinks?: unknown[] }) => ({
+  id,
+  key,
+  fields: {
+    labels: fields.labels ?? ['factory-ready'],
+    components: (fields.components ?? ['10022']).map(component => ({ id: component, name: `c${component}` })),
+    issuelinks: fields.issuelinks ?? [],
+    summary: `Summary ${key}`,
+    project: { id: '10010' },
+    status: { statusCategory: { key: 'new' } },
+  },
+});
 
 /** The Jira site as raw HTTP: every exchange is recorded, unexpected ones included (answered 404). */
 function jiraWorld() {
   const exchanges: JiraHttpExchange[] = [];
   const unexpected: string[] = [];
-  const json = (body: unknown, status = 200): JiraHttpResult => ({ kind: 'response', status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const json = (body: unknown, status = 200): JiraHttpResult => ({
+    kind: 'response',
+    status,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   const tickets: Record<string, unknown> = {
     81017: issue('81017', 'PAG-42', { issuelinks: [blockedBy('70202', 'OPS-9'), { id: '9812', type: blocks, outwardIssue: { id: '70203', key: 'PAG-50' } }] }),
     81018: issue('81018', 'PAG-43', { issuelinks: [blockedBy('70301', 'OPS-10')] }),
@@ -66,8 +80,10 @@ function jiraWorld() {
     if (exchange.method === 'POST' && url.pathname === '/rest/api/3/search/jql') {
       const body = JSON.parse(exchange.body!) as { nextPageToken?: string };
       const ids = body.nextPageToken === 'P2' ? ['81020', '81021'] : ['81017', '81018', '81019'];
-      return json({ issues: ids.map(id => ({ id, key: (tickets[id] as { key: string }).key, fields: { project: { id: '10010' } } })),
-        ...(body.nextPageToken === 'P2' ? { isLast: true } : { isLast: false, nextPageToken: 'P2' }) });
+      return json({
+        issues: ids.map(id => ({ id, key: (tickets[id] as { key: string }).key, fields: { project: { id: '10010' } } })),
+        ...(body.nextPageToken === 'P2' ? { isLast: true } : { isLast: false, nextPageToken: 'P2' }),
+      });
     }
     if (exchange.method === 'GET' && url.pathname === '/rest/api/3/issueLinkType') return json({ issueLinkTypes: [blocks] });
     const id = /^\/rest\/api\/3\/issue\/(\d+)$/.exec(url.pathname)?.[1];
@@ -84,11 +100,16 @@ function jiraWorld() {
 
 function recordingGitHub() {
   const calls: string[] = [];
-  const github = new Proxy({ appId: 123 } as unknown as GitHubAccess, { get(_target, property) {
-    if (property === 'appId') return 123;
-    if (property === 'then') return undefined;
-    return async () => { calls.push(String(property)); return { ok: false, observedAt: new Date().toISOString(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' }; };
-  } });
+  const github = new Proxy({ appId: 123 } as unknown as GitHubAccess, {
+    get(_target, property) {
+      if (property === 'appId') return 123;
+      if (property === 'then') return undefined;
+      return async () => {
+        calls.push(String(property));
+        return { ok: false, observedAt: new Date().toISOString(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' };
+      };
+    },
+  });
   return { github, calls };
 }
 
@@ -111,21 +132,35 @@ test('the Jira source is evaluated over the host transport: every page, a fresh 
   const world = jiraWorld();
   const { root, access, source, githubCalls } = await composed(world.send);
   try {
-    const result = await evaluateJiraSource({ tracker: access.trackers!.jira!, source, authorizedRepositories: access.repositories.map(item => item.repository) });
+    const result = await evaluateJiraSource({
+      tracker: access.trackers!.jira!,
+      source,
+      authorizedRepositories: access.repositories.map(item => item.repository),
+    });
     assert.equal(result.kind, 'evaluated');
     if (result.kind !== 'evaluated') return;
     const decisions = Object.fromEntries(result.candidates.map(item => [item.ticket.key, item.evaluation.decision]));
     assert.deepEqual(decisions, { 'PAG-42': 'eligible', 'PAG-43': 'blocked', 'PAG-44': 'not-candidate', 'PAG-45': 'eligible', 'PAG-46': 'unverifiable' });
     const byKey = (key: string) => result.candidates.find(item => item.ticket.key === key)!;
     assert.deepEqual(byKey('PAG-42').evaluation, { decision: 'eligible', repository: 'equipe/payments-api', reasons: [] });
-    assert.deepEqual(byKey('PAG-45').evaluation, { decision: 'eligible', repository: 'equipe/checkout-web', reasons: [] }, 'route of the re-read, not of the listing');
+    assert.deepEqual(
+      byKey('PAG-45').evaluation,
+      { decision: 'eligible', repository: 'equipe/checkout-web', reasons: [] },
+      'route of the re-read, not of the listing',
+    );
     const fact = byKey('PAG-42').blockers;
     assert.equal(fact?.kind, 'observed');
     if (fact?.kind !== 'observed') return;
-    assert.deepEqual([fact.source, fact.coverage, fact.root.issueId, fact.blockers], ['jira-rest', 'visible', '81017', [{ issueId: '70202', key: 'N-70202', statusCategory: 'done' }]]);
+    assert.deepEqual(
+      [fact.source, fact.coverage, fact.root.issueId, fact.blockers],
+      ['jira-rest', 'visible', '81017', [{ issueId: '70202', key: 'N-70202', statusCategory: 'done' }]],
+    );
     assert.ok(fact.limitations.length > 0 && fact.observedAt.length > 0, 'origin, instant and visible coverage, never global completeness');
     assert.equal(byKey('PAG-46').blockers?.kind, 'unavailable', 'a 403 neighbour is unverifiable, never an empty list');
-    assert.deepEqual(byKey('PAG-43').evaluation.reasons.map(reason => reason.code), ['JIRA_BLOCKER_NOT_DONE']);
+    assert.deepEqual(
+      byKey('PAG-43').evaluation.reasons.map(reason => reason.code),
+      ['JIRA_BLOCKER_NOT_DONE'],
+    );
 
     // Positive control and boundaries: calls were made, only reads, only toward the configured origin, each with basic auth.
     assert.ok(world.exchanges.length > 0);
@@ -142,32 +177,55 @@ test('the Jira source is evaluated over the host transport: every page, a fresh 
     assert.ok(!paths.some(path => path.includes('/issue/81019?fields=status')), 'a removed label stops before any blocker read');
     assert.deepEqual(githubCalls, [], 'no GitHub call: nothing is admitted, published or dispatched');
     assert.doesNotMatch(JSON.stringify(result), /SENTINEL/, 'the token never reaches an observation or a reason');
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('a listing that cannot reach its last page evaluates nothing and re-reads nothing', async () => {
   const world = jiraWorld();
   const send = async (exchange: JiraHttpExchange): Promise<JiraHttpResult> => {
-    const body = exchange.body ? JSON.parse(exchange.body) as { nextPageToken?: string } : {};
-    if (body.nextPageToken === 'P2') { world.exchanges.push(exchange); return { kind: 'failed', reason: 'timeout' }; }
+    const body = exchange.body ? (JSON.parse(exchange.body) as { nextPageToken?: string }) : {};
+    if (body.nextPageToken === 'P2') {
+      world.exchanges.push(exchange);
+      return { kind: 'failed', reason: 'timeout' };
+    }
     return world.send(exchange);
   };
   const { root, access, source } = await composed(send);
   try {
-    const result = await evaluateJiraSource({ tracker: access.trackers!.jira!, source, authorizedRepositories: access.repositories.map(item => item.repository) });
+    const result = await evaluateJiraSource({
+      tracker: access.trackers!.jira!,
+      source,
+      authorizedRepositories: access.repositories.map(item => item.repository),
+    });
     assert.equal(result.kind, 'unavailable');
     assert.equal(result.kind === 'unavailable' && result.listing.code, 'JIRA_TIMEOUT');
-    assert.deepEqual(world.exchanges.map(exchange => exchange.method), ['POST', 'POST'], 'no re-read after an incomplete listing');
-  } finally { await rm(root, { recursive: true, force: true }); }
+    assert.deepEqual(
+      world.exchanges.map(exchange => exchange.method),
+      ['POST', 'POST'],
+      'no re-read after an incomplete listing',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
-test('a custom link type blocks until the operator indicates it in the source\'s linkTypes; then its direction decides', async () => {
+test("a custom link type blocks until the operator indicates it in the source's linkTypes; then its direction decides", async () => {
   const depends = { id: '10500', name: 'Depends', inward: 'depends on', outward: 'is depended on by' };
   const world = jiraWorld();
   const send = async (exchange: JiraHttpExchange): Promise<JiraHttpResult> => {
     const url = new URL(exchange.url);
-    const json = (body: unknown): JiraHttpResult => ({ kind: 'response', status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    if (url.pathname === '/rest/api/3/issueLinkType') { world.exchanges.push(exchange); return json({ issueLinkTypes: [blocks, depends] }); }
+    const json = (body: unknown): JiraHttpResult => ({
+      kind: 'response',
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (url.pathname === '/rest/api/3/issueLinkType') {
+      world.exchanges.push(exchange);
+      return json({ issueLinkTypes: [blocks, depends] });
+    }
     if (url.pathname === '/rest/api/3/issue/81018' && url.searchParams.get('fields') !== 'status') {
       world.exchanges.push(exchange);
       return json(issue('81018', 'PAG-43', { issuelinks: [{ id: '9900', type: depends, inwardIssue: { id: '70301', key: 'OPS-10' } }] }));
@@ -177,16 +235,29 @@ test('a custom link type blocks until the operator indicates it in the source\'s
   const decide = async (config: string) => {
     const { root, access, source } = await composed(send, config);
     try {
-      const result = await evaluateJiraSource({ tracker: access.trackers!.jira!, source, authorizedRepositories: access.repositories.map(item => item.repository) });
+      const result = await evaluateJiraSource({
+        tracker: access.trackers!.jira!,
+        source,
+        authorizedRepositories: access.repositories.map(item => item.repository),
+      });
       assert.equal(result.kind, 'evaluated');
       return result.kind === 'evaluated' ? result.candidates.find(item => item.ticket.key === 'PAG-43')!.evaluation : undefined;
-    } finally { await rm(root, { recursive: true, force: true }); }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   };
   const unindicated = await decide(yaml);
-  assert.deepEqual(unindicated?.reasons.map(reason => reason.code), ['JIRA_LINK_TYPE_CUSTOM']);
+  assert.deepEqual(
+    unindicated?.reasons.map(reason => reason.code),
+    ['JIRA_LINK_TYPE_CUSTOM'],
+  );
   assert.match(unindicated?.reasons[0]?.nextStep ?? '', /linkTypes.*10500/);
   const inward = await decide(yaml.replace('    routes:\n', "    linkTypes: [{id: '10500', blocks: inward}]\n    routes:\n"));
-  assert.deepEqual(inward?.reasons.map(reason => reason.code), ['JIRA_BLOCKER_NOT_DONE'], 'the indicated neighbour is read and blocks');
+  assert.deepEqual(
+    inward?.reasons.map(reason => reason.code),
+    ['JIRA_BLOCKER_NOT_DONE'],
+    'the indicated neighbour is read and blocks',
+  );
   const none = await decide(yaml.replace('    routes:\n', "    linkTypes: [{id: '10500', blocks: none}]\n    routes:\n"));
   assert.deepEqual(none?.decision, 'eligible');
 });

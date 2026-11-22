@@ -13,19 +13,42 @@ const v8 = builderSkillPacks['factory-skills-v8'];
 test('factory-skills-v8: implement and alpine-diagnostics ask for generous build/test timeouts and bash for files over the edit/write limits', async () => {
   const pack = await loadSkillPack(v8.directory, 'factory-skills-v8');
   assert.deepEqual([pack.id, pack.version, pack.manifest.guestDirectory], ['factory-skills-v8', '8.0.0', '/artifacts/factory/skill-pack/factory-skills-v8']);
-  for (const file of pack.manifest.files) assert.equal(createHash('sha256').update(await readFile(join(v8.directory, file.path))).digest('hex'), file.sha256, file.path);
+  for (const file of pack.manifest.files)
+    assert.equal(
+      createHash('sha256')
+        .update(await readFile(join(v8.directory, file.path)))
+        .digest('hex'),
+      file.sha256,
+      file.path,
+    );
   const flat = (text: string) => text.replace(/\s+/g, ' '); // rules may wrap across lines
   const implement = await readFile(join(v8.directory, 'skills/implement/SKILL.md'), 'utf8');
   const diagnostics = await readFile(join(v8.directory, 'skills/alpine-diagnostics/SKILL.md'), 'utf8');
   for (const text of [implement, diagnostics].map(flat)) {
-    for (const rule of ['generous', '`timeout: 1800` seconds', 'first run', 'downloads',
-      'never a short one such as 120', 'ends the activation, because the Factory cannot confirm that it stopped',
-      'at most 8192 bytes', '`write` accepts at most 8192 characters', 'with `bash`']) assert.ok(text.includes(rule), rule);
+    for (const rule of [
+      'generous',
+      '`timeout: 1800` seconds',
+      'first run',
+      'downloads',
+      'never a short one such as 120',
+      'ends the activation, because the Factory cannot confirm that it stopped',
+      'at most 8192 bytes',
+      '`write` accepts at most 8192 characters',
+      'with `bash`',
+    ])
+      assert.ok(text.includes(rule), rule);
   }
-  for (const rule of ['A refusal of either is an ordinary tool error',
+  for (const rule of [
+    'A refusal of either is an ordinary tool error',
     // carried over from v7 (ticket 34), v6 (ticket 14), v5 (ticket 13) and v4 (ticket 11)
-    'Never declare `fixed` without a change', 'PUBLISH-ONLY activation', 'Treat ONLY the findings the delivered results list',
-    '`review-rounds=multi`', 'Continue in the SAME session (`continue` message)', 'call the `ask_user` tool once']) assert.ok(flat(implement).includes(rule), rule);
+    'Never declare `fixed` without a change',
+    'PUBLISH-ONLY activation',
+    'Treat ONLY the findings the delivered results list',
+    '`review-rounds=multi`',
+    'Continue in the SAME session (`continue` message)',
+    'call the `ask_user` tool once',
+  ])
+    assert.ok(flat(implement).includes(rule), rule);
   assert.match(pack.prompts.find(item => item.name === 'implement')!.content, /factory-skills-v8\/skills\/implement\/SKILL\.md/);
   const files = await skillPackGuestFiles('factory-skills-v8');
   for (const text of [implement, diagnostics, ...pack.prompts.map(item => item.content)]) {

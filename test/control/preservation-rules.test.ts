@@ -2,7 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { classifyInterruption } from '../../src/control/rules/recovery.js';
 import type { PreservationObservation } from '../../src/contracts/index.js';
-import { gateCorrectionPrompt, gateDecision, gateLossReason, gateRefusalLimit, gateRefusedCode, preservedHeads, recordPreserved } from '../../src/control/rules/preservation.js';
+import {
+  gateCorrectionPrompt,
+  gateDecision,
+  gateLossReason,
+  gateRefusalLimit,
+  gateRefusedCode,
+  preservedHeads,
+  recordPreserved,
+} from '../../src/control/rules/preservation.js';
 import { knownRemote } from '../../src/control/rules/divergence.js';
 import { decideDiscovery } from '../../src/control/rules/publication.js';
 import type { PublicationView } from '../../src/control/types.js';
@@ -10,9 +18,17 @@ import type { PublicationView } from '../../src/control/types.js';
 // v2 ticket 07 (V2-05..V2-07, pure rules): what the preservation gate accepts, the six refusals of proof G1 each under its own reason, the
 // instruction that returns a refusal to the Builder and the block after three refusals in a row.
 
-const head = 'a'.repeat(40), other = 'b'.repeat(40);
-const guest = (patch: Partial<Extract<PreservationObservation, { status: 'observed' }>> = {}): PreservationObservation =>
-  ({ status: 'observed', head, modified: 0, untracked: 0, stashes: 0, remote: { state: 'present', sha: head }, ...patch });
+const head = 'a'.repeat(40),
+  other = 'b'.repeat(40);
+const guest = (patch: Partial<Extract<PreservationObservation, { status: 'observed' }>> = {}): PreservationObservation => ({
+  status: 'observed',
+  head,
+  modified: 0,
+  untracked: 0,
+  stashes: 0,
+  remote: { state: 'present', sha: head },
+  ...patch,
+});
 const origin = { state: 'present' as const, sha: head };
 
 test('the gate accepts only a clean workspace without stash whose HEAD is the Work branch tip on `origin`, and names that commit', () => {
@@ -52,8 +68,14 @@ test('the refusal diagnostic carries the facts the Builder needs', () => {
 });
 
 test('the instruction returned to the Builder names the reason, the one push allowed and forbids versioning secrets', () => {
-  const prompt = gateCorrectionPrompt({ occasion: 'question', refusal: { code: 'WORKSPACE_UNTRACKED', detail: '1 untracked file(s) not ignored' }, attempt: 1,
-    branch: 'factory/3-0123abcd', push: 'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0123abcd', pullRequest: false });
+  const prompt = gateCorrectionPrompt({
+    occasion: 'question',
+    refusal: { code: 'WORKSPACE_UNTRACKED', detail: '1 untracked file(s) not ignored' },
+    attempt: 1,
+    branch: 'factory/3-0123abcd',
+    push: 'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0123abcd',
+    pullRequest: false,
+  });
   assert.match(prompt, /WORKSPACE_UNTRACKED: 1 untracked file\(s\) not ignored/);
   assert.ok(prompt.includes('git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0123abcd'));
   assert.match(prompt, /refusal 1 of 3/);
@@ -65,16 +87,25 @@ test('the instruction returned to the Builder names the reason, the one push all
 
 test('three refusals in a row end the boot as a loss whose reason is the diagnostic of the last one; the end is transient, never a block (Operator decision 7 of 2026-11-21)', () => {
   assert.equal(gateRefusalLimit, 3);
-  assert.equal(gateLossReason({ occasion: 'ci-wait', refusal: { code: 'STASH_PRESENT', detail: '2 stash entr(ies)' }, refusals: 3 }),
-    'Ended by the Factory: the preservation gate refused 3 time(s) in a row before ci-wait (last: STASH_PRESENT: 2 stash entr(ies)).');
+  assert.equal(
+    gateLossReason({ occasion: 'ci-wait', refusal: { code: 'STASH_PRESENT', detail: '2 stash entr(ies)' }, refusals: 3 }),
+    'Ended by the Factory: the preservation gate refused 3 time(s) in a row before ci-wait (last: STASH_PRESENT: 2 stash entr(ies)).',
+  );
   assert.equal(gateRefusedCode, 'PRESERVATION_GATE_REFUSED');
   // The Execution comes back through the queue as one operational recovery, like the death of the environment.
   assert.deepEqual(classifyInterruption(gateRefusedCode), { kind: 'recoverable' });
-  const prompt = gateCorrectionPrompt({ occasion: 'question', refusal: { code: 'STASH_PRESENT', detail: 'x' }, attempt: 2, branch: 'b', push: 'p', pullRequest: false });
+  const prompt = gateCorrectionPrompt({
+    occasion: 'question',
+    refusal: { code: 'STASH_PRESENT', detail: 'x' },
+    attempt: 2,
+    branch: 'b',
+    push: 'p',
+    pullRequest: false,
+  });
   assert.match(prompt, /after 3 in a row this environment is ended and what is not on origin is LOST/);
 });
 
-test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP tip is never taken for a human change', () => {
+test("commits confirmed by the gate are the Factory's own on `origin`: a WIP tip is never taken for a human change", () => {
   const first = recordPreserved(null, { commit: head, branch: 'factory/3-x', confirmedAt: 't1', executionId: 'e1', boot: 'b1', occasion: 'question' });
   const second = recordPreserved(first, { commit: other, branch: 'factory/3-x', confirmedAt: 't2', executionId: 'e2', boot: 'b2', occasion: 'ci-wait' });
   assert.deepEqual([second.commit, second.occasion, second.heads], [other, 'ci-wait', [head, other]]);
@@ -83,10 +114,31 @@ test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP ti
   const publication = { linkedHeads: [], attempts: [], discoveries: [], divergences: [], verified: { head: 'c'.repeat(40) } } as unknown as PublicationView;
   assert.deepEqual(knownRemote(publication, false, false, [head]).heads, [head]);
   // No PR yet, the Work branch holds a gate-confirmed WIP commit: the verified head is published over exactly that tip (lease), not blocked.
-  const expect = { workId: 'w', ticketNumber: 3, branch: 'factory/3-x', base: 'main', repositoryId: 3, head: 'c'.repeat(40), app: { login: 'factory-app[bot]', id: 1 } };
-  const observation = { kind: 'observed' as const, repositoryId: 3, candidates: [], branch: { state: 'present' as const, sha: head },
-    refs: { state: 'complete' as const, refs: {} }, baseProtection: { state: 'pull-request-required' as const } };
-  const decide = (heads: string[]) => decideDiscovery({ expect: expect as never, attempted: false, known: knownRemote(publication, false, false, heads), preservedHeads: heads, observation: observation as never });
+  const expect = {
+    workId: 'w',
+    ticketNumber: 3,
+    branch: 'factory/3-x',
+    base: 'main',
+    repositoryId: 3,
+    head: 'c'.repeat(40),
+    app: { login: 'factory-app[bot]', id: 1 },
+  };
+  const observation = {
+    kind: 'observed' as const,
+    repositoryId: 3,
+    candidates: [],
+    branch: { state: 'present' as const, sha: head },
+    refs: { state: 'complete' as const, refs: {} },
+    baseProtection: { state: 'pull-request-required' as const },
+  };
+  const decide = (heads: string[]) =>
+    decideDiscovery({
+      expect: expect as never,
+      attempted: false,
+      known: knownRemote(publication, false, false, heads),
+      preservedHeads: heads,
+      observation: observation as never,
+    });
   assert.deepEqual(decide([]).reasons, ['REMOTE_BRANCH_UNKNOWN_CHANGE']);
   const decision = decide([head]);
   assert.equal(decision.outcome, 'absent');
@@ -95,6 +147,8 @@ test('commits confirmed by the gate are the Factory\'s own on `origin`: a WIP ti
 
 test('the push the instruction names is exactly the one the Builder Host allows (the same literal is pinned in test/workers/push-policy.test.ts)', async () => {
   const { gateCorrectionPush } = await import('../../src/control/rules/preservation.js');
-  assert.equal(gateCorrectionPush('factory/3-0b9c6a52', 'https://github.com/acme/project.git'),
-    'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0b9c6a52');
+  assert.equal(
+    gateCorrectionPush('factory/3-0b9c6a52', 'https://github.com/acme/project.git'),
+    'git -C /workspace/checkout push https://github.com/acme/project.git HEAD:refs/heads/factory/3-0b9c6a52',
+  );
 });

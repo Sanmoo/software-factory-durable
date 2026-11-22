@@ -4,68 +4,140 @@ import { environmentOperations } from './environment.js';
 import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/index.js';
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
-export type { BranchRule, CheckRunFact, ClassicChecks, ClassicSettings, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
+export type {
+  BranchRule,
+  CheckRunFact,
+  ClassicChecks,
+  ClassicSettings,
+  Known,
+  PullRequestFacts,
+  PullRequestObservation,
+  PullRequestQuery,
+  RequiredCheck,
+  RuleParameters,
+  StatusFact,
+} from './pull-request.js';
 import { feedbackOperations, type FeedbackObservation, type FeedbackQuery } from './feedback.js';
 import { lossMarkerOperations, type LostMarkerCleanupResult, type LostMarkerSelection, type LostMarkersObservation } from './loss-markers.js';
-import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type OwnPullRequestObservation, type PullRequestRef } from './delivery.js';
+import {
+  deliveryOperations,
+  type BranchCleanupResult,
+  type BranchCleanupSelection,
+  type CleanupEffect,
+  type OwnPullRequestObservation,
+  type PullRequestRef,
+} from './delivery.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
  * Several Tickets of one repository share ONE pull request listing per call (bounded polling cost). */
-export type PublicationCorrelation = { repo: GitHubScope;
+export type PublicationCorrelation = {
+  repo: GitHubScope;
   /** Empty = branch-only correlation (Jira ticket 04: a Work whose Ticket has no GitHub issue number); then `knownBranches` must not be empty. */
-  issueNumbers: number[]; knownBranches: string[];
+  issueNumbers: number[];
+  knownBranches: string[];
   /** Ticket 14: also report every branch/tag tip of the repository (complete listings) and whether `base` requires pull requests with no
    * bypass for the reading App (rulesets / classic protection). Refs and rules are facts; Control decides. */
-  refs?: boolean; base?: string;
+  refs?: boolean;
+  base?: string;
   /** Ticket 21: compare this commit (the Factory-known tip) with the current tip of the FIRST known branch when they differ. */
   compareFrom?: string;
   /** Review HIGH: also list the push activity of the FIRST known branch and compare each of these tips, and every tip that activity
    * reports, with its current tip (ancestry + files changed since). */
-  preserve?: string[] };
+  preserve?: string[];
+};
 /** Review HIGH: push activity of a branch as GitHub reports it (who moved it from which tip to which). */
-export type BranchActivity = { state: 'complete'; entries: { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[]; truncated: boolean } |
-  { state: 'unknown'; code: string };
+export type BranchActivity =
+  | {
+      state: 'complete';
+      entries: { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[];
+      truncated: boolean;
+    }
+  | { state: 'unknown'; code: string };
 /** Ticket 21: GitHub's comparison of two commits of the own branch (bounded commit/file lists; `truncated` when GitHub has more). */
-export type BranchComparison = { state: 'complete'; from: string; to: string; status: string; aheadBy: number; behindBy: number;
-  commits: { sha: string; author: { login: string; id: number } | null; authorName: string | null; subject: string }[]; files: string[]; truncated: boolean } |
-  { state: 'unknown'; code: string };
+export type BranchComparison =
+  | {
+      state: 'complete';
+      from: string;
+      to: string;
+      status: string;
+      aheadBy: number;
+      behindBy: number;
+      commits: { sha: string; author: { login: string; id: number } | null; authorName: string | null; subject: string }[];
+      files: string[];
+      truncated: boolean;
+    }
+  | { state: 'unknown'; code: string };
 /** Repository-wide branch/tag tips (`refs/heads/x`, `refs/tags/y`) from complete listings; a failed or capped read is unknown. */
 export type RefsListing = { state: 'complete'; refs: Record<string, string> } | { state: 'unknown'; code: string };
 /** `pull-request-required`: an active pull_request rule the App cannot bypass (ruleset `current_user_can_bypass: never`) or classic
  * required reviews without App bypass allowances. Never a certification of the team's barriers (spec §2.1/§8). */
-export type BaseProtection = { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
+export type BaseProtection =
+  { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
 export type PullRequestCandidate = {
-  pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean;
-  headRef: string; headRepositoryId: number | null; author: { id: number; login: string; type: string };
+  pullRequestId: number;
+  nodeId: string;
+  number: number;
+  url: string;
+  state: 'open' | 'closed';
+  merged: boolean;
+  headRef: string;
+  headRepositoryId: number | null;
+  author: { id: number; login: string; type: string };
   association: ('closing-reference' | 'cross-reference' | 'development-link' | 'known-branch')[];
   /** Ticket 14: facts Control needs to recognize its OWN publication (head commit, base, draft flag, body with the correlation marker). */
-  headSha: string; baseRef: string; draft: boolean; body: string | null;
+  headSha: string;
+  baseRef: string;
+  draft: boolean;
+  body: string | null;
 };
 /** Tip of a known own branch as read from the remote: a complete listing proves `absent`; a failed read is `unknown`, never absence. */
 export type BranchRef = { state: 'present'; sha: string } | { state: 'absent' } | { state: 'unknown'; code: string; nextStep: string };
 /** Per Ticket: complete association, or incomplete (never an empty list standing in for absence). */
-export type IssuePublication = { completeness: 'complete'; candidates: PullRequestCandidate[] } |
-  { completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
+export type IssuePublication =
+  { completeness: 'complete'; candidates: PullRequestCandidate[] } | { completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 /** An unavailable query never proves the absence of an associated or own pull request. */
-export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number;
-  issues: Record<string, IssuePublication>; limitations: string[];
-  /** Jira ticket 08: only for a branch-only correlation (no issue number), every pull request of the same complete listing whose head is a
-   * known branch of THIS repository (forks excluded), per branch. Ownership is still Control's decision (marker, App author, base). */
-  branchCandidates?: Record<string, PullRequestCandidate[]>;
-  /** One entry per known branch (empty when none was given, e.g. admission). */
-  branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection; comparison?: BranchComparison;
-  activity?: BranchActivity; ancestry?: Record<string, BranchComparison> } |
-  { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
+export type PublicationObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      repository: string;
+      repositoryId: number;
+      issues: Record<string, IssuePublication>;
+      limitations: string[];
+      /** Jira ticket 08: only for a branch-only correlation (no issue number), every pull request of the same complete listing whose head is a
+       * known branch of THIS repository (forks excluded), per branch. Ownership is still Control's decision (marker, App author, base). */
+      branchCandidates?: Record<string, PullRequestCandidate[]>;
+      /** One entry per known branch (empty when none was given, e.g. admission). */
+      branches: Record<string, BranchRef>;
+      refs?: RefsListing;
+      baseProtection?: BaseProtection;
+      comparison?: BranchComparison;
+      activity?: BranchActivity;
+      ancestry?: Record<string, BranchComparison>;
+    }
+  | {
+      kind: 'unavailable';
+      source: 'github-rest';
+      observedAt: string;
+      repository: string;
+      completeness: 'incomplete';
+      code: string;
+      waitSeconds?: number;
+      nextStep: string;
+    };
 
 /** Outcome of one draft/ready conversion. `applied`: GitHub's answer to the mutation (not yet the independent observation Control requires);
  * `known-failure`: certainly not applied; `unknown`: may have been applied — read the pull request before any repetition. */
-export type DraftConversion = { kind: 'applied'; observedAt: string; draft: boolean; headSha: string; revocation: string } |
-  { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
+export type DraftConversion =
+  | { kind: 'applied'; observedAt: string; draft: boolean; headSha: string; revocation: string }
+  | { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
 
 /** Ticket 25: outcome of ONE reopen of the Work's own pull request. `applied`: GitHub's answer (Control still observes the PR independently);
  * `known-failure`: certainly not reopened; `unknown`: may be open — read it before any repetition. */
-export type PullRequestReopen = { kind: 'applied'; observedAt: string; revocation: string } |
-  { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
+export type PullRequestReopen =
+  | { kind: 'applied'; observedAt: string; revocation: string }
+  | { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
 
 export interface CodeRepository {
   checkAccess(repo: GitHubScope, base: string): Promise<AccessDiagnostic>;
@@ -98,23 +170,58 @@ export type { LostMarker, LostMarkerCleanupResult, LostMarkerSelection, LostMark
 export type { PullRequestRef, OwnPullRequestFacts, OwnPullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
 const pullSchema = z.object({
-  id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(), html_url: z.string().url(),
-  state: z.enum(['open', 'closed']), merged_at: z.string().nullable().optional(), title: z.string().nullable().optional(), body: z.string().nullable().optional(),
+  id: z.number().int().positive().safe(),
+  node_id: z.string().min(1).max(256),
+  number: z.number().int().positive().safe(),
+  html_url: z.string().url(),
+  state: z.enum(['open', 'closed']),
+  merged_at: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
   draft: z.boolean(),
-  head: z.object({ ref: z.string().min(1).max(512), sha: z.string().regex(/^[0-9a-f]{40}$/), repo: z.object({ id: z.number().int().positive().safe() }).nullable() }),
+  head: z.object({
+    ref: z.string().min(1).max(512),
+    sha: z.string().regex(/^[0-9a-f]{40}$/),
+    repo: z.object({ id: z.number().int().positive().safe() }).nullable(),
+  }),
   base: z.object({ ref: z.string().min(1).max(512) }),
   user: z.object({ id: z.number().int().positive().safe(), login: z.string(), type: z.string() }),
 });
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-const timelineSchema = z.array(z.object({ event: z.string(), source: z.object({ issue: z.object({
-  number: z.number().int().positive().safe(), html_url: z.string().url(), pull_request: z.unknown().optional() }).optional() }).optional() }));
+const timelineSchema = z.array(
+  z.object({
+    event: z.string(),
+    source: z
+      .object({
+        issue: z
+          .object({
+            number: z.number().int().positive().safe(),
+            html_url: z.string().url(),
+            pull_request: z.unknown().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+  }),
+);
 type Pull = z.infer<typeof pullSchema>;
-const candidateOf = (pull: Pull, association: PullRequestCandidate['association']): PullRequestCandidate => ({ pullRequestId: pull.id, nodeId: pull.node_id,
-  number: pull.number, url: pull.html_url, state: pull.state, merged: Boolean(pull.merged_at),
-  headRef: pull.head.ref, headRepositoryId: pull.head.repo?.id ?? null, author: { id: pull.user.id, login: pull.user.login, type: pull.user.type },
-  association, headSha: pull.head.sha, baseRef: pull.base.ref, draft: pull.draft,
+const candidateOf = (pull: Pull, association: PullRequestCandidate['association']): PullRequestCandidate => ({
+  pullRequestId: pull.id,
+  nodeId: pull.node_id,
+  number: pull.number,
+  url: pull.html_url,
+  state: pull.state,
+  merged: Boolean(pull.merged_at),
+  headRef: pull.head.ref,
+  headRepositoryId: pull.head.repo?.id ?? null,
+  author: { id: pull.user.id, login: pull.user.login, type: pull.user.type },
+  association,
+  headSha: pull.head.sha,
+  baseRef: pull.base.ref,
+  draft: pull.draft,
   // Bounded copy of the body: Control only looks for its correlation marker and checks the description's shape.
-  body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null });
+  body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null,
+});
 
 export function createCodeRepository(options: { github: GitHubAccess }): CodeRepository {
   async function associate(repo: GitHubScope, issueNumber: number, pulls: Pull[], repositoryId: number, knownBranches: string[]): Promise<IssuePublication> {
@@ -126,8 +233,13 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       if (!parsed.success) throw new InvalidGitHubObservation();
       return parsed.data;
     });
-    if (!timeline.ok) return { completeness: 'incomplete', code: timeline.code, ...(timeline.waitSeconds !== undefined ? { waitSeconds: timeline.waitSeconds } : {}),
-      nextStep: `Issue timeline unavailable; associated pull requests are unknown. ${timeline.nextStep}` };
+    if (!timeline.ok)
+      return {
+        completeness: 'incomplete',
+        code: timeline.code,
+        ...(timeline.waitSeconds !== undefined ? { waitSeconds: timeline.waitSeconds } : {}),
+        nextStep: `Issue timeline unavailable; associated pull requests are unknown. ${timeline.nextStep}`,
+      };
     const linked = new Map<number, Set<PullRequestCandidate['association'][number]>>();
     const add = (number: number, kind: PullRequestCandidate['association'][number]) => linked.set(number, (linked.get(number) ?? new Set()).add(kind));
     const ownPull = new RegExp(`^https://github\\.com/${escape(repo.repository)}/pull/(\\d+)$`, 'i');
@@ -136,11 +248,21 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       const source = event.source?.issue;
       const number = source && source.pull_request !== undefined ? Number(ownPull.exec(source.html_url)?.[1] ?? NaN) : NaN;
       if (event.event === 'cross-referenced' && Number.isSafeInteger(number)) add(number, 'cross-reference');
-      else if (event.event === 'connected') { if (Number.isSafeInteger(number)) add(number, 'development-link'); else unidentifiedLinks++; }
-      else if (event.event === 'disconnected') { if (Number.isSafeInteger(number)) linked.get(number)?.delete('development-link'); else unidentifiedLinks--; }
+      else if (event.event === 'connected') {
+        if (Number.isSafeInteger(number)) add(number, 'development-link');
+        else unidentifiedLinks++;
+      } else if (event.event === 'disconnected') {
+        if (Number.isSafeInteger(number)) linked.get(number)?.delete('development-link');
+        else unidentifiedLinks--;
+      }
     }
-    if (unidentifiedLinks > 0) return { completeness: 'incomplete', code: 'ASSOCIATION_UNIDENTIFIED',
-      nextStep: 'The issue timeline shows a Development link without an identifiable pull request; associated pull requests cannot be ruled out. Operator must inspect the issue on GitHub.' };
+    if (unidentifiedLinks > 0)
+      return {
+        completeness: 'incomplete',
+        code: 'ASSOCIATION_UNIDENTIFIED',
+        nextStep:
+          'The issue timeline shows a Development link without an identifiable pull request; associated pull requests cannot be ruled out. Operator must inspect the issue on GitHub.',
+      };
     for (const pull of pulls) {
       if (closing.test(pull.title ?? '') || closing.test(pull.body ?? '')) add(pull.number, 'closing-reference');
       if (knownBranches.includes(pull.head.ref) && pull.head.repo?.id === repositoryId) add(pull.number, 'known-branch');
@@ -150,9 +272,18 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     for (const [number, kinds] of [...linked].sort(([a], [b]) => a - b)) {
       if (!kinds.size) continue;
       const pull = pulls.find(item => item.number === number);
-      if (!pull) return { completeness: 'incomplete', code: 'ASSOCIATED_PULL_REQUEST_NOT_LISTED',
-        nextStep: `Pull request #${number} is associated by the timeline but absent from the complete listing; association cannot be evaluated.` };
-      candidates.push(candidateOf(pull, order.filter(kind => kinds.has(kind))));
+      if (!pull)
+        return {
+          completeness: 'incomplete',
+          code: 'ASSOCIATED_PULL_REQUEST_NOT_LISTED',
+          nextStep: `Pull request #${number} is associated by the timeline but absent from the complete listing; association cannot be evaluated.`,
+        };
+      candidates.push(
+        candidateOf(
+          pull,
+          order.filter(kind => kinds.has(kind)),
+        ),
+      );
     }
     return { completeness: 'complete', candidates };
   }
@@ -175,64 +306,123 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     if (!/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/.test(base)) return { state: 'unknown', code: 'INVALID_BRANCH' };
     const read = await options.github.read(repo, 'publication-read', async session => {
       const path = base.split('/').map(encodeURIComponent).join('/');
-      const rules = z.array(z.object({ type: z.string(), ruleset_id: z.number().int().positive().optional() })).safeParse(await session.list(`/repos/${repo.repository}/rules/branches/${path}`));
+      const rules = z
+        .array(z.object({ type: z.string(), ruleset_id: z.number().int().positive().optional() }))
+        .safeParse(await session.list(`/repos/${repo.repository}/rules/branches/${path}`));
       if (!rules.success) throw new InvalidGitHubObservation();
       const sources: string[] = [];
       for (const id of [...new Set(rules.data.filter(rule => rule.type === 'pull_request' && rule.ruleset_id).map(rule => rule.ruleset_id!))].slice(0, 10)) {
-        const ruleset = z.object({ id: z.literal(id), enforcement: z.string(), current_user_can_bypass: z.string().optional() }).safeParse(await session.get(`/repos/${repo.repository}/rulesets/${id}`));
+        const ruleset = z
+          .object({ id: z.literal(id), enforcement: z.string(), current_user_can_bypass: z.string().optional() })
+          .safeParse(await session.get(`/repos/${repo.repository}/rulesets/${id}`));
         if (!ruleset.success) throw new InvalidGitHubObservation();
         if (ruleset.data.enforcement === 'active' && ruleset.data.current_user_can_bypass === 'never') sources.push(`ruleset:${id}`);
       }
       let classic: unknown = null;
-      try { classic = await session.get(`/repos/${repo.repository}/branches/${path}/protection`); }
-      catch (error) { if (!(error instanceof Error && error.message === 'GITHUB_NOT_FOUND_OR_HIDDEN')) throw error; }
-      const parsed = z.object({ required_pull_request_reviews: z.object({ bypass_pull_request_allowances: z.object({ apps: z.array(z.unknown()) }).optional() }).optional() }).safeParse(classic ?? {});
+      try {
+        classic = await session.get(`/repos/${repo.repository}/branches/${path}/protection`);
+      } catch (error) {
+        if (!(error instanceof Error && error.message === 'GITHUB_NOT_FOUND_OR_HIDDEN')) throw error;
+      }
+      const parsed = z
+        .object({ required_pull_request_reviews: z.object({ bypass_pull_request_allowances: z.object({ apps: z.array(z.unknown()) }).optional() }).optional() })
+        .safeParse(classic ?? {});
       if (!parsed.success) throw new InvalidGitHubObservation();
       const reviews = parsed.data.required_pull_request_reviews;
-      if (reviews && !(reviews.bypass_pull_request_allowances?.apps.length)) sources.push('classic');
+      if (reviews && !reviews.bypass_pull_request_allowances?.apps.length) sources.push('classic');
       return sources;
     });
     if (!read.ok) return { state: 'unknown', code: read.code };
-    return read.value.length ? { state: 'pull-request-required', sources: read.value } : { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' };
+    return read.value.length
+      ? { state: 'pull-request-required', sources: read.value }
+      : { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' };
   }
   /** Ticket 21: `from...to` comparison (Contents read). Commits are reported oldest first, at most 50; files at most 100. */
   async function compare(repo: GitHubScope, from: string, to: string): Promise<BranchComparison> {
-    const commit = z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), author: z.object({ login: z.string().max(100), id: z.number().int().positive().safe() }).nullable(),
-      commit: z.object({ author: z.object({ name: z.string().max(512).nullable().optional() }).nullable().optional(), message: z.string() }) });
+    const commit = z.object({
+      sha: z.string().regex(/^[0-9a-f]{40}$/),
+      author: z.object({ login: z.string().max(100), id: z.number().int().positive().safe() }).nullable(),
+      commit: z.object({
+        author: z
+          .object({ name: z.string().max(512).nullable().optional() })
+          .nullable()
+          .optional(),
+        message: z.string(),
+      }),
+    });
     const read = await options.github.read(repo, 'publication-read', async session => {
-      const parsed = z.object({ status: z.string().max(32), ahead_by: z.number().int().nonnegative().safe(), behind_by: z.number().int().nonnegative().safe(),
-        total_commits: z.number().int().nonnegative().safe(), commits: z.array(commit), files: z.array(z.object({ filename: z.string().max(4096) })).optional() })
+      const parsed = z
+        .object({
+          status: z.string().max(32),
+          ahead_by: z.number().int().nonnegative().safe(),
+          behind_by: z.number().int().nonnegative().safe(),
+          total_commits: z.number().int().nonnegative().safe(),
+          commits: z.array(commit),
+          files: z.array(z.object({ filename: z.string().max(4096) })).optional(),
+        })
         .safeParse(await session.get(`/repos/${repo.repository}/compare/${from}...${to}`));
       if (!parsed.success) throw new InvalidGitHubObservation();
       return parsed.data;
     });
     if (!read.ok) return { state: 'unknown', code: read.code };
     const value = read.value;
-    return { state: 'complete', from, to, status: value.status, aheadBy: value.ahead_by, behindBy: value.behind_by,
-      commits: value.commits.slice(0, 50).map(item => ({ sha: item.sha, author: item.author ? { login: item.author.login, id: item.author.id } : null,
-        authorName: item.commit.author?.name ?? null, subject: (item.commit.message.split('\n')[0] ?? '').slice(0, 200) })),
+    return {
+      state: 'complete',
+      from,
+      to,
+      status: value.status,
+      aheadBy: value.ahead_by,
+      behindBy: value.behind_by,
+      commits: value.commits.slice(0, 50).map(item => ({
+        sha: item.sha,
+        author: item.author ? { login: item.author.login, id: item.author.id } : null,
+        authorName: item.commit.author?.name ?? null,
+        subject: (item.commit.message.split('\n')[0] ?? '').slice(0, 200),
+      })),
       files: (value.files ?? []).slice(0, 100).map(item => item.filename),
-      truncated: value.total_commits > Math.min(50, value.commits.length) || (value.files?.length ?? 0) > 100 };
+      truncated: value.total_commits > Math.min(50, value.commits.length) || (value.files?.length ?? 0) > 100,
+    };
   }
   /** Review HIGH: push activity of one branch (bounded: 100 entries; more = truncated). */
   async function activityOf(repo: GitHubScope, branch: string): Promise<BranchActivity> {
-    const entry = z.object({ before: z.string().regex(/^[0-9a-f]{40}$/), after: z.string().regex(/^[0-9a-f]{40}$/), activity_type: z.string().max(64), timestamp: z.string().max(64),
-      actor: z.object({ login: z.string().max(100), id: z.number().int().positive().safe() }).nullable().optional() });
+    const entry = z.object({
+      before: z.string().regex(/^[0-9a-f]{40}$/),
+      after: z.string().regex(/^[0-9a-f]{40}$/),
+      activity_type: z.string().max(64),
+      timestamp: z.string().max(64),
+      actor: z
+        .object({ login: z.string().max(100), id: z.number().int().positive().safe() })
+        .nullable()
+        .optional(),
+    });
     const read = await options.github.read(repo, 'publication-read', async session => {
-      const parsed = z.array(entry).safeParse(await session.list(`/repos/${repo.repository}/activity?ref=${encodeURIComponent(`refs/heads/${branch}`)}`, { maxPages: 1 }));
+      const parsed = z
+        .array(entry)
+        .safeParse(await session.list(`/repos/${repo.repository}/activity?ref=${encodeURIComponent(`refs/heads/${branch}`)}`, { maxPages: 1 }));
       if (!parsed.success) throw new InvalidGitHubObservation();
       return parsed.data;
     });
     if (!read.ok) return { state: 'unknown', code: read.code };
-    return { state: 'complete', truncated: read.value.length >= 100, entries: read.value.slice(0, 100).map(item => ({ before: item.before, after: item.after, type: item.activity_type,
-      actor: item.actor ? { login: item.actor.login, id: item.actor.id } : null, at: item.timestamp })) };
+    return {
+      state: 'complete',
+      truncated: read.value.length >= 100,
+      entries: read.value.slice(0, 100).map(item => ({
+        before: item.before,
+        after: item.after,
+        type: item.activity_type,
+        actor: item.actor ? { login: item.actor.login, id: item.actor.id } : null,
+        at: item.timestamp,
+      })),
+    };
   }
   /** Remote tip of one own branch: a complete matching-refs listing filtered to the exact ref (absence only from a complete listing). */
   async function branchRef(repo: GitHubScope, branch: string, repositoryId: number): Promise<BranchRef> {
-    if (!/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) return { state: 'unknown', code: 'INVALID_BRANCH', nextStep: 'Branch name rejected locally; nothing was read.' };
+    if (!/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch))
+      return { state: 'unknown', code: 'INVALID_BRANCH', nextStep: 'Branch name rejected locally; nothing was read.' };
     const read = await options.github.read(repo, 'publication-read', async session => {
       if (session.repositoryId !== repositoryId) throw new InvalidGitHubObservation();
-      const parsed = z.array(z.object({ ref: z.string(), object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), type: z.string() }) }))
+      const parsed = z
+        .array(z.object({ ref: z.string(), object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), type: z.string() }) }))
         .safeParse(await session.list(`/repos/${repo.repository}/git/matching-refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`));
       if (!parsed.success) throw new InvalidGitHubObservation();
       const exact = parsed.data.filter(item => item.ref === `refs/heads/${branch}`);
@@ -250,14 +440,26 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         const value = written.value as { draft: boolean; headSha: string };
         return { kind: 'applied', observedAt: written.observedAt, draft: value.draft, headSha: value.headSha, revocation: written.revocation };
       }
-      return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
-        nextStep: written.nextStep, revocation: written.revocation };
+      return {
+        kind: written.outcome,
+        observedAt: written.observedAt,
+        code: written.code,
+        ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
+        nextStep: written.nextStep,
+        revocation: written.revocation,
+      };
     },
     async reopenPullRequest(pr, effect) {
       const written = await options.github.reopen(pr.repo, { number: pr.number, nodeId: pr.nodeId }, effect.effectId);
       if (written.ok) return { kind: 'applied', observedAt: written.observedAt, revocation: written.revocation };
-      return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
-        nextStep: written.nextStep, revocation: written.revocation };
+      return {
+        kind: written.outcome,
+        observedAt: written.observedAt,
+        code: written.code,
+        ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
+        nextStep: written.nextStep,
+        revocation: written.revocation,
+      };
     },
     ...deliveryOperations(options),
     ...lossMarkerOperations(options),
@@ -267,14 +469,16 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();
         const branch = await session.get(`/repos/${repo.repository}/branches/${encodeURIComponent(base)}`);
-        if (!z.object({ name: z.literal(base), commit: z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/) }) }).safeParse(branch).success) throw new InvalidGitHubObservation();
+        if (!z.object({ name: z.literal(base), commit: z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/) }) }).safeParse(branch).success)
+          throw new InvalidGitHubObservation();
       });
     },
     async findPublication(correlation) {
       const { repo } = correlation;
       const numbers = [...new Set(correlation.issueNumbers)];
       // Jira ticket 04: a branch-only correlation (no issue number: a Jira Work's refs) reads the listing and the known branches, never a timeline.
-      if ((!numbers.length && !correlation.knownBranches.length) || numbers.some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('INVALID_PUBLICATION_CORRELATION');
+      if ((!numbers.length && !correlation.knownBranches.length) || numbers.some(n => !Number.isSafeInteger(n) || n <= 0))
+        throw new Error('INVALID_PUBLICATION_CORRELATION');
       const pulls = await options.github.read(repo, 'repository-read', async session => {
         const parsed = z.array(pullSchema).safeParse(await session.list(`/repos/${repo.repository}/pulls?state=all`));
         if (!parsed.success) throw new InvalidGitHubObservation();
@@ -285,41 +489,77 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         }
         return [...unique.values()];
       });
-      if (!pulls.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, completeness: 'incomplete', code: pulls.code,
-        ...(pulls.waitSeconds !== undefined ? { waitSeconds: pulls.waitSeconds } : {}), nextStep: pulls.nextStep };
+      if (!pulls.ok)
+        return {
+          kind: 'unavailable',
+          source: 'github-rest',
+          observedAt: pulls.observedAt,
+          repository: repo.repository,
+          completeness: 'incomplete',
+          code: pulls.code,
+          ...(pulls.waitSeconds !== undefined ? { waitSeconds: pulls.waitSeconds } : {}),
+          nextStep: pulls.nextStep,
+        };
       const issues: Record<string, IssuePublication> = {};
-      for (const issueNumber of numbers) issues[String(issueNumber)] = await associate(repo, issueNumber, pulls.value, pulls.repositoryId, correlation.knownBranches);
+      for (const issueNumber of numbers)
+        issues[String(issueNumber)] = await associate(repo, issueNumber, pulls.value, pulls.repositoryId, correlation.knownBranches);
       const branches: Record<string, BranchRef> = {};
       for (const branch of [...new Set(correlation.knownBranches)]) branches[branch] = await branchRef(repo, branch, pulls.repositoryId);
-      const branchCandidates = numbers.length ? undefined : Object.fromEntries([...new Set(correlation.knownBranches)].map(branch => [branch,
-        pulls.value.filter(pull => pull.head.ref === branch && pull.head.repo?.id === pulls.repositoryId).sort((a, b) => a.number - b.number)
-          .map(pull => candidateOf(pull, ['known-branch']))]));
+      const branchCandidates = numbers.length
+        ? undefined
+        : Object.fromEntries(
+            [...new Set(correlation.knownBranches)].map(branch => [
+              branch,
+              pulls.value
+                .filter(pull => pull.head.ref === branch && pull.head.repo?.id === pulls.repositoryId)
+                .sort((a, b) => a.number - b.number)
+                .map(pull => candidateOf(pull, ['known-branch'])),
+            ]),
+          );
       const refs = correlation.refs ? await refsListing(repo) : undefined;
       const first = correlation.knownBranches[0] !== undefined ? branches[correlation.knownBranches[0]] : undefined;
-      const comparison = correlation.compareFrom && /^[0-9a-f]{40}$/.test(correlation.compareFrom) && first?.state === 'present' && first.sha !== correlation.compareFrom
-        ? await compare(repo, correlation.compareFrom, first.sha) : undefined;
+      const comparison =
+        correlation.compareFrom && /^[0-9a-f]{40}$/.test(correlation.compareFrom) && first?.state === 'present' && first.sha !== correlation.compareFrom
+          ? await compare(repo, correlation.compareFrom, first.sha)
+          : undefined;
       let activity: BranchActivity | undefined;
       let ancestry: Record<string, BranchComparison> | undefined;
       if (correlation.preserve && correlation.knownBranches[0] !== undefined) {
         activity = await activityOf(repo, correlation.knownBranches[0]);
         if (first?.state === 'present') {
-          const tips = [...new Set([...correlation.preserve, ...(activity.state === 'complete' ? activity.entries.flatMap(item => [item.after, item.before]) : [])])]
-            .filter(tip => /^[0-9a-f]{40}$/.test(tip) && !/^0{40}$/.test(tip) && tip !== first.sha);
+          const tips = [
+            ...new Set([...correlation.preserve, ...(activity.state === 'complete' ? activity.entries.flatMap(item => [item.after, item.before]) : [])]),
+          ].filter(tip => /^[0-9a-f]{40}$/.test(tip) && !/^0{40}$/.test(tip) && tip !== first.sha);
           ancestry = {};
           // Bounded: at most 16 comparisons; a tip beyond the bound is absent (unknown to Control, never assumed preserved).
           for (const tip of tips.slice(0, 16)) ancestry[tip] = await compare(repo, tip, first.sha);
         }
       }
       const baseProtection = correlation.base !== undefined ? await protection(repo, correlation.base) : undefined;
-      return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches,
+      return {
+        kind: 'observed',
+        source: 'github-rest',
+        observedAt: pulls.observedAt,
+        repository: repo.repository,
+        repositoryId: pulls.repositoryId,
+        issues,
+        branches,
         ...(branchCandidates ? { branchCandidates } : {}),
-        ...(refs ? { refs } : {}), ...(baseProtection ? { baseProtection } : {}), ...(comparison ? { comparison } : {}), ...(activity ? { activity } : {}), ...(ancestry ? { ancestry } : {}), limitations: [
-        ...(correlation.knownBranches.length ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.'] : []),
-        'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',
-        'Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).',
-        'A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.',
-        'Listing and timeline are separate reads, not an atomic remote snapshot.',
-      ] };
+        ...(refs ? { refs } : {}),
+        ...(baseProtection ? { baseProtection } : {}),
+        ...(comparison ? { comparison } : {}),
+        ...(activity ? { activity } : {}),
+        ...(ancestry ? { ancestry } : {}),
+        limitations: [
+          ...(correlation.knownBranches.length
+            ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.']
+            : []),
+          'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',
+          'Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).',
+          'A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.',
+          'Listing and timeline are separate reads, not an atomic remote snapshot.',
+        ],
+      };
     },
   };
 }

@@ -11,7 +11,11 @@ import { createHash } from 'node:crypto';
 // preserved evidence, a session copy). Nothing is followed; an unsafe entry refuses the whole deletion before anything is touched.
 const workId = 'w-forget';
 const base = { workId, executionId: 'e-1', invocationId: 'i-1', role: 'builder' as const, environmentRef: 'env', bootRef: 'boot' };
-const exists = (path: string) => lstat(path).then(() => true, () => false);
+const exists = (path: string) =>
+  lstat(path).then(
+    () => true,
+    () => false,
+  );
 
 async function area(t: { after(fn: () => Promise<void>): void }) {
   const root = await mkdtemp(join(tmpdir(), 'records-forget31-'));
@@ -19,13 +23,23 @@ async function area(t: { after(fn: () => Promise<void>): void }) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
   const output = await records.openOutput({ ...base, callId: randomUUID() });
-  await output.write(Buffer.from('tool output')); await output.finish();
+  await output.write(Buffer.from('tool output'));
+  await output.finish();
   await records.record({ ...base, callId: 'worker-start' }, { version: 1, kind: 'worker-start' });
-  await preserveEvidence({ root, workId, label: 'env', stage: async destination => { await mkdir(join(destination, 'review'), { mode: 0o755 }); await writeFile(join(destination, 'review', 'a.json'), '{}'); } });
+  await preserveEvidence({
+    root,
+    workId,
+    label: 'env',
+    stage: async destination => {
+      await mkdir(join(destination, 'review'), { mode: 0o755 });
+      await writeFile(join(destination, 'review', 'a.json'), '{}');
+    },
+  });
   const data = Buffer.from('{"type":"session"}\n');
   await preserveSessionCopy(root, workId, 'e-1', data, createHash('sha256').update(data).digest('hex'));
   const foreign = await records.openOutput({ ...base, workId: 'w-other', callId: randomUUID() });
-  await foreign.write(Buffer.from('foreign')); await foreign.finish();
+  await foreign.write(Buffer.from('foreign'));
+  await foreign.finish();
   return { root };
 }
 
@@ -37,8 +51,8 @@ test('forget: inspects the whole tree, deletes it (rename to a tombstone first),
   assert.ok(tree.files >= 8 && tree.bytes > 0, JSON.stringify(tree));
   const result = await forgetWorkRecords(root, workId);
   assert.deepEqual([result.outcome, result.code, result.files], ['removed', null, tree.files]);
-  assert.equal(await exists(join(root, workId)) || await exists(join(root, `.forget-${workId}`)), false);
-  assert.ok(await exists(join(root, 'w-other')), 'another Work\'s Records stay');
+  assert.equal((await exists(join(root, workId))) || (await exists(join(root, `.forget-${workId}`))), false);
+  assert.ok(await exists(join(root, 'w-other')), "another Work's Records stay");
   assert.deepEqual(await forgetWorkRecords(root, workId), { outcome: 'absent', code: null, files: 0, bytes: 0 });
   const after = await inspectWorkRecords(root, workId);
   assert.deepEqual([after.completeness, after.present, after.leftover, after.files], ['complete', false, false, 0]);
@@ -46,7 +60,8 @@ test('forget: inspects the whole tree, deletes it (rename to a tombstone first),
 
 test('forget: an unsafe entry (symlink) refuses the whole deletion before anything is touched; invalid ids and a foreign root are refused', async t => {
   const { root } = await area(t);
-  const target = join(root, 'outside'); await writeFile(target, 'must survive');
+  const target = join(root, 'outside');
+  await writeFile(target, 'must survive');
   await symlink(target, join(root, workId, 'evidence', 'link'));
   const tree = await inspectWorkRecords(root, workId);
   assert.deepEqual([tree.completeness, tree.unsafe], ['incomplete', [`${workId}/evidence/link`]]);
@@ -71,8 +86,13 @@ test('forget: an interrupted earlier deletion (tombstone left) is visible to the
 
 test('forget: an unsafe entry appearing mid-removal (after the rename) is a PARTIAL deletion with its counts, never a clean refusal; the next forget completes it', async t => {
   const { root } = await area(t);
-  const target = join(root, 'outside'); await writeFile(target, 'must survive');
-  const result = await forgetWorkRecords(root, workId, { afterRename: async tombstone => { await symlink(target, join(tombstone, 'aaa-link')); } });
+  const target = join(root, 'outside');
+  await writeFile(target, 'must survive');
+  const result = await forgetWorkRecords(root, workId, {
+    afterRename: async tombstone => {
+      await symlink(target, join(tombstone, 'aaa-link'));
+    },
+  });
   assert.equal(result.outcome, 'failed');
   assert.equal(result.code, 'RECORDS_FORGET_PARTIAL_UNSAFE');
   assert.equal(typeof result.files, 'number');

@@ -10,7 +10,11 @@ test('phase guard: reads first (each after the previous one consumed), then run 
   assert.equal(phaseGuard('preflight', {}, none, false), 'TICKET_NOT_PINNED');
   assert.equal(phaseGuard('rerun', { preflight: ok }, none, true), null);
   assert.equal(phaseGuard('contexts', { preflight: ok }, none, true), 'RERUN_NOT_CONSUMED');
-  assert.equal(phaseGuard('contexts', { preflight: ok, rerun: { status: 'held' } }, new Set(['rerun-intent']), true), null, 'a held read does not stop the others');
+  assert.equal(
+    phaseGuard('contexts', { preflight: ok, rerun: { status: 'held' } }, new Set(['rerun-intent']), true),
+    null,
+    'a held read does not stop the others',
+  );
   assert.equal(phaseGuard('run', { preflight: ok, homonym: ok }, new Set(['homonym-intent']), true), null);
   assert.equal(phaseGuard('run', { preflight: ok }, none, true), 'HOMONYM_NOT_CONSUMED');
   assert.equal(phaseGuard('strict', { preflight: ok, run: { status: 'held' } }, none, true), 'RUN_SUCCESS_REQUIRED');
@@ -38,48 +42,129 @@ test('guards: run = implementation then publication; strict = ONE repair then pu
   assert.deepEqual([strictConversions(true), strictConversions(false), strictConversions(false)], [true, true, false]);
 });
 
-const work = (extra: Record<string, unknown>) => ({ publication: { state: 'published' }, execution: null, impediments: [], correction: null, corrections: [],
-  readiness: null, checks: null, ...extra }) as unknown as WorkView;
+const work = (extra: Record<string, unknown>) =>
+  ({
+    publication: { state: 'published' },
+    execution: null,
+    impediments: [],
+    correction: null,
+    corrections: [],
+    readiness: null,
+    checks: null,
+    ...extra,
+  }) as unknown as WorkView;
 const facts = { activations: 2, humanObserved: true, quietCyclesDone: true, conversions: 0, refusedConversions: 0 };
-const ready = (effects: string[]) => ({ flag: { factory: 'ready', observed: 'ready' }, effects: effects.map(action => ({ action, state: 'confirmed' })), effect: null });
-test('settled: run ends at the Factory\'s ready with satisfied checks and no correction; strict at ONE published strict correction and ready again', () => {
-  assert.deepEqual(settled('run', work({ readiness: ready(['mark-ready']), checks: { latest: { outcome: 'satisfied' } } }), facts), { done: true, success: true });
+const ready = (effects: string[]) => ({
+  flag: { factory: 'ready', observed: 'ready' },
+  effects: effects.map(action => ({ action, state: 'confirmed' })),
+  effect: null,
+});
+test("settled: run ends at the Factory's ready with satisfied checks and no correction; strict at ONE published strict correction and ready again", () => {
+  assert.deepEqual(settled('run', work({ readiness: ready(['mark-ready']), checks: { latest: { outcome: 'satisfied' } } }), facts), {
+    done: true,
+    success: true,
+  });
   assert.deepEqual(settled('run', work({ readiness: ready([]), checks: { latest: { outcome: 'waiting' } } }), facts), { done: false, success: false });
-  assert.deepEqual(settled('run', work({ corrections: [{ outcome: 'published' }] }), facts), { done: true, success: false }, 'a correction in run is not this design');
-  const strict = work({ corrections: [{ outcome: 'published', reasons: [{ code: 'STRICT_UPDATE_REQUIRED' }] }], readiness: ready(['mark-ready', 'convert-to-draft', 'mark-ready']),
-    checks: { latest: { outcome: 'satisfied' } } });
+  assert.deepEqual(
+    settled('run', work({ corrections: [{ outcome: 'published' }] }), facts),
+    { done: true, success: false },
+    'a correction in run is not this design',
+  );
+  const strict = work({
+    corrections: [{ outcome: 'published', reasons: [{ code: 'STRICT_UPDATE_REQUIRED' }] }],
+    readiness: ready(['mark-ready', 'convert-to-draft', 'mark-ready']),
+    checks: { latest: { outcome: 'satisfied' } },
+  });
   assert.deepEqual(settled('strict', strict, facts), { done: true, success: true });
   assert.deepEqual(settled('strict', strict, { ...facts, humanObserved: false }), { done: true, success: false });
   assert.deepEqual(settled('strict', work({ publication: { state: 'not-publishable', reasons: ['X'] } }), facts), { done: true, success: false });
-  const drafted = work({ corrections: [{ outcome: 'published' }], readiness: { flag: { factory: 'ready', observed: 'draft' }, humanDraft: { observedAt: 't' } } });
+  const drafted = work({
+    corrections: [{ outcome: 'published' }],
+    readiness: { flag: { factory: 'ready', observed: 'draft' }, humanDraft: { observedAt: 't' } },
+  });
   assert.deepEqual(settled('human-draft', drafted, { ...facts, activations: 0 }), { done: true, success: true });
   assert.deepEqual(settled('human-draft', drafted, { ...facts, activations: 0, conversions: 1 }), { done: true, success: false });
 });
 
 test('the probe PR is evaluated with its own identity: no ownership reason can mask a check fact', () => {
-  const expect = probeExpectation({ repositoryId: 3, pullRequest: { pullRequestId: 9, nodeId: 'PR_n', number: 101, headRef: 'q34s-probe', headSha: 'a'.repeat(40), baseRef: 'main', author: { id: 7 } } });
-  assert.deepEqual(expect, { own: { pullRequestId: 9, nodeId: 'PR_n', number: 101, headRef: 'q34s-probe', base: 'main', authorId: 7 }, repositoryId: 3, linkedHeads: ['a'.repeat(40)], localRequiredChecks: [] });
+  const expect = probeExpectation({
+    repositoryId: 3,
+    pullRequest: { pullRequestId: 9, nodeId: 'PR_n', number: 101, headRef: 'q34s-probe', headSha: 'a'.repeat(40), baseRef: 'main', author: { id: 7 } },
+  });
+  assert.deepEqual(expect, {
+    own: { pullRequestId: 9, nodeId: 'PR_n', number: 101, headRef: 'q34s-probe', base: 'main', authorId: 7 },
+    repositoryId: 3,
+    linkedHeads: ['a'.repeat(40)],
+    localRequiredChecks: [],
+  });
 });
 
 function passing() {
   const [h1, h2, b1] = ['1', '2', 'b'].map(c => c.repeat(40)) as [string, string, string];
   const req = (context: string, extra: Record<string, unknown>) => ({ context, ...extra });
   return {
-    run: { status: 'success', events: [{ call: 'checks', head: h1, outcome: 'waiting' }, { call: 'checks', head: h1, outcome: 'satisfied' }] },
-    strict: { status: 'success' }, strictObserved: { sha: b1 }, humanDraft: { status: 'success', events: [] },
+    run: {
+      status: 'success',
+      events: [
+        { call: 'checks', head: h1, outcome: 'waiting' },
+        { call: 'checks', head: h1, outcome: 'satisfied' },
+      ],
+    },
+    strict: { status: 'success' },
+    strictObserved: { sha: b1 },
+    humanDraft: { status: 'success', events: [] },
     rerun: { status: 'success', reads: [{ evaluation: { outcome: 'waiting', requirements: [req('factory-gate', { state: 'waiting' })] } }] },
-    contexts: { status: 'success', evaluation: { strict: { required: true }, reasons: [{ category: 'wait', code: 'REQUIRED_CHECK_ABSENT', subject: 'factory-absent' }],
-      requirements: [req('factory-optional', { state: 'satisfied', results: [{ conclusion: 'skipped' }] })], modalities: [{ type: 'required_linear_history' }] } },
-    classic: { status: 'success', evaluation: { outcome: 'blocked', requirements: [req('factory-gate', { sources: ['classic', 'ruleset:26435808:Repository:x'] })],
-      modalities: [{ type: 'lock_branch', source: 'classic', merge: 'blocking', reason: 'BRANCH_LOCKED' }, { type: 'required_signatures', source: 'classic', merge: 'blocking', reason: 'SIGNED_COMMITS_REQUIRED' }] } },
-    homonym: { status: 'success', evaluation: { requirements: [req('factory-gate', { state: 'satisfied', otherOrigin: [{ kind: 'status', status: 'failure' }] })] } },
-    inspect: { work: { publication: { linkedHeads: [h1, h2] }, corrections: [{ outcome: 'published', reasons: [{ code: 'STRICT_UPDATE_REQUIRED', headSha: h1, baseTip: b1 }] }],
-      readiness: { humanDraft: { observedAt: 't' }, effects: [{ action: 'mark-ready', state: 'confirmed' }, { action: 'convert-to-draft', state: 'confirmed' }], effect: { action: 'mark-ready', state: 'confirmed' } } },
-    compare: { value: { behind_by: 0 } }, changedFiles: ['docs/FACTORY_CHECKS_S.md'], pull: { pullRequest: { merged: false } }, pushViolations: [], sessions: [{ tokenPattern: false }], secretScan: { matches: [] } },
+    contexts: {
+      status: 'success',
+      evaluation: {
+        strict: { required: true },
+        reasons: [{ category: 'wait', code: 'REQUIRED_CHECK_ABSENT', subject: 'factory-absent' }],
+        requirements: [req('factory-optional', { state: 'satisfied', results: [{ conclusion: 'skipped' }] })],
+        modalities: [{ type: 'required_linear_history' }],
+      },
+    },
+    classic: {
+      status: 'success',
+      evaluation: {
+        outcome: 'blocked',
+        requirements: [req('factory-gate', { sources: ['classic', 'ruleset:26435808:Repository:x'] })],
+        modalities: [
+          { type: 'lock_branch', source: 'classic', merge: 'blocking', reason: 'BRANCH_LOCKED' },
+          { type: 'required_signatures', source: 'classic', merge: 'blocking', reason: 'SIGNED_COMMITS_REQUIRED' },
+        ],
+      },
+    },
+    homonym: {
+      status: 'success',
+      evaluation: { requirements: [req('factory-gate', { state: 'satisfied', otherOrigin: [{ kind: 'status', status: 'failure' }] })] },
+    },
+    inspect: {
+      work: {
+        publication: { linkedHeads: [h1, h2] },
+        corrections: [{ outcome: 'published', reasons: [{ code: 'STRICT_UPDATE_REQUIRED', headSha: h1, baseTip: b1 }] }],
+        readiness: {
+          humanDraft: { observedAt: 't' },
+          effects: [
+            { action: 'mark-ready', state: 'confirmed' },
+            { action: 'convert-to-draft', state: 'confirmed' },
+          ],
+          effect: { action: 'mark-ready', state: 'confirmed' },
+        },
+      },
+      compare: { value: { behind_by: 0 } },
+      changedFiles: ['docs/FACTORY_CHECKS_S.md'],
+      pull: { pullRequest: { merged: false } },
+      pushViolations: [],
+      sessions: [{ tokenPattern: false }],
+      secretScan: { matches: [] },
+    },
   } as Record<string, Record<string, unknown>>;
 }
 test('verdict: met on a complete passing set (12 checks); sensitive per obligation; a no-op fails', () => {
-  const failing = (saved: Record<string, Record<string, unknown>>) => verdictOf(saved).checks.filter(item => !item.met).map(item => item.id);
+  const failing = (saved: Record<string, Record<string, unknown>>) =>
+    verdictOf(saved)
+      .checks.filter(item => !item.met)
+      .map(item => item.id);
   assert.deepEqual(failing(passing()), []);
   assert.equal(verdictOf(passing()).checks.length, 12);
   assert.equal(verdictOf({}).passed, false);

@@ -35,42 +35,78 @@ const pullRequestRule = { type: 'pull_request', ruleset_id: 1, ruleset_source_ty
 const model = { provider: productionProfile.model.providerId, model: productionProfile.model.modelId };
 const repository = { ...worldScope, correctionLimit: 3, recoveryLimit: 3 };
 const interval = 20;
-const effective = { models: { builder: model, standards: model, spec: model }, repositories: [repository], dependencyRepositories: [], operators: ['operator-one'],
-  concurrency: 1, sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme', observationIntervalSeconds: interval } };
+const effective = {
+  models: { builder: model, standards: model, spec: model },
+  repositories: [repository],
+  dependencyRepositories: [],
+  operators: ['operator-one'],
+  concurrency: 1,
+  sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme', observationIntervalSeconds: interval },
+};
 
 test('V2-15: the environment dies under a running Builder: no model request and no tool call happens after the confirmed cessation, and Control ends the activation', async t => {
-  const world = await githubWorld(t, { issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })], pulls: [], refs: {},
-    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, comments: [], checks: {
+  const world = await githubWorld(t, {
+    issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })],
+    pulls: [],
+    refs: {},
+    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } },
+    comments: [],
+    checks: {
       branches: { main: { sha: tip, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
-      rules: { main: [pullRequestRule] }, checkRuns: {}, statuses: {}, compare: {} } });
+      rules: { main: [pullRequestRule] },
+      checkRuns: {},
+      statuses: {},
+      compare: {},
+    },
+  });
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   const fake = lambdaAccountFake();
   const guests = lambdaGuestFake(fake);
   // v2 ticket 12: what a push of the loss marker holder does on this remote: the ref appears in the gh world Control reads.
   const pushes: Promise<void>[] = [];
-  guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-'),
-    push: (ref, sha) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); } };
+  guests.world.origins[remoteUrl] = {
+    commits: [tip],
+    token: token => token.startsWith('synthetic-installation-secret-'),
+    push: (ref, sha) => {
+      pushes.push(
+        world.update(state => {
+          state.factoryRefs = { ...state.factoryRefs, [ref]: sha };
+        }),
+      );
+    },
+  };
   const clock = accountClock(fake);
-  const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
+  const watch = manualObservationTimer(milliseconds => {
+    fake.account.clock.now += milliseconds;
+  });
   // ONE ordered log of everything the assertion is about: model requests, tool calls, and the instant the SERVICE confirms the cessation.
   const log: string[] = [];
   const service: LambdaServiceFactory = profile => {
     const real = fake.service(profile);
-    return { ...real, microvm: async id => {
-      const read = await real.microvm(id);
-      if (read.ok && read.value.state === 'TERMINATED' && !log.includes('cessation-confirmed')) log.push('cessation-confirmed');
-      return read;
-    } };
+    return {
+      ...real,
+      microvm: async id => {
+        const read = await real.microvm(id);
+        if (read.ok && read.value.state === 'TERMINATED' && !log.includes('cessation-confirmed')) log.push('cessation-confirmed');
+        return read;
+      },
+    };
   };
 
   const launched: { role: string; phaseId: string; boot: string }[] = [];
   let aborted = false;
   let longRunning!: () => void;
-  const inLongCommand = new Promise<void>(resolve => { longRunning = resolve; });
+  const inLongCommand = new Promise<void>(resolve => {
+    longRunning = resolve;
+  });
   let lateCall: (() => Promise<ReadResult>) | undefined;
   guests.world.commands['git status'] = () => 0;
   // A long command of a living environment: it never ends by itself.
-  guests.world.commands['mvn deploy'] = async (_guest, run) => { longRunning(); await run.disconnected; return 0; };
+  guests.world.commands['mvn deploy'] = async (_guest, run) => {
+    longRunning();
+    await run.disconnected;
+    return 0;
+  };
   const launcher: LambdaWorkerLauncher = async (request, endpoint, signal) => {
     const context = request.context;
     launched.push({ role: context.role, phaseId: context.phaseId, boot: context.bootRef });
@@ -78,21 +114,66 @@ test('V2-15: the environment dies under a running Builder: no model request and 
     // after the invocation by the launch record, and the session file with the usage of the requests made before the environment died.
     const workerDirectory = join(workerRuntimeDirectory(world.root, context.bootRef), `w-scripted${launched.length}`);
     await mkdir(join(workerDirectory, 'profile', 'sessions'), { recursive: true, mode: 0o700 });
-    await recordWorkerLaunch(workerDirectory, { workId: context.workId, executionId: context.executionId, invocationId: context.invocationId, role: context.role });
-    await writeFile(join(workerDirectory, 'profile', 'sessions', 'session.jsonl'), [{ type: 'session', version: 3, id: `scripted-${launched.length}`, timestamp: 't', cwd: '/workspace' },
-      { type: 'message', id: 'a1', message: { role: 'assistant', provider: 'p', model: 'm', stopReason: 'stop', usage: { input: 30, output: 20, cacheRead: 10, cacheWrite: 0, totalTokens: 60 } } },
-      { type: 'message', id: 'a2', message: { role: 'assistant', provider: 'p', model: 'm', stopReason: 'aborted', usage: { input: 3, output: 2, cacheRead: 1, cacheWrite: 0, totalTokens: 6 } } }]
-      .map(entry => JSON.stringify(entry)).join('\n'), { mode: 0o600 });
-    signal.addEventListener('abort', () => { aborted = true; log.push('worker-aborted'); }, { once: true });
+    await recordWorkerLaunch(workerDirectory, {
+      workId: context.workId,
+      executionId: context.executionId,
+      invocationId: context.invocationId,
+      role: context.role,
+    });
+    await writeFile(
+      join(workerDirectory, 'profile', 'sessions', 'session.jsonl'),
+      [
+        { type: 'session', version: 3, id: `scripted-${launched.length}`, timestamp: 't', cwd: '/workspace' },
+        {
+          type: 'message',
+          id: 'a1',
+          message: {
+            role: 'assistant',
+            provider: 'p',
+            model: 'm',
+            stopReason: 'stop',
+            usage: { input: 30, output: 20, cacheRead: 10, cacheWrite: 0, totalTokens: 60 },
+          },
+        },
+        {
+          type: 'message',
+          id: 'a2',
+          message: {
+            role: 'assistant',
+            provider: 'p',
+            model: 'm',
+            stopReason: 'aborted',
+            usage: { input: 3, output: 2, cacheRead: 1, cacheWrite: 0, totalTokens: 6 },
+          },
+        },
+      ]
+        .map(entry => JSON.stringify(entry))
+        .join('\n'),
+      { mode: 0o600 },
+    );
+    signal.addEventListener(
+      'abort',
+      () => {
+        aborted = true;
+        log.push('worker-aborted');
+      },
+      { once: true },
+    );
     const tools = createSandbox({ root: world.root, toolEndpoint: endpoint });
     let calls = 0;
     const call = async (command: string) => {
       log.push(`tool-call:${command}`);
-      const result = await tools.executeTool(context, { callId: `call-${calls += 1}`, name: 'bash', command } as ToolCall, () => {}, new AbortController().signal);
+      const result = await tools.executeTool(
+        context,
+        { callId: `call-${(calls += 1)}`, name: 'bash', command } as ToolCall,
+        () => {},
+        new AbortController().signal,
+      );
       log.push(`tool-result:${result.status === 'success' ? 'success' : result.code}`);
       return result;
     };
-    lateCall = () => tools.executeTool(context, { callId: `late-${calls += 1}`, name: 'bash', command: 'git status' } as ToolCall, () => {}, new AbortController().signal);
+    lateCall = () =>
+      tools.executeTool(context, { callId: `late-${(calls += 1)}`, name: 'bash', command: 'git status' } as ToolCall, () => {}, new AbortController().signal);
     const receipt = { workId: context.workId, id: randomUUID() };
     const completed = (async () => {
       // The agent loop. It deliberately ignores a failed tool call and goes on: only the end of its lifetime stops it.
@@ -103,11 +184,20 @@ test('V2-15: the environment dies under a running Builder: no model request and 
       }
       return { status: 'failure' as const, code: 'WORKER_INTERRUPTED' };
     })();
-    return { started: Promise.resolve({ receipt, invocation: { executionId: context.executionId, invocationId: context.invocationId } }), completed, deliver: async () => false };
+    return {
+      started: Promise.resolve({ receipt, invocation: { executionId: context.executionId, invocationId: context.invocationId } }),
+      completed,
+      deliver: async () => false,
+    };
   };
 
-  const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer } });
+  const composed = await composeProductionExecution({
+    root: world.root,
+    effective,
+    guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) },
+    github,
+    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer },
+  });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   const ports: ExecutionPorts = composed.ports;
@@ -117,27 +207,52 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const dir = await mkdtemp(join(tmpdir(), 'factory-lambda-death-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: ports,
-    access: composeProductionAccess({ github, effective }), polling: { intervalSeconds: 60, clock: time.clock } });
+  const control = await openControl({
+    storagePath: join(dir, 'control.sqlite'),
+    runtimeInventory: 'empty',
+    execution: ports,
+    access: composeProductionAccess({ github, effective }),
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
+  t.after(async () => {
+    if (!stop.signal.aborted) {
+      stop.abort();
+      await running;
+    }
+  });
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-  const executionOf = (value: WorkView | undefined, id?: string) => [...(value?.previousExecutions ?? []), ...(value?.execution ? [value.execution] : [])].find(item => id === undefined || item.executionId === id);
+  const executionOf = (value: WorkView | undefined, id?: string) =>
+    [...(value?.previousExecutions ?? []), ...(value?.execution ? [value.execution] : [])].find(item => id === undefined || item.executionId === id);
   let lastSeen = '';
-  const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => until(() => `${label} ${lastSeen}`, async () => {
-    const value = await work();
-    if (predicate(value)) return value!;
-    lastSeen = JSON.stringify({ state: value?.execution?.state, end: value?.execution?.end, held: value?.execution?.held, phase: value?.execution?.dispatch.phase, impediments: value?.impediments, launched, log });
-    if (time.isSleeping()) time.advance();
-    return undefined;
-  }, 10);
+  const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) =>
+    until(
+      () => `${label} ${lastSeen}`,
+      async () => {
+        const value = await work();
+        if (predicate(value)) return value!;
+        lastSeen = JSON.stringify({
+          state: value?.execution?.state,
+          end: value?.execution?.end,
+          held: value?.execution?.held,
+          phase: value?.execution?.dispatch.phase,
+          impediments: value?.impediments,
+          launched,
+          log,
+        });
+        if (time.isSleeping()) time.advance();
+        return undefined;
+      },
+      10,
+    );
 
   // The Builder runs and is inside a long command; the environment is alive.
   await settle('started', value => value?.execution?.state === 'started');
   await inLongCommand;
   const started = (await work())!.execution!;
-  const environment = started.dispatch.environment!, boot = started.dispatch.boot!;
+  const environment = started.dispatch.environment!,
+    boot = started.dispatch.boot!;
   const guest = guests.guestOf(fake.account.microvms[0]!.microvmId)!;
   const reads = () => fake.calls.filter(call => call.operation === 'microvm').length;
   const before = reads();
@@ -152,7 +267,10 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const workId = (await work())!.work_id;
   const markerRef = `refs/factory/lost/${workId}/${boot}`;
   const armed = guest.executions.filter(item => item.program === 'loss-marker-arm');
-  assert.deepEqual(armed.map(item => [item.user, item.environmentNames]), [['builder', ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']]]);
+  assert.deepEqual(
+    armed.map(item => [item.user, item.environmentNames]),
+    [['builder', ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']]],
+  );
   assert.deepEqual([guest.lossMarker?.remote, guest.lossMarker?.ref], [remoteUrl, markerRef]);
   assert.equal(armed[0]!.script.includes(guest.lossMarker!.token), false, 'the token is in no script');
   // The Builder committed work it never pushed; the service ends the MicroVM and calls the terminate hook, which takes no parameter.
@@ -170,10 +288,21 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const confirmedAt = log.indexOf('cessation-confirmed');
   assert.notEqual(confirmedAt, -1, log.join(','));
   const after = log.slice(confirmedAt + 1);
-  assert.deepEqual(after.filter(entry => entry === 'model-request'), [], `no model request after the confirmed cessation: ${log.join(',')}`);
-  assert.deepEqual(after.filter(entry => entry.startsWith('tool-call:')), [], `no tool call after the confirmed cessation: ${log.join(',')}`);
+  assert.deepEqual(
+    after.filter(entry => entry === 'model-request'),
+    [],
+    `no model request after the confirmed cessation: ${log.join(',')}`,
+  );
+  assert.deepEqual(
+    after.filter(entry => entry.startsWith('tool-call:')),
+    [],
+    `no tool call after the confirmed cessation: ${log.join(',')}`,
+  );
   // The call in flight was cancelled and answered as "environment ended"; the worker's lifetime was ended by the owner.
-  assert.deepEqual(after.filter(entry => entry.startsWith('tool-result:')), ['tool-result:SANDBOX_ENVIRONMENT_ENDED']);
+  assert.deepEqual(
+    after.filter(entry => entry.startsWith('tool-result:')),
+    ['tool-result:SANDBOX_ENVIRONMENT_ENDED'],
+  );
   assert.equal(aborted, true);
   assert.deepEqual(log.filter(entry => entry === 'model-request').length, 2, 'the loop had three more turns to take and took none');
   // A call a worker still attempts is denied, and nothing reaches the guest.
@@ -187,34 +316,63 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   // Control ended the activation: the Execution is over as a loss, with what the sandbox observed, and nothing else was launched on that boot.
   assert.deepEqual([ended.end?.outcome, ended.end?.code], ['failure', 'SANDBOX_ENVIRONMENT_ENDED']);
   assert.deepEqual([ended.environmentEnd?.boot, ended.environmentEnd?.reason], [boot, 'MicroVM exceeded maximum lifetime.']);
-  assert.deepEqual(launched.filter(item => item.boot === boot), [{ role: 'builder', phaseId: 'builder-initial', boot }]);
+  assert.deepEqual(
+    launched.filter(item => item.boot === boot),
+    [{ role: 'builder', phaseId: 'builder-initial', boot }],
+  );
   const released = executionOf(await settle('slot released', value => executionOf(value, started.executionId)?.slot.held === false), started.executionId)!;
   assert.equal(released.end?.cessation, 'confirmed');
   // The started command is an uncertain effect of that Execution (ticket 13 gives it to the substitute session).
-  assert.deepEqual(released.indeterminateEffects?.map(effect => [effect.tool, effect.description, effect.outcome]), [['bash', 'mvn deploy', 'environment-ended']]);
+  assert.deepEqual(
+    released.indeterminateEffects?.map(effect => [effect.tool, effect.description, effect.outcome]),
+    [['bash', 'mvn deploy', 'environment-ended']],
+  );
   // The boot's record carries the end and the reason the service gave; nobody asked the service to terminate anything.
-  const record = JSON.parse(await readFile(join(world.root, 'lambda', 'works', environment, 'boots', boot, 'boot.json'), 'utf8')) as { phase: string; end: { reason: string; stateReason: string; terminatedAt: string } };
+  const record = JSON.parse(await readFile(join(world.root, 'lambda', 'works', environment, 'boots', boot, 'boot.json'), 'utf8')) as {
+    phase: string;
+    end: { reason: string; stateReason: string; terminatedAt: string };
+  };
   assert.deepEqual([record.phase, record.end.reason, record.end.stateReason], ['ended', 'loss', 'MicroVM exceeded maximum lifetime.']);
   assert.equal(typeof record.end.terminatedAt, 'string');
-  assert.deepEqual(fake.mutations.filter(mutation => mutation.operation === 'terminateMicrovm'), []);
+  assert.deepEqual(
+    fake.mutations.filter(mutation => mutation.operation === 'terminateMicrovm'),
+    [],
+  );
   assert.equal(watch.pending(), 0, 'the watch of the dead boot is over');
   // v2 ticket 12 (V2-17): the loss is on the Work, from Control's own reads of `origin`: nothing of the Work branch was ever pushed, and
   // the marker ref holds the commit the hook pushed. It is not preservation: nothing was confirmed and the Work has no branch on origin.
   const lostWork = (await settle('loss recorded', value => value?.losses?.length === 1))!;
   const [loss] = lostWork.losses!;
-  assert.deepEqual([loss!.executionId, loss!.boot, loss!.reason, loss!.confirmed.commit, loss!.confirmed.source, loss!.session],
-    [started.executionId, boot, 'MicroVM exceeded maximum lifetime.', null, 'none', { invocationId: started.invocationId, disposition: 'conserved-as-evidence' }]);
+  assert.deepEqual(
+    [loss!.executionId, loss!.boot, loss!.reason, loss!.confirmed.commit, loss!.confirmed.source, loss!.session],
+    [
+      started.executionId,
+      boot,
+      'MicroVM exceeded maximum lifetime.',
+      null,
+      'none',
+      { invocationId: started.invocationId, disposition: 'conserved-as-evidence' },
+    ],
+  );
   assert.deepEqual([loss!.marker.state, loss!.marker.ref, loss!.marker.state === 'present' && loss!.marker.commit], ['present', markerRef, unpublished]);
   assert.equal(lostWork.preservation, undefined);
   assert.equal(typeof loss!.consumption.executionMs, 'number');
   // The old session's host directory (the boot's worker runtime) is still there: evidence, removed only by the Work's cleanup.
-  assert.equal(await stat(join(world.root, 'r')).then(entry => entry.isDirectory(), () => false), true);
+  assert.equal(
+    await stat(join(world.root, 'r')).then(
+      entry => entry.isDirectory(),
+      () => false,
+    ),
+    true,
+  );
   // Finding A7: the lost activation never returned its session, yet what it spent is counted: `factory usage` measures the session its
   // invocation left in the lost boot, as partial (it ended by loss; no hash was recorded), instead of dropping it as not recorded.
-  const usage = (await control.inspect({ kind: 'usage', work_id: lostWork.work_id }) as UsageView).works[0]!;
+  const usage = ((await control.inspect({ kind: 'usage', work_id: lostWork.work_id })) as UsageView).works[0]!;
   const spent = usage.activities.find(item => item.executionId === started.executionId && item.role === 'builder')!;
-  assert.deepEqual([spent.measurement, spent.code, spent.entries, spent.failedOrAborted, spent.tokens, spent.session.state],
-    ['partial', 'SESSION_ENDED_BY_LOSS', 2, 1, { input: 33, output: 22, cacheRead: 11, cacheWrite: 0, total: 66 }, 'partial']);
+  assert.deepEqual(
+    [spent.measurement, spent.code, spent.entries, spent.failedOrAborted, spent.tokens, spent.session.state],
+    ['partial', 'SESSION_ENDED_BY_LOSS', 2, 1, { input: 33, output: 22, cacheRead: 11, cacheWrite: 0, total: 66 }, 'partial'],
+  );
   assert.ok(usage.total.tokens!.total >= 66 && usage.total.measurement === 'partial', JSON.stringify(usage.total));
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
@@ -226,73 +384,144 @@ test('V2-15: the environment dies under a running Builder: no model request and 
 // armed for the terminate hook, `keepMarker`, and records the boot's end as `loss`), the loss is recorded with the marker Control read on
 // origin, and the Work returns by itself in a NEW boot whose session gets the substitute package.
 test('V2-17: a Builder that fails with unpublished work loses the boot visibly: the holder stays armed for the terminate hook, the boot ends as a loss, and the substitute resumes in a new boot', async t => {
-  const world = await githubWorld(t, { issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })], pulls: [], refs: {},
-    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, comments: [], checks: {
+  const world = await githubWorld(t, {
+    issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md.' })],
+    pulls: [],
+    refs: {},
+    rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } },
+    comments: [],
+    checks: {
       branches: { main: { sha: tip, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
-      rules: { main: [pullRequestRule] }, checkRuns: {}, statuses: {}, compare: {} } });
+      rules: { main: [pullRequestRule] },
+      checkRuns: {},
+      statuses: {},
+      compare: {},
+    },
+  });
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   const fake = lambdaAccountFake();
   const guests = lambdaGuestFake(fake);
   const pushes: Promise<void>[] = [];
-  guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-'), tip: () => null,
-    push: (ref, sha) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); } };
+  guests.world.origins[remoteUrl] = {
+    commits: [tip],
+    token: token => token.startsWith('synthetic-installation-secret-'),
+    tip: () => null,
+    push: (ref, sha) => {
+      pushes.push(
+        world.update(state => {
+          state.factoryRefs = { ...state.factoryRefs, [ref]: sha };
+        }),
+      );
+    },
+  };
   const clock = accountClock(fake);
-  const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
+  const watch = manualObservationTimer(milliseconds => {
+    fake.account.clock.now += milliseconds;
+  });
   // The guest's terminate hook runs when the SERVICE ends the MicroVM: whether a holder was still armed then is what `keepMarker` decides.
   const hooks: { microvmId: string; pushed: boolean }[] = [];
   const service: LambdaServiceFactory = profile => {
     const real = fake.service(profile);
-    return { ...real, terminateMicrovm: async id => { hooks.push({ microvmId: id, pushed: guests.terminateHook(id) }); await Promise.all(pushes); return real.terminateMicrovm(id); } };
+    return {
+      ...real,
+      terminateMicrovm: async id => {
+        hooks.push({ microvmId: id, pushed: guests.terminateHook(id) });
+        await Promise.all(pushes);
+        return real.terminateMicrovm(id);
+      },
+    };
   };
   const unpublished = 'd'.repeat(40);
   const launched: { phaseId: string; boot: string; prompt: string }[] = [];
   const launcher: LambdaWorkerLauncher = async (request, _endpoint, signal) => {
     const context = request.context;
     const turn = launched.push({ phaseId: context.phaseId, boot: context.bootRef, prompt: request.prompt });
-    const started = Promise.resolve({ receipt: { workId: context.workId, id: randomUUID() }, invocation: { executionId: context.executionId, invocationId: context.invocationId } });
+    const started = Promise.resolve({
+      receipt: { workId: context.workId, id: randomUUID() },
+      invocation: { executionId: context.executionId, invocationId: context.invocationId },
+    });
     if (turn === 1) {
       // The first Builder commits work, never pushes it, and its activation fails (a transient worker failure).
       guests.guestOf(fake.account.microvms[0]!.microvmId)!.repository!.commit = unpublished;
       return { started, completed: Promise.resolve({ status: 'failure' as const, code: 'WORKER_INTERRUPTED' }), deliver: async () => false };
     }
     // The substitute: at work until the test ends.
-    const completed = new Promise<{ status: 'failure'; code: string }>(resolve => signal.addEventListener('abort', () => resolve({ status: 'failure', code: 'WORKER_INTERRUPTED' }), { once: true }));
+    const completed = new Promise<{ status: 'failure'; code: string }>(resolve =>
+      signal.addEventListener('abort', () => resolve({ status: 'failure', code: 'WORKER_INTERRUPTED' }), { once: true }),
+    );
     return { started, completed, deliver: async () => false };
   };
-  const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer } });
+  const composed = await composeProductionExecution({
+    root: world.root,
+    effective,
+    guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) },
+    github,
+    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer },
+  });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   const dir = await mkdtemp(join(tmpdir(), 'factory-lambda-control-loss-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const time = manualClock();
   let calendar = 0;
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...composed.ports, calendar: { now: () => Date.now() + calendar } },
-    access: composeProductionAccess({ github, effective }), polling: { intervalSeconds: 60, clock: time.clock } });
+  const control = await openControl({
+    storagePath: join(dir, 'control.sqlite'),
+    runtimeInventory: 'empty',
+    execution: { ...composed.ports, calendar: { now: () => Date.now() + calendar } },
+    access: composeProductionAccess({ github, effective }),
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
+  t.after(async () => {
+    if (!stop.signal.aborted) {
+      stop.abort();
+      await running;
+    }
+  });
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
   let lastSeen = '';
-  const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => until(() => `${label} ${lastSeen}`, async () => {
-    const value = await work();
-    if (predicate(value)) return value!;
-    lastSeen = JSON.stringify({ state: value?.execution?.state, end: value?.execution?.end, held: value?.execution?.held, losses: value?.losses?.length, impediments: value?.impediments, launched: launched.map(item => item.phaseId) });
-    // The persisted recovery wait runs on the calendar: jumped, never slept.
-    if (time.isSleeping()) { calendar += 60000; time.advance(); }
-    return undefined;
-  }, 10);
+  const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) =>
+    until(
+      () => `${label} ${lastSeen}`,
+      async () => {
+        const value = await work();
+        if (predicate(value)) return value!;
+        lastSeen = JSON.stringify({
+          state: value?.execution?.state,
+          end: value?.execution?.end,
+          held: value?.execution?.held,
+          losses: value?.losses?.length,
+          impediments: value?.impediments,
+          launched: launched.map(item => item.phaseId),
+        });
+        // The persisted recovery wait runs on the calendar: jumped, never slept.
+        if (time.isSleeping()) {
+          calendar += 60000;
+          time.advance();
+        }
+        return undefined;
+      },
+      10,
+    );
 
   const lost = await settle('loss recorded', value => value?.losses?.length === 1);
   const [loss] = lost.losses!;
   const failed = [...lost.previousExecutions, ...(lost.execution ? [lost.execution] : [])].find(item => item.executionId === loss!.executionId)!;
-  const environment = failed.dispatch.environment!, boot = failed.dispatch.boot!;
+  const environment = failed.dispatch.environment!,
+    boot = failed.dispatch.boot!;
   const first = fake.account.microvms[0]!;
   const guest = guests.guestOf(first.microvmId)!;
   // Control's one check ran the preservation program in the guest and found HEAD unpublished; nobody was asked to correct it.
-  assert.deepEqual(failed.preservationGate?.attempts.map(item => [item.outcome, item.code]), [['refused', 'HEAD_NOT_PUBLISHED']]);
+  assert.deepEqual(
+    failed.preservationGate?.attempts.map(item => [item.outcome, item.code]),
+    [['refused', 'HEAD_NOT_PUBLISHED']],
+  );
   assert.equal(guest.executions.filter(item => item.program === 'preservation-gate').length, 1);
-  assert.deepEqual([failed.end?.outcome, failed.end?.code, loss!.cause, loss!.boot, loss!.confirmed.commit], ['failure', 'WORKER_INTERRUPTED', 'ended-unpublished', boot, null]);
+  assert.deepEqual(
+    [failed.end?.outcome, failed.end?.code, loss!.cause, loss!.boot, loss!.confirmed.commit],
+    ['failure', 'WORKER_INTERRUPTED', 'ended-unpublished', boot, null],
+  );
   // `keepMarker`: the holder armed with the Builder's grant was NOT ended before the stop, so the terminate hook of that MicroVM pushed
   // the committed HEAD to the marker ref, and Control read it on origin for the record.
   const lifecycle = guest.executions.filter(item => item.program.startsWith('loss-marker-')).map(item => item.program);
@@ -301,18 +530,29 @@ test('V2-17: a Builder that fails with unpublished work loses the boot visibly: 
   const markerRef = `refs/factory/lost/${lost.work_id}/${boot}`;
   assert.deepEqual([loss!.marker.state, loss!.marker.ref, loss!.marker.state === 'present' && loss!.marker.commit], ['present', markerRef, unpublished]);
   // The adapter's own record of the boot agrees with Control's: ended as a loss, by a stop that was asked as one.
-  const record = JSON.parse(await readFile(join(world.root, 'lambda', 'works', environment, 'boots', boot, 'boot.json'), 'utf8')) as { phase: string; stop: { reason: string }; end: { reason: string } };
+  const record = JSON.parse(await readFile(join(world.root, 'lambda', 'works', environment, 'boots', boot, 'boot.json'), 'utf8')) as {
+    phase: string;
+    stop: { reason: string };
+    end: { reason: string };
+  };
   assert.deepEqual([record.phase, record.stop.reason, record.end.reason], ['ended', 'loss', 'loss']);
 
   // The Work comes back by itself on one operational recovery, in a NEW boot, and that session is the substitute.
   const resumed = await settle('substitute started', value => value?.execution?.executionId !== failed.executionId && value?.execution?.state === 'started');
   assert.notEqual(resumed.execution!.dispatch.boot, boot);
   assert.equal(fake.account.microvms.length, 2);
-  assert.deepEqual(launched.map(item => item.phaseId), ['builder-initial', 'builder-recovery']);
+  assert.deepEqual(
+    launched.map(item => item.phaseId),
+    ['builder-initial', 'builder-recovery'],
+  );
   const package_ = launched[1]!.prompt;
   assert.ok(package_.startsWith('Factory notice (new boot): this environment was RECREATED'), package_.slice(0, 200));
   assert.ok(package_.includes('Factory substitute-session package (recovery after a LOSS)'));
-  assert.ok(package_.includes(`LOSS declared by the Factory: the environment of boot ${boot} (Execution ${failed.executionId}) was ended by the Factory because its work was not published`));
+  assert.ok(
+    package_.includes(
+      `LOSS declared by the Factory: the environment of boot ${boot} (Execution ${failed.executionId}) was ended by the Factory because its work was not published`,
+    ),
+  );
   assert.ok(package_.includes(`Loss marker ref: ${markerRef} at ${unpublished}`));
   assert.equal(resumed.budget?.recoveries.consumed, 1);
   stop.abort();

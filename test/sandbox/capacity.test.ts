@@ -44,7 +44,12 @@ test('boot precondition: MemAvailable >= guest memory + floor (default 1024 MiB,
 test('capacity diagnostic: virtual totals versus the observed host; one boot below its preconditions blocks, all Slots at full size is only unverified', () => {
   const effective = configuration();
   const gib = 1073741824;
-  const roomy = { memory: { totalBytes: String(16 * gib), availableBytes: String(12 * gib) }, storage: { availableBytes: String(500 * gib) }, cpus: 8, runningGuests: 0 };
+  const roomy = {
+    memory: { totalBytes: String(16 * gib), availableBytes: String(12 * gib) },
+    storage: { availableBytes: String(500 * gib) },
+    cpus: 8,
+    runningGuests: 0,
+  };
   const all = capacityDiagnostic({ concurrency: 3, configuration: effective, host: roomy });
   assert.equal(all.status, 'unverified', 'configured capacity is never reported as proven');
   assert.match(all.message, /concurrency 3 Slot\(s\) x guest 2048 MiB \/ 2 vCPU \/ 40 GiB virtual disk/);
@@ -52,32 +57,58 @@ test('capacity diagnostic: virtual totals versus the observed host; one boot bel
   assert.match(all.message, /covers every free Slot at its full virtual size/);
   assert.match(all.message, /not reserved/);
   assert.match(all.nextStep, /measured authorized run/);
-  const tight = capacityDiagnostic({ concurrency: 3, configuration: effective, host: { ...roomy, memory: { totalBytes: String(16 * gib), availableBytes: String(5 * gib) } } });
+  const tight = capacityDiagnostic({
+    concurrency: 3,
+    configuration: effective,
+    host: { ...roomy, memory: { totalBytes: String(16 * gib), availableBytes: String(5 * gib) } },
+  });
   assert.equal(tight.status, 'unverified', 'one boot still fits: memory is allocated on demand');
   assert.match(tight.message, /does NOT cover every free Slot/);
-  const below = capacityDiagnostic({ concurrency: 1, configuration: effective, host: { ...roomy, memory: { totalBytes: String(4 * gib), availableBytes: String(2 * gib) } } });
+  const below = capacityDiagnostic({
+    concurrency: 1,
+    configuration: effective,
+    host: { ...roomy, memory: { totalBytes: String(4 * gib), availableBytes: String(2 * gib) } },
+  });
   assert.equal(below.status, 'blocked');
   assert.match(below.nextStep, /never retried/);
-  assert.equal(capacityDiagnostic({ concurrency: 1, configuration: effective, host: { ...roomy, storage: { availableBytes: String(43 * gib) } } }).status, 'blocked',
-    'a boot needs its virtual disk plus the free-space floor');
-  const unknown = capacityDiagnostic({ concurrency: 1, configuration: effective, host: { memory: undefined, storage: roomy.storage, cpus: 8, runningGuests: 0 } });
+  assert.equal(
+    capacityDiagnostic({ concurrency: 1, configuration: effective, host: { ...roomy, storage: { availableBytes: String(43 * gib) } } }).status,
+    'blocked',
+    'a boot needs its virtual disk plus the free-space floor',
+  );
+  const unknown = capacityDiagnostic({
+    concurrency: 1,
+    configuration: effective,
+    host: { memory: undefined, storage: roomy.storage, cpus: 8, runningGuests: 0 },
+  });
   assert.equal(unknown.status, 'unverified', 'unreadable meminfo is unknown, never blocked');
   assert.match(unknown.message, /host memory unknown/);
   assert.equal(capacityDiagnostic({ concurrency: 1, configuration: effective, host: { ...roomy, runningGuests: null } }).status, 'unverified');
 });
 
-test('review: the Factory\'s own running guests occupy Slots and are already inside MemAvailable — healthy running capacity is never blocked', () => {
+test("review: the Factory's own running guests occupy Slots and are already inside MemAvailable — healthy running capacity is never blocked", () => {
   const effective = configuration();
   const gib = 1073741824;
   const low = { memory: { totalBytes: String(16 * gib), availableBytes: String(2 * gib) }, storage: { availableBytes: String(500 * gib) }, cpus: 8 };
   const full = capacityDiagnostic({ concurrency: 3, configuration: effective, host: { ...low, runningGuests: 3 } });
   assert.equal(full.status, 'unverified');
   assert.match(full.message, /own running guests 3 \(free Slots 0\)/);
-  assert.equal(capacityDiagnostic({ concurrency: 3, configuration: effective, host: { ...low, runningGuests: 2 } }).status, 'blocked', 'a free Slot whose boot cannot fit now');
-  assert.deepEqual(parseSandboxUnits([
-    'factory-sandbox-boot-11111111-2222-4333-8444-555555555555.service loaded active running Factory sandbox',
-    'factory-sandbox-boot-21111111-2222-4333-8444-555555555555.service loaded inactive dead x',
-    'other.service loaded active running y', ''].join('\n')), ['factory-sandbox-boot-11111111-2222-4333-8444-555555555555.service']);
+  assert.equal(
+    capacityDiagnostic({ concurrency: 3, configuration: effective, host: { ...low, runningGuests: 2 } }).status,
+    'blocked',
+    'a free Slot whose boot cannot fit now',
+  );
+  assert.deepEqual(
+    parseSandboxUnits(
+      [
+        'factory-sandbox-boot-11111111-2222-4333-8444-555555555555.service loaded active running Factory sandbox',
+        'factory-sandbox-boot-21111111-2222-4333-8444-555555555555.service loaded inactive dead x',
+        'other.service loaded active running y',
+        '',
+      ].join('\n'),
+    ),
+    ['factory-sandbox-boot-11111111-2222-4333-8444-555555555555.service'],
+  );
 });
 
 test('decision 4 (review): a boot counts in the ledger only while it is LAUNCHING, across passes; once observed running (or failed) it is dropped, so its memory is never subtracted twice', async () => {
@@ -95,13 +126,20 @@ test('decision 4 (review): a boot counts in the ledger only while it is LAUNCHIN
   assert.deepEqual(ledger.launching(), []);
   // Three boots minutes apart, each running before the next: each judged on its own guest against the current observation.
   available = (2048 + 1024) * mib;
-  for (let i = 0; i < 3; i++) { const release = await ledger.admit(effective); assert.ok(release, `boot ${i + 1}`); release(); }
+  for (let i = 0; i < 3; i++) {
+    const release = await ledger.admit(effective);
+    assert.ok(release, `boot ${i + 1}`);
+    release();
+  }
   // Releasing twice is harmless and never drops another launching boot.
   const a = await createBootLedger(async () => String(10 * 2048 * mib)).admit(effective);
-  a!(); a!();
+  a!();
+  a!();
   const shared = createBootLedger(async () => String(10 * 2048 * mib));
-  const x = await shared.admit(effective), y = await shared.admit(effective);
-  x!(); x!();
+  const x = await shared.admit(effective),
+    y = await shared.admit(effective);
+  x!();
+  x!();
   assert.deepEqual(shared.launching(), [2048], 'an unfinished boot is never evicted');
   y!();
   assert.equal(await createBootLedger(async () => undefined).admit(effective), null, 'unobservable memory never admits');

@@ -19,10 +19,17 @@ export function remainingMs(env: NodeJS.ProcessEnv = process.env, now = Date.now
 /** SIGKILL the child's whole process group (it must have been started with `detached: true`). */
 export function killTree(child: ChildProcess): void {
   if (!child.pid) return;
-  try { process.kill(-child.pid, 'SIGKILL'); } catch { /* the group is already gone */ }
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    /* the group is already gone */
+  }
 }
 
-export interface Ended { code: number | null; signal: NodeJS.Signals | null }
+export interface Ended {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
 
 /**
  * The end of a detached child: its exit, then the closing of its pipes (output complete). Whatever its group left behind is killed
@@ -35,9 +42,19 @@ export function ended(child: ChildProcess, stage: () => string): Promise<Ended> 
       killTree(child);
       reject(new Error(`TEST_BUDGET_EXCEEDED: child ${child.pid} still running after ${remainingMs()} ms; last stage: ${stage()}`));
     }, remainingMs());
-    child.once('error', error => { clearTimeout(timer); killTree(child); reject(error); });
-    child.once('exit', (code, signal) => { exit = { code, signal }; killTree(child); });
-    child.once('close', (code, signal) => { clearTimeout(timer); resolve(exit ?? { code, signal }); });
+    child.once('error', error => {
+      clearTimeout(timer);
+      killTree(child);
+      reject(error);
+    });
+    child.once('exit', (code, signal) => {
+      exit = { code, signal };
+      killTree(child);
+    });
+    child.once('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve(exit ?? { code, signal });
+    });
   });
 }
 

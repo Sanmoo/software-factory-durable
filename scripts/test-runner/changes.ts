@@ -10,7 +10,11 @@ type Git = (args: readonly string[]) => string | undefined;
 
 export function gitIn(root: string): Git {
   return args => {
-    try { return execFileSync('git', [...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return undefined; }
+    try {
+      return execFileSync('git', [...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      return undefined;
+    }
   };
 }
 

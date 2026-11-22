@@ -12,8 +12,16 @@ import { validateConfiguration } from '../../src/sandbox/configuration.js';
 const workId = 'configuration-compat-work';
 const environment = `env-${createHash('sha256').update(workId).digest('hex')}` as EnvironmentRef;
 const boot = 'boot-11111111-2222-4333-8444-555555555555';
-const withFloor = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4,
-  minFreeMemoryMiB: 1024 };
+const withFloor = {
+  schemaVersion: 1,
+  profile: 'gondolin-qemu-alpine-dev-v1',
+  memoryMiB: 2048,
+  vcpus: 2,
+  diskGiB: 40,
+  shutdownGraceSeconds: 30,
+  minFreeSpaceGiB: 4,
+  minFreeMemoryMiB: 1024,
+};
 
 test('schema: minFreeMemoryMiB is accepted when present (positive integer) and absent from the effective configuration when not set', () => {
   const present = validateConfiguration(withFloor);
@@ -28,27 +36,54 @@ test('schema: minFreeMemoryMiB is accepted when present (positive integer) and a
 test('an environment whose owner/identity configuration carries minFreeMemoryMiB observes stopped with confirmed cessation (manager double)', async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-config-compat-'));
   const previousPath = process.env.PATH;
-  t.after(async () => { if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath; await rm(root, { recursive: true, force: true }); });
+  t.after(async () => {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    await rm(root, { recursive: true, force: true });
+  });
   const directory = join(root, 'environments', environment);
   const path = join(directory, boot);
   await mkdir(path, { recursive: true, mode: 0o700 });
   const json = (p: string, value: unknown) => writeFile(p, JSON.stringify(value), { mode: 0o600 });
   const unit = `factory-sandbox-${boot}.service`;
   const group = `/user.slice/user-${process.getuid?.()}.slice/user@${process.getuid?.()}.service/app.slice/${unit}`;
-  await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration: withFloor,
-    guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) } });
+  await json(join(directory, 'owner.json'), {
+    version: 1,
+    workId,
+    environment,
+    configuration: withFloor,
+    guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) },
+  });
   await json(join(directory, 'ready.json'), { environment });
   await json(join(directory, 'current.json'), { version: 1, environment, boot });
-  await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
-    configuration: withFloor });
-  await json(join(path, 'started.json'), { version: 1, boot, unit, invocation: 'a'.repeat(32), cgroup: group,
-    cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') });
-  const bin = join(root, 'bin'); await mkdir(bin, { mode: 0o700 });
-  await writeFile(join(bin, 'systemctl'), `#!${process.execPath}
+  await json(join(path, 'identity.json'), {
+    version: 1,
+    environment,
+    boot,
+    unit,
+    hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
+    configuration: withFloor,
+  });
+  await json(join(path, 'started.json'), {
+    version: 1,
+    boot,
+    unit,
+    invocation: 'a'.repeat(32),
+    cgroup: group,
+    cgroupNamespace: await readlink('/proc/self/ns/cgroup'),
+    mountNamespace: await readlink('/proc/self/ns/mnt'),
+  });
+  const bin = join(root, 'bin');
+  await mkdir(bin, { mode: 0o700 });
+  await writeFile(
+    join(bin, 'systemctl'),
+    `#!${process.execPath}
 const args = process.argv.slice(2);
 if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(unit)} || args.length !== 4) process.exit(77);
 console.log('LoadState=loaded\\nActiveState=inactive\\nSubState=dead\\nInvocationID=${'a'.repeat(32)}\\nMainPID=0\\nControlGroup=\\nResult=success');
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   process.env.PATH = bin;
   const { storage: _storage, ...lifecycle } = await createSandbox({ root }).observe({ environment });
   assert.deepEqual(lifecycle, { condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable', boot });
@@ -58,9 +93,19 @@ test('ticket 50: only profile, disk size and guest assets are the identity of a 
   const { environmentIdentityChanges } = await import('../../src/sandbox/configuration.js');
   const pin = { directory: '/assets/a', manifestSha256: 'a'.repeat(64) };
   const prepared = { configuration: withFloor as never as { profile: 'gondolin-qemu-alpine-dev-v1'; diskGiB: number }, guestAssets: pin };
-  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: { ...withFloor, memoryMiB: 4096, vcpus: 8, minFreeSpaceGiB: 9, shutdownGraceSeconds: 1,
-    minFreeMemoryMiB: 1 } as never, guestAssets: pin }), [], 'guest resources and host settings are per boot');
-  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: { ...withFloor, diskGiB: 60 } as never, guestAssets: { ...pin, manifestSha256: 'b'.repeat(64) } }),
-    ['sandbox.diskGiB 40 -> 60', `guest assets ${'a'.repeat(12)} -> ${'b'.repeat(12)}`]);
-  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: withFloor as never, guestAssets: undefined }), [`guest assets ${'a'.repeat(12)} -> none`]);
+  assert.deepEqual(
+    environmentIdentityChanges(prepared, {
+      configuration: { ...withFloor, memoryMiB: 4096, vcpus: 8, minFreeSpaceGiB: 9, shutdownGraceSeconds: 1, minFreeMemoryMiB: 1 } as never,
+      guestAssets: pin,
+    }),
+    [],
+    'guest resources and host settings are per boot',
+  );
+  assert.deepEqual(
+    environmentIdentityChanges(prepared, { configuration: { ...withFloor, diskGiB: 60 } as never, guestAssets: { ...pin, manifestSha256: 'b'.repeat(64) } }),
+    ['sandbox.diskGiB 40 -> 60', `guest assets ${'a'.repeat(12)} -> ${'b'.repeat(12)}`],
+  );
+  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: withFloor as never, guestAssets: undefined }), [
+    `guest assets ${'a'.repeat(12)} -> none`,
+  ]);
 });

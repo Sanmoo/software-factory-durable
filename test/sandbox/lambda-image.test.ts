@@ -11,28 +11,58 @@ import { lambdaAccountFake } from './lambda-service-fake.js';
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 const sha = (letter: string) => letter.repeat(64);
 const pinned = (change: { sha256?: string; repositoryId?: number; apk?: { name: string; version: string }[] } = {}) => ({
-  path: '.factory/environment.yaml', commit: 'c'.repeat(40), sha256: change.sha256 ?? sha('d'), repository: 'acme/shop', repositoryId: change.repositoryId ?? 42,
-  declaration: { schemaVersion: 1 as const, apk: change.apk ?? [{ name: 'maven', version: '3.9.11-r0' }], images: [{ reference: `docker.io/testcontainers/ryuk@sha256:${sha('a')}` }] } });
+  path: '.factory/environment.yaml',
+  commit: 'c'.repeat(40),
+  sha256: change.sha256 ?? sha('d'),
+  repository: 'acme/shop',
+  repositoryId: change.repositoryId ?? 42,
+  declaration: {
+    schemaVersion: 1 as const,
+    apk: change.apk ?? [{ name: 'maven', version: '3.9.11-r0' }],
+    images: [{ reference: `docker.io/testcontainers/ryuk@sha256:${sha('a')}` }],
+  },
+});
 const works = { first: '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01', second: '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a02', third: '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a03' };
 /** The real tail of a failed Alpine build (Alpine proof, evidence `neg-build-log.json`). */
 const failedBuildLog = [
   "#7 [3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99'\n",
-  '#7 0.304 ERROR: unable to select packages:\n', '#7 0.305   maven-3.9.11-r0:\n', '#7 0.305     breaks: world[maven=3.9.11-r99]\n',
-  '#7 ERROR: process "/bin/sh -c apk add --no-cache \'openjdk21-jdk=21.0.13.1_p2-r0\' \'maven=3.9.11-r99\'" did not complete successfully: exit code: 1\n',
-  '------\n', " > [3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99':\n",
-  '0.304 ERROR: unable to select packages:\n', '0.305   maven-3.9.11-r0:\n', '0.305     breaks: world[maven=3.9.11-r99]\n', '------\n',
-  'Dockerfile:3\n', '--------------------\n', '   3 | >>> RUN apk add --no-cache \'maven=3.9.11-r99\'\n', '--------------------\n',
-  'error: failed to solve: process "/bin/sh -c apk add --no-cache \'maven=3.9.11-r99\'" did not complete successfully: exit code: 1\n'];
+  '#7 0.304 ERROR: unable to select packages:\n',
+  '#7 0.305   maven-3.9.11-r0:\n',
+  '#7 0.305     breaks: world[maven=3.9.11-r99]\n',
+  "#7 ERROR: process \"/bin/sh -c apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99'\" did not complete successfully: exit code: 1\n",
+  '------\n',
+  " > [3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99':\n",
+  '0.304 ERROR: unable to select packages:\n',
+  '0.305   maven-3.9.11-r0:\n',
+  '0.305     breaks: world[maven=3.9.11-r99]\n',
+  '------\n',
+  'Dockerfile:3\n',
+  '--------------------\n',
+  "   3 | >>> RUN apk add --no-cache 'maven=3.9.11-r99'\n",
+  '--------------------\n',
+  'error: failed to solve: process "/bin/sh -c apk add --no-cache \'maven=3.9.11-r99\'" did not complete successfully: exit code: 1\n',
+];
 
 async function installation(t: TestContext, wait: { maxSeconds?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-image-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fake = lambdaAccountFake();
   /** The fake clock: waiting for a build only moves the account's time (never a real sleep). */
-  const sleep = async (milliseconds: number) => { fake.account.clock.now += milliseconds; };
+  const sleep = async (milliseconds: number) => {
+    fake.account.clock.now += milliseconds;
+  };
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaImageWait: { intervalSeconds: 10, maxSeconds: wait.maxSeconds ?? 900, sleep } });
-  const prepare = (workId: string, environment: ReturnType<typeof pinned> | null = pinned(), extra: { retryEnvironmentBase?: boolean; configuration?: unknown } = {}) =>
-    sandbox.prepare({ workId, configuration: extra.configuration ?? configuration, ...(environment ? { environment } : {}), ...(extra.retryEnvironmentBase ? { retryEnvironmentBase: true } : {}) });
+  const prepare = (
+    workId: string,
+    environment: ReturnType<typeof pinned> | null = pinned(),
+    extra: { retryEnvironmentBase?: boolean; configuration?: unknown } = {},
+  ) =>
+    sandbox.prepare({
+      workId,
+      configuration: extra.configuration ?? configuration,
+      ...(environment ? { environment } : {}),
+      ...(extra.retryEnvironmentBase ? { retryEnvironmentBase: true } : {}),
+    });
   const operations = () => fake.mutations.map(call => call.operation);
   return { root, fake, sandbox, prepare, operations };
 }
@@ -47,7 +77,10 @@ test('Prepare builds the image of the environment key once; a second Work with t
   assert.deepEqual(first.base.packages, { maven: '3.9.11-r0' });
   assert.deepEqual(first.base.images, [{ reference: `docker.io/testcontainers/ryuk@sha256:${sha('a')}`, digest: `sha256:${sha('a')}` }]);
   assert.deepEqual(operations(), ['putBuildArtifact', 'createImage']);
-  assert.deepEqual(fake.account.images.map(image => [image.name.startsWith('factory-acme-'), image.state]), [[true, 'CREATED']]);
+  assert.deepEqual(
+    fake.account.images.map(image => [image.name.startsWith('factory-acme-'), image.state]),
+    [[true, 'CREATED']],
+  );
 
   const second = await prepare(works.second);
   assert.ok(second.status === 'success' && second.base);
@@ -68,11 +101,19 @@ test('the image request is the adapter profile and the release pin; nothing of i
   await prepare(works.first);
   const request = fake.mutations.find(call => call.operation === 'createImage')!.input as Record<string, unknown>;
   const name = fake.account.images[0]!.name;
-  assert.deepEqual(request, { name, description: request.description, baseImageArn: 'arn:aws:lambda:us-east-1:aws:microvm-image:al2023-1', baseImageVersion: '3',
-    buildRoleArn: 'arn:aws:iam::123456789012:role/factory-acme-build', artifactUri: `s3://factory-acme-build-123456789012-us-east-1/${name}.zip`,
-    architecture: 'arm64', minimumMemoryMiB: 1024, additionalOsCapabilities: ['ALL'],
+  assert.deepEqual(request, {
+    name,
+    description: request.description,
+    baseImageArn: 'arn:aws:lambda:us-east-1:aws:microvm-image:al2023-1',
+    baseImageVersion: '3',
+    buildRoleArn: 'arn:aws:iam::123456789012:role/factory-acme-build',
+    artifactUri: `s3://factory-acme-build-123456789012-us-east-1/${name}.zip`,
+    architecture: 'arm64',
+    minimumMemoryMiB: 1024,
+    additionalOsCapabilities: ['ALL'],
     hooks: { port: 9000, runTimeoutSeconds: 60, terminateTimeoutSeconds: 60, readyTimeoutSeconds: 120 },
-    tags: { [installationTagKey]: 'acme', [workTagKey]: works.first } });
+    tags: { [installationTagKey]: 'acme', [workTagKey]: works.first },
+  });
   const artifact = Buffer.from(fake.account.objects['factory-acme-build-123456789012-us-east-1']![`${name}.zip`]!.body).toString('latin1');
   assert.match(artifact, /'maven=3\.9\.11-r0'/);
   assert.match(artifact, /adduser -D -s \/bin\/bash builder/);
@@ -83,7 +124,10 @@ test('the image and its build artifact carry the installation tag and the Work t
   await prepare(works.first);
   const tags = { 'software-factory-installation': 'acme', 'software-factory-work': works.first };
   assert.deepEqual(fake.account.images[0]!.tags, tags);
-  assert.deepEqual(Object.values(fake.account.objects['factory-acme-build-123456789012-us-east-1']!).map(object => object.tags), [tags]);
+  assert.deepEqual(
+    Object.values(fake.account.objects['factory-acme-build-123456789012-us-east-1']!).map(object => object.tags),
+    [tags],
+  );
 });
 
 test('a changed declaration, repository or release pin is a new key and a new image', async t => {
@@ -133,7 +177,10 @@ test('a failed build is a visible impediment whose cause is read from the build 
   assert.match(result.detail!, /maven=3\.9\.11-r99/);
   assert.ok(result.detail!.length <= 400);
   assert.deepEqual(operations(), ['putBuildArtifact', 'createImage']);
-  assert.deepEqual(fake.account.images.map(image => image.state), ['CREATE_FAILED']);
+  assert.deepEqual(
+    fake.account.images.map(image => image.state),
+    ['CREATE_FAILED'],
+  );
 
   // Repeating Prepare (same Work or another with the same key) reports the same failure: no implicit retry, no other version.
   fake.account.buildFailure = null;
@@ -161,7 +208,10 @@ test("only the Operator's explicit retry rebuilds a failed image, replacing it u
   const retried = await prepare(works.first, pinned(), { retryEnvironmentBase: true });
   assert.ok(retried.status === 'success' && retried.base && !retried.base.reused);
   assert.deepEqual(operations(), ['putBuildArtifact', 'createImage', 'deleteImage', 'putBuildArtifact', 'createImage']);
-  assert.deepEqual(fake.account.images.map(image => image.state), ['CREATED']);
+  assert.deepEqual(
+    fake.account.images.map(image => image.state),
+    ['CREATED'],
+  );
   // A retry never rebuilds an image that is fine.
   await prepare(works.second, pinned(), { retryEnvironmentBase: true });
   assert.equal(operations().length, 5);
@@ -173,7 +223,10 @@ test('a build that is still running when the wait ends is incomplete, and the ne
   const waiting = await prepare(works.first);
   assert.ok(waiting.status === 'failure' && waiting.code === 'ENVIRONMENT_BASE_PREPARATION_INCOMPLETE');
   assert.match(waiting.detail!, /still being built/);
-  assert.deepEqual(fake.account.images.map(image => image.state), ['CREATING']);
+  assert.deepEqual(
+    fake.account.images.map(image => image.state),
+    ['CREATING'],
+  );
   const next = await prepare(works.second);
   assert.ok(next.status === 'success' && next.base?.reused, 'the build another Prepare started is reused');
   assert.deepEqual(operations(), ['putBuildArtifact', 'createImage']);
@@ -181,7 +234,11 @@ test('a build that is still running when the wait ends is incomplete, and the ne
 
 test('Prepare refuses, before touching the account, a Work without a pinned declaration and a declaration outside the closed schema', async t => {
   const { fake, prepare } = await installation(t);
-  assert.deepEqual(await prepare(works.first, null), { status: 'failure', code: 'ENVIRONMENT_NOT_PINNED', detail: 'The Lambda adapter builds the MicroVM image from the pinned .factory/environment.yaml; this Work has none.' });
+  assert.deepEqual(await prepare(works.first, null), {
+    status: 'failure',
+    code: 'ENVIRONMENT_NOT_PINNED',
+    detail: 'The Lambda adapter builds the MicroVM image from the pinned .factory/environment.yaml; this Work has none.',
+  });
   const hostile = pinned();
   hostile.declaration.apk = [{ name: 'curl && rm -rf /', version: '8.23.0-r0' }];
   const refused = await prepare(works.first, hostile);
@@ -204,9 +261,14 @@ test('an account that cannot be reached or refuses a permission leaves Prepare i
 });
 
 test('the cause of a build failure is the failing step of the BuildKit log, bounded to one line', () => {
-  assert.equal(buildFailureCause(failedBuildLog),
-    "[3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99': ERROR: unable to select packages: maven-3.9.11-r0: breaks: world[maven=3.9.11-r99]");
-  assert.equal(buildFailureCause(['#1 [internal] load build definition\n', 'error: failed to solve: failed to read dockerfile\n']), 'error: failed to solve: failed to read dockerfile');
+  assert.equal(
+    buildFailureCause(failedBuildLog),
+    "[3/5] RUN apk add --no-cache 'openjdk21-jdk=21.0.13.1_p2-r0' 'maven=3.9.11-r99': ERROR: unable to select packages: maven-3.9.11-r0: breaks: world[maven=3.9.11-r99]",
+  );
+  assert.equal(
+    buildFailureCause(['#1 [internal] load build definition\n', 'error: failed to solve: failed to read dockerfile\n']),
+    'error: failed to solve: failed to read dockerfile',
+  );
   assert.equal(buildFailureCause(['#1 DONE 0.0s\n', '\n']), null);
   assert.equal(buildFailureCause([]), null);
   assert.ok(buildFailureCause([' > [2/5] RUN apk add:\n', `0.1 ERROR: ${'x'.repeat(2000)}\n`, '------\n'])!.length <= 400);

@@ -25,8 +25,13 @@ import { generateSessionKey, guestKeepaliveSeconds, guestSshPort, openChannel, t
 
 /** Time as the boot waits see it. Injected so tests move a fake clock; production uses the wall clock. */
 export type LambdaBootClock = { now(): number; sleep(milliseconds: number): Promise<void> };
-export const defaultLambdaBootClock: LambdaBootClock = Object.freeze({ now: () => Date.now(),
-  sleep: (milliseconds: number) => new Promise<void>(resolve => { setTimeout(resolve, milliseconds); }) });
+export const defaultLambdaBootClock: LambdaBootClock = Object.freeze({
+  now: () => Date.now(),
+  sleep: (milliseconds: number) =>
+    new Promise<void>(resolve => {
+      setTimeout(resolve, milliseconds);
+    }),
+});
 
 /** Bounded waits of a boot (observed: Run to SSH usable about 7 s; Terminate to `TERMINATED` 4 to 8 s). One service read per interval. */
 export const lambdaBootWaits = Object.freeze({ intervalSeconds: 2, runningSeconds: 120, channelSeconds: 90, cessationSeconds: 120 });
@@ -36,18 +41,31 @@ export const lambdaBootWaits = Object.freeze({ intervalSeconds: 2, runningSecond
  * aborted. Separate from the boot clock because it runs for the whole life of a boot, beside its calls: tests move it by hand.
  */
 export type LambdaObservationTimer = (milliseconds: number, signal: AbortSignal) => Promise<void>;
-export const defaultLambdaObservationTimer: LambdaObservationTimer = (milliseconds, signal) => new Promise<void>(resolve => {
-  if (signal.aborted) { resolve(); return; }
-  const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
-  // Never keeps the process alive: a watch is not work.
-  const timer = setTimeout(done, milliseconds);
-  timer.unref();
-  signal.addEventListener('abort', done, { once: true });
-});
+export const defaultLambdaObservationTimer: LambdaObservationTimer = (milliseconds, signal) =>
+  new Promise<void>(resolve => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    // Never keeps the process alive: a watch is not work.
+    const timer = setTimeout(done, milliseconds);
+    timer.unref();
+    signal.addEventListener('abort', done, { once: true });
+  });
 
-export type LambdaBootDependencies = { root: string; service: LambdaServiceFactory; transport: GuestTransport; clock: LambdaBootClock;
+export type LambdaBootDependencies = {
+  root: string;
+  service: LambdaServiceFactory;
+  transport: GuestTransport;
+  clock: LambdaBootClock;
   /** v2 ticket 10: how the watch of a boot's environment waits between observations (default: a real, unreferenced timer). */
-  observationTimer?: LambdaObservationTimer };
+  observationTimer?: LambdaObservationTimer;
+};
 export type LambdaStartResult = StartResult;
 
 /** Why a boot began and why it ended (V2-10). A boot whose start did not complete ends with `end` and the failure code. */
@@ -58,10 +76,14 @@ const instant = z.string().min(1);
 const bootRecordSchema = z.strictObject({
   version: z.literal(1),
   boot: z.string().regex(/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/),
-  environment: z.string().regex(/^env-[a-f0-9]{64}$/), workId: z.string().min(1),
+  environment: z.string().regex(/^env-[a-f0-9]{64}$/),
+  workId: z.string().min(1),
   /** How any process reaches the account again: the profile NAME and region, never a credential. */
-  awsProfile: z.string().min(1), region: z.string().min(1), installation: z.string().min(1),
-  imageArn: z.string().min(1), imageVersion: z.string().min(1),
+  awsProfile: z.string().min(1),
+  region: z.string().min(1),
+  installation: z.string().min(1),
+  imageArn: z.string().min(1),
+  imageVersion: z.string().min(1),
   /** The size of the boot comes from the profile the image was built with: GetMicrovm reports none. */
   size: z.strictObject({ baselineMemoryMiB: z.number(), peakMemoryMiB: z.number(), peakVcpus: z.number() }),
   maxBootSeconds: z.number().int().positive(),
@@ -70,17 +92,28 @@ const bootRecordSchema = z.strictObject({
   begin: z.strictObject({ reason: z.enum(['start', 'planned-swap']), requestedAt: instant }),
   /** `requested`: RunMicrovm not answered yet; `running`: a MicroVM exists; `active`: channel up and commit cloned; `ending`: stop requested. */
   phase: z.enum(['requested', 'running', 'active', 'ending', 'ended']),
-  microvmId: z.string().min(1).optional(), endpoint: z.string().min(1).optional(),
+  microvmId: z.string().min(1).optional(),
+  endpoint: z.string().min(1).optional(),
   /** The guest's SSH host key, pinned by the host at first contact; every later connection accepts only this key. */
-  hostKey: z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/=]+$/).optional(),
+  hostKey: z
+    .string()
+    .regex(/^ssh-ed25519 [A-Za-z0-9+/=]+$/)
+    .optional(),
   checkout: z.strictObject({ repository: z.string(), commit: z.string(), branch: z.string().optional() }).optional(),
   /** The service's own instants (GetMicrovm), as given. */
   startedAt: instant.optional(),
   stop: z.strictObject({ reason: z.enum(['planned-swap', 'loss', 'end']), requestedAt: instant, detail: z.string().max(256).optional() }).optional(),
-  end: z.strictObject({ reason: z.enum(['planned-swap', 'loss', 'end']), at: instant, terminatedAt: instant.optional(), stateReason: z.string().optional(),
-    /** The failure code of a start that did not complete. */ code: z.string().optional(),
-    /** v2 ticket 14 (V2-32): the service's end minus the service's start. Absent: the service did not give both instants (unknown, never zero). */
-    seconds: z.number().nonnegative().optional() }).optional(),
+  end: z
+    .strictObject({
+      reason: z.enum(['planned-swap', 'loss', 'end']),
+      at: instant,
+      terminatedAt: instant.optional(),
+      stateReason: z.string().optional(),
+      /** The failure code of a start that did not complete. */ code: z.string().optional(),
+      /** v2 ticket 14 (V2-32): the service's end minus the service's start. Absent: the service did not give both instants (unknown, never zero). */
+      seconds: z.number().nonnegative().optional(),
+    })
+    .optional(),
   /** Guest evidence the host read over the channel (files under the boot's `evidence/`); `lost` says what never was (V2-34). */
   evidence: z.strictObject({ collected: z.array(z.strictObject({ label: z.string(), at: instant, bytes: z.number().int() })), lost: z.string().nullable() }),
   /**
@@ -88,10 +121,17 @@ const bootRecordSchema = z.strictObject({
    * boot stopped, as a protected Records reference (`<root>/<work>/evidence/<id>/files/`). Ticket 08 re-sends `spec/` and `instructions/`
    * of the latest `preserved` collection to the next boot. `absent`: the guest had none; `lost`: not collected before the boot ended.
    */
-  artifacts: z.discriminatedUnion('status', [
-    z.strictObject({ status: z.literal('preserved'), at: instant, reference: z.strictObject({ workId: z.string(), id: z.string(), manifestSha256: z.string(), files: z.number().int(), bytes: z.number().int() }) }),
-    z.strictObject({ status: z.literal('absent'), at: instant }),
-    z.strictObject({ status: z.literal('lost'), at: instant, code: z.string() })]).optional(),
+  artifacts: z
+    .discriminatedUnion('status', [
+      z.strictObject({
+        status: z.literal('preserved'),
+        at: instant,
+        reference: z.strictObject({ workId: z.string(), id: z.string(), manifestSha256: z.string(), files: z.number().int(), bytes: z.number().int() }),
+      }),
+      z.strictObject({ status: z.literal('absent'), at: instant }),
+      z.strictObject({ status: z.literal('lost'), at: instant, code: z.string() }),
+    ])
+    .optional(),
   /** v2 ticket 08 (decision 3D): the `spec/`/`instructions/` versions the host re-sent into this boot at its start, their source boot and the boots whose versions were lost. */
   restored: z.strictObject({ restored: z.array(z.string()), from: z.string().nullable(), lost: z.array(z.string()) }).optional(),
 });
@@ -110,10 +150,16 @@ async function writeJson(path: string, value: unknown) {
 }
 async function readJson<T>(path: string, schema: z.ZodType<T>): Promise<T | null> {
   let text: string;
-  try { text = await readFile(path, 'utf8'); } catch (error) { if (missing(error)) return null; throw error; }
+  try {
+    text = await readFile(path, 'utf8');
+  } catch (error) {
+    if (missing(error)) return null;
+    throw error;
+  }
   return schema.parse(JSON.parse(text));
 }
-const saveRecord = async (root: string, record: LambdaBootRecord) => writeJson(join(await bootDirectory(root, record.environment, record.boot), 'boot.json'), record);
+const saveRecord = async (root: string, record: LambdaBootRecord) =>
+  writeJson(join(await bootDirectory(root, record.environment, record.boot), 'boot.json'), record);
 
 /** The record of one boot; `null` when this installation has none under that reference. An unreadable record throws (never guessed). */
 export async function readLambdaBoot(root: string, environment: EnvironmentRef, boot: BootRef): Promise<LambdaBootRecord | null> {
@@ -128,15 +174,27 @@ export async function currentLambdaBoot(root: string, environment: EnvironmentRe
 /** Every boot recorded for the environment, oldest first: identity, reasons, size, start and end (V2-10; consumption is ticket 14). */
 export async function listLambdaBoots(root: string, environment: EnvironmentRef): Promise<LambdaBootRecord[]> {
   let names: string[];
-  try { names = await readdir(join(await workDirectory(root, environment), 'boots')); } catch (error) { if (missing(error)) return []; throw error; }
+  try {
+    names = await readdir(join(await workDirectory(root, environment), 'boots'));
+  } catch (error) {
+    if (missing(error)) return [];
+    throw error;
+  }
   const records = await Promise.all(names.map(name => readLambdaBoot(root, environment, name as BootRef)));
-  return records.filter((record): record is LambdaBootRecord => record !== null).sort((left, right) => left.begin.requestedAt.localeCompare(right.begin.requestedAt));
+  return records
+    .filter((record): record is LambdaBootRecord => record !== null)
+    .sort((left, right) => left.begin.requestedAt.localeCompare(right.begin.requestedAt));
 }
 
 /** Ticket 15: every environment the Lambda adapter has host records for in this installation (an image record or boots). */
 export async function listLambdaEnvironments(root: string): Promise<EnvironmentRef[]> {
   let names: string[];
-  try { names = await readdir(join(await realpath(root), 'lambda', 'works')); } catch (error) { if (missing(error)) return []; throw error; }
+  try {
+    names = await readdir(join(await realpath(root), 'lambda', 'works'));
+  } catch (error) {
+    if (missing(error)) return [];
+    throw error;
+  }
   return names.filter(name => /^env-[a-f0-9]{64}$/.test(name)).sort() as EnvironmentRef[];
 }
 
@@ -155,20 +213,38 @@ const serviceOf = (dependencies: LambdaBootDependencies, record: Pick<LambdaBoot
 function ended(record: LambdaBootRecord, reason: BootEndReason, clock: LambdaBootClock, microvm?: LambdaMicrovm, code?: string): LambdaBootRecord {
   const last = record.evidence.collected.at(-1);
   // What the host did not read before a death no longer exists anywhere: there are no runtime logs without an execution role (V2-34).
-  const lost = reason === 'loss' && record.evidence.lost === null
-    ? `The boot ended before a final collection: guest evidence after ${last ? `the collection of ${last.at}` : 'its start'} is lost.` : record.evidence.lost;
+  const lost =
+    reason === 'loss' && record.evidence.lost === null
+      ? `The boot ended before a final collection: guest evidence after ${last ? `the collection of ${last.at}` : 'its start'} is lost.`
+      : record.evidence.lost;
   const startedAt = record.startedAt ?? microvm?.startedAt;
   const seconds = serviceSeconds(startedAt, microvm?.terminatedAt);
-  return { ...record, phase: 'ended', evidence: { ...record.evidence, lost },
+  return {
+    ...record,
+    phase: 'ended',
+    evidence: { ...record.evidence, lost },
     // Decision 2c: what was not collected before a death is declared lost, never reconstructed.
-    ...(record.artifacts ? {} : { artifacts: { status: 'lost' as const, at: iso(clock), code: reason === 'loss' ? 'BOOT_LOST_BEFORE_COLLECTION' : 'NOT_COLLECTED' } }),
+    ...(record.artifacts
+      ? {}
+      : { artifacts: { status: 'lost' as const, at: iso(clock), code: reason === 'loss' ? 'BOOT_LOST_BEFORE_COLLECTION' : 'NOT_COLLECTED' } }),
     ...(startedAt ? { startedAt } : {}),
-    end: { reason, at: iso(clock), ...(microvm?.terminatedAt ? { terminatedAt: microvm.terminatedAt } : {}),
-      ...(microvm?.stateReason ? { stateReason: microvm.stateReason } : {}), ...(code ? { code } : {}), ...(seconds === null ? {} : { seconds }) } };
+    end: {
+      reason,
+      at: iso(clock),
+      ...(microvm?.terminatedAt ? { terminatedAt: microvm.terminatedAt } : {}),
+      ...(microvm?.stateReason ? { stateReason: microvm.stateReason } : {}),
+      ...(code ? { code } : {}),
+      ...(seconds === null ? {} : { seconds }),
+    },
+  };
 }
 
 /** TerminateMicrovm only asks; cessation is a later GetMicrovm saying `TERMINATED`. Not seen within the wait: NOT confirmed. */
-export async function terminateAndConfirm(service: LambdaService, microvmId: string, clock: LambdaBootClock): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
+export async function terminateAndConfirm(
+  service: LambdaService,
+  microvmId: string,
+  clock: LambdaBootClock,
+): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
   await service.terminateMicrovm(microvmId);
   const deadline = clock.now() + lambdaBootWaits.cessationSeconds * 1000;
   for (;;) {
@@ -181,30 +257,51 @@ export async function terminateAndConfirm(service: LambdaService, microvmId: str
 
 const evidenceLimit = 512 * 1024;
 /** Reads the guest's boot logs over the channel into the boot's private directory. `false`: nothing was collected this time. */
-async function collectEvidence(dependencies: LambdaBootDependencies, record: LambdaBootRecord, channel: LambdaChannel, label: string): Promise<LambdaBootRecord | null> {
+async function collectEvidence(
+  dependencies: LambdaBootDependencies,
+  record: LambdaBootRecord,
+  channel: LambdaChannel,
+  label: string,
+): Promise<LambdaBootRecord | null> {
   const result = await channel.exec(evidenceProgram());
   if (result.status !== 'exited' || result.exitCode !== 0) return null;
   const directory = join(await bootDirectory(dependencies.root, record.environment, record.boot), 'evidence');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const text = Buffer.from(result.stdout, 'utf8').subarray(0, evidenceLimit);
   await writeFile(join(directory, `${label}.log`), text, { mode: 0o600 });
-  return { ...record, evidence: { ...record.evidence, collected: [...record.evidence.collected.filter(entry => entry.label !== label), { label, at: iso(dependencies.clock), bytes: text.byteLength }] } };
+  return {
+    ...record,
+    evidence: {
+      ...record.evidence,
+      collected: [...record.evidence.collected.filter(entry => entry.label !== label), { label, at: iso(dependencies.clock), bytes: text.byteLength }],
+    },
+  };
 }
 
 /**
  * Decision 2c: the `/artifacts` evidence trees of a living boot, staged into the protected Records area of its Work. One collection per
  * stop; a boot that already has a preserved collection keeps it when a repeated stop finds nothing more.
  */
-async function collectArtifacts(dependencies: LambdaBootDependencies, record: LambdaBootRecord, channel: LambdaChannel): Promise<NonNullable<LambdaBootRecord['artifacts']>> {
+async function collectArtifacts(
+  dependencies: LambdaBootDependencies,
+  record: LambdaBootRecord,
+  channel: LambdaChannel,
+): Promise<NonNullable<LambdaBootRecord['artifacts']>> {
   const at = iso(dependencies.clock);
   const earlier = record.artifacts?.status === 'preserved' ? record.artifacts : null;
   // An empty or missing tree leaves no empty Records entry behind: the stage refuses and the incomplete directory is removed.
-  const preserved = await preserveEvidence({ root: dependencies.root, workId: record.workId, label: `${record.environment}/${record.boot}`, stage: async destination => {
-    const collected = await collectLambdaArtifacts(channel, destination);
-    if (collected.status === 'failure') throw new Error(collected.code);
-    if (collected.status === 'absent' || collected.files === 0) throw new Error('EVIDENCE_ABSENT');
-  } }).catch(() => ({ status: 'failed' as const, code: 'EVIDENCE_PRESERVATION_FAILED' }));
-  if (preserved.status !== 'preserved') return earlier ?? (preserved.code === 'EVIDENCE_ABSENT' ? { status: 'absent', at } : { status: 'lost', at, code: preserved.code });
+  const preserved = await preserveEvidence({
+    root: dependencies.root,
+    workId: record.workId,
+    label: `${record.environment}/${record.boot}`,
+    stage: async destination => {
+      const collected = await collectLambdaArtifacts(channel, destination);
+      if (collected.status === 'failure') throw new Error(collected.code);
+      if (collected.status === 'absent' || collected.files === 0) throw new Error('EVIDENCE_ABSENT');
+    },
+  }).catch(() => ({ status: 'failed' as const, code: 'EVIDENCE_PRESERVATION_FAILED' }));
+  if (preserved.status !== 'preserved')
+    return earlier ?? (preserved.code === 'EVIDENCE_ABSENT' ? { status: 'absent', at } : { status: 'lost', at, code: preserved.code });
   return { status: 'preserved', at, reference: preserved.reference };
 }
 
@@ -214,14 +311,21 @@ async function collectArtifacts(dependencies: LambdaBootDependencies, record: La
  * the search with nothing to send; one that ended before its collection is `lost` (what it wrote is gone) and the search goes on to what
  * the host still holds. A boot that never became active (no clone) never had a Builder and is skipped. Null: no earlier boot at all.
  */
-export async function previousLambdaArtifacts(root: string, environment: EnvironmentRef, boot: BootRef): Promise<{ from: BootRef | null; source: string | null; lost: BootRef[] } | null> {
+export async function previousLambdaArtifacts(
+  root: string,
+  environment: EnvironmentRef,
+  boot: BootRef,
+): Promise<{ from: BootRef | null; source: string | null; lost: BootRef[] } | null> {
   const earlier = (await listLambdaBoots(root, environment)).filter(record => record.boot !== boot && record.checkout).reverse();
   if (!earlier.length) return null;
   const lost: BootRef[] = [];
   for (const record of earlier) {
     if (record.artifacts?.status === 'preserved') {
       const { workId, id } = record.artifacts.reference;
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(workId) || !/^[a-f0-9-]{36}$/.test(id)) { lost.push(record.boot as BootRef); continue; }
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(workId) || !/^[a-f0-9-]{36}$/.test(id)) {
+        lost.push(record.boot as BootRef);
+        continue;
+      }
       return { from: record.boot as BootRef, source: join(root, workId, 'evidence', id, 'files'), lost };
     }
     if (record.artifacts?.status === 'absent') return { from: null, source: null, lost };
@@ -230,9 +334,13 @@ export async function previousLambdaArtifacts(root: string, environment: Environ
   return { from: null, source: null, lost };
 }
 
-export type LambdaCheckout = { repository: string; commit: string; branch?: string;
+export type LambdaCheckout = {
+  repository: string;
+  commit: string;
+  branch?: string;
   /** The Builder's reduced Git credential, in memory only: delivered to the clone as process environment over the channel (V2-24). */
-  credential: { readonly token: string } };
+  credential: { readonly token: string };
+};
 
 /**
  * Iniciar: RunMicrovm of the Work's image (no tags: the service takes none; no execution role, no idle suspension, `INTERNET_EGRESS`), then
@@ -240,16 +348,35 @@ export type LambdaCheckout = { repository: string; commit: string; branch?: stri
  * from `origin` in the guest. Success only with all three. Any failure after a MicroVM exists terminates it; an end the service does not
  * confirm is `indeterminate`, never a plain failure.
  */
-export async function startLambdaBoot(dependencies: LambdaBootDependencies, { environment, profile, checkout, reason = 'start', remoteUrl, seeds = [] }: { environment: EnvironmentRef;
-  profile: LambdaProfile; checkout?: LambdaCheckout; reason?: BootBeginReason; remoteUrl: (scope: { repository: string }) => string;
-  /** v2 ticket 06: Factory material written into the guest of this boot (a boot starts empty, so it is sent at every start). */ seeds?: readonly ArtifactSeed[] }): Promise<LambdaStartResult> {
+export async function startLambdaBoot(
+  dependencies: LambdaBootDependencies,
+  {
+    environment,
+    profile,
+    checkout,
+    reason = 'start',
+    remoteUrl,
+    seeds = [],
+  }: {
+    environment: EnvironmentRef;
+    profile: LambdaProfile;
+    checkout?: LambdaCheckout;
+    reason?: BootBeginReason;
+    remoteUrl: (scope: { repository: string }) => string;
+    /** v2 ticket 06: Factory material written into the guest of this boot (a boot starts empty, so it is sent at every start). */ seeds?: readonly ArtifactSeed[];
+  },
+): Promise<LambdaStartResult> {
   const { root, clock, transport } = dependencies;
   if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'failure', code: 'ENVIRONMENT_REF_INVALID' };
   const image = await readWorkImage(root, environment);
   if (!image) return { status: 'failure', code: 'ENVIRONMENT_NOT_PREPARED' };
   if (!checkout) return { status: 'failure', code: 'CHECKOUT_REQUIRED' };
-  const clone = cloneProgram({ remote: remoteUrl({ repository: checkout.repository }), commit: checkout.commit, token: checkout.credential.token,
-    ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) });
+  const clone = cloneProgram({
+    remote: remoteUrl({ repository: checkout.repository }),
+    commit: checkout.commit,
+    token: checkout.credential.token,
+    ...(checkout.branch === undefined ? {} : { branch: checkout.branch }),
+  });
   if (!clone || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(checkout.repository)) return { status: 'failure', code: 'CHECKOUT_INVALID' };
   // Never adopt a survivor: a previous boot that the service does not report ended must be stopped first, not reused.
   const previous = await currentLambdaBoot(root, environment);
@@ -265,16 +392,37 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   const identityFile = join(directory, identityName);
   await writeFile(identityFile, key.privateKey, { mode: 0o600, flag: 'wx' });
   const size = lambdaBootSize(profile);
-  let record: LambdaBootRecord = { version: 1, boot, environment, workId: image.workId, awsProfile: profile.awsProfile, region: profile.region, installation: profile.installation,
-    imageArn: image.imageArn, imageVersion: image.imageVersion, size: { baselineMemoryMiB: size.baselineMemoryMiB, peakMemoryMiB: size.peakMemoryMiB, peakVcpus: size.peakVcpus },
-    maxBootSeconds: profile.maxBootSeconds, observationIntervalSeconds: profile.observationIntervalSeconds, begin: { reason, requestedAt: iso(clock) }, phase: 'requested', evidence: { collected: [], lost: null } };
-  const save = async (next: LambdaBootRecord) => { record = next; await saveRecord(root, record); };
+  let record: LambdaBootRecord = {
+    version: 1,
+    boot,
+    environment,
+    workId: image.workId,
+    awsProfile: profile.awsProfile,
+    region: profile.region,
+    installation: profile.installation,
+    imageArn: image.imageArn,
+    imageVersion: image.imageVersion,
+    size: { baselineMemoryMiB: size.baselineMemoryMiB, peakMemoryMiB: size.peakMemoryMiB, peakVcpus: size.peakVcpus },
+    maxBootSeconds: profile.maxBootSeconds,
+    observationIntervalSeconds: profile.observationIntervalSeconds,
+    begin: { reason, requestedAt: iso(clock) },
+    phase: 'requested',
+    evidence: { collected: [], lost: null },
+  };
+  const save = async (next: LambdaBootRecord) => {
+    record = next;
+    await saveRecord(root, record);
+  };
   await save(record);
   await writeJson(join(await workDirectory(root, environment), 'current.json'), { version: 1, environment, boot });
 
   // The payload is public material only: the session PUBLIC key the guest authorizes for `builder`.
-  const run = await service.runMicrovm({ imageArn: image.imageArn, maximumDurationSeconds: profile.maxBootSeconds,
-    runHookPayload: JSON.stringify({ builder: key.publicKey }), tags: { [installationTagKey]: profile.installation, [workTagKey]: image.workId } });
+  const run = await service.runMicrovm({
+    imageArn: image.imageArn,
+    maximumDurationSeconds: profile.maxBootSeconds,
+    runHookPayload: JSON.stringify({ builder: key.publicKey }),
+    tags: { [installationTagKey]: profile.installation, [workTagKey]: image.workId },
+  });
   if (!run.ok) {
     await rm(identityFile, { force: true });
     // An unreadable answer does not prove that no MicroVM was created: the record stays open for the inventory by tag (ticket 15).
@@ -287,7 +435,7 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   const { microvmId, endpoint } = run.value;
   let channel: LambdaChannel | null = null;
   const fail = async (code: string, detail?: string): Promise<StartResult> => {
-    if (channel) await save(await collectEvidence(dependencies, record, channel, 'start-failure').catch(() => null) ?? record);
+    if (channel) await save((await collectEvidence(dependencies, record, channel, 'start-failure').catch(() => null)) ?? record);
     channel?.close();
     await rm(identityFile, { force: true });
     const cessation = await terminateAndConfirm(service, microvmId, clock);
@@ -302,7 +450,10 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   const interval = lambdaBootWaits.intervalSeconds * 1000;
   for (const deadline = clock.now() + lambdaBootWaits.runningSeconds * 1000; ;) {
     const read = await service.microvm(microvmId);
-    if (read.ok && read.value.state === 'RUNNING') { await save({ ...record, ...(read.value.startedAt ? { startedAt: read.value.startedAt } : {}) }); break; }
+    if (read.ok && read.value.state === 'RUNNING') {
+      await save({ ...record, ...(read.value.startedAt ? { startedAt: read.value.startedAt } : {}) });
+      break;
+    }
     // A failed run hook takes the MicroVM straight to its end without ever running.
     if (read.ok && (read.value.state === 'TERMINATING' || read.value.state === 'TERMINATED')) return fail('MICROVM_RUN_HOOK_FAILED', read.value.stateReason);
     if (clock.now() >= deadline) return fail('MICROVM_NOT_RUNNING', read.ok ? read.value.state : failureDetail(read.failure));
@@ -314,8 +465,18 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   for (const deadline = clock.now() + lambdaBootWaits.channelSeconds * 1000; hostKey === null;) {
     const token = await service.createAuthToken({ microvmId, port: guestSshPort, expirationMinutes: 60 });
     if (!token.ok) return fail('CHANNEL_TOKEN_REFUSED', failureDetail(token.failure));
-    const contact = await transport.readHostKey({ endpoint, port: guestSshPort, token: token.value.token, user: 'builder', identityFile, keepaliveSeconds: guestKeepaliveSeconds });
-    if (contact.status === 'read') { hostKey = contact.hostKey; break; }
+    const contact = await transport.readHostKey({
+      endpoint,
+      port: guestSshPort,
+      token: token.value.token,
+      user: 'builder',
+      identityFile,
+      keepaliveSeconds: guestKeepaliveSeconds,
+    });
+    if (contact.status === 'read') {
+      hostKey = contact.hostKey;
+      break;
+    }
     // `sshd` is born in the start script, a few seconds after the MicroVM runs: nothing answering yet is expected.
     if (contact.status === 'refused' && contact.code !== 'UNREACHABLE') return fail(`CHANNEL_${contact.code}`, contact.detail);
     if (clock.now() >= deadline) return fail('CHANNEL_UNREACHABLE', contact.detail);
@@ -349,35 +510,59 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   if (previous3d === 'unreadable') return fail('ARTIFACT_RESTORE_FAILED', 'ARTIFACT_RESTORE_RECORDS_UNREADABLE');
   let artifacts: { restored: string[]; from: BootRef | null; lost: BootRef[] } | null = null;
   if (previous3d) {
-    const restored = previous3d.source ? await restoreLambdaArtifacts(channel, previous3d.source).catch(() => ({ status: 'failure' as const, code: 'ARTIFACT_RESTORE_UNAVAILABLE' }))
+    const restored = previous3d.source
+      ? await restoreLambdaArtifacts(channel, previous3d.source).catch(() => ({ status: 'failure' as const, code: 'ARTIFACT_RESTORE_UNAVAILABLE' }))
       : { status: 'restored' as const, versions: [], files: 0 };
     if (restored.status !== 'restored') return fail('ARTIFACT_RESTORE_FAILED', restored.code);
     artifacts = { restored: restored.versions, from: restored.versions.length ? previous3d.from : null, lost: previous3d.lost };
   }
-  await save(await collectEvidence(dependencies, record, channel, 'start').catch(() => null) ?? record);
-  await save({ ...record, ...(artifacts ? { restored: artifacts } : {}), phase: 'active', checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) } });
+  await save((await collectEvidence(dependencies, record, channel, 'start').catch(() => null)) ?? record);
+  await save({
+    ...record,
+    ...(artifacts ? { restored: artifacts } : {}),
+    phase: 'active',
+    checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) },
+  });
   return { status: 'success', boot, seeds: seeded.seeds, ...(artifacts ? { artifacts } : {}) };
 }
 
 export type LambdaObservation = Observation & {
   /** What the service said about the MicroVM in this observation (absent: the service was not, or could not be, read). */
-  lifecycle?: { state: string; stateReason?: string; startedAt?: string; terminatedAt?: string } };
+  lifecycle?: { state: string; stateReason?: string; startedAt?: string; terminatedAt?: string };
+};
 
 /**
  * Observar: the condition is the service's (GetMicrovm), read with the boot's record by ANY process. A MicroVM found terminated that no
  * stop was asked for is recorded as a loss, with its uncollected evidence declared lost. An unreadable or in-between answer is
  * `indeterminate`: cessation is never inferred.
  */
-export async function observeLambdaBoot(dependencies: LambdaBootDependencies, { environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<LambdaObservation> {
-  const reference = boot ?? await currentLambdaBoot(dependencies.root, environment);
+export async function observeLambdaBoot(
+  dependencies: LambdaBootDependencies,
+  { environment, boot }: { environment: EnvironmentRef; boot?: BootRef },
+): Promise<LambdaObservation> {
+  const reference = boot ?? (await currentLambdaBoot(dependencies.root, environment));
   const correlated = boot === undefined ? { boot: reference } : {};
   if (!reference) return { condition: 'not-booted', cessationConfirmed: true, consumption: 'unavailable', boot: null };
   const record = await readLambdaBoot(dependencies.root, environment, reference);
   if (!record) return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable', ...correlated };
-  const stopped = (lifecycle?: LambdaObservation['lifecycle']): LambdaObservation =>
-    ({ condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable', ...correlated, ...(lifecycle ? { lifecycle } : {}) });
-  if (record.phase === 'ended') return stopped(record.end?.terminatedAt ? { state: 'TERMINATED', terminatedAt: record.end.terminatedAt,
-    ...(record.end.stateReason ? { stateReason: record.end.stateReason } : {}), ...(record.startedAt ? { startedAt: record.startedAt } : {}) } : undefined);
+  const stopped = (lifecycle?: LambdaObservation['lifecycle']): LambdaObservation => ({
+    condition: 'stopped',
+    cessationConfirmed: true,
+    consumption: 'unavailable',
+    ...correlated,
+    ...(lifecycle ? { lifecycle } : {}),
+  });
+  if (record.phase === 'ended')
+    return stopped(
+      record.end?.terminatedAt
+        ? {
+            state: 'TERMINATED',
+            terminatedAt: record.end.terminatedAt,
+            ...(record.end.stateReason ? { stateReason: record.end.stateReason } : {}),
+            ...(record.startedAt ? { startedAt: record.startedAt } : {}),
+          }
+        : undefined,
+    );
   // RunMicrovm was never answered for this record: whether a MicroVM exists is unknown to the host (the inventory by tag is ticket 15).
   if (!record.microvmId) return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable', ...correlated };
   const read = await serviceOf(dependencies, record).microvm(record.microvmId);
@@ -389,7 +574,8 @@ export async function observeLambdaBoot(dependencies: LambdaBootDependencies, { 
     await saveRecord(dependencies.root, ended(record, record.stop?.reason ?? 'loss', dependencies.clock, read.value));
     return stopped(lifecycle);
   }
-  if (state === 'RUNNING' || state === 'PENDING') return { condition: 'active', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
+  if (state === 'RUNNING' || state === 'PENDING')
+    return { condition: 'active', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
   return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
 }
 
@@ -398,7 +584,10 @@ export async function observeLambdaBoot(dependencies: LambdaBootDependencies, { 
  * installation accounted for every MicroVM that start could have left. Nothing else may close such a record: the host alone cannot
  * tell whether a MicroVM exists. A record that has an id, or already ended, is left as it is.
  */
-export async function closeUnansweredLambdaStart(dependencies: Pick<LambdaBootDependencies, 'root' | 'clock'>, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }): Promise<boolean> {
+export async function closeUnansweredLambdaStart(
+  dependencies: Pick<LambdaBootDependencies, 'root' | 'clock'>,
+  { environment, boot }: { environment: EnvironmentRef; boot: BootRef },
+): Promise<boolean> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record || record.phase !== 'requested' || record.microvmId) return false;
   await rm(join(await bootDirectory(dependencies.root, environment, boot), identityName), { force: true });
@@ -406,14 +595,17 @@ export async function closeUnansweredLambdaStart(dependencies: Pick<LambdaBootDe
   return true;
 }
 
-const stopReason = (reason: string): BootEndReason => reason === 'planned-swap' || reason === 'loss' ? reason : 'end';
+const stopReason = (reason: string): BootEndReason => (reason === 'planned-swap' || reason === 'loss' ? reason : 'end');
 
 /**
  * Parar: collects the guest evidence over the channel, withdraws access (the session key is deleted; no token expiry is awaited), asks
  * TerminateMicrovm and confirms cessation ONLY when the service reports `TERMINATED`. Nothing of the disk is kept. `reason` is
  * `planned-swap`, `loss` or anything else for the end of the boot's use.
  */
-export async function stopLambdaBoot(dependencies: LambdaBootDependencies, { environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult> {
+export async function stopLambdaBoot(
+  dependencies: LambdaBootDependencies,
+  { environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string },
+): Promise<StopResult> {
   const { root, clock } = dependencies;
   let record = await readLambdaBoot(root, environment, boot);
   if (!record) return { status: 'failure', code: 'BOOT_NOT_FOUND', cessationConfirmed: false };
@@ -431,19 +623,42 @@ export async function stopLambdaBoot(dependencies: LambdaBootDependencies, { env
     return confirmed;
   }
   const requested = stopReason(reason);
-  if (!record.stop) record = { ...record, stop: { reason: requested, requestedAt: iso(clock), ...(requested === 'end' && reason !== 'end' ? { detail: reason.slice(0, 256) } : {}) } };
+  if (!record.stop)
+    record = {
+      ...record,
+      stop: { reason: requested, requestedAt: iso(clock), ...(requested === 'end' && reason !== 'end' ? { detail: reason.slice(0, 256) } : {}) },
+    };
   record = { ...record, phase: 'ending' };
   await saveRecord(root, record);
-  const identity = await stat(identityFile).then(() => true, () => false);
+  const identity = await stat(identityFile).then(
+    () => true,
+    () => false,
+  );
   if (record.hostKey && identity) {
     const channel = openChannel({ service, transport: dependencies.transport, microvmId, endpoint, identityFile, hostKey: record.hostKey, now: clock.now });
     const collected = await collectEvidence(dependencies, record, channel, 'stop').catch(() => null);
     // Decision 2c: review captures and the preserved request/instruction versions leave the guest NOW or never (V2-34).
     const artifacts = await collectArtifacts(dependencies, record, channel);
     channel.close();
-    record = { ...(collected ?? { ...record, evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The final collection over the channel failed: guest evidence after the last collection is lost.' } }), artifacts };
-  } else record = { ...record, artifacts: record.artifacts ?? { status: 'lost', at: iso(clock), code: 'CHANNEL_UNAVAILABLE' },
-    evidence: { ...record.evidence, lost: record.evidence.lost ?? 'The channel was never established or access was already withdrawn: no final guest evidence was collected.' } };
+    record = {
+      ...(collected ?? {
+        ...record,
+        evidence: {
+          ...record.evidence,
+          lost: record.evidence.lost ?? 'The final collection over the channel failed: guest evidence after the last collection is lost.',
+        },
+      }),
+      artifacts,
+    };
+  } else
+    record = {
+      ...record,
+      artifacts: record.artifacts ?? { status: 'lost', at: iso(clock), code: 'CHANNEL_UNAVAILABLE' },
+      evidence: {
+        ...record.evidence,
+        lost: record.evidence.lost ?? 'The channel was never established or access was already withdrawn: no final guest evidence was collected.',
+      },
+    };
   // Access is withdrawn by removing the session key and ending the MicroVM; a still-valid token alone opens nothing without the key.
   await rm(identityFile, { force: true });
   await saveRecord(root, record);
@@ -457,31 +672,77 @@ export async function stopLambdaBoot(dependencies: LambdaBootDependencies, { env
  * The channel to an ACTIVE boot, opened by any host process from the boot's record (pinned host key, session key file): what tool calls
  * (ticket 05) and observation programs run over. Closing it, or stopping the boot, withdraws the access.
  */
-export async function openLambdaBootChannel(dependencies: LambdaBootDependencies, { environment, boot, user = 'builder' }: { environment: EnvironmentRef; boot: BootRef;
-  /** The guest Unix user every program of this channel runs as (ticket 05: chosen by the host from the bound role). */ user?: GuestUser }): Promise<{ status: 'open'; channel: LambdaChannel } | { status: 'unavailable'; code: string }> {
+export async function openLambdaBootChannel(
+  dependencies: LambdaBootDependencies,
+  {
+    environment,
+    boot,
+    user = 'builder',
+  }: {
+    environment: EnvironmentRef;
+    boot: BootRef;
+    /** The guest Unix user every program of this channel runs as (ticket 05: chosen by the host from the bound role). */ user?: GuestUser;
+  },
+): Promise<{ status: 'open'; channel: LambdaChannel } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
   if (record.phase !== 'active' || !record.microvmId || !record.endpoint || !record.hostKey) return { status: 'unavailable', code: 'BOOT_NOT_ACTIVE' };
   const identityFile = join(await bootDirectory(dependencies.root, environment, boot), identityName);
-  if (!await stat(identityFile).then(() => true, () => false)) return { status: 'unavailable', code: 'BOOT_ACCESS_WITHDRAWN' };
-  return { status: 'open', channel: openChannel({ service: serviceOf(dependencies, record), transport: dependencies.transport, microvmId: record.microvmId, endpoint: record.endpoint,
-    identityFile, hostKey: record.hostKey, now: dependencies.clock.now, user }) };
+  if (
+    !(await stat(identityFile).then(
+      () => true,
+      () => false,
+    ))
+  )
+    return { status: 'unavailable', code: 'BOOT_ACCESS_WITHDRAWN' };
+  return {
+    status: 'open',
+    channel: openChannel({
+      service: serviceOf(dependencies, record),
+      transport: dependencies.transport,
+      microvmId: record.microvmId,
+      endpoint: record.endpoint,
+      identityFile,
+      hostKey: record.hostKey,
+      now: dependencies.clock.now,
+      user,
+    }),
+  };
 }
 
 const channelFile = 'channel.jsonl';
 const channelEntrySchema = z.union([
-  z.strictObject({ kind: z.literal('effect'), at: instant, executionId: z.string(), invocationId: z.string(), role: z.string(), tool: z.enum(['bash', 'write', 'edit-source']),
-    callId: z.string(), description: z.string(), outcome: z.enum(['orphan-ended', 'environment-ended', 'channel-unrecoverable']) }),
+  z.strictObject({
+    kind: z.literal('effect'),
+    at: instant,
+    executionId: z.string(),
+    invocationId: z.string(),
+    role: z.string(),
+    tool: z.enum(['bash', 'write', 'edit-source']),
+    callId: z.string(),
+    description: z.string(),
+    outcome: z.enum(['orphan-ended', 'environment-ended', 'channel-unrecoverable']),
+  }),
   z.strictObject({ kind: z.literal('unrecoverable'), at: instant, attempts: z.number().int().positive() }),
   // Diagnostics of a recovery (real run of 2026-11-22: an exhausted reconnection left nothing saying what each attempt met). One line
   // per step: `drop` is the reconnection after a lost connection (numbered attempts, with the service's word on the environment),
   // `interrupt` the end of a call the adapter itself cut (v2 ticket 09). `call` is the host's marker identity of the call; `outcome`
   // is one of the fixed words of `end-call`. No output of a tool, no connection detail and no credential is ever here. It is not part
   // of the channel report: Control decides nothing from it.
-  z.strictObject({ kind: z.literal('recovery'), at: instant, cause: z.enum(['drop', 'interrupt']), call: z.string(), attempt: z.number().int().positive(),
-    condition: z.enum(['active', 'ended', 'unknown']).optional(), action: z.enum(['end-call', 'rerun']).optional(),
-    status: z.enum(['exited', 'refused', 'lost', 'closed']).optional(), code: z.string().optional(), exitCode: z.number().int().optional(),
-    outcome: z.string().max(64).optional() })]);
+  z.strictObject({
+    kind: z.literal('recovery'),
+    at: instant,
+    cause: z.enum(['drop', 'interrupt']),
+    call: z.string(),
+    attempt: z.number().int().positive(),
+    condition: z.enum(['active', 'ended', 'unknown']).optional(),
+    action: z.enum(['end-call', 'rerun']).optional(),
+    status: z.enum(['exited', 'refused', 'lost', 'closed']).optional(),
+    code: z.string().optional(),
+    exitCode: z.number().int().optional(),
+    outcome: z.string().max(64).optional(),
+  }),
+]);
 export type LambdaChannelEntry = z.infer<typeof channelEntrySchema>;
 
 /**
@@ -495,15 +756,25 @@ export async function recordLambdaChannelEntry(root: string, environment: Enviro
 export async function readLambdaChannelLog(root: string, environment: EnvironmentRef, boot: BootRef): Promise<LambdaChannelEntry[]> {
   if (!/^env-[a-f0-9]{64}$/.test(environment) || !bootRecordSchema.shape.boot.safeParse(boot).success) return [];
   let text: string;
-  try { text = await readFile(join(await bootDirectory(root, environment, boot), channelFile), 'utf8'); } catch (error) { if (missing(error)) return []; throw error; }
-  return text.split('\n').filter(Boolean).map(line => channelEntrySchema.parse(JSON.parse(line)));
+  try {
+    text = await readFile(join(await bootDirectory(root, environment, boot), channelFile), 'utf8');
+  } catch (error) {
+    if (missing(error)) return [];
+    throw error;
+  }
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map(line => channelEntrySchema.parse(JSON.parse(line)));
 }
 /** The channel report of one boot; empty when nothing was recorded. A line that cannot be read throws: an uncertain effect is never dropped silently. */
 export async function readLambdaChannelReport(root: string, environment: EnvironmentRef, boot: BootRef): Promise<ChannelReport> {
   const report: ChannelReport = { indeterminateEffects: [], unrecoverable: null };
   for (const entry of await readLambdaChannelLog(root, environment, boot)) {
-    if (entry.kind === 'effect') { const { kind: _kind, ...effect } = entry; report.indeterminateEffects.push(effect satisfies IndeterminateEffect); }
-    else if (entry.kind === 'unrecoverable') report.unrecoverable ??= { at: entry.at, attempts: entry.attempts };
+    if (entry.kind === 'effect') {
+      const { kind: _kind, ...effect } = entry;
+      report.indeterminateEffects.push(effect satisfies IndeterminateEffect);
+    } else if (entry.kind === 'unrecoverable') report.unrecoverable ??= { at: entry.at, attempts: entry.attempts };
   }
   return report;
 }
@@ -511,5 +782,8 @@ export async function readLambdaChannelReport(root: string, environment: Environ
 /** Whether `environment` belongs to the Lambda adapter in this installation (it has a recorded image or boots). */
 export async function isLambdaEnvironment(root: string, environment: EnvironmentRef): Promise<boolean> {
   if (!/^env-[a-f0-9]{64}$/.test(environment)) return false;
-  return stat(await workDirectory(root, environment)).then(() => true, () => false);
+  return stat(await workDirectory(root, environment)).then(
+    () => true,
+    () => false,
+  );
 }

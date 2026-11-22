@@ -7,7 +7,8 @@ assert.deepEqual(Object.keys(process.env).sort(), ['LANG', 'LC_ALL', 'NODE_DISAB
 let attempts = 0;
 globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
   // Count/notify ALL attempts before any assertion; SDK may swallow fetch errors.
-  attempts++; process.send?.({ kind: 'provider-attempt', count: attempts });
+  attempts++;
+  process.send?.({ kind: 'provider-attempt', count: attempts });
   assert.equal(input instanceof Request ? input.url : String(input), 'https://offline.invalid/chat/completions');
   const headers = input instanceof Request ? input.headers : new Headers(init?.headers);
   assert.equal(headers.get('authorization'), 'Bearer synthetic-key');
@@ -16,7 +17,8 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const failure = body.includes('Task145 fail');
   const enabled = body.includes('Task145 ok');
   assert.ok(attempts <= (failure ? 1 : 2));
-  assert.match(body, /"name":"bash"/); assert.match(body, /"name":"write"/);
+  assert.match(body, /"name":"bash"/);
+  assert.match(body, /"name":"write"/);
   if (enabled || failure) assert.match(body, /"name":"read"/);
   else assert.doesNotMatch(body, /"name":"read"/);
   assert.doesNotMatch(body, /"name":"edit"/);
@@ -29,14 +31,40 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     else assert.doesNotMatch(body, /Full output: \/artifacts\//);
   }
   process.send?.({ kind: 'provider-validated', count: attempts });
-  const calls = [{ index: 0, id: 'bash-run', type: 'function', function: { name: 'bash', arguments: JSON.stringify({
-    command: "printf 'syn''thetic-se''cret'; printf 'tail π' >&2", copyOutput: !enabled,
-  }) } }, ...(failure ? [{ index: 1, id: 'queued-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'never.txt', content: 'no' }) } }] : [])];
-  const choices = attempts === 1 ? [
-    { index: 0, delta: { role: 'assistant', tool_calls: calls }, finish_reason: null },
-    { index: 0, delta: {}, finish_reason: 'tool_calls' },
-  ] : [{ index: 0, delta: { role: 'assistant', content: 'Complete.' }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'stop' }];
-  const events = choices.map(choice => 'data: ' + JSON.stringify({ id: 'copy-response-' + attempts,
-    object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) + '\n\n').join('');
+  const calls = [
+    {
+      index: 0,
+      id: 'bash-run',
+      type: 'function',
+      function: {
+        name: 'bash',
+        arguments: JSON.stringify({
+          command: "printf 'syn''thetic-se''cret'; printf 'tail π' >&2",
+          copyOutput: !enabled,
+        }),
+      },
+    },
+    ...(failure
+      ? [{ index: 1, id: 'queued-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'never.txt', content: 'no' }) } }]
+      : []),
+  ];
+  const choices =
+    attempts === 1
+      ? [
+          { index: 0, delta: { role: 'assistant', tool_calls: calls }, finish_reason: null },
+          { index: 0, delta: {}, finish_reason: 'tool_calls' },
+        ]
+      : [
+          { index: 0, delta: { role: 'assistant', content: 'Complete.' }, finish_reason: null },
+          { index: 0, delta: {}, finish_reason: 'stop' },
+        ];
+  const events = choices
+    .map(
+      choice =>
+        'data: ' +
+        JSON.stringify({ id: 'copy-response-' + attempts, object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) +
+        '\n\n',
+    )
+    .join('');
   return new Response(events + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
 };

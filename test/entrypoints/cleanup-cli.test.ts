@@ -10,12 +10,24 @@ import { githubWorld } from './github-world-fixture.js';
 // What a plan and its confirmation do on a real Work is proven at flow level (test/control/retention-flow).
 function invoke(root: string, args: string[]) {
   const child = spawn(process.execPath, [resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
-    env: { PATH: `${root}:${process.env.PATH ?? ''}`, HOME: '/forbidden-personal-profile' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += String(data); });
-  child.stderr.on('data', data => { stderr += String(data); });
-  return { child, result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr })); }) };
+    env: { PATH: `${root}:${process.env.PATH ?? ''}`, HOME: '/forbidden-personal-profile' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '',
+    stderr = '';
+  child.stdout.on('data', data => {
+    stdout += String(data);
+  });
+  child.stderr.on('data', data => {
+    stderr += String(data);
+  });
+  return {
+    child,
+    result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', code => resolve({ code, stdout, stderr }));
+    }),
+  };
 }
 const work = '0b9c6a52-3d3e-4c8f-9a51-000000000011';
 
@@ -23,35 +35,75 @@ test('ticket 30: `factory cleanup` / `cleanup-confirm` identify the request firs
   const world = await githubWorld(t, { issues: [], pulls: [] });
   const root = world.root;
   await prepareController(root);
-  const cli = async (...args: string[]) => { const result = await invoke(root, args).result; return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined }; };
+  const cli = async (...args: string[]) => {
+    const result = await invoke(root, args).result;
+    return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined };
+  };
   const owner = invoke(root, ['run']);
-  t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
+  t.after(async () => {
+    owner.child.kill('SIGTERM');
+    await owner.result;
+  });
   await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
   // Ticket 30: explicit cleanup through the real CLI/socket/owner: plan (identified request, nothing removed) and confirmation; no Work → not-applied.
   const plan = '0b9c6a52-3d3e-4c8f-9a51-000000000099';
-  for (const bad of [['cleanup', work, '--select', 'logs,evidence'], ['cleanup', 'not-a-uuid', '--select', 'logs'], ['cleanup-confirm', work, 'not-a-plan'],
-    ['cleanup', work, '--select', 'logs', '--yes', '--request-id', 'x'.repeat(121)]]) {
+  for (const bad of [
+    ['cleanup', work, '--select', 'logs,evidence'],
+    ['cleanup', 'not-a-uuid', '--select', 'logs'],
+    ['cleanup-confirm', work, 'not-a-plan'],
+    ['cleanup', work, '--select', 'logs', '--yes', '--request-id', 'x'.repeat(121)],
+  ]) {
     assert.equal((await cli(...bad)).code, 2, bad.join(' '));
   }
   const planned = await cli('cleanup', work, '--select', 'logs,sessions', '--request-id', 'cleanup-1');
   assert.equal(planned.code, 2, planned.stderr);
   assert.match(planned.stderr, /REQUEST_IDENTIFIED.*cleanup-1/);
-  assert.deepEqual(planned.json, { kind: 'durable', request_id: 'cleanup-1', operation: 'cleanup-plan', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  assert.deepEqual(planned.json, {
+    kind: 'durable',
+    request_id: 'cleanup-1',
+    operation: 'cleanup-plan',
+    work_id: work,
+    outcome: 'not-applied',
+    reason: 'WORK_NOT_FOUND',
+    plan: null,
+  });
   const automated = await cli('cleanup', work, '--select', 'logs', '--yes', '--request-id', 'cleanup-2');
   assert.equal(automated.code, 2, 'automation mode: no plan accepted, so nothing is confirmed');
   assert.doesNotMatch(automated.stderr, /cleanup-2-confirm/);
   const confirmed = await cli('cleanup-confirm', work, plan, '--request-id', 'confirm-1');
   assert.equal(confirmed.code, 2, confirmed.stderr);
-  assert.deepEqual(confirmed.json, { kind: 'durable', request_id: 'confirm-1', operation: 'cleanup-confirm', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  assert.deepEqual(confirmed.json, {
+    kind: 'durable',
+    request_id: 'confirm-1',
+    operation: 'cleanup-confirm',
+    work_id: work,
+    outcome: 'not-applied',
+    reason: 'WORK_NOT_FOUND',
+    plan: null,
+  });
   // Ticket 31: `forget` / `forget-confirm` through the same CLI/socket/owner path: identified first, invalid forms refused locally, no Work → not-applied.
-  for (const bad of [['forget', 'not-a-uuid'], ['forget', work, '--select', 'logs'], ['forget-confirm', work], ['forget-confirm', work, 'not-a-plan'],
-    ['forget', work, '--yes', '--yes'], ['forget', work, '--yes', '--request-id', 'x'.repeat(121)]]) {
+  for (const bad of [
+    ['forget', 'not-a-uuid'],
+    ['forget', work, '--select', 'logs'],
+    ['forget-confirm', work],
+    ['forget-confirm', work, 'not-a-plan'],
+    ['forget', work, '--yes', '--yes'],
+    ['forget', work, '--yes', '--request-id', 'x'.repeat(121)],
+  ]) {
     assert.equal((await cli(...bad)).code, 2, bad.join(' '));
   }
   const forget = await cli('forget', work, '--request-id', 'forget-1');
   assert.equal(forget.code, 2, forget.stderr);
   assert.match(forget.stderr, /REQUEST_IDENTIFIED.*forget-1/);
-  assert.deepEqual(forget.json, { kind: 'durable', request_id: 'forget-1', operation: 'forget-plan', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  assert.deepEqual(forget.json, {
+    kind: 'durable',
+    request_id: 'forget-1',
+    operation: 'forget-plan',
+    work_id: work,
+    outcome: 'not-applied',
+    reason: 'WORK_NOT_FOUND',
+    plan: null,
+  });
   const forgetYes = await cli('forget', work, '--yes', '--request-id', 'forget-2');
   assert.equal(forgetYes.code, 2);
   assert.doesNotMatch(forgetYes.stderr, /forget-2-confirm/, 'no plan accepted: nothing is confirmed');

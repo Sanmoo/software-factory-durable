@@ -14,8 +14,14 @@ import { worldScope } from './github-world-fixture.js';
 export const tip = 'b'.repeat(40);
 export const remoteUrl = 'https://github.com/acme/project.git';
 const model = { provider: productionProfile.model.providerId, model: productionProfile.model.modelId };
-export const effective = { models: { builder: model, standards: model, spec: model }, repositories: [{ ...worldScope, correctionLimit: 3, recoveryLimit: 3 }], dependencyRepositories: [],
-  operators: ['operator-one'], concurrency: 1, sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' } };
+export const effective = {
+  models: { builder: model, standards: model, spec: model },
+  repositories: [{ ...worldScope, correctionLimit: 3, recoveryLimit: 3 }],
+  dependencyRepositories: [],
+  operators: ['operator-one'],
+  concurrency: 1,
+  sandbox: { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' },
+};
 
 export async function composeCrashInstallation(input: { root: string; executable: string; accountFile: string }) {
   const github = createGitHubAccess({ root: input.root, executable: input.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
@@ -27,11 +33,23 @@ export async function composeCrashInstallation(input: { root: string; executable
   /** The Builder's worker process: it reports its start and then works forever (the boot is in progress when the controller dies). */
   const workerLauncher: LambdaWorkerLauncher = async request => {
     launched.push(`${request.context.role}:${request.context.phaseId}`);
-    return { started: Promise.resolve({ receipt: { workId: request.context.workId, id: randomUUID() }, invocation: { executionId: request.context.executionId, invocationId: request.context.invocationId } }),
-      completed: new Promise<never>(() => {}), deliver: async () => false };
+    return {
+      started: Promise.resolve({
+        receipt: { workId: request.context.workId, id: randomUUID() },
+        invocation: { executionId: request.context.executionId, invocationId: request.context.invocationId },
+      }),
+      completed: new Promise<never>(() => {}),
+      deliver: async () => false,
+    };
   };
   const lambda = { service: fake.service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher };
-  const composed = await composeProductionExecution({ root: input.root, effective, guestAssets: { directory: join(input.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github, lambda });
+  const composed = await composeProductionExecution({
+    root: input.root,
+    effective,
+    guestAssets: { directory: join(input.root, 'guest'), manifestSha256: 'a'.repeat(64) },
+    github,
+    lambda,
+  });
   if (composed.status !== 'composed') throw new Error(`not composed: ${JSON.stringify(composed)}`);
   return { github, fake, guests, clock, lambda, ports: composed.ports, launched };
 }

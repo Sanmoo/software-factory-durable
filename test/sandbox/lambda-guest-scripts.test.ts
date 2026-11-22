@@ -18,7 +18,10 @@ import { ended, killTree, remainingMs } from '../runner/budget.js';
 // here is AWS, ssh or a VM: what `sshd` gives a command (a new session whose leader is the command) is given by `setsid`.
 
 /** One program as the transport delivers it: the remote command line through the user's shell, environment and input on stdin. */
-const delivered = (request: GuestExecRequest) => { const remote = remoteCommand(request)!; return { command: remote.command, stdin: Buffer.from(remote.stdin) }; };
+const delivered = (request: GuestExecRequest) => {
+  const remote = remoteCommand(request)!;
+  return { command: remote.command, stdin: Buffer.from(remote.stdin) };
+};
 const runProgram = (request: GuestExecRequest) => {
   const { command, stdin } = delivered(request);
   return spawnSync('/bin/bash', ['-c', command], { input: stdin, encoding: 'utf8', timeout: remainingMs() });
@@ -26,9 +29,13 @@ const runProgram = (request: GuestExecRequest) => {
 /** State and process group of a process, from `/proc` (the command name may hold spaces and parentheses). */
 const processState = (pid: number): { state: string; group: number } | null => {
   try {
-    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ');
+    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      .replace(/^.*\) /s, '')
+      .split(' ');
     return { state: fields[0]!, group: Number(fields[2]) };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 };
 
 test('end-call ends the group of a dropped call whose members nobody reaps: zombies are not a living call (real run of 2026-11-22)', async t => {
@@ -37,20 +44,37 @@ test('end-call ends the group of a dropped call whose members nobody reaps: zomb
   const call = randomUUID();
   t.after(() => rm(callMarker(call), { force: true }));
   // The Builder's Bash program exactly as the adapter sends it: marker, fixed prelude, the command with a child of its own.
-  const tool = delivered({ program: 'tool', script: toolScript(['/bin/bash', '-c', channelPrelude, 'factory-builder', 'echo started; sleep 100000 & wait', `PATH=${guestPath}`], directory, call) });
+  const tool = delivered({
+    program: 'tool',
+    script: toolScript(['/bin/bash', '-c', channelPrelude, 'factory-builder', 'echo started; sleep 100000 & wait', `PATH=${guestPath}`], directory, call),
+  });
   const input = join(directory, 'stdin');
   await writeFile(input, tool.stdin);
   // The guest after the drop: the call is the leader of its own session, and its parent (PID 1 of the guest, the hook agent) never
   // waits for it. Here that parent is `cat`, which lives until this test closes its input.
-  const parent = spawn('/bin/bash', ['-c', 'setsid /bin/bash -c "$1" < "$2" & exec cat > /dev/null', 'guest-init', tool.command, input], { detached: true, stdio: ['pipe', 'pipe', 'inherit'] });
+  const parent = spawn('/bin/bash', ['-c', 'setsid /bin/bash -c "$1" < "$2" & exec cat > /dev/null', 'guest-init', tool.command, input], {
+    detached: true,
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
   const parentEnd = ended(parent, () => 'the stand-in of the guest init');
   let leader: number | undefined = undefined;
-  t.after(() => { if (leader) try { process.kill(-leader, 'SIGKILL'); } catch { /* already gone */ } killTree(parent); });
-  const [first] = await once(parent.stdout, 'data') as [Buffer];
+  t.after(() => {
+    if (leader)
+      try {
+        process.kill(-leader, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    killTree(parent);
+  });
+  const [first] = (await once(parent.stdout, 'data')) as [Buffer];
   assert.equal(first.toString(), 'started\n');
   leader = Number(await readFile(callMarker(call), 'utf8'));
   const before = processState(leader);
-  assert.ok(before && before.group === leader && before.state !== 'Z', `the marker names the living leader of the call's own process group: ${JSON.stringify(before)}`);
+  assert.ok(
+    before && before.group === leader && before.state !== 'Z',
+    `the marker names the living leader of the call's own process group: ${JSON.stringify(before)}`,
+  );
 
   const end = runProgram(endCallProgram(call));
   assert.deepEqual([end.status, end.stdout, end.stderr], [0, 'call-ended\n', '']);

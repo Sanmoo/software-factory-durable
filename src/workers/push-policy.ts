@@ -15,23 +15,36 @@
 export type PushPolicy = { branch: string; expected: string | null; head: string; remote?: string | undefined; wip?: true | undefined };
 const remoteToken = /^(origin|https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.git)$/;
 const hex40 = /^[0-9a-f]{40}$/;
-export const allowedPush = (policy: PushPolicy) => `git -C /workspace/checkout push --force-with-lease=refs/heads/${policy.branch}:${policy.expected ?? ''} ${policy.remote ?? 'origin'} ${policy.head}:refs/heads/${policy.branch}`;
-export const allowedWipPush = (policy: Pick<PushPolicy, 'branch' | 'remote'>) => `git -C /workspace/checkout push ${policy.remote ?? 'origin'} HEAD:refs/heads/${policy.branch}`;
+export const allowedPush = (policy: PushPolicy) =>
+  `git -C /workspace/checkout push --force-with-lease=refs/heads/${policy.branch}:${policy.expected ?? ''} ${policy.remote ?? 'origin'} ${policy.head}:refs/heads/${policy.branch}`;
+export const allowedWipPush = (policy: Pick<PushPolicy, 'branch' | 'remote'>) =>
+  `git -C /workspace/checkout push ${policy.remote ?? 'origin'} HEAD:refs/heads/${policy.branch}`;
 export function pushDenied(command: string, policy: PushPolicy | undefined): string | null {
   const refsWrite = /\b(gh\b[\s\S]*\bapi|curl|wget)\b[\s\S]*(git\/refs|\/git\/ref\b|graphql)/i.test(command) && !/\bgh\s+pr\b/.test(command);
-  if (refsWrite) return 'PUSH_POLICY_DENIED: GitHub API/HTTP calls on git refs are refused; publish only with the exact git push command of your Factory instruction.';
+  if (refsWrite)
+    return 'PUSH_POLICY_DENIED: GitHub API/HTTP calls on git refs are refused; publish only with the exact git push command of your Factory instruction.';
   if (!/\bgit\b[\s\S]*\bpush\b/.test(command) && !/\bsend-pack\b/.test(command)) return null;
   if (policy?.wip) {
     if (policy.remote !== undefined && !remoteToken.test(policy.remote)) return 'PUSH_POLICY_DENIED: no push is allowed in this activation.';
     const allowed = allowedWipPush(policy);
-    return command.trim() === allowed ? null : 'PUSH_POLICY_DENIED: refused LOCALLY by the Factory Host before any network effect: nothing was sent. ' +
-      `The only push allowed is exactly: ${allowed} — run exactly this command ALONE as its own bash call: ${allowed}`;
+    return command.trim() === allowed
+      ? null
+      : 'PUSH_POLICY_DENIED: refused LOCALLY by the Factory Host before any network effect: nothing was sent. ' +
+          `The only push allowed is exactly: ${allowed} — run exactly this command ALONE as its own bash call: ${allowed}`;
   }
-  if (!policy || !hex40.test(policy.head) || (policy.remote !== undefined && !remoteToken.test(policy.remote)) || (policy.expected !== null && !hex40.test(policy.expected)) || policy.expected === policy.head) {
+  if (
+    !policy ||
+    !hex40.test(policy.head) ||
+    (policy.remote !== undefined && !remoteToken.test(policy.remote)) ||
+    (policy.expected !== null && !hex40.test(policy.expected)) ||
+    policy.expected === policy.head
+  ) {
     return 'PUSH_POLICY_DENIED: no push is allowed in this activation.';
   }
   const allowed = allowedPush(policy);
   // Strict: the exact command as the WHOLE call (no chaining). The denial is local and says how to correct it once (real run q21-human-v3).
-  return command.trim() === allowed ? null : 'PUSH_POLICY_DENIED: refused LOCALLY by the Factory Host before any network effect: nothing was sent, so this is ' +
-    `not a publication attempt. The only push allowed is exactly: ${allowed} — run exactly this command ALONE as its own bash call: ${allowed}`;
+  return command.trim() === allowed
+    ? null
+    : 'PUSH_POLICY_DENIED: refused LOCALLY by the Factory Host before any network effect: nothing was sent, so this is ' +
+        `not a publication attempt. The only push allowed is exactly: ${allowed} — run exactly this command ALONE as its own bash call: ${allowed}`;
 }

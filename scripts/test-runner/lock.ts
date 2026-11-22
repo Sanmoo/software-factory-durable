@@ -2,7 +2,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export interface MachineLock { waitedMs: number; release(): void }
+export interface MachineLock {
+  waitedMs: number;
+  release(): void;
+}
 
 /** One heavy tier (ci/full) at a time on this machine, across worktrees and sessions. */
 export function machineLockPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -25,7 +28,11 @@ export async function acquireMachineLock(path: string, holder: Record<string, un
     if (attempt.error) throw attempt.error;
     if (attempt.status !== 0) {
       let current = 'unknown holder';
-      try { current = readFileSync(`${path}.holder`, 'utf8').trim(); } catch { /* holder note is advisory */ }
+      try {
+        current = readFileSync(`${path}.holder`, 'utf8').trim();
+      } catch {
+        /* holder note is advisory */
+      }
       log(`machine lock busy (${current}); queued, waiting time is reported apart and not counted in the budget`);
       const status = await new Promise<number | null>((resolve, reject) => {
         const child = spawn('flock', ['--exclusive', '3'], { stdio: [...stdio] });
@@ -34,8 +41,23 @@ export async function acquireMachineLock(path: string, holder: Record<string, un
       });
       if (status !== 0) throw new Error(`TEST_RUNNER_LOCK_FAILED: flock exited ${status}`);
     }
-  } catch (error) { closeSync(fd); throw error; }
-  try { writeFileSync(`${path}.holder`, JSON.stringify({ ...holder, since: new Date().toISOString() }) + '\n', { mode: 0o600 }); } catch { /* advisory */ }
+  } catch (error) {
+    closeSync(fd);
+    throw error;
+  }
+  try {
+    writeFileSync(`${path}.holder`, JSON.stringify({ ...holder, since: new Date().toISOString() }) + '\n', { mode: 0o600 });
+  } catch {
+    /* advisory */
+  }
   let released = false;
-  return { waitedMs: now() - started, release: () => { if (!released) { released = true; closeSync(fd); } } };
+  return {
+    waitedMs: now() - started,
+    release: () => {
+      if (!released) {
+        released = true;
+        closeSync(fd);
+      }
+    },
+  };
 }

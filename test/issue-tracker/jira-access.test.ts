@@ -7,20 +7,46 @@ import { createJiraTracker, type JiraRequest, type JiraResponse } from '../../sr
 // A missing permission is a diagnostic, never an attempt to widen access (the only request is the read).
 const scope = { tracker: 'jira' as const, siteId: 'site-A', url: 'https://equipe.atlassian.net', projectId: '10010', label: 'factory-ready' };
 const at = '2026-11-22T10:00:00.000Z';
-const permissions = (have: Record<string, boolean>) => ({ permissions: Object.fromEntries(Object.entries(have).map(([key, value]) => [key, { key, havePermission: value }])) });
+const permissions = (have: Record<string, boolean>) => ({
+  permissions: Object.fromEntries(Object.entries(have).map(([key, value]) => [key, { key, havePermission: value }])),
+});
 
 function recording(respond: (request: JiraRequest) => JiraResponse) {
   const calls: JiraRequest[] = [];
-  return { calls, tracker: createJiraTracker({ scopes: [scope], transport: () => ({ request: async (request: JiraRequest) => { calls.push(request); return respond(request); } }) }) };
+  return {
+    calls,
+    tracker: createJiraTracker({
+      scopes: [scope],
+      transport: () => ({
+        request: async (request: JiraRequest) => {
+          calls.push(request);
+          return respond(request);
+        },
+      }),
+    }),
+  };
 }
 
 test('every needed permission granted: ok, from one read of the project permissions; audience and visibility stay unverified', async () => {
-  const { calls, tracker } = recording(() => ({ ok: true, status: 200, observedAt: at, body: permissions({ BROWSE_PROJECTS: true, ADD_COMMENTS: true, LINK_ISSUES: true }) }));
+  const { calls, tracker } = recording(() => ({
+    ok: true,
+    status: 200,
+    observedAt: at,
+    body: permissions({ BROWSE_PROJECTS: true, ADD_COMMENTS: true, LINK_ISSUES: true }),
+  }));
   const result = await tracker.checkAccess(scope);
-  assert.deepEqual(calls, [{ method: 'GET', path: '/rest/api/3/mypermissions', query: { projectId: '10010', permissions: 'BROWSE_PROJECTS,ADD_COMMENTS,LINK_ISSUES' } }]);
+  assert.deepEqual(calls, [
+    { method: 'GET', path: '/rest/api/3/mypermissions', query: { projectId: '10010', permissions: 'BROWSE_PROJECTS,ADD_COMMENTS,LINK_ISSUES' } },
+  ]);
   assert.equal(result.status, 'ok');
   assert.equal(result.code, 'JIRA_ACCESS_OK');
-  assert.deepEqual(result.facts, { projectRead: 'granted', commentCreate: 'granted', remoteLinks: 'granted', commentAudience: 'unverified', blockerVisibility: 'unverified' });
+  assert.deepEqual(result.facts, {
+    projectRead: 'granted',
+    commentCreate: 'granted',
+    remoteLinks: 'granted',
+    commentAudience: 'unverified',
+    blockerVisibility: 'unverified',
+  });
   assert.deepEqual([result.siteId, result.projectId, result.observedAt], ['site-A', '10010', at]);
 });
 
@@ -39,7 +65,13 @@ test('an unreadable token or an unavailable site concludes nothing: blocked with
     const { tracker } = recording(() => ({ ok: false, code, observedAt: at, nextStep: `synthetic ${code}` }));
     const result = await tracker.checkAccess(scope);
     assert.deepEqual([result.status, result.code, result.completeness], ['blocked', code, 'incomplete']);
-    assert.deepEqual(result.facts, { projectRead: 'unverified', commentCreate: 'unverified', remoteLinks: 'unverified', commentAudience: 'unverified', blockerVisibility: 'unverified' });
+    assert.deepEqual(result.facts, {
+      projectRead: 'unverified',
+      commentCreate: 'unverified',
+      remoteLinks: 'unverified',
+      commentAudience: 'unverified',
+      blockerVisibility: 'unverified',
+    });
   }
   const { tracker } = recording(() => ({ ok: true, status: 200, observedAt: at, body: { unexpected: true } }));
   assert.equal((await tracker.checkAccess(scope)).code, 'JIRA_OBSERVATION_INVALID');

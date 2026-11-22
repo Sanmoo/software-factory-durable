@@ -16,15 +16,23 @@ export const deliveryNoticeRef = (workId: string) => `delivery:${workId}`;
  * Inside the delivery commit (nothing for a GitHub Work): desire the link `delivered` and intend the delivery notice. A notice already
  * intended for this Work is never intended again (one notice per Work, whatever the number of merge observations).
  */
-export async function intendJiraDelivery(tx: Tx, input: { work: { work_id: string; ticket: TicketRef; queue: { sequence: number } }; url: string; base: string }) {
+export async function intendJiraDelivery(
+  tx: Tx,
+  input: { work: { work_id: string; ticket: TicketRef; queue: { sequence: number } }; url: string; base: string },
+) {
   const { work } = input;
   if (work.ticket.tracker !== 'jira') return;
   const link = await desireJiraLink(tx, { work, url: input.url, desired: 'delivered' });
   const document = await tx.doc(jiraComments);
   if (Object.values(document.effects).some(effect => effect.purpose.kind === 'delivery' && effect.purpose.workId === work.work_id)) return;
   const workRef = link?.workRef ?? workShortRef(work.queue.sequence);
-  await intendJiraComment(tx, { destination: { ...work.ticket }, purpose: { kind: 'delivery', workId: work.work_id }, refPrefix: 'delivery',
-    logicalRef: deliveryNoticeRef(work.work_id), content: () => deliveryComment({ workRef, base: input.base, url: input.url }) });
+  await intendJiraComment(tx, {
+    destination: { ...work.ticket },
+    purpose: { kind: 'delivery', workId: work.work_id },
+    refPrefix: 'delivery',
+    logicalRef: deliveryNoticeRef(work.work_id),
+    content: () => deliveryComment({ workRef, base: input.base, url: input.url }),
+  });
 }
 
 /** The delivery is a fact: its notice is always wanted (never withdrawn), posted when Jira answers and reconciled after any uncertain POST. */
@@ -39,7 +47,8 @@ export async function jiraDeliveryProtections(tx: Tx, work_id: string): Promise<
   const link = (await tx.doc(jiraLinks)).links[work_id];
   if (link?.state === 'pending') reasons.push(`EFFECT_UNSETTLED:jira-link:${work_id}`);
   for (const effect of Object.values((await tx.doc(jiraComments)).effects)) {
-    if (effect.purpose.kind === 'delivery' && effect.purpose.workId === work_id && commentUnsettled(effect)) reasons.push(`EFFECT_UNSETTLED:jira-notice:${effect.effectId}`);
+    if (effect.purpose.kind === 'delivery' && effect.purpose.workId === work_id && commentUnsettled(effect))
+      reasons.push(`EFFECT_UNSETTLED:jira-notice:${effect.effectId}`);
   }
   return reasons;
 }

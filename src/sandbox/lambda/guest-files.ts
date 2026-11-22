@@ -144,4 +144,8 @@ Match User reviewer
     PermitTTY no
 `;
 
-export const guestFiles: Readonly<Record<'hook-agent.py' | 'start.sh' | 'sshd_config', string>> = Object.freeze({ 'hook-agent.py': hookAgent, 'start.sh': start, sshd_config: sshdConfig });
+export const guestFiles: Readonly<Record<'hook-agent.py' | 'start.sh' | 'sshd_config', string>> = Object.freeze({
+  'hook-agent.py': hookAgent,
+  'start.sh': start,
+  sshd_config: sshdConfig,
+});

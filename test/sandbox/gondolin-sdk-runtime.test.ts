@@ -15,20 +15,25 @@ const entry = (root: string) => pathToFileURL(join(root, gondolinSdkProfile.dire
 // TEST ONLY: replace exactly the verified public entry BEFORE evaluation. No SDK
 // code (including transitive CPU/key/assets self-tests) may execute in this test.
 test('closed loader verifies every request before exact-entry substitution; synthetic only, no native proof', async t => {
-  let allowedEntry = entry(project), imports = 0;
+  let allowedEntry = entry(project),
+    imports = 0;
   const effects = { creates: 0, commands: 0 };
   const counterKey = Symbol.for('factory-test-only-gondolin-runtime-effects');
   Object.defineProperty(globalThis, counterKey, { value: effects, configurable: true });
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
       if (specifier === allowedEntry) return { url: specifier, shortCircuit: true };
-      if (specifier.includes('@earendil-works/gondolin') || specifier.includes('/factory-development-gondolin-v1/') || context.parentURL === allowedEntry) throw new Error('UNLISTED_SDK_IMPORT');
+      if (specifier.includes('@earendil-works/gondolin') || specifier.includes('/factory-development-gondolin-v1/') || context.parentURL === allowedEntry)
+        throw new Error('UNLISTED_SDK_IMPORT');
       return nextResolve(specifier, context);
     },
     load(url, context, nextLoad) {
       if (url === allowedEntry) {
         imports++;
-        return { format: 'module', shortCircuit: true, source: `
+        return {
+          format: 'module',
+          shortCircuit: true,
+          source: `
           export class VM {
             constructor() { throw new Error('SYNTHETIC_CONSTRUCTOR_FORBIDDEN'); }
             static create() { globalThis[Symbol.for('factory-test-only-gondolin-runtime-effects')].creates++; throw new Error('SYNTHETIC_CREATE_FORBIDDEN'); }
@@ -38,7 +43,8 @@ test('closed loader verifies every request before exact-entry substitution; synt
             constructor() { throw new Error('SYNTHETIC_PROVIDER_FORBIDDEN'); }
           }
           export function createHttpHooks() { throw new Error('SYNTHETIC_HTTP_HOOKS_FORBIDDEN'); }
-        ` };
+        `,
+        };
       }
       if (url.includes('/gondolin/') || url.includes('/factory-development-gondolin-v1/')) throw new Error('UNLISTED_SDK_LOAD');
       return nextLoad(url, context);
@@ -98,7 +104,8 @@ test('closed loader verifies every request before exact-entry substitution; synt
     // Actual retained profile: verifier-only reads followed by controlled entry
     // substitution. Snapshot metadata confirms this test does not rewrite it.
     const record = join(project, gondolinSdkProfile.directory, 'profile.json');
-    const before = await stat(record), bytes = await readFile(record);
+    const before = await stat(record),
+      bytes = await readFile(record);
     const sdk = await loadDevelopmentGondolinSdk();
     assert.equal(typeof sdk.VM.create, 'function');
     assert.equal(typeof sdk.RealFSProvider, 'function');
@@ -109,7 +116,9 @@ test('closed loader verifies every request before exact-entry substitution; synt
 
     // Fail before effects: synthetic SDK create/exec are never requested.
     assert.deepEqual(effects, { creates: 0, commands: 0 });
-    t.diagnostic('missing/incomplete/drift import0; fixture valid+cached import1; cached drift refused; actual verified exact-entry substitution1; synthetic create0/command0; real SDK evaluations0');
+    t.diagnostic(
+      'missing/incomplete/drift import0; fixture valid+cached import1; cached drift refused; actual verified exact-entry substitution1; synthetic create0/command0; real SDK evaluations0',
+    );
   } finally {
     process.chdir(project);
     hooks.deregister();
@@ -125,9 +134,18 @@ test('adapter routes at existing sdk-import gate; backend and lifecycle options 
   assert.ok(gate > source.indexOf('await inspectGuestAssets('));
   assert.ok(load > gate && load < source.indexOf("phase = 'vm-create'"));
   assert.equal(source.includes("await import('@earendil-works/gondolin')"), false);
-  for (const preserved of ['startTimeoutMs: 30000', 'AbortSignal.timeout(10000)', "accel: 'kvm'", 'netEnabled: true, mitmCertDir',
-    'httpHooks, dns: { mode: \'synthetic\' }, allowWebSockets: false',
-    'rootDiskReadOnly: false', 'rootDiskDeleteOnClose: false', 'debugLog: null', 'await vm.start()', 'vm?.close()']) {
+  for (const preserved of [
+    'startTimeoutMs: 30000',
+    'AbortSignal.timeout(10000)',
+    "accel: 'kvm'",
+    'netEnabled: true, mitmCertDir',
+    "httpHooks, dns: { mode: 'synthetic' }, allowWebSockets: false",
+    'rootDiskReadOnly: false',
+    'rootDiskDeleteOnClose: false',
+    'debugLog: null',
+    'await vm.start()',
+    'vm?.close()',
+  ]) {
     assert.ok(source.includes(preserved), preserved);
   }
 });

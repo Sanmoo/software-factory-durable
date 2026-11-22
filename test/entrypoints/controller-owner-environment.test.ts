@@ -25,11 +25,21 @@ async function launch(t: { after(fn: () => Promise<void>): void }, env: Record<s
   await chmod(join(bin, 'flock'), 0o755);
   const result = spawnSync(process.execPath, [controller, root], { encoding: 'utf8', timeout: remainingMs(), env: { PATH: `${bin}:/usr/bin:/bin`, ...env } });
   assert.equal(result.status, 0, result.stderr);
-  return Object.fromEntries((await readFile(dump, 'utf8')).trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+  return Object.fromEntries(
+    (await readFile(dump, 'utf8'))
+      .trim()
+      .split('\n')
+      .map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+  );
 }
 
 test('the owner receives the user-manager bus (XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS) and nothing else from the caller', async t => {
-  const env = await launch(t, { XDG_RUNTIME_DIR: '/run/user/4242', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/4242/bus', GH_TOKEN: 'never-forwarded', HOME: '/h' });
+  const env = await launch(t, {
+    XDG_RUNTIME_DIR: '/run/user/4242',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/4242/bus',
+    GH_TOKEN: 'never-forwarded',
+    HOME: '/h',
+  });
   assert.equal(env.XDG_RUNTIME_DIR, '/run/user/4242');
   assert.equal(env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/4242/bus');
   assert.equal(env.GH_TOKEN, undefined);
@@ -37,7 +47,7 @@ test('the owner receives the user-manager bus (XDG_RUNTIME_DIR, DBUS_SESSION_BUS
   assert.equal(env.LANG, 'C');
 });
 
-test('without them in the caller (a stripped environment), the owner still gets the account\'s standard user bus', async t => {
+test("without them in the caller (a stripped environment), the owner still gets the account's standard user bus", async t => {
   const env = await launch(t, {});
   const uid = process.getuid?.();
   assert.equal(env.XDG_RUNTIME_DIR, `/run/user/${uid}`);

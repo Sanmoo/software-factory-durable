@@ -7,17 +7,35 @@ import { readConfined } from './confined.js';
 /** Trusted, read-only Factory material (e.g. the versioned skill pack) copied ONCE per environment under /artifacts/<name>. */
 export type ArtifactSeed = { name: string; directory: string };
 /** `replaced` (ticket 50): where the divergent copy was set aside (relative to /artifacts) when the operator decided to recreate the seed. */
-type SeedResult = { status: 'success'; seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] } |
+type SeedResult =
+  | { status: 'success'; seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] }
   /** `detail` (ticket 50): the divergent seed file (`<seed>/<path>`), so the operator can inspect it before deciding. */
-  { status: 'failure' | 'indeterminate'; code: string; detail?: string };
+  | { status: 'failure' | 'indeterminate'; code: string; detail?: string };
 
 const seedName = /^factory\/[a-z0-9-]+\/[a-z0-9][a-z0-9.-]{0,63}$/;
-const relative = z.string().regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/).refine(path => !path.split('/').some(part => part === '.' || part === '..'));
-const manifestSchema = z.object({ files: z.array(z.object({ path: relative, sha256: z.string().regex(/^[0-9a-f]{64}$/) })).min(1).max(1024) });
+const relative = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
+  .refine(path => !path.split('/').some(part => part === '.' || part === '..'));
+const manifestSchema = z.object({
+  files: z
+    .array(z.object({ path: relative, sha256: z.string().regex(/^[0-9a-f]{64}$/) }))
+    .min(1)
+    .max(1024),
+});
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
-class SeedFailure extends Error { constructor(readonly code: string) { super(code); } }
+class SeedFailure extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
 /** Calendar stamp of a set-aside copy: sortable, filesystem and seed-name safe. */
-const stamp = (at: Date) => at.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'z').toLowerCase();
+const stamp = (at: Date) =>
+  at
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d+Z$/, 'z')
+    .toLowerCase();
 
 /** The first file of an existing copy that differs from the manifest (`manifest.json` itself first), or null when the copy is intact. */
 async function divergence(target: string, manifest: Buffer, files: readonly { path: string; sha256: string }[]): Promise<string | null> {
@@ -42,7 +60,12 @@ async function components(artifacts: string, name: string): Promise<boolean> {
   for (const [index, part] of parts.entries()) {
     path = join(path, part);
     let info;
-    try { info = await lstat(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw error;
+    }
     if (info.isSymbolicLink() || !info.isDirectory()) throw new SeedFailure('ARTIFACT_SEED_PATH_UNSAFE');
     if (index === parts.length - 1) return true;
   }
@@ -54,9 +77,12 @@ async function components(artifacts: string, name: string): Promise<boolean> {
  * symlink/hard link followed); otherwise ARTIFACT_SEED_VERSION_CONFLICT. A new copy writes exactly the manifest's files, exclusively.
  * The guest may still edit the copy later (no immutability against hostile code); the controller never reads it back.
  */
-export async function seedArtifacts(artifacts: string, seeds: readonly ArtifactSeed[],
+export async function seedArtifacts(
+  artifacts: string,
+  seeds: readonly ArtifactSeed[],
   /** Ticket 50: seeds the operator explicitly decided to recreate: a divergent copy is set aside (kept, renamed) and a fresh one written. */
-  options: { recreate?: readonly string[]; now?: () => Date } = {}): Promise<SeedResult> {
+  options: { recreate?: readonly string[]; now?: () => Date } = {},
+): Promise<SeedResult> {
   const result: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] = [];
   try {
     artifacts = await realpath(artifacts);
@@ -72,21 +98,26 @@ export async function seedArtifacts(artifacts: string, seeds: readonly ArtifactS
       let replaced: string | undefined;
       if (await components(artifacts, seed.name)) {
         const diverged = await divergence(target, manifest, files);
-        if (diverged === null) { result.push({ name: seed.name, manifestSha256, reused: true }); continue; }
+        if (diverged === null) {
+          result.push({ name: seed.name, manifestSha256, reused: true });
+          continue;
+        }
         if (!options.recreate?.includes(seed.name)) return { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT', detail: `${seed.name}/${diverged}` };
         // Operator decision: the divergent copy is never deleted or merged; it is renamed aside (same parent, never followed) for inspection.
         replaced = `${seed.name}.divergent-${stamp(options.now?.() ?? new Date())}`;
         await rename(target, join(artifacts, replaced));
       }
       for (const prefix of ['factory', seed.name.split('/').slice(0, 2).join('/')]) {
-        if (!await components(artifacts, prefix)) await mkdir(join(artifacts, prefix), { mode: 0o700 });
+        if (!(await components(artifacts, prefix))) await mkdir(join(artifacts, prefix), { mode: 0o700 });
       }
       await mkdir(target, { mode: 0o700 });
       for (const file of files) {
         let parent = target;
         for (const part of dirname(file.path) === '.' ? [] : dirname(file.path).split('/')) {
           parent = join(parent, part);
-          await mkdir(parent, { mode: 0o700 }).catch(async error => { if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !(await lstat(parent)).isDirectory()) throw error; });
+          await mkdir(parent, { mode: 0o700 }).catch(async error => {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !(await lstat(parent)).isDirectory()) throw error;
+          });
         }
         await writeFile(join(target, file.path), file.bytes, { flag: 'wx', mode: 0o600 });
       }

@@ -15,9 +15,15 @@ async function directory(t: { after(fn: () => Promise<void>): void }) {
   t.after(() => rm(dir, { recursive: true, force: true }));
   return dir;
 }
-const storage = (inspection: StorageInspection) => { assert.equal(inspection.kind, 'storage'); return inspection as Extract<StorageInspection, { kind: 'storage' }>; };
-const incompatibleOpen = (path: string) => assert.rejects(openControl({ storagePath: path, runtimeInventory: 'unknown' }),
-  (error: unknown) => error instanceof StorageFormatError && error.code === 'STORAGE_INCOMPATIBLE');
+const storage = (inspection: StorageInspection) => {
+  assert.equal(inspection.kind, 'storage');
+  return inspection as Extract<StorageInspection, { kind: 'storage' }>;
+};
+const incompatibleOpen = (path: string) =>
+  assert.rejects(
+    openControl({ storagePath: path, runtimeInventory: 'unknown' }),
+    (error: unknown) => error instanceof StorageFormatError && error.code === 'STORAGE_INCOMPATIBLE',
+  );
 
 test('the run end has ONE source (ticket 26 stop outcome): a stop with a live, unconfirmed activity is uncertain, run result and durable end alike', async t => {
   const dir = await directory(t);
@@ -45,12 +51,17 @@ test('only a provably empty file is fresh: a non-Factory SQLite database is refu
   const check = await openNodeSqliteDatabase(path);
   const tables = await check.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name");
   await check.close();
-  assert.deepEqual(tables.map(row => row.name), ['foreign_data'], 'no Pi Durable schema was created');
+  assert.deepEqual(
+    tables.map(row => row.name),
+    ['foreign_data'],
+    'no Pi Durable schema was created',
+  );
 });
 
 test('Factory documents without the installation document are incompatible; the installation is never created lazily', async t => {
   const dir = await directory(t);
-  const source = join(dir, 'source.sqlite'), path = join(dir, 'control.sqlite');
+  const source = join(dir, 'source.sqlite'),
+    path = join(dir, 'control.sqlite');
   await storageWithPendingQuestion(source);
   await writeFormatOne(source, path, [], ['factory.installation']);
   const before = storage(await inspectStorage(path));
@@ -63,7 +74,8 @@ test('Factory documents without the installation document are incompatible; the 
 
 test('the migration verifies the expected preserved state BEFORE its commit; a mismatch commits nothing', async t => {
   const dir = await directory(t);
-  const source = join(dir, 'source.sqlite'), path = join(dir, 'control.sqlite');
+  const source = join(dir, 'source.sqlite'),
+    path = join(dir, 'control.sqlite');
   await storageWithPendingQuestion(source);
   await writeFormatOne(source, path);
   const before = storage(await inspectStorage(path));
@@ -78,7 +90,8 @@ test('the full state digest covers lifecycle and migration records; the preserve
   const dir = await directory(t);
   const path = join(dir, 'control.sqlite');
   const control = await openControl({ storagePath: path, runtimeInventory: 'unknown' });
-  const aborted = new AbortController(); aborted.abort();
+  const aborted = new AbortController();
+  aborted.abort();
   await control.run(aborted.signal); // Initializes, records nothing, closes.
   const before = storage(await inspectStorage(path));
   const store = await openStore(path);

@@ -9,9 +9,12 @@ type Constructor = new (root: string) => RealFSProvider;
  * providers. This does not protect against compromised trusted host processes. */
 export function createWorkspaceProvider(Provider: Constructor, root: string): RealFSProvider {
   const provider = new Provider(root);
-  const lstat = provider.lstat.bind(provider), lstatSync = provider.lstatSync.bind(provider);
-  const readlink = provider.readlink.bind(provider), readlinkSync = provider.readlinkSync.bind(provider);
-  const realpath = provider.realpath.bind(provider), realpathSync = provider.realpathSync.bind(provider);
+  const lstat = provider.lstat.bind(provider),
+    lstatSync = provider.lstatSync.bind(provider);
+  const readlink = provider.readlink.bind(provider),
+    readlinkSync = provider.readlinkSync.bind(provider);
+  const realpath = provider.realpath.bind(provider),
+    realpathSync = provider.realpathSync.bind(provider);
   const parent = (path: string) => posix.dirname(posix.normalize(path));
   provider.lstat = async (path, options) => {
     await realpath(parent(path));

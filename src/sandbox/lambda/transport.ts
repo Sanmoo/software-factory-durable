@@ -40,7 +40,8 @@ export type GuestRefusal = {
     | 'AUTHENTICATION_REFUSED'
     /** Nothing answered: the MicroVM is gone or its `sshd` is not up yet. */
     | 'UNREACHABLE';
-  detail?: string };
+  detail?: string;
+};
 export type GuestExecResult =
   | { status: 'exited'; exitCode: number; stdout: string; stderr: string }
   | GuestRefusal
@@ -57,7 +58,11 @@ export interface GuestTransport {
    */
   readHostKey(target: GuestTarget): Promise<{ status: 'read'; hostKey: string } | GuestRefusal | { status: 'lost'; detail?: string }>;
   /** One program over a NEW connection that accepts only `hostKey`. `signal` closes the connection. */
-  exec(target: GuestTarget & { hostKey: string }, request: GuestExecRequest, options?: { signal?: AbortSignal; onData?: (data: Buffer) => void }): Promise<GuestExecResult>;
+  exec(
+    target: GuestTarget & { hostKey: string },
+    request: GuestExecRequest,
+    options?: { signal?: AbortSignal; onData?: (data: Buffer) => void },
+  ): Promise<GuestExecResult>;
 }
 
 const sshString = (value: Uint8Array | string) => {
@@ -79,12 +84,25 @@ export function generateSessionKey(): { publicKey: string; privateKey: string } 
   const seed = pair.privateKey.export({ type: 'pkcs8', format: 'der' }).subarray(-32);
   const check = randomBytes(4);
   const body = Buffer.concat([check, check, sshString('ssh-ed25519'), sshString(raw), sshString(Buffer.concat([seed, raw])), sshString('factory-session')]);
-  const padding = Buffer.from(Array.from({ length: (8 - body.length % 8) % 8 }, (_, index) => index + 1));
+  const padding = Buffer.from(Array.from({ length: (8 - (body.length % 8)) % 8 }, (_, index) => index + 1));
   const one = Buffer.alloc(4);
   one.writeUInt32BE(1);
-  const key = Buffer.concat([Buffer.from('openssh-key-v1\0'), sshString('none'), sshString('none'), sshString(''), one, sshString(publicBlob(raw)), sshString(Buffer.concat([body, padding]))]);
-  return { publicKey: `ssh-ed25519 ${publicBlob(raw).toString('base64')}`,
-    privateKey: `-----BEGIN OPENSSH PRIVATE KEY-----\n${key.toString('base64').match(/.{1,70}/g)!.join('\n')}\n-----END OPENSSH PRIVATE KEY-----\n` };
+  const key = Buffer.concat([
+    Buffer.from('openssh-key-v1\0'),
+    sshString('none'),
+    sshString('none'),
+    sshString(''),
+    one,
+    sshString(publicBlob(raw)),
+    sshString(Buffer.concat([body, padding])),
+  ]);
+  return {
+    publicKey: `ssh-ed25519 ${publicBlob(raw).toString('base64')}`,
+    privateKey: `-----BEGIN OPENSSH PRIVATE KEY-----\n${key
+      .toString('base64')
+      .match(/.{1,70}/g)!
+      .join('\n')}\n-----END OPENSSH PRIVATE KEY-----\n`,
+  };
 }
 
 /** The public line of a session private key written by `generateSessionKey` (what a guest must have authorized to accept it). */
@@ -94,11 +112,20 @@ export function sessionPublicKey(privateKey: string): string | null {
     const magic = Buffer.from('openssh-key-v1\0');
     if (!key.subarray(0, magic.length).equals(magic)) return null;
     let offset = magic.length;
-    const next = () => { const length = key.readUInt32BE(offset); const value = key.subarray(offset + 4, offset + 4 + length); offset += 4 + length; return value; };
-    next(); next(); next();
+    const next = () => {
+      const length = key.readUInt32BE(offset);
+      const value = key.subarray(offset + 4, offset + 4 + length);
+      offset += 4 + length;
+      return value;
+    };
+    next();
+    next();
+    next();
     offset += 4;
     return `ssh-ed25519 ${next().toString('base64')}`;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** The service allows at most 60 minutes; an open connection outlives its token, so the token only matters when a connection OPENS. */
@@ -117,8 +144,25 @@ export type LambdaChannel = {
  * boot's session key, with keepalive. Ingress tokens are issued by the host as connections need them (a boot outlives a token) and are
  * never recorded.
  */
-export function openChannel({ service, transport, microvmId, endpoint, identityFile, hostKey, now, user = 'builder' }: { service: LambdaService; transport: GuestTransport;
-  microvmId: string; endpoint: string; identityFile: string; hostKey: string; now: () => number; user?: GuestUser }): LambdaChannel {
+export function openChannel({
+  service,
+  transport,
+  microvmId,
+  endpoint,
+  identityFile,
+  hostKey,
+  now,
+  user = 'builder',
+}: {
+  service: LambdaService;
+  transport: GuestTransport;
+  microvmId: string;
+  endpoint: string;
+  identityFile: string;
+  hostKey: string;
+  now: () => number;
+  user?: GuestUser;
+}): LambdaChannel {
   let token: { value: string; renewAt: number } | null = null;
   let closed = false;
   const open = new Set<AbortController>();
@@ -134,7 +178,8 @@ export function openChannel({ service, transport, microvmId, endpoint, identityF
       const abort = new AbortController();
       open.add(abort);
       const interrupt = () => abort.abort();
-      if (options.signal?.aborted) abort.abort(); else options.signal?.addEventListener('abort', interrupt, { once: true });
+      if (options.signal?.aborted) abort.abort();
+      else options.signal?.addEventListener('abort', interrupt, { once: true });
       try {
         if (abort.signal.aborted) return { status: 'lost', detail: 'The call was interrupted before its connection opened' };
         // A refused token ran nothing, so one retry with a fresh token is safe.
@@ -142,14 +187,20 @@ export function openChannel({ service, transport, microvmId, endpoint, identityF
           const current = token && now() < token.renewAt ? token : await issue();
           if (closed) return { status: 'closed' };
           if (!current) return { status: 'refused', code: 'TOKEN_REFUSED', detail: 'The service issued no ingress token' };
-          const result = await transport.exec({ endpoint, port: guestSshPort, token: current.value, user, identityFile, keepaliveSeconds: guestKeepaliveSeconds, hostKey },
-            request, { signal: abort.signal, ...(options.onData ? { onData: options.onData } : {}) });
+          const result = await transport.exec(
+            { endpoint, port: guestSshPort, token: current.value, user, identityFile, keepaliveSeconds: guestKeepaliveSeconds, hostKey },
+            request,
+            { signal: abort.signal, ...(options.onData ? { onData: options.onData } : {}) },
+          );
           if (closed) return { status: 'closed' };
           if (result.status !== 'refused' || result.code !== 'TOKEN_REFUSED') return result;
           token = null;
         }
         return { status: 'refused', code: 'TOKEN_REFUSED' };
-      } finally { open.delete(abort); options.signal?.removeEventListener('abort', interrupt); }
+      } finally {
+        open.delete(abort);
+        options.signal?.removeEventListener('abort', interrupt);
+      }
     },
     close() {
       closed = true;

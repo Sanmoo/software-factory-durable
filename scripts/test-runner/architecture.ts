@@ -3,12 +3,19 @@
 // decide the step's outcome, never the exit code.
 import type { Graph } from './selection.ts';
 
-export interface Violation { rule: string; from: string; to: string }
+export interface Violation {
+  rule: string;
+  from: string;
+  to: string;
+}
 interface CruiseModule {
   source: string;
   dependencies: { module?: string; resolved: string; couldNotResolve: boolean; coreModule: boolean; followable: boolean; dependencyTypes?: string[] }[];
 }
-interface Cruise { modules: CruiseModule[]; summary: { violations: { rule: { name: string }; from: string; to: string }[]; error: number } }
+interface Cruise {
+  modules: CruiseModule[];
+  summary: { violations: { rule: { name: string }; from: string; to: string }[]; error: number };
+}
 
 export function readCruise(output: string): { violations: Violation[]; graph: Graph } {
   const cruise = JSON.parse(output) as Cruise;
@@ -17,7 +24,8 @@ export function readCruise(output: string): { violations: Violation[]; graph: Gr
   const unresolved: string[] = [];
   for (const module of cruise.modules) {
     if (module.source.startsWith('node_modules/')) continue;
-    const imports = module.dependencies.filter(dep => !dep.coreModule && !dep.couldNotResolve && !dep.resolved.startsWith('node_modules/'))
+    const imports = module.dependencies
+      .filter(dep => !dep.coreModule && !dep.couldNotResolve && !dep.resolved.startsWith('node_modules/'))
       .map(dep => dep.resolved);
     edges.set(module.source, [...new Set(imports)].sort());
     if (module.dependencies.some(dep => dep.couldNotResolve)) unresolved.push(module.source);

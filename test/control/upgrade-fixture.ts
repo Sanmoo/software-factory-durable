@@ -22,44 +22,95 @@ const sha = (question: string, context: string) => createHash('sha256').update(J
 function ports(cessation: boolean, live = false): ExecutionPorts {
   let asked = false;
   return {
-    configuration: { schemaVersion: 1 }, capacity: 1,
+    configuration: { schemaVersion: 1 },
+    capacity: 1,
     builder: { skillPack: 'factory-skills-v2', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
       async prepare(input) {
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: false }],
-          checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
+        return {
+          status: 'success',
+          environment: `env-${'c'.repeat(64)}` as never,
+          seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: false }],
+          checkout: {
+            path: '/workspace/checkout',
+            repository: input.checkout.repository,
+            repositoryId: input.checkout.repositoryId,
+            base: 'main',
+            branch: input.checkout.branch,
+            baseCommit: 'a'.repeat(40),
+            origin: 'https://github.com/acme/project.git',
+            reused: false,
+            preparedAt: new Date().toISOString(),
+          },
+        };
       },
-      async start() { return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
+      async start() {
+        return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never };
+      },
       async stop() {
-        return cessation ? { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }
+        return cessation
+          ? { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }
           : { status: 'indeterminate', code: 'STOP_UNCONFIRMED', cessationConfirmed: false };
       },
     },
     credentials: {
       async issue() {
-        return { delivery: { token: 'synthetic-grant' }, metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
-          permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() } };
+        return {
+          delivery: { token: 'synthetic-grant' },
+          metadata: {
+            role: 'builder',
+            purpose: 'builder-start',
+            repository: 'acme/project',
+            repositoryId: 3,
+            installationId: 2,
+            permissions: { metadata: 'read', contents: 'read', issues: 'read' },
+            issuedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          },
+        };
       },
-      async revoke() { return { kind: 'not-attempted', nextStep: 'synthetic' }; },
+      async revoke() {
+        return { kind: 'not-attempted', nextStep: 'synthetic' };
+      },
     },
     workers: {
       async activate(invocation, _delivery, events) {
         const receipt = { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' };
-        const started = Promise.resolve({ receipt, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
+        const started = Promise.resolve({
+          receipt,
+          invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId },
+        });
         // `live`: the activation never ends by itself (a Builder still running when the owner stops).
         let end: (value: { status: 'failure'; code: string }) => void = () => {};
-        const completed = live ? new Promise<{ status: 'failure'; code: string }>(resolve => { end = resolve; }) : started.then(async () => {
-          if (asked) return { status: 'success' as const, receipt };
-          asked = true;
-          const question: WorkerQuestion = { questionId, question: 'Which file name should the doc use?', context: 'Ticket names none.',
-            sha256: sha('Which file name should the doc use?', 'Ticket names none.'), reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
-          const ack = await events!.question!(question);
-          return { status: 'question' as const, receipt, question: { ...question, acknowledged: ack.status === 'recorded' } };
-        });
-        return { worker: invocation.context.invocationId, started, completed, close() { end({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); } };
+        const completed = live
+          ? new Promise<{ status: 'failure'; code: string }>(resolve => {
+              end = resolve;
+            })
+          : started.then(async () => {
+              if (asked) return { status: 'success' as const, receipt };
+              asked = true;
+              const question: WorkerQuestion = {
+                questionId,
+                question: 'Which file name should the doc use?',
+                context: 'Ticket names none.',
+                sha256: sha('Which file name should the doc use?', 'Ticket names none.'),
+                reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' },
+              };
+              const ack = await events!.question!(question);
+              return { status: 'question' as const, receipt, question: { ...question, acknowledged: ack.status === 'recorded' } };
+            });
+        return {
+          worker: invocation.context.invocationId,
+          started,
+          completed,
+          close() {
+            end({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
+          },
+        };
       },
-      async deliver(_worker, directive) { return { status: directive.kind === 'credential' ? 'delivered' as const : 'withdrawn' as const }; },
+      async deliver(_worker, directive) {
+        return { status: directive.kind === 'credential' ? ('delivered' as const) : ('withdrawn' as const) };
+      },
     },
   };
 }
@@ -71,21 +122,33 @@ export async function storageWithPendingQuestion(storagePath: string, options: {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3), remoteIssue(4)] };
   const github = githubDoubles(remote);
   const time = manualClock();
-  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(cessation),
-    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+  const control: Control = await openControl({
+    storagePath,
+    runtimeInventory: 'empty',
+    execution: ports(cessation),
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] },
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  const show = async () => (await control.inspect({ kind: 'list' }) as ListView).works.find(work => work.ticket.number === 3);
-  await untilHolds('Question published (and the second Work admitted)', async () => {
-    const work = await show();
-    const question = work ? (await control.inspect({ kind: 'show', work_id: work.work_id }) as Extract<ShowView, { kind: 'work' }>).questions[0] : undefined;
-    if (question?.publication.state === 'published' && (!cessation || (await control.inspect({ kind: 'list' }) as ListView).works.length === 2)) return true;
-    if (time.isSleeping()) time.advance();
-    return false;
-  }, 5);
-  const pause = await control.accept({ request_id: 'pause-before-upgrade', operation: 'pause', origin: 'local-cli' }) as ControlReceipt;
+  const show = async () => ((await control.inspect({ kind: 'list' })) as ListView).works.find(work => work.ticket.number === 3);
+  await untilHolds(
+    'Question published (and the second Work admitted)',
+    async () => {
+      const work = await show();
+      const question = work
+        ? ((await control.inspect({ kind: 'show', work_id: work.work_id })) as Extract<ShowView, { kind: 'work' }>).questions[0]
+        : undefined;
+      if (question?.publication.state === 'published' && (!cessation || ((await control.inspect({ kind: 'list' })) as ListView).works.length === 2))
+        return true;
+      if (time.isSleeping()) time.advance();
+      return false;
+    },
+    5,
+  );
+  const pause = (await control.accept({ request_id: 'pause-before-upgrade', operation: 'pause', origin: 'local-cli' })) as ControlReceipt;
   assert.equal(pause.kind, 'durable');
-  const list = await control.inspect({ kind: 'list' }) as ListView;
+  const list = (await control.inspect({ kind: 'list' })) as ListView;
   stop.abort();
   // Ticket 26: an earlier Execution ended with unconfirmed cessation is not a live activity of THIS stop (its next boot reconciles it).
   assert.deepEqual(await running, { kind: 'clean' });
@@ -113,8 +176,12 @@ async function documentsOf(storage: SqliteStorage) {
 function olderInstallation(value: JsonObject, format: 1 | 2): JsonObject {
   if (format === 1) return { paused: value.paused, history: value.history } as JsonObject;
   const storage = value.storage as JsonObject | undefined;
-  return { paused: value.paused, history: value.history, storage: { format: 2, migrations: (storage?.migrations ?? []) as JsonObject[] },
-    lifecycle: (value.lifecycle ?? { current: null, last: null }) as JsonObject } as JsonObject;
+  return {
+    paused: value.paused,
+    history: value.history,
+    storage: { format: 2, migrations: (storage?.migrations ?? []) as JsonObject[] },
+    lifecycle: (value.lifecycle ?? { current: null, last: null }) as JsonObject,
+  } as JsonObject;
 }
 
 /**
@@ -122,24 +189,49 @@ function olderInstallation(value: JsonObject, format: 1 | 2): JsonObject {
  * definitions of that format (every kind except the installation is v1 in formats 1 to 3). `extra` adds documents of the given kind/version
  * (used to build incompatible storages); `patch` rewrites the value of a copied kind (e.g. a forgotten Work in the Ticket index). Test fixture only.
  */
-export async function writeOlderFormat(format: 1 | 2, source: string, target: string, options: { extra?: { kind: string; version: number; key?: string; value: JsonObject }[];
-  omit?: string[]; patch?: Record<string, (value: JsonObject) => JsonObject> } = {}) {
+export async function writeOlderFormat(
+  format: 1 | 2,
+  source: string,
+  target: string,
+  options: {
+    extra?: { kind: string; version: number; key?: string; value: JsonObject }[];
+    omit?: string[];
+    patch?: Record<string, (value: JsonObject) => JsonObject>;
+  } = {},
+) {
   const from = await SqliteStorage.open(await openNodeSqliteDatabase(source));
   const documents = await documentsOf(from);
   await from.close(BACKGROUND_CONTEXT);
   const session = createSession(await SqliteStorage.open(await openNodeSqliteDatabase(target)));
-  const all = [...documents.filter(item => !(options.omit ?? []).includes(item.kind)).map(item => {
-    const value = item.kind === 'factory.installation' ? olderInstallation(item.value, format) : item.value;
-    return { ...item, version: item.kind === 'factory.installation' ? format : item.version, value: options.patch?.[item.kind]?.(value) ?? value };
-  }), ...(options.extra ?? [])];
+  const all = [
+    ...documents
+      .filter(item => !(options.omit ?? []).includes(item.kind))
+      .map(item => {
+        const value = item.kind === 'factory.installation' ? olderInstallation(item.value, format) : item.value;
+        return { ...item, version: item.kind === 'factory.installation' ? format : item.version, value: options.patch?.[item.kind]?.(value) ?? value };
+      }),
+    ...(options.extra ?? []),
+  ];
   for (const item of all) {
     await session.commit(async tx => {
       if (item.key === undefined && (singletons.includes(item.kind) || !item.kind.startsWith('factory.') || item.kind === 'factory.future')) {
-        const doc = await tx.doc(defineDoc<JsonObject>({ kind: item.kind, version: item.version, scope: 'session', initial: () => ({}), checkpointWhen: () => true }));
+        const doc = await tx.doc(
+          defineDoc<JsonObject>({ kind: item.kind, version: item.version, scope: 'session', initial: () => ({}), checkpointWhen: () => true }),
+        );
         Object.assign(doc, item.value);
       } else {
-        const doc = await tx.doc(defineDocFamily<JsonObject, null>({ kind: item.kind, version: item.version, scope: 'session', family: true, initial: () => ({}),
-          checkpointWhen: () => true }), item.key!, null);
+        const doc = await tx.doc(
+          defineDocFamily<JsonObject, null>({
+            kind: item.kind,
+            version: item.version,
+            scope: 'session',
+            family: true,
+            initial: () => ({}),
+            checkpointWhen: () => true,
+          }),
+          item.key!,
+          null,
+        );
         Object.assign(doc, item.value);
       }
     }, BACKGROUND_CONTEXT);
@@ -147,26 +239,40 @@ export async function writeOlderFormat(format: 1 | 2, source: string, target: st
   await session.close(BACKGROUND_CONTEXT);
 }
 /** `source` re-expressed as a pre-ticket-33 (format 1) storage. */
-export const writeFormatOne = (source: string, target: string, extra: { kind: string; version: number; key?: string; value: JsonObject }[] = [], omit: string[] = []) =>
-  writeOlderFormat(1, source, target, { extra, omit });
+export const writeFormatOne = (
+  source: string,
+  target: string,
+  extra: { kind: string; version: number; key?: string; value: JsonObject }[] = [],
+  omit: string[] = [],
+) => writeOlderFormat(1, source, target, { extra, omit });
 /** `source` re-expressed as a format-2 storage (the format of every release before the Jira origin). */
-export const writeFormatTwo = (source: string, target: string, options: Parameters<typeof writeOlderFormat>[3] = {}) => writeOlderFormat(2, source, target, options);
+export const writeFormatTwo = (source: string, target: string, options: Parameters<typeof writeOlderFormat>[3] = {}) =>
+  writeOlderFormat(2, source, target, options);
 
 /** Ticket 33 + 26: the owner is stopped while its Builder still runs and the boot stop cannot be confirmed: the run ends `uncertain`. */
 export async function storageStoppedWithLiveActivity(storagePath: string) {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
   const github = githubDoubles(remote);
   const time = manualClock();
-  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(false, true),
-    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+  const control: Control = await openControl({
+    storagePath,
+    runtimeInventory: 'empty',
+    execution: ports(false, true),
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] },
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  await untilHolds('Builder Execution started', async () => {
-    const work = (await control.inspect({ kind: 'list' }) as ListView).works[0];
-    if (work?.execution?.state === 'started') return true;
-    if (time.isSleeping()) time.advance();
-    return false;
-  }, 5);
+  await untilHolds(
+    'Builder Execution started',
+    async () => {
+      const work = ((await control.inspect({ kind: 'list' })) as ListView).works[0];
+      if (work?.execution?.state === 'started') return true;
+      if (time.isSleeping()) time.advance();
+      return false;
+    },
+    5,
+  );
   stop.abort();
   return running;
 }
@@ -176,12 +282,17 @@ export async function reconcilingRun(storagePath: string) {
   const remote: Remote = { pulls: {}, issues: [] };
   const github = githubDoubles(remote);
   const time = manualClock();
-  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(true),
-    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+  const control: Control = await openControl({
+    storagePath,
+    runtimeInventory: 'empty',
+    execution: ports(true),
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] },
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   await time.sleeping();
-  const status = await control.inspect({ kind: 'status' }) as { recovery: unknown };
+  const status = (await control.inspect({ kind: 'status' })) as { recovery: unknown };
   stop.abort();
   return { end: await running, recovery: status.recovery };
 }

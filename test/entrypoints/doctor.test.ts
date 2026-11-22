@@ -21,8 +21,19 @@ test('offline doctor reports paths, versions, permissions, KVM/systemd/storage/s
     assert.equal(report.configuration.valid, false);
     assert.equal(report.versions.node, '24.21.0');
     assert.equal(report.paths.root, root);
-    for (const id of ['permissions:credentials', 'permissions:run', 'socket-path', 'storage', 'storage-lock-durability',
-      'kvm-access', 'kvm-functional', 'systemd', 'qemu-system-x86_64', 'qemu-img', 'docker-runtime']) {
+    for (const id of [
+      'permissions:credentials',
+      'permissions:run',
+      'socket-path',
+      'storage',
+      'storage-lock-durability',
+      'kvm-access',
+      'kvm-functional',
+      'systemd',
+      'qemu-system-x86_64',
+      'qemu-img',
+      'docker-runtime',
+    ]) {
       const check = report.checks.find((item: { id: string }) => item.id === id);
       assert.ok(check, id);
       assert.ok(['ok', 'blocked', 'unverified'].includes(check.status), id);
@@ -34,7 +45,9 @@ test('offline doctor reports paths, versions, permissions, KVM/systemd/storage/s
     assert.deepEqual(await readdir(root, { recursive: true }), before);
     assert.equal(await readFile(join(root, 'data', 'operational.sqlite'), 'utf8'), 'not a database; must not be opened');
     assert.equal((await stat(join(root, 'run'))).mode & 0o777, 0o700);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket', async () => {
@@ -46,24 +59,31 @@ test('doctor rejects a socket pathname that cannot fit Linux sockaddr_un without
     const check = JSON.parse(result.stdout).checks.find((item: { id: string }) => item.id === 'socket-path');
     assert.equal(check.status, 'blocked');
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(parent, { recursive: true, force: true }); }
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
 });
 
 test('importing public modules cannot write, spawn probes, or read a personal profile', async () => {
   const { pathToFileURL } = await import('node:url');
   const root = await mkdtemp(join(tmpdir(), 'factory-import-'));
   try {
-    const script = `await import(${JSON.stringify(pathToFileURL(cli).href)});\n` +
+    const script =
+      `await import(${JSON.stringify(pathToFileURL(cli).href)});\n` +
       `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/sandbox/index.js')).href)});\n` +
       `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/control/index.js')).href)});\n` +
       `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/protocol/index.js')).href)});`;
     const result = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${resolve('.')}`, '--input-type=module', '-e', script], {
-      cwd: root, encoding: 'utf8', env: { HOME: join(root, 'forbidden-profile'), GH_TOKEN: 'synthetic-not-to-inherit' },
+      cwd: root,
+      encoding: 'utf8',
+      env: { HOME: join(root, 'forbidden-profile'), GH_TOKEN: 'synthetic-not-to-inherit' },
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, '');
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('doctor refuses a symlinked configuration and reports permission issues without repairing them', async () => {
@@ -80,26 +100,32 @@ test('doctor refuses a symlinked configuration and reports permission issues wit
     assert.equal(report.checks.find((check: { id: string }) => check.id === 'permissions:run').status, 'blocked');
     assert.equal((await stat(join(root, 'run'))).mode & 0o777, 0o755);
     assert.doesNotMatch(result.stdout, /synthetic-do-not-read/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('offline version probes accept integer systemd versions and do not inherit personal credentials', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-probes-'));
   try {
     await mkdir(join(root, 'bin'));
-    const probe = `#!${process.execPath}\n` +
+    const probe =
+      `#!${process.execPath}\n` +
       `if (process.argv.slice(2).join(' ') !== '--version' || process.env.GH_TOKEN || process.env.HOME) process.exit(1);\n` +
       `console.log('systemd 777');\n`;
     for (const command of ['systemctl', 'qemu-system-x86_64', 'qemu-img']) {
       await writeFile(join(root, 'bin', command), probe, { mode: 0o700 });
     }
     const result = spawnSync(process.execPath, [cli, 'doctor', '--root', root, '--json'], {
-      encoding: 'utf8', env: { PATH: join(root, 'bin'), HOME: '/synthetic-personal-home', GH_TOKEN: 'synthetic-not-to-forward' },
+      encoding: 'utf8',
+      env: { PATH: join(root, 'bin'), HOME: '/synthetic-personal-home', GH_TOKEN: 'synthetic-not-to-forward' },
     });
     const report = JSON.parse(result.stdout);
     assert.equal(report.versions.systemctl, '777');
     assert.equal(report.versions['qemu-system-x86_64'], '777');
     assert.equal(report.versions['qemu-img'], '777');
     assert.doesNotMatch(result.stdout + result.stderr, /synthetic-not-to-forward/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

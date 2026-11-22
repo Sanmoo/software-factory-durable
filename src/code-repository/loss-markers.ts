@@ -15,8 +15,15 @@ export type LostMarkersObservation = { state: 'complete'; observedAt: string; ma
  * found none (nothing was sent); `kept`: no atomic conditional deletion is available for this token; `failed`: a known failure with
  * some ref left; `indeterminate`: a listing or a deletion did not answer conclusively (re-read before any new attempt).
  */
-export type LostMarkerCleanupResult = { outcome: 'removed' | 'absent' | 'kept' | 'failed' | 'indeterminate'; code: string; observedAt: string;
-  removed: string[]; remaining: string[]; nextStep: string; effectId: string };
+export type LostMarkerCleanupResult = {
+  outcome: 'removed' | 'absent' | 'kept' | 'failed' | 'indeterminate';
+  code: string;
+  observedAt: string;
+  removed: string[];
+  remaining: string[];
+  nextStep: string;
+  effectId: string;
+};
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 /** At most this many marker refs of one Work are handled in one attempt (one per lost boot; a Work has few). */
@@ -24,7 +31,8 @@ const markerLimit = 32;
 
 async function listMarkers(session: GitHubSession, repository: string, workId: string): Promise<LostMarker[]> {
   const prefix = lostMarkerPrefix(workId)!;
-  const parsed = z.array(z.object({ ref: z.string(), object: z.object({ sha, type: z.string() }) }))
+  const parsed = z
+    .array(z.object({ ref: z.string(), object: z.object({ sha, type: z.string() }) }))
     .safeParse(await session.list(`/repos/${repository}/git/matching-refs/${prefix.slice('refs/'.length)}`, { maxPages: 10 }));
   if (!parsed.success) throw new InvalidGitHubObservation();
   // Only exact marker refs of THIS Work; anything else under the prefix is not the Factory's shape and is left alone.
@@ -44,7 +52,9 @@ export function lossMarkerOperations(options: { github: GitHubAccess }) {
         return listMarkers(session, selection.repo.repository, selection.workId);
       });
       if (!read.ok) return { state: 'unknown', code: read.code };
-      return read.value === null ? { state: 'unknown', code: 'REPOSITORY_IDENTITY_MISMATCH' } : { state: 'complete', observedAt: read.observedAt, markers: read.value };
+      return read.value === null
+        ? { state: 'unknown', code: 'REPOSITORY_IDENTITY_MISMATCH' }
+        : { state: 'complete', observedAt: read.observedAt, markers: read.value };
     },
 
     /**
@@ -53,33 +63,71 @@ export function lossMarkerOperations(options: { github: GitHubAccess }) {
      */
     async cleanupLostMarkers(selection: LostMarkerSelection, effect: { effectId: string }): Promise<LostMarkerCleanupResult> {
       const observedAt = new Date().toISOString();
-      const result = (outcome: LostMarkerCleanupResult['outcome'], code: string, removed: string[], remaining: string[], nextStep: string): LostMarkerCleanupResult =>
-        ({ outcome, code, observedAt, removed, remaining, nextStep, effectId: effect.effectId });
+      const result = (
+        outcome: LostMarkerCleanupResult['outcome'],
+        code: string,
+        removed: string[],
+        remaining: string[],
+        nextStep: string,
+      ): LostMarkerCleanupResult => ({ outcome, code, observedAt, removed, remaining, nextStep, effectId: effect.effectId });
       const listed = await this.readLostMarkers(selection);
-      if (listed.state !== 'complete') return result('indeterminate', listed.code, [], [], 'The marker refs could not be listed; nothing was sent. The next sweep reads again.');
-      if (!listed.markers.length) return result('absent', 'LOST_MARKERS_ABSENT', [], [], 'A complete read shows no loss marker ref of this Work; nothing was sent.');
+      if (listed.state !== 'complete')
+        return result('indeterminate', listed.code, [], [], 'The marker refs could not be listed; nothing was sent. The next sweep reads again.');
+      if (!listed.markers.length)
+        return result('absent', 'LOST_MARKERS_ABSENT', [], [], 'A complete read shows no loss marker ref of this Work; nothing was sent.');
       const removed: string[] = [];
       let stopped: { outcome: 'kept' | 'failed' | 'indeterminate'; code: string } | null = null;
       for (const marker of listed.markers.slice(0, markerLimit)) {
-        const attempt = await options.github.cleanup(selection.repo, async session => {
-          if (session.repositoryId !== selection.repositoryId) return { kind: 'rejected' as const, code: 'REPOSITORY_IDENTITY_MISMATCH' };
-          const repository = z.object({ node_id: z.string().min(1).max(128) }).safeParse(await session.get(`/repos/${selection.repo.repository}`));
-          if (!repository.success) return { kind: 'rejected' as const, code: 'REPOSITORY_PAYLOAD_INVALID' };
-          return session.deleteRefIfAt({ repositoryNodeId: repository.data.node_id, lostMarker: marker.ref, beforeOid: marker.sha });
-        }).catch(() => null);
-        if (!attempt) { stopped = { outcome: 'indeterminate', code: 'CLEANUP_ADAPTER_FAILED' }; break; }
-        if (!attempt.ok) { stopped = { outcome: attempt.outcome === 'unknown' ? 'indeterminate' : 'failed', code: attempt.code }; break; }
-        if (attempt.value.kind === 'unavailable') { stopped = { outcome: 'kept', code: attempt.value.code }; break; }
+        const attempt = await options.github
+          .cleanup(selection.repo, async session => {
+            if (session.repositoryId !== selection.repositoryId) return { kind: 'rejected' as const, code: 'REPOSITORY_IDENTITY_MISMATCH' };
+            const repository = z.object({ node_id: z.string().min(1).max(128) }).safeParse(await session.get(`/repos/${selection.repo.repository}`));
+            if (!repository.success) return { kind: 'rejected' as const, code: 'REPOSITORY_PAYLOAD_INVALID' };
+            return session.deleteRefIfAt({ repositoryNodeId: repository.data.node_id, lostMarker: marker.ref, beforeOid: marker.sha });
+          })
+          .catch(() => null);
+        if (!attempt) {
+          stopped = { outcome: 'indeterminate', code: 'CLEANUP_ADAPTER_FAILED' };
+          break;
+        }
+        if (!attempt.ok) {
+          stopped = { outcome: attempt.outcome === 'unknown' ? 'indeterminate' : 'failed', code: attempt.code };
+          break;
+        }
+        if (attempt.value.kind === 'unavailable') {
+          stopped = { outcome: 'kept', code: attempt.value.code };
+          break;
+        }
         // A rejected deletion (the ref moved or is gone) is settled by the re-read below, never assumed.
         if (attempt.value.kind === 'deleted') removed.push(marker.ref);
       }
       const after = await this.readLostMarkers(selection);
-      if (after.state !== 'complete') return result('indeterminate', after.code, removed, [], 'The deletion was sent but the re-read failed; the next sweep reads again before any new attempt.');
+      if (after.state !== 'complete')
+        return result(
+          'indeterminate',
+          after.code,
+          removed,
+          [],
+          'The deletion was sent but the re-read failed; the next sweep reads again before any new attempt.',
+        );
       const remaining = after.markers.map(marker => marker.ref);
-      if (!remaining.length) return result('removed', 'LOST_MARKERS_DELETED', removed, [], 'Loss marker refs deleted atomically and re-read absent. No branch and no pull request was touched.');
-      return result(stopped?.outcome ?? 'failed', stopped?.code ?? 'LOST_MARKERS_REMAIN', removed, remaining, stopped?.outcome === 'kept'
-        ? 'kept: atomic delete unavailable for this token; the marker refs are kept and never deleted without a precondition. Operator decides.'
-        : 'Some loss marker ref is still there; the next sweep lists and tries again.');
+      if (!remaining.length)
+        return result(
+          'removed',
+          'LOST_MARKERS_DELETED',
+          removed,
+          [],
+          'Loss marker refs deleted atomically and re-read absent. No branch and no pull request was touched.',
+        );
+      return result(
+        stopped?.outcome ?? 'failed',
+        stopped?.code ?? 'LOST_MARKERS_REMAIN',
+        removed,
+        remaining,
+        stopped?.outcome === 'kept'
+          ? 'kept: atomic delete unavailable for this token; the marker refs are kept and never deleted without a precondition. Operator decides.'
+          : 'Some loss marker ref is still there; the next sweep lists and tries again.',
+      );
     },
   };
 }

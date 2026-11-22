@@ -4,9 +4,16 @@ import { guestPinSha256, lambdaGuestPin, lambdaImageKey, lambdaImageName, render
 import { storedZip } from '../../src/sandbox/lambda/zip.js';
 
 // v2 ticket 03 (V2-27): the fixed MicroVM image recipe, mounted by the host from validated values only. Pure; nothing is built here.
-const declaration = { schemaVersion: 1 as const, apk: [{ name: 'openjdk21-jdk', version: '21.0.13.1_p2-r0' }, { name: 'maven', version: '3.9.11-r0' }],
-  images: [{ reference: 'docker.io/testcontainers/ryuk@sha256:' + 'a'.repeat(64) }] };
-const apk = 'apk add --no-cache --repositories-file /dev/null --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/main --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community';
+const declaration = {
+  schemaVersion: 1 as const,
+  apk: [
+    { name: 'openjdk21-jdk', version: '21.0.13.1_p2-r0' },
+    { name: 'maven', version: '3.9.11-r0' },
+  ],
+  images: [{ reference: 'docker.io/testcontainers/ryuk@sha256:' + 'a'.repeat(64) }],
+};
+const apk =
+  'apk add --no-cache --repositories-file /dev/null --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/main --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community';
 const file = (rendered: ReturnType<typeof renderGuestImage>, name: string) => {
   assert.equal(rendered.ok, true);
   return rendered.ok ? rendered.files.find(entry => entry.name === name)!.content : '';
@@ -22,7 +29,8 @@ test('the Dockerfile starts from the pinned Alpine, installs the template and th
     "RUN adduser -D -s /bin/bash reviewer && sed -i 's/^reviewer:!/reviewer:*/' /etc/shadow",
     'COPY hook-agent.py start.sh sshd_config declared-images /opt/factory/',
     'CMD ["python3", "-u", "/opt/factory/hook-agent.py"]',
-    '']);
+    '',
+  ]);
 });
 
 test('declared Docker images are a data file read at boot, never embedded in the image', () => {
@@ -67,12 +75,16 @@ test('the start hook brings up sshd and dockerd; none of them is started at buil
 });
 
 test('the template packages are pinned to exact Alpine versions in the release pin', () => {
-  assert.deepEqual(lambdaGuestPin.packages.map(entry => entry.name), ['docker', 'docker-cli-compose', 'docker-cli-buildx', 'openssh', 'git', 'python3', 'bash', 'websocat', 'iptables', 'curl', 'github-cli']);
+  assert.deepEqual(
+    lambdaGuestPin.packages.map(entry => entry.name),
+    ['docker', 'docker-cli-compose', 'docker-cli-buildx', 'openssh', 'git', 'python3', 'bash', 'websocat', 'iptables', 'curl', 'github-cli'],
+  );
   for (const entry of lambdaGuestPin.packages) assert.match(entry.version, /^[0-9][0-9a-z._]*-r[0-9]+$/, entry.name);
 });
 
 const profile = { installation: 'acme', architecture: 'arm64' as const, baselineMemoryMiB: 1024, additionalOsCapabilities: ['ALL'] };
-const keyOf = (change: Partial<Parameters<typeof lambdaImageKey>[0]> = {}) => lambdaImageKey({ repositoryId: 42, declarationSha256: 'd'.repeat(64), profile, ...change });
+const keyOf = (change: Partial<Parameters<typeof lambdaImageKey>[0]> = {}) =>
+  lambdaImageKey({ repositoryId: 42, declarationSha256: 'd'.repeat(64), profile, ...change });
 
 test('the image key is (repository, declaration hash, release pin): the same inputs give the same key, any change gives a new one', () => {
   assert.match(keyOf(), /^[a-f0-9]{64}$/);
@@ -97,7 +109,10 @@ test('images are named under the installation prefix the operation role is scope
 });
 
 test('the build artifact is a zip with the Dockerfile at its root, byte-identical for the same files', () => {
-  const files = [{ name: 'Dockerfile', content: 'FROM scratch\n' }, { name: 'start.sh', content: '#!/bin/bash\n' }];
+  const files = [
+    { name: 'Dockerfile', content: 'FROM scratch\n' },
+    { name: 'start.sh', content: '#!/bin/bash\n' },
+  ];
   const zip = storedZip(files);
   assert.deepEqual(Buffer.from(storedZip(files)), Buffer.from(zip));
   // Independent reading of the archive: end-of-central-directory record, then each central entry and its stored bytes.
@@ -110,7 +125,10 @@ test('the build artifact is a zip with the Dockerfile at its root, byte-identica
   for (let index = 0; index < 2; index++) {
     assert.equal(view.readUInt32LE(offset), 0x02014b50);
     assert.equal(view.readUInt16LE(offset + 10), 0, 'stored');
-    const crc = view.readUInt32LE(offset + 16), size = view.readUInt32LE(offset + 24), nameLength = view.readUInt16LE(offset + 28), local = view.readUInt32LE(offset + 42);
+    const crc = view.readUInt32LE(offset + 16),
+      size = view.readUInt32LE(offset + 24),
+      nameLength = view.readUInt16LE(offset + 28),
+      local = view.readUInt32LE(offset + 42);
     const name = view.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
     assert.equal(view.readUInt32LE(local), 0x04034b50);
     const data = local + 30 + view.readUInt16LE(local + 26) + view.readUInt16LE(local + 28);
@@ -118,7 +136,13 @@ test('the build artifact is a zip with the Dockerfile at its root, byte-identica
     offset += 46 + nameLength + view.readUInt16LE(offset + 30) + view.readUInt16LE(offset + 32);
   }
   // CRC-32 of 'FROM scratch\n' computed with `python3 -c "import zlib;print(hex(zlib.crc32(b'FROM scratch\n')))"`.
-  assert.deepEqual(read.map(entry => [entry.name, entry.content]), [['Dockerfile', 'FROM scratch\n'], ['start.sh', '#!/bin/bash\n']]);
+  assert.deepEqual(
+    read.map(entry => [entry.name, entry.content]),
+    [
+      ['Dockerfile', 'FROM scratch\n'],
+      ['start.sh', '#!/bin/bash\n'],
+    ],
+  );
   assert.equal(read[0]!.crc, 0xf75d57c2);
 });
 
@@ -126,8 +150,11 @@ test('the guest listens only for the lifecycle hooks, sshd on loopback and the W
   const rendered = renderGuestImage(declaration);
   const everything = ['hook-agent.py', 'start.sh', 'sshd_config', 'Dockerfile'].map(name => file(rendered, name)).join('\n');
   // Every listener of the guest files, by the forms they use to open one.
-  const listeners = [...everything.matchAll(/ws-l:([0-9.]+:[0-9]+)|ThreadingHTTPServer\(\("([0-9.]+)", ([0-9]+)\)|^ListenAddress ([0-9.]+)\n|^Port ([0-9]+)$/gm)]
-    .map(match => match[1] ?? (match[2] ? `${match[2]}:${match[3]}` : match[4] ?? `port ${match[5]}`)).sort();
+  const listeners = [
+    ...everything.matchAll(/ws-l:([0-9.]+:[0-9]+)|ThreadingHTTPServer\(\("([0-9.]+)", ([0-9]+)\)|^ListenAddress ([0-9.]+)\n|^Port ([0-9]+)$/gm),
+  ]
+    .map(match => match[1] ?? (match[2] ? `${match[2]}:${match[3]}` : (match[4] ?? `port ${match[5]}`)))
+    .sort();
   assert.deepEqual(listeners, ['0.0.0.0:8022', '0.0.0.0:9000', '127.0.0.1', 'port 22']);
   // Nothing publishes the Docker daemon over TCP either.
   assert.doesNotMatch(everything, /EXPOSE|-H tcp:|tcp:\/\/0\.0\.0\.0/);

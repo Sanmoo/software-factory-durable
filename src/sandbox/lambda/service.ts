@@ -32,27 +32,52 @@ export type LambdaServiceResult<T> = { ok: true; value: T } | { ok: false; failu
 export type LambdaArchitecture = 'arm64' | 'x86_64';
 
 /** Image states the adapter decides on (observed: `CREATING`, `CREATED`, `CREATE_FAILED`); any other value is passed through as text. */
-export type LambdaImage = { name: string; imageArn: string; state: string; tags: Record<string, string>;
-  latestActiveImageVersion?: string; latestFailedImageVersion?: string };
+export type LambdaImage = {
+  name: string;
+  imageArn: string;
+  state: string;
+  tags: Record<string, string>;
+  latestActiveImageVersion?: string;
+  latestFailedImageVersion?: string;
+};
 
 /** One CreateMicrovmImage request. Size, architecture, OS capabilities and hooks are properties of the IMAGE, fixed here. */
-export type LambdaImageRequest = { name: string; description: string; baseImageArn: string; baseImageVersion: string; buildRoleArn: string;
+export type LambdaImageRequest = {
+  name: string;
+  description: string;
+  baseImageArn: string;
+  baseImageVersion: string;
+  buildRoleArn: string;
   /** `s3://<bucket>/<key>` of the build artifact, in the image's region. */ artifactUri: string;
-  architecture: LambdaArchitecture; minimumMemoryMiB: number; additionalOsCapabilities: readonly string[];
+  architecture: LambdaArchitecture;
+  minimumMemoryMiB: number;
+  additionalOsCapabilities: readonly string[];
   hooks: { port: number; runTimeoutSeconds: number; terminateTimeoutSeconds: number; readyTimeoutSeconds: number };
-  tags: Readonly<Record<string, string>> };
+  tags: Readonly<Record<string, string>>;
+};
 
 /**
  * Ticket 04: one RunMicrovm request. There is deliberately no execution role and no idle policy here: the guest runs without AWS
  * credentials (V2-24) and automatic suspension stays off (V2-09), so neither can be requested through the port. Ingress is always
  * `HTTP_INGRESS` and egress `INTERNET_EGRESS` (V2-20, V2-25). The image's latest active version is the one run.
  */
-export type LambdaMicrovmRequest = { imageArn: string; maximumDurationSeconds: number;
+export type LambdaMicrovmRequest = {
+  imageArn: string;
+  maximumDurationSeconds: number;
   /** The string handed to the guest's `run` hook: public material only (the session public key). */ runHookPayload: string;
-  tags: Readonly<Record<string, string>> };
+  tags: Readonly<Record<string, string>>;
+};
 /** GetMicrovm. States the adapter decides on: `PENDING`, `RUNNING`, `TERMINATING`, `TERMINATED`; any other value is passed through. */
-export type LambdaMicrovm = { microvmId: string; state: string; endpoint?: string; imageArn?: string; imageVersion?: string; stateReason?: string;
-  /** ISO instants as the service gave them (with any offset); `terminatedAt` only once terminated. */ startedAt?: string; terminatedAt?: string };
+export type LambdaMicrovm = {
+  microvmId: string;
+  state: string;
+  endpoint?: string;
+  imageArn?: string;
+  imageVersion?: string;
+  stateReason?: string;
+  /** ISO instants as the service gave them (with any offset); `terminatedAt` only once terminated. */ startedAt?: string;
+  terminatedAt?: string;
+};
 /**
  * Ticket 15: one item of ListMicrovms. Observed fields: id, state, image and start; terminated MicroVMs stay listed. `tags` is present
  * only when the service lists them: the observed answer has none, and RunMicrovm takes no tags (real account, 2026-11-21; V2-33).
@@ -65,8 +90,12 @@ export interface LambdaService {
   /** STS GetCallerIdentity: the account and principal ARN behind the named profile. */
   callerIdentity(): Promise<LambdaServiceResult<{ account: string; arn: string }>>;
   /** IAM SimulatePrincipalPolicy: whether `principalArn`'s policies allow each action on the resources, with the given request context. */
-  simulatePermissions(input: { principalArn: string; actions: readonly string[]; resources: readonly string[];
-    context?: readonly { key: string; value: string }[] }): Promise<LambdaServiceResult<{ action: string; allowed: boolean }[]>>;
+  simulatePermissions(input: {
+    principalArn: string;
+    actions: readonly string[];
+    resources: readonly string[];
+    context?: readonly { key: string; value: string }[];
+  }): Promise<LambdaServiceResult<{ action: string; allowed: boolean }[]>>;
   /** IAM GetRole. */
   role(name: string): Promise<LambdaServiceResult<{ arn: string }>>;
   /** S3 GetBucketLocation. */
@@ -74,7 +103,12 @@ export interface LambdaService {
   /** Lambda MicroVMs ListMicrovmImages in the profile's region (read-only; also the proof that the service answers there). */
   listImages(): Promise<LambdaServiceResult<{ name: string; state: string; imageArn?: string }[]>>;
   /** S3 PutObject with object tags: the build artifact (a zip with the `Dockerfile` at its root) of one MicroVM image. Changes the account. */
-  putBuildArtifact(input: { bucket: string; key: string; body: Uint8Array; tags: Readonly<Record<string, string>> }): Promise<LambdaServiceResult<{ uri: string }>>;
+  putBuildArtifact(input: {
+    bucket: string;
+    key: string;
+    body: Uint8Array;
+    tags: Readonly<Record<string, string>>;
+  }): Promise<LambdaServiceResult<{ uri: string }>>;
   /** Lambda MicroVMs CreateMicrovmImage: starts ONE build and returns at once (`CREATING`). `conflict`: an image of that name exists. Changes the account. */
   createImage(input: LambdaImageRequest): Promise<LambdaServiceResult<{ imageArn: string; state: string }>>;
   /** Lambda MicroVMs GetMicrovmImage, by ARN (the service refuses the name). `not-found`: no such image. */

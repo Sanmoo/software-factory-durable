@@ -16,8 +16,12 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const group = join(dir, 'cgroup', cgroup);
   await mkdir(group, { recursive: true });
   const proc = join(dir, 'proc');
-  const pids = { 10: ['qemu-system-x86', 'qemu-system-x86_64\0-m\0'], 11: ['node', '/node\0/r/dist/src/entrypoints/adapter.js\0'],
-    12: ['node', '/node\0/r/dist/src/entrypoints/worker.js\0'], 13: ['node', '/node\0/r/dist/src/entrypoints/worker.js\0'] } as const;
+  const pids = {
+    10: ['qemu-system-x86', 'qemu-system-x86_64\0-m\0'],
+    11: ['node', '/node\0/r/dist/src/entrypoints/adapter.js\0'],
+    12: ['node', '/node\0/r/dist/src/entrypoints/worker.js\0'],
+    13: ['node', '/node\0/r/dist/src/entrypoints/worker.js\0'],
+  } as const;
   for (const [pid, [comm, cmdline]] of Object.entries(pids)) {
     await mkdir(join(proc, pid), { recursive: true });
     await writeFile(join(proc, pid, 'comm'), `${comm}\n`);
@@ -35,7 +39,13 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   await writeFile(join(proc, 'meminfo'), 'MemTotal:       16000000 kB\nMemAvailable:    9000000 kB\n');
   await writeFile(join(proc, 'loadavg'), '1.50 2.25 3.00 4/900 12345\n');
   await writeFile(join(proc, 'pressure', 'memory'), 'some avg10=0.00 avg60=0.10 avg300=0.20 total=10\n');
-  return { cgroupRoot: join(dir, 'cgroup'), procRoot: proc, write, group, resolve: async (unit: string) => unit === `factory-sandbox-${boot}.service` ? cgroup : null };
+  return {
+    cgroupRoot: join(dir, 'cgroup'),
+    procRoot: proc,
+    write,
+    group,
+    resolve: async (unit: string) => (unit === `factory-sandbox-${boot}.service` ? cgroup : null),
+  };
 }
 
 test('parsers: cpu.stat usage, io.stat summed over devices, process classes inside the own unit', () => {
@@ -57,14 +67,29 @@ test('boot samples and summary: peak memory, CPU seconds and I/O between samples
   let now = 1000;
   await f.write(1_000_000, 500, '8:0 rbytes=100 wbytes=50\n');
   const first = await sampleBoot({ boot, resolve: f.resolve, cgroupRoot: f.cgroupRoot, procRoot: f.procRoot, now: () => now });
-  assert.deepEqual(first.processes.map(item => [item.class, item.count]).sort(), [['adapter', 1], ['vmm', 1], ['worker', 2]]);
+  assert.deepEqual(first.processes.map(item => [item.class, item.count]).sort(), [
+    ['adapter', 1],
+    ['vmm', 1],
+    ['worker', 2],
+  ]);
   assert.equal(first.processes.find(item => item.class === 'worker')!.rssBytes, (12 + 13) * 1000 * 1024);
   now = 16000;
   await f.write(4_000_000, 900, '8:0 rbytes=1100 wbytes=250\n');
   const second = await sampleBoot({ boot, resolve: f.resolve, cgroupRoot: f.cgroupRoot, procRoot: f.procRoot, now: () => now });
   const [summary] = summarize([first, second]);
-  assert.deepEqual([summary!.samples, summary!.windowMs, summary!.peakMemoryCurrentBytes, summary!.memoryPeakBytes, summary!.cpuSeconds, summary!.ioReadBytes, summary!.ioWriteBytes,
-    summary!.maxWorkersAtOnce], [2, 15000, 900, 905, 3, 1000, 200, 2]);
+  assert.deepEqual(
+    [
+      summary!.samples,
+      summary!.windowMs,
+      summary!.peakMemoryCurrentBytes,
+      summary!.memoryPeakBytes,
+      summary!.cpuSeconds,
+      summary!.ioReadBytes,
+      summary!.ioWriteBytes,
+      summary!.maxWorkersAtOnce,
+    ],
+    [2, 15000, 900, 905, 3, 1000, 200, 2],
+  );
   assert.equal(summary!.peakRssBytes.vmm, 10 * 1000 * 1024);
   // Unreadable memory in one sample: the peak is unknown (null), never the other sample's value or zero.
   await rm(join(f.group, 'memory.current'));

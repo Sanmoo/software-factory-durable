@@ -11,10 +11,19 @@ import { pathToFileURL } from 'node:url';
 import { installNativeAppFixture } from './native-app-fixture.js';
 
 export type WorldIssue = {
-  id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; state_reason: string | null;
-  labels: { id: number; name: string }[]; user: { id: number; login: string; type: string }; pull_request?: object;
+  id: number;
+  node_id: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed';
+  state_reason: string | null;
+  labels: { id: number; name: string }[];
+  user: { id: number; login: string; type: string };
+  pull_request?: object;
   /** Served as is (ticket 53: moved by every comment; the Factory never reads it). */
-  updated_at?: string; comments?: number;
+  updated_at?: string;
+  comments?: number;
   /** Issue timeline events served at /issues/{n}/timeline (paginated). */
   timeline?: object[];
   /** Owning repository (default acme/project). Issue ids stay globally unique across repositories, like GitHub. */
@@ -31,14 +40,32 @@ export type WorldIssue = {
   raw_blocked_by?: object[];
 };
 export type WorldPull = {
-  id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; merged_at: string | null;
-  head: { ref: string; sha?: string; repo: { id: number } | null }; user: { id: number; login: string; type: string };
+  id: number;
+  node_id: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed';
+  merged_at: string | null;
+  head: { ref: string; sha?: string; repo: { id: number } | null };
+  user: { id: number; login: string; type: string };
   /** Ticket 14 (defaults: not draft, base main, head sha 'c'*40). */
-  draft?: boolean; base?: { ref: string };
+  draft?: boolean;
+  base?: { ref: string };
 };
 /** Issue comment as GitHub REST returns it (html_url/performed_via_github_app computed by the fixture when absent). */
-export type WorldComment = { id: number; issue: number; repository?: string; node_id?: string; body: string | null; user: { id: number; login: string; type: string };
-  created_at?: string; updated_at?: string; performed_via_github_app?: { id: number } | null; html_url?: string };
+export type WorldComment = {
+  id: number;
+  issue: number;
+  repository?: string;
+  node_id?: string;
+  body: string | null;
+  user: { id: number; login: string; type: string };
+  created_at?: string;
+  updated_at?: string;
+  performed_via_github_app?: { id: number } | null;
+  html_url?: string;
+};
 /** Ticket 44: the `.factory/environment.yaml` every fixture repository serves unless `environmentFiles` says otherwise. */
 export const defaultEnvironmentFile = 'schemaVersion: 1\napk:\n  - name: openjdk25-jdk\n    version: 25.0.5.1_p2-r0\n';
 export type World = {
@@ -65,7 +92,8 @@ export type World = {
   /** Ticket 14: rules applying to a branch (/rules/branches/<b>), rulesets by id (/rulesets/<id>) and classic protection (/branches/<b>/protection; absent = 404). */
   /** Ticket 21 review: push activity by ref (`refs/heads/x`), served at GET /activity?ref=. */
   activity?: Record<string, object[]>;
-  branchRules?: Record<string, { type: string; ruleset_id?: number }[]>; rulesets?: Record<string, { enforcement: string; current_user_can_bypass?: string }>;
+  branchRules?: Record<string, { type: string; ruleset_id?: number }[]>;
+  rulesets?: Record<string, { enforcement: string; current_user_can_bypass?: string }>;
   classicProtection?: Record<string, object>;
   /** Ticket 14: the App slug served by GET /app (default factory-app) and whether its bot user exists. */
   appSlug?: string;
@@ -95,10 +123,21 @@ export type World = {
  */
 export type ChecksWorld = {
   /** Absent for a pull request: it is served as it is in `pulls` (head sha, base ref, draft). */
-  details?: Record<number, { head_sha: string; base_ref?: string | undefined; base_sha?: string; draft?: boolean | undefined; merged?: boolean; mergeable?: boolean | null;
-    mergeable_state?: string; merge_commit_sha?: string | null;
-    /** From the `afterReads`-th read of this pull request on, it reports this head (a push during the collection). */
-    change?: { afterReads: number; head_sha: string } }>;
+  details?: Record<
+    number,
+    {
+      head_sha: string;
+      base_ref?: string | undefined;
+      base_sha?: string;
+      draft?: boolean | undefined;
+      merged?: boolean;
+      mergeable?: boolean | null;
+      mergeable_state?: string;
+      merge_commit_sha?: string | null;
+      /** From the `afterReads`-th read of this pull request on, it reports this head (a push during the collection). */
+      change?: { afterReads: number; head_sha: string };
+    }
+  >;
   branches?: Record<string, { sha: string; protected: boolean; protection?: object }>;
   requiredStatusChecks?: Record<string, object>;
   rules?: Record<string, object[]>;
@@ -115,25 +154,71 @@ export type ChecksWorld = {
 };
 /** A check run as GitHub REST returns it (ticket 15 fixtures). */
 export function checkRun(id: number, name: string, overrides: Record<string, unknown> = {}) {
-  return { id, name, head_sha: 'd'.repeat(40), status: 'completed', conclusion: 'success', started_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
-    completed_at: '2026-11-14T11:00:00Z', app: { id: 15368, slug: 'github-actions' }, check_suite: { id: 500 }, html_url: `https://github.com/acme/project/runs/${id}`, ...overrides };
+  return {
+    id,
+    name,
+    head_sha: 'd'.repeat(40),
+    status: 'completed',
+    conclusion: 'success',
+    started_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
+    completed_at: '2026-11-14T11:00:00Z',
+    app: { id: 15368, slug: 'github-actions' },
+    check_suite: { id: 500 },
+    html_url: `https://github.com/acme/project/runs/${id}`,
+    ...overrides,
+  };
 }
 /** A commit status as GitHub REST returns it (ticket 15 fixtures). */
 export function commitStatus(id: number, context: string, state: string, overrides: Record<string, unknown> = {}) {
-  return { id, context, state, creator: { id: 77, login: 'ci-bot[bot]', type: 'Bot' }, created_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
-    updated_at: '2026-11-14T10:59:00Z', target_url: `https://ci.example/${id}`, ...overrides };
+  return {
+    id,
+    context,
+    state,
+    creator: { id: 77, login: 'ci-bot[bot]', type: 'Bot' },
+    created_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
+    updated_at: '2026-11-14T10:59:00Z',
+    target_url: `https://ci.example/${id}`,
+    ...overrides,
+  };
 }
 /** `sequence`: the issuance number of an access_tokens POST; `grant`: the issuance number of the installation token a request used. */
-export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string>; body?: string;
-  sequence?: number; grant?: number };
+export type TraceEntry = {
+  method: string;
+  endpoint: string;
+  credential: 'app-jwt' | 'installation';
+  permissions?: Record<string, string>;
+  body?: string;
+  sequence?: number;
+  grant?: number;
+};
 
 export function issue(number: number, overrides: Partial<WorldIssue> = {}): WorldIssue {
-  return { id: 7000 + number, node_id: `I_node${number}`, number, title: `Ticket ${number}`, body: `SPEC-BODY-${number} must never be captured`,
-    state: 'open', state_reason: null, labels: [{ id: 55, name: 'ready-for-agent' }], user: { id: 9, login: 'human', type: 'User' }, ...overrides };
+  return {
+    id: 7000 + number,
+    node_id: `I_node${number}`,
+    number,
+    title: `Ticket ${number}`,
+    body: `SPEC-BODY-${number} must never be captured`,
+    state: 'open',
+    state_reason: null,
+    labels: [{ id: 55, name: 'ready-for-agent' }],
+    user: { id: 9, login: 'human', type: 'User' },
+    ...overrides,
+  };
 }
 export function pull(number: number, overrides: Partial<WorldPull> = {}): WorldPull {
-  return { id: 9000 + number, node_id: `PR_node${number}`, number, title: `Change ${number}`, body: null, state: 'open', merged_at: null,
-    head: { ref: `human/change-${number}`, repo: { id: 3 } }, user: { id: 10, login: 'someone', type: 'User' }, ...overrides };
+  return {
+    id: 9000 + number,
+    node_id: `PR_node${number}`,
+    number,
+    title: `Change ${number}`,
+    body: null,
+    state: 'open',
+    merged_at: null,
+    head: { ref: `human/change-${number}`, repo: { id: 3 } },
+    user: { id: 10, login: 'someone', type: 'User' },
+    ...overrides,
+  };
 }
 
 export async function githubWorld(t: { after(fn: () => Promise<void> | void): void }, initial: World, scenario = 'world') {
@@ -157,15 +242,21 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   // with an update that holds it across the event loop).
   const worldLock = join(root, 'world.lock');
   const standIn = join(root, 'gh-world-stand-in');
-  await writeFile(executable, `#!${process.execPath}
+  await writeFile(
+    executable,
+    `#!${process.execPath}
 import { spawnSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const run = process.env.NATIVE_FIXTURE === '1' ? [process.execPath, ${JSON.stringify(standIn)}, ...args]
   : ['/usr/bin/flock', '--exclusive', ${JSON.stringify(worldLock)}, process.execPath, ${JSON.stringify(standIn)}, ...args];
 const result = spawnSync(run[0], run.slice(1), { stdio: 'inherit' });
 process.exit(result.status ?? 1);
-`, { mode: 0o700 });
-  await writeFile(standIn, `#!${process.execPath}
+`,
+    { mode: 0o700 },
+  );
+  await writeFile(
+    standIn,
+    `#!${process.execPath}
   import { readFileSync, appendFileSync, writeFileSync, renameSync } from 'node:fs';
   const saveWorld = value => { const temporary = ${JSON.stringify(worldFile)} + '.' + process.pid; writeFileSync(temporary, JSON.stringify(value)); renameSync(temporary, ${JSON.stringify(worldFile)}); };
   const args = process.argv.slice(2);
@@ -453,20 +544,33 @@ process.exit(result.status ?? 1);
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
   process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + (raw ?? JSON.stringify(body)));
   process.exit(status >= 200 && status < 300 && !graphqlErrors ? 0 : 1);
-  `, { mode: 0o700 });
+  `,
+    { mode: 0o700 },
+  );
   const preload = join(root, 'native-fixture.mjs');
-  await writeFile(preload, `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)}, ${JSON.stringify(scenario)});`);
-  await writeFile(join(root, 'flock'), `#!${process.execPath}
+  await writeFile(
+    preload,
+    `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)}, ${JSON.stringify(scenario)});`,
+  );
+  await writeFile(
+    join(root, 'flock'),
+    `#!${process.execPath}
 import { spawn } from 'node:child_process';
 const args=process.argv.slice(2); args.splice(7,0,'--import',${JSON.stringify(preload)});
 const child=spawn('/usr/bin/flock',args,{stdio:'inherit'});
 process.on('SIGTERM',()=>child.kill('SIGTERM')); process.on('SIGINT',()=>child.kill('SIGINT'));
 child.on('exit',code=>{process.exitCode=code??1;});
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const restore = installNativeAppFixture(executable, scenario);
-  t.after(() => { restore(); });
+  t.after(() => {
+    restore();
+  });
   return {
-    root, executable, native: restore.observation,
+    root,
+    executable,
+    native: restore.observation,
     async update(change: (world: World) => void) {
       await underWorldLock(worldLock, () => {
         const world = JSON.parse(readFileSync(worldFile, 'utf8')) as World;
@@ -478,10 +582,20 @@ child.on('exit',code=>{process.exitCode=code??1;});
     },
     /** Tokens revoked through DELETE /installation/token (synthetic values only). */
     async revoked(): Promise<string[]> {
-      try { return (await readFile(revokedFile, 'utf8')).split('\n').filter(Boolean).map(line => (JSON.parse(line) as { token: string }).token); } catch { return []; }
+      try {
+        return (await readFile(revokedFile, 'utf8'))
+          .split('\n')
+          .filter(Boolean)
+          .map(line => (JSON.parse(line) as { token: string }).token);
+      } catch {
+        return [];
+      }
     },
     async trace(): Promise<TraceEntry[]> {
-      return (await readFile(traceFile, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as TraceEntry);
+      return (await readFile(traceFile, 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line) as TraceEntry);
     },
   };
 }
@@ -489,8 +603,18 @@ export const worldScope = { repository: 'acme/project', installationId: 2, workf
 
 /** GitHub timeline events as returned by REST for issue timelines. */
 export function crossReferenced(pullNumber: number, repository = 'acme/project') {
-  return { event: 'cross-referenced', source: { type: 'issue', issue: { id: 9000 + pullNumber, number: pullNumber,
-    html_url: `https://github.com/${repository}/pull/${pullNumber}`, pull_request: { url: `https://api.github.com/repos/${repository}/pulls/${pullNumber}` } } } };
+  return {
+    event: 'cross-referenced',
+    source: {
+      type: 'issue',
+      issue: {
+        id: 9000 + pullNumber,
+        number: pullNumber,
+        html_url: `https://github.com/${repository}/pull/${pullNumber}`,
+        pull_request: { url: `https://api.github.com/repos/${repository}/pulls/${pullNumber}` },
+      },
+    },
+  };
 }
 export function connected(pullNumber?: number, event: 'connected' | 'disconnected' = 'connected') {
   return pullNumber === undefined ? { event } : { ...crossReferenced(pullNumber), event };
@@ -506,5 +630,10 @@ async function underWorldLock(lock: string, critical: () => void): Promise<void>
     holder.once('error', () => resolve(false));
   });
   if (!acquired) throw new Error('WORLD_LOCK_UNAVAILABLE');
-  try { critical(); } finally { holder.stdin.end(); await exited; }
+  try {
+    critical();
+  } finally {
+    holder.stdin.end();
+    await exited;
+  }
 }

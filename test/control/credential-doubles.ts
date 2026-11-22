@@ -3,7 +3,13 @@
 import type { BuilderGrant, RevocationResult } from '../../src/contracts/index.js';
 import type { ExecutionPorts } from '../../src/control/types.js';
 
-export type LifecycleCall = { kind: 'prepare' | 'start' | 'issue' | 'activate' | 'deliver' | 'revoke' | 'close' | 'stop'; at: number; token?: string; directive?: string; detail?: unknown };
+export type LifecycleCall = {
+  kind: 'prepare' | 'start' | 'issue' | 'activate' | 'deliver' | 'revoke' | 'close' | 'stop';
+  at: number;
+  token?: string;
+  directive?: string;
+  detail?: unknown;
+};
 export type LifecycleOptions = {
   /** Lifetime (ms) of each issued grant; default one hour. */
   lifetimeMs?: (sequence: number) => number;
@@ -35,23 +41,46 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
   let issued = 0;
   let delivered = 0;
   let finish!: (value: { status: 'success' }) => void;
-  const completion = new Promise<{ status: 'success' }>(resolve => { finish = resolve; });
-  const record = (call: Omit<LifecycleCall, 'at'>) => { calls.push({ ...call, at: calls.length }); };
+  const completion = new Promise<{ status: 'success' }>(resolve => {
+    finish = resolve;
+  });
+  const record = (call: Omit<LifecycleCall, 'at'>) => {
+    calls.push({ ...call, at: calls.length });
+  };
   const ports: ExecutionPorts = {
-    configuration: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' }, capacity: 1,
+    configuration: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' },
+    capacity: 1,
     builder: { skillPack: 'factory-skills-v1', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     ...(options.beforeExpirySeconds === undefined ? {} : { credentialRenewal: { beforeExpirySeconds: options.beforeExpirySeconds } }),
     sandbox: {
       async prepare(input) {
         record({ kind: 'prepare', detail: input });
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [],
-          checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
+        return {
+          status: 'success',
+          environment: `env-${'c'.repeat(64)}` as never,
+          seeds: [],
+          checkout: {
+            path: '/workspace/checkout',
+            repository: input.checkout.repository,
+            repositoryId: input.checkout.repositoryId,
+            base: 'main',
+            branch: input.checkout.branch,
+            baseCommit: 'a'.repeat(40),
+            origin: 'https://github.com/acme/project.git',
+            reused: false,
+            preparedAt: new Date().toISOString(),
+          },
+        };
       },
-      async start() { record({ kind: 'start' }); return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
+      async start() {
+        record({ kind: 'start' });
+        return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never };
+      },
       async stop() {
         record({ kind: 'stop' });
-        return options.stopCessation === false ? { status: 'indeterminate', code: 'X', cessationConfirmed: false } : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' };
+        return options.stopCessation === false
+          ? { status: 'indeterminate', code: 'X', cessationConfirmed: false }
+          : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' };
       },
     },
     credentials: {
@@ -62,9 +91,19 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
         if (outcome === 'unknown') throw Object.assign(new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN'), { outcome: 'unknown' });
         if (outcome === 'rejected') throw Object.assign(new Error('GITHUB_RATE_LIMITED'), { outcome: 'known-rejected' });
         const now = Date.now();
-        return { delivery: Object.freeze({ token: tokenOf(sequence) }), metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
-          permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date(now).toISOString(),
-          expiresAt: options.expiresAt?.(sequence) ?? new Date(now + (options.lifetimeMs?.(sequence) ?? 3600000)).toISOString() } };
+        return {
+          delivery: Object.freeze({ token: tokenOf(sequence) }),
+          metadata: {
+            role: 'builder',
+            purpose: 'builder-start',
+            repository: 'acme/project',
+            repositoryId: 3,
+            installationId: 2,
+            permissions: { metadata: 'read', contents: 'read', issues: 'read' },
+            issuedAt: new Date(now).toISOString(),
+            expiresAt: options.expiresAt?.(sequence) ?? new Date(now + (options.lifetimeMs?.(sequence) ?? 3600000)).toISOString(),
+          },
+        };
       },
       async revoke(grant) {
         record({ kind: 'revoke', token: grant.delivery.token });
@@ -76,13 +115,29 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
     },
     workers: {
       async activate(invocation, delivery) {
-        record({ kind: 'activate', ...(delivery?.credential ? { token: delivery.credential.token } : {}), detail: { invocation: { ...invocation, signal: undefined } } });
+        record({
+          kind: 'activate',
+          ...(delivery?.credential ? { token: delivery.credential.token } : {}),
+          detail: { invocation: { ...invocation, signal: undefined } },
+        });
         if (options.activateGate) await options.activateGate;
-        const started = Promise.resolve({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
-          invocation: { executionId: options.startConflict ? 'another-execution' : invocation.context.executionId, invocationId: invocation.context.invocationId } });
-        return { worker: invocation.context.invocationId, started,
-          completed: started.then(() => completion.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } }))),
-          close() { record({ kind: 'close' }); } };
+        const started = Promise.resolve({
+          receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
+          invocation: {
+            executionId: options.startConflict ? 'another-execution' : invocation.context.executionId,
+            invocationId: invocation.context.invocationId,
+          },
+        });
+        return {
+          worker: invocation.context.invocationId,
+          started,
+          completed: started.then(() =>
+            completion.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } })),
+          ),
+          close() {
+            record({ kind: 'close' });
+          },
+        };
       },
       async deliver(worker, directive) {
         if (directive.kind === 'withdraw-credential') {
@@ -92,7 +147,9 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
         if (directive.kind !== 'credential') return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
         const sequence = ++delivered;
         record({ kind: 'deliver', directive: directive.kind, token: directive.credential.token, detail: worker });
-        return (options.deliver?.(sequence) ?? 'delivered') === 'delivered' ? { status: 'delivered' } : { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
+        return (options.deliver?.(sequence) ?? 'delivered') === 'delivered'
+          ? { status: 'delivered' }
+          : { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
       },
     },
   };

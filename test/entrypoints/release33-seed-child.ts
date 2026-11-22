@@ -11,5 +11,15 @@ const { waiting, list } = await storageWithPendingQuestion(source);
 await writeFormatOne(source, storagePath);
 await chmod(storagePath, 0o600);
 for (const suffix of ['', '-wal', '-shm']) await rm(`${source}${suffix}`, { force: true });
-console.log(JSON.stringify({ works: list.works.map(work => ({ work_id: work.work_id, ticket: work.ticket.number, queue: work.queue, impediments: work.impediments.map(item => item.code) })),
-  waiting: waiting.work_id, questions: waiting.questions }));
+console.log(
+  JSON.stringify({
+    works: list.works.map(work => ({
+      work_id: work.work_id,
+      ticket: work.ticket.number,
+      queue: work.queue,
+      impediments: work.impediments.map(item => item.code),
+    })),
+    waiting: waiting.work_id,
+    questions: waiting.questions,
+  }),
+);

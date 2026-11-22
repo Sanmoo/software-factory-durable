@@ -11,8 +11,14 @@ import { lambdaGuestFake } from './lambda-guest-fake.js';
 // instants are the service's own (GetMicrovm) on the account's fake clock; no AWS call, no ssh, no socket.
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 const sha = (letter: string) => letter.repeat(64);
-const pinned = { path: '.factory/environment.yaml', commit: 'c'.repeat(40), sha256: sha('d'), repository: 'acme/shop', repositoryId: 42,
-  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: '3.9.11-r0' }], images: [] } };
+const pinned = {
+  path: '.factory/environment.yaml',
+  commit: 'c'.repeat(40),
+  sha256: sha('d'),
+  repository: 'acme/shop',
+  repositoryId: 42,
+  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: '3.9.11-r0' }], images: [] },
+};
 const workId = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01';
 const remote = 'https://github.com/acme/shop.git';
 const startingCommit = '1'.repeat(40);
@@ -26,8 +32,13 @@ async function installation(t: TestContext) {
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [startingCommit], token };
   const clock = accountClock(fake);
-  const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock,
-    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
+  const sandbox = createSandbox({
+    root,
+    lambdaService: fake.service,
+    lambdaTransport: guest.transport,
+    lambdaBootClock: clock,
+    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep },
+  });
   const prepare = (work = workId, environment = pinned) => sandbox.prepare({ workId: work, configuration, environment });
   const prepared = await prepare();
   assert.equal(prepared.status, 'success', JSON.stringify(prepared));
@@ -57,8 +68,13 @@ test('each boot is reported with identity, reasons, size, start, end and seconds
   const secondVm = microvm();
   const report = await usage();
   assert.equal(report.unit, 'microvm-seconds');
-  assert.deepEqual(report.boots.map(boot => [boot.boot, boot.begin, boot.end, boot.state]),
-    [[first, 'start', 'planned-swap', 'measured'], [second, 'planned-swap', 'end', 'measured']]);
+  assert.deepEqual(
+    report.boots.map(boot => [boot.boot, boot.begin, boot.end, boot.state]),
+    [
+      [first, 'start', 'planned-swap', 'measured'],
+      [second, 'planned-swap', 'end', 'measured'],
+    ],
+  );
   const [one, two] = report.boots;
   assert.equal(one!.size, '4096 MiB / 2 vCPU (baseline 1024 MiB)');
   assert.equal(one!.startedAt, new Date(firstVm.startedAt).toISOString());
@@ -90,7 +106,10 @@ test('a boot whose end the service never confirmed is reported with unknown seco
 test('a boot still running has no seconds yet, a lost boot is measured up to its death, and a refused start ran nothing', async t => {
   const { fake, sandbox, environment, start, usage, microvm } = await installation(t);
   const lost = await start();
-  assert.deepEqual((await usage()).boots.map(boot => [boot.state, boot.seconds, boot.end]), [['running', null, null]]);
+  assert.deepEqual(
+    (await usage()).boots.map(boot => [boot.state, boot.seconds, boot.end]),
+    [['running', null, null]],
+  );
   fake.account.clock.now += 120_000;
   fake.kill(microvm().microvmId);
   assert.equal((await sandbox.observe({ environment, boot: lost })).condition, 'stopped');
@@ -98,7 +117,13 @@ test('a boot still running has no seconds yet, a lost boot is measured up to its
   const refused = await sandbox.start({ environment, configuration, checkout });
   assert.deepEqual([refused.status, refused.status !== 'success' && refused.code], ['failure', 'SERVICE_CAPACITY_REFUSED']);
   const boots = (await usage()).boots;
-  assert.deepEqual(boots.map(boot => [boot.state, boot.end, boot.code ?? null]), [['measured', 'loss', null], ['not-run', 'end', 'SERVICE_CAPACITY_REFUSED']]);
+  assert.deepEqual(
+    boots.map(boot => [boot.state, boot.end, boot.code ?? null]),
+    [
+      ['measured', 'loss', null],
+      ['not-run', 'end', 'SERVICE_CAPACITY_REFUSED'],
+    ],
+  );
   assert.equal(boots[0]!.seconds, (microvm().terminatedAt! - microvm().startedAt) / 1000);
   assert.deepEqual([boots[1]!.seconds, boots[1]!.startedAt, boots[1]!.endedAt], [0, null, null]);
 });
@@ -107,7 +132,10 @@ test('a start whose RunMicrovm answer was unreadable is reported as unknown: a M
   const { fake, sandbox, environment, usage } = await installation(t);
   fake.account.runRefusal = { kind: 'unknown', detail: 'Unreadable answer' };
   assert.equal((await sandbox.start({ environment, configuration, checkout })).status, 'indeterminate');
-  assert.deepEqual((await usage()).boots.map(boot => [boot.state, boot.seconds]), [['unknown', null]]);
+  assert.deepEqual(
+    (await usage()).boots.map(boot => [boot.state, boot.seconds]),
+    [['unknown', null]],
+  );
 });
 
 test('an environment that is not of this adapter, or does not exist, reports no boot usage instead of an empty one', async t => {
@@ -122,12 +150,22 @@ test('image builds are recorded per environment key: one build serves every Work
   assert.equal((await prepare()).status, 'success');
   const other = await prepare('7c0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a02');
   assert.equal(other.status, 'success');
-  const changed = await prepare('8d0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a03', { ...pinned, sha256: sha('e'), declaration: { ...pinned.declaration, apk: [{ name: 'maven', version: '3.9.12-r0' }] } });
+  const changed = await prepare('8d0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a03', {
+    ...pinned,
+    sha256: sha('e'),
+    declaration: { ...pinned.declaration, apk: [{ name: 'maven', version: '3.9.12-r0' }] },
+  });
   assert.equal(changed.status, 'success', JSON.stringify(changed));
   const report = await sandbox.environmentBuilds();
   assert.ok(report.status === 'reported');
   const key = (result: typeof other) => (result as { base: { base: string } }).base.base;
-  assert.deepEqual(report.keys.map(entry => [entry.key, entry.builds, entry.last.outcome, entry.works]), [[key(other), 1, 'created', 2], [key(changed), 1, 'created', 1]]);
+  assert.deepEqual(
+    report.keys.map(entry => [entry.key, entry.builds, entry.last.outcome, entry.works]),
+    [
+      [key(other), 1, 'created', 2],
+      [key(changed), 1, 'created', 1],
+    ],
+  );
   assert.equal(fake.account.images.length, 2);
   // The instants are the account's time around the build the installation helper already waited for (130 s in the fake).
   const requested = Date.parse(report.keys[0]!.last.requestedAt);
@@ -143,11 +181,23 @@ test('a failed build is recorded as failed, and the Operator retry of the same k
   assert.deepEqual([failed.status, failed.status !== 'success' && failed.code], ['failure', 'ENVIRONMENT_BASE_PREPARATION_FAILED']);
   const after = await sandbox.environmentBuilds();
   assert.ok(after.status === 'reported');
-  assert.deepEqual(after.keys.map(entry => [entry.builds, entry.last.outcome]), [[1, 'created'], [1, 'failed']]);
+  assert.deepEqual(
+    after.keys.map(entry => [entry.builds, entry.last.outcome]),
+    [
+      [1, 'created'],
+      [1, 'failed'],
+    ],
+  );
   fake.account.buildFailure = null;
   const retried = await sandbox.prepare({ workId: '9e0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a04', configuration, environment: failing, retryEnvironmentBase: true });
   assert.equal(retried.status, 'success', JSON.stringify(retried));
   const final = await sandbox.environmentBuilds();
   assert.ok(final.status === 'reported');
-  assert.deepEqual(final.keys.map(entry => [entry.builds, entry.last.outcome]), [[1, 'created'], [2, 'created']]);
+  assert.deepEqual(
+    final.keys.map(entry => [entry.builds, entry.last.outcome]),
+    [
+      [1, 'created'],
+      [2, 'created'],
+    ],
+  );
 });

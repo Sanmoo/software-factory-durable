@@ -5,11 +5,28 @@ import type { AccessDependencies, ConfiguredRepository, ControlInput, ControlRec
 import type { IssueTracker, TicketRef } from '../../issue-tracker/index.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
-import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
-  settleCancellation } from '../rules/cycles.js';
+import {
+  authorizationChange,
+  authorizationFacts,
+  cancelDecision,
+  cycleImpediments,
+  hasImpediment,
+  newCycleDecision,
+  occupying,
+  reopenDecision,
+  resumeDecision,
+  settleCancellation,
+} from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
 import { noProgressCode } from '../rules/boot-rotation.js';
-import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
+import {
+  newReviewRoundDecision,
+  overrideBlockedRecoveryDecision,
+  positiveResolution,
+  retriesEnvironmentBase,
+  retryBlockedStartDecision,
+  reviewerRetryLimitCode,
+} from '../rules/recovery.js';
 import { readWork, recordTicketPresentation, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { observeJiraAuthorization } from './jira-evaluation.js';
 import { questions } from './questions.js';
@@ -22,23 +39,44 @@ import type { Session } from './store.js';
 
 type CycleInput = Extract<ControlInput, { operation: 'cancel' | 'resume' | 'reopen' | 'new' }>;
 type Receipt = Extract<ControlReceipt, { operation: 'cancel' | 'resume' | 'reopen' | 'new' }>;
-type Index = { tickets: Record<string, { current: string; previous: string[] }>; memory?: Record<string, { cycles: { work_id: string; cycle: number; result: WorkView['result']; mergeConfirmed: boolean }[] }>;
-  forgotten?: Record<string, ForgottenWork> };
+type Index = {
+  tickets: Record<string, { current: string; previous: string[] }>;
+  memory?: Record<string, { cycles: { work_id: string; cycle: number; result: WorkView['result']; mergeConfirmed: boolean }[] }>;
+  forgotten?: Record<string, ForgottenWork>;
+};
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const history = (work: WorkRecord, event: CycleEvent,
-  origin: 'controller-cycles' | 'local-cli' | 'jira-comment', detail: string, at = new Date().toISOString()) => work.history.push({ at, event, origin, detail: detail.slice(0, 512) });
-const addImpediment = (work: WorkRecord, impediment: Impediment) => { if (!hasImpediment(work, impediment.code)) work.impediments.push(impediment); };
-const removeImpediments = (work: WorkRecord, codes: string[]) => { work.impediments = work.impediments.filter(item => !codes.includes(item.code)); };
+const history = (
+  work: WorkRecord,
+  event: CycleEvent,
+  origin: 'controller-cycles' | 'local-cli' | 'jira-comment',
+  detail: string,
+  at = new Date().toISOString(),
+) => work.history.push({ at, event, origin, detail: detail.slice(0, 512) });
+const addImpediment = (work: WorkRecord, impediment: Impediment) => {
+  if (!hasImpediment(work, impediment.code)) work.impediments.push(impediment);
+};
+const removeImpediments = (work: WorkRecord, codes: string[]) => {
+  work.impediments = work.impediments.filter(item => !codes.includes(item.code));
+};
 /** The Ticket's explicit minimal memory (spec §12.4) follows the cycle's result in the same commit. */
 export function rememberResult(index: Index, work: WorkRecord) {
   const key = ticketKey(work.ticket);
   const cycles = index.memory?.[key]?.cycles ?? [];
   const entry = { work_id: work.work_id, cycle: work.cycle, result: work.result, mergeConfirmed: work.result === 'delivered' && Boolean(work.delivery?.merge) };
-  index.memory = { ...(index.memory ?? {}), [key]: { cycles: cycles.some(item => item.work_id === work.work_id) ? cycles.map(item => item.work_id === work.work_id ? entry : item) : [...cycles, entry] } };
+  index.memory = {
+    ...(index.memory ?? {}),
+    [key]: {
+      cycles: cycles.some(item => item.work_id === work.work_id) ? cycles.map(item => (item.work_id === work.work_id ? entry : item)) : [...cycles, entry],
+    },
+  };
 }
 
 /** Deduplicated "Aceitar comando": same identity + content returns the recorded receipt; same identity + other content is a conflict. */
-async function command(session: Session, input: CycleInput, decide: (tx: Parameters<Parameters<Session['commit']>[0]>[0]) => Promise<Receipt>): Promise<Receipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+async function command(
+  session: Session,
+  input: CycleInput,
+  decide: (tx: Parameters<Parameters<Session['commit']>[0]>[0]) => Promise<Receipt>,
+): Promise<Receipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   return session.commit(async tx => {
     const request = await tx.doc(requests, input.request_id, null);
     if (request.input) {
@@ -51,8 +89,13 @@ async function command(session: Session, input: CycleInput, decide: (tx: Paramet
     return copy(receipt);
   }, BACKGROUND_CONTEXT);
 }
-const receiptOf = (input: Pick<CycleInput, 'request_id' | 'operation'>, work_id: string | null, outcome: Receipt['outcome'], reason: string | null, created: string | null = null): Receipt =>
-  ({ kind: 'durable', request_id: input.request_id, operation: input.operation, work_id, outcome, reason, created });
+const receiptOf = (
+  input: Pick<CycleInput, 'request_id' | 'operation'>,
+  work_id: string | null,
+  outcome: Receipt['outcome'],
+  reason: string | null,
+  created: string | null = null,
+): Receipt => ({ kind: 'durable', request_id: input.request_id, operation: input.operation, work_id, outcome, reason, created });
 
 /** Who cancels: the local operator, the accepted answer of a Question Control asked, or `/factory cancel` on the Work's origin Jira Card. */
 export type CancelBy = { kind: 'local-cli' } | { kind: 'question'; questionId: string } | { kind: 'jira-comment'; accountId: string; commentId: string };
@@ -62,9 +105,12 @@ export type CancelBy = { kind: 'local-cli' } | { kind: 'question'; questionId: s
  * Ticket memory) and the stop intent are durable BEFORE anything is interrupted. The caller then withdraws credentials and requests the stop;
  * the Slot is released only by the confirmed cessation. Branch, PR, artifacts and GitHub are never touched.
  */
-export async function acceptCancel(session: Session, input: CycleInput & { operation: 'cancel' },
+export async function acceptCancel(
+  session: Session,
+  input: CycleInput & { operation: 'cancel' },
   /** Final review, should-fix 13: the Work is ended by the accepted answer of a Question Control asked (the branch is gone from `origin`), not by a local command. */
-  by?: { questionId: string }) {
+  by?: { questionId: string },
+) {
   return command(session, input, tx => cancelIn(tx, input, by ? { kind: 'question', questionId: by.questionId } : { kind: 'local-cli' }));
 }
 
@@ -72,7 +118,11 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
  * The cancellation itself, inside the caller's commit (which records the request identity and receipt). Jira ticket 07: `/factory cancel`
  * on a Jira Card uses this same transition; only the origin recorded in history and the review-retry decision differ.
  */
-export async function cancelIn(tx: Parameters<Parameters<Session['commit']>[0]>[0], input: { request_id: string; operation: 'cancel'; work_id: string }, by: CancelBy) {
+export async function cancelIn(
+  tx: Parameters<Parameters<Session['commit']>[0]>[0],
+  input: { request_id: string; operation: 'cancel'; work_id: string },
+  by: CancelBy,
+) {
   const index = await tx.doc(ticketIndex);
   const work = (await tx.doc(works, input.work_id, null)).work;
   const decision = cancelDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false);
@@ -81,20 +131,60 @@ export async function cancelIn(tx: Parameters<Parameters<Session['commit']>[0]>[
   const at = new Date().toISOString();
   const active = work!.execution && occupying(work!.execution) ? work!.execution.executionId : null;
   work!.result = 'cancelled';
-  work!.cancellation = { request_id: input.request_id, requestedAt: at, state: 'stopping', ceasedAt: null, executionId: active,
-    nextStep: 'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.' };
-  const who = by.kind === 'question' ? `Ended by the accepted answer to Question ${by.questionId}` : by.kind === 'jira-comment'
-    ? `Cancelled by comment ${by.commentId} of Jira account ${by.accountId} on the origin Card` : 'Cancelled by the operator';
-  addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: `${who}: no new action, publication or renewal. ` +
-    (work!.ticket.tracker === 'jira' ? 'No new cycle of this Card starts from Jira.' : '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.') });
-  if (by.kind === 'question') work!.history.push({ at, event: 'cancel-requested', origin: 'controller-dispatch', detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512) });
+  work!.cancellation = {
+    request_id: input.request_id,
+    requestedAt: at,
+    state: 'stopping',
+    ceasedAt: null,
+    executionId: active,
+    nextStep:
+      'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.',
+  };
+  const who =
+    by.kind === 'question'
+      ? `Ended by the accepted answer to Question ${by.questionId}`
+      : by.kind === 'jira-comment'
+        ? `Cancelled by comment ${by.commentId} of Jira account ${by.accountId} on the origin Card`
+        : 'Cancelled by the operator';
+  addImpediment(work!, {
+    code: cycleImpediments.cancelled,
+    scope: 'work',
+    since: at,
+    nextStep:
+      `${who}: no new action, publication or renewal. ` +
+      (work!.ticket.tracker === 'jira'
+        ? 'No new cycle of this Card starts from Jira.'
+        : '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.'),
+  });
+  if (by.kind === 'question')
+    work!.history.push({
+      at,
+      event: 'cancel-requested',
+      origin: 'controller-dispatch',
+      detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512),
+    });
   else history(work!, 'cancel-requested', by.kind, `${input.request_id}${active ? `:active:${active}` : ''}`, at);
   // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
   const execution = work!.execution;
-  if (execution && !execution.reviewRetryLimit && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)) {
+  if (
+    execution &&
+    !execution.reviewRetryLimit &&
+    (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)
+  ) {
     const jira = by.kind === 'jira-comment';
-    execution.reviewRetryLimit = { decision: 'cancel', request_id: input.request_id, operator: jira ? { kind: 'jira', accountId: by.accountId } : { kind: 'local-administrator' }, at };
-    work!.history.push({ at, event: 'review-retry-limit-decided', origin: jira ? 'jira-comment' : 'local-cli', executionId: execution.executionId, detail: `${input.request_id}:cancel` });
+    execution.reviewRetryLimit = {
+      decision: 'cancel',
+      request_id: input.request_id,
+      operator: jira ? { kind: 'jira', accountId: by.accountId } : { kind: 'local-administrator' },
+      at,
+    };
+    work!.history.push({
+      at,
+      event: 'review-retry-limit-decided',
+      origin: jira ? 'jira-comment' : 'local-cli',
+      executionId: execution.executionId,
+      detail: `${input.request_id}:cancel`,
+    });
   }
   if (settleCancellation(work!, at)) history(work!, 'cancellation-ceased', 'controller-cycles', 'no own activity was running', at);
   rememberResult(index, work!);
@@ -102,7 +192,11 @@ export async function cancelIn(tx: Parameters<Parameters<Session['commit']>[0]>[
 }
 
 /** `resume <work>`: removes ONLY the suspension codes it answers and leaves a pending-read impediment; never touches any other impediment. */
-export async function acceptResume(session: Session, input: CycleInput & { operation: 'resume' }, facts: { running(work_id: string): boolean } = { running: () => false }) {
+export async function acceptResume(
+  session: Session,
+  input: CycleInput & { operation: 'resume' },
+  facts: { running(work_id: string): boolean } = { running: () => false },
+) {
   if ('override_blocked_recovery' in input) return acceptBlockedRecoveryOverride(session, input, facts);
   if ('new_review_round' in input) return acceptNewReviewRound(session, input, facts);
   if ('retry_blocked_start' in input) return acceptBlockedStartRetry(session, input, facts);
@@ -112,22 +206,47 @@ export async function acceptResume(session: Session, input: CycleInput & { opera
     const decision = resumeDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false);
     // Final review, should-fix 10 (V2-14): the operator exit of "no progress between boots". The block is lifted, the sequence of boots is
     // counted from zero and the Work returns through the queue as ONE operational recovery (kept if one is already pending).
-    if (work && work.result === 'open' && index.tickets[ticketKey(work.ticket)]?.current === work.work_id && hasImpediment(work, noProgressCode) && !(work.execution && occupying(work.execution))) {
+    if (
+      work &&
+      work.result === 'open' &&
+      index.tickets[ticketKey(work.ticket)]?.current === work.work_id &&
+      hasImpediment(work, noProgressCode) &&
+      !(work.execution && occupying(work.execution))
+    ) {
       const at = new Date().toISOString();
       removeImpediments(work, [noProgressCode, ...(decision.kind === 'accept' ? decision.remove : [])]);
       work.bootLedger = [];
-      if (decision.kind === 'accept') addImpediment(work, { code: cycleImpediments.resumePending, scope: 'work', since: at, nextStep: 'Resume accepted: the next complete read of the Ticket must ' +
-        'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.' });
+      if (decision.kind === 'accept')
+        addImpediment(work, {
+          code: cycleImpediments.resumePending,
+          scope: 'work',
+          since: at,
+          nextStep:
+            'Resume accepted: the next complete read of the Ticket must ' +
+            'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.',
+        });
       applyRecoveryRequest(work, { executionId: work.execution?.executionId ?? null, code: noProgressCode, at, reason: `operator-resume:${noProgressCode}` });
-      history(work, 'resume-accepted', 'local-cli', `${input.request_id}:${[noProgressCode, ...(decision.kind === 'accept' ? decision.remove : [])].join(',')}`, at);
+      history(
+        work,
+        'resume-accepted',
+        'local-cli',
+        `${input.request_id}:${[noProgressCode, ...(decision.kind === 'accept' ? decision.remove : [])].join(',')}`,
+        at,
+      );
       return receiptOf(input, work.work_id, 'accepted', null);
     }
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     removeImpediments(work!, decision.remove);
-    addImpediment(work!, { code: cycleImpediments.resumePending, scope: 'work', since: at, nextStep: 'Resume accepted: the next complete read of the Ticket must ' +
-      'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.' });
+    addImpediment(work!, {
+      code: cycleImpediments.resumePending,
+      scope: 'work',
+      since: at,
+      nextStep:
+        'Resume accepted: the next complete read of the Ticket must ' +
+        'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.',
+    });
     history(work!, 'resume-accepted', 'local-cli', `${input.request_id}:${decision.remove.join(',')}`, at);
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
@@ -140,35 +259,72 @@ export async function acceptResume(session: Session, input: CycleInput & { opera
  * ticket 26's ordinary path (persisted wait; one `recoveries` unit at the confirmed start; exhaustion is the usual impediment). Nothing of the
  * lost request is reconstructed and nothing is launched here: the Work re-enters its queue position and the dispatcher revalidates everything.
  */
-async function acceptBlockedRecoveryOverride(session: Session, input: Extract<CycleInput, { override_blocked_recovery: string }>, facts: { running(work_id: string): boolean }) {
+async function acceptBlockedRecoveryOverride(
+  session: Session,
+  input: Extract<CycleInput, { override_blocked_recovery: string }>,
+  facts: { running(work_id: string): boolean },
+) {
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
     const execution = work?.execution ?? null;
     const bound: { questionId: string; executionId: string; invocationId: string }[] = [];
-    if (work && execution?.blockedRequest) for (const id of work.questions ?? []) {
-      const question = (await tx.doc(questions, id, null)).question;
-      if (question) bound.push({ questionId: question.questionId, executionId: question.executionId, invocationId: question.invocationId });
-    }
+    if (work && execution?.blockedRequest)
+      for (const id of work.questions ?? []) {
+        const question = (await tx.doc(questions, id, null)).question;
+        if (question) bound.push({ questionId: question.questionId, executionId: question.executionId, invocationId: question.invocationId });
+      }
     const blocked = execution?.blockedRequest;
     const decision = overrideBlockedRecoveryDecision({
       work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
       execution: execution ? { state: execution.state, slotHeld: execution.slot.held, end: execution.end ?? null, blockedRequest: blocked } : null,
-      reference: input.override_blocked_recovery, running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation), pendingRecovery: Boolean(work?.pendingRecovery),
+      reference: input.override_blocked_recovery,
+      running: facts.running(input.work_id),
+      cancelling: Boolean(work?.cancellation),
+      pendingRecovery: Boolean(work?.pendingRecovery),
       // A returned failure (finding A9) lost no request: there is nothing a later read of Records could resolve.
-      resolved: Boolean(blocked && blocked.cause !== 'returned-failure' && execution && positiveResolution({ blocked, executionId: execution.executionId, invocationId: execution.invocationId, questions: bound,
-        recovery: execution.recovery ?? [] })) });
+      resolved: Boolean(
+        blocked &&
+        blocked.cause !== 'returned-failure' &&
+        execution &&
+        positiveResolution({
+          blocked,
+          executionId: execution.executionId,
+          invocationId: execution.invocationId,
+          questions: bound,
+          recovery: execution.recovery ?? [],
+        }),
+      ),
+    });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
-    work!.history.push({ at, event: 'blocked-recovery-overridden', origin: 'local-cli', executionId: execution!.executionId,
-      detail: `${input.request_id}:${input.override_blocked_recovery}`.slice(0, 512) });
+    work!.history.push({
+      at,
+      event: 'blocked-recovery-overridden',
+      origin: 'local-cli',
+      executionId: execution!.executionId,
+      detail: `${input.request_id}:${input.override_blocked_recovery}`.slice(0, 512),
+    });
     // No recovery was pending (revalidated above), so this opens exactly one new request.
-    applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-override:${input.override_blocked_recovery}` });
+    applyRecoveryRequest(work!, {
+      executionId: execution!.executionId,
+      code: decision.code,
+      at,
+      reason: `operator-override:${input.override_blocked_recovery}`,
+    });
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
-    execution!.blockedRequest = { ...execution!.blockedRequest!, override: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at,
-      reference: input.override_blocked_recovery, recoveryRequest: 'requested' } };
+    execution!.blockedRequest = {
+      ...execution!.blockedRequest!,
+      override: {
+        request_id: input.request_id,
+        operator: { kind: 'local-administrator' },
+        at,
+        reference: input.override_blocked_recovery,
+        recoveryRequest: 'requested',
+      },
+    };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }
@@ -186,16 +342,32 @@ async function acceptNewReviewRound(session: Session, input: Extract<CycleInput,
     const execution = work?.execution ?? null;
     const decision = newReviewRoundDecision({
       work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
-      execution: execution ? { state: execution.state, slotHeld: execution.slot.held, held: execution.held ?? null, end: execution.end ?? null,
-        reviewRetryLimit: execution.reviewRetryLimit ?? null } : null,
-      running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation), pendingRecovery: Boolean(work?.pendingRecovery) });
+      execution: execution
+        ? {
+            state: execution.state,
+            slotHeld: execution.slot.held,
+            held: execution.held ?? null,
+            end: execution.end ?? null,
+            reviewRetryLimit: execution.reviewRetryLimit ?? null,
+          }
+        : null,
+      running: facts.running(input.work_id),
+      cancelling: Boolean(work?.cancellation),
+      pendingRecovery: Boolean(work?.pendingRecovery),
+    });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
     execution!.reviewRetryLimit = { decision: 'new-review-round', request_id: input.request_id, operator: { kind: 'local-administrator' }, at };
-    work!.history.push({ at, event: 'review-retry-limit-decided', origin: 'local-cli', executionId: execution!.executionId, detail: `${input.request_id}:new-review-round` });
+    work!.history.push({
+      at,
+      event: 'review-retry-limit-decided',
+      origin: 'local-cli',
+      executionId: execution!.executionId,
+      detail: `${input.request_id}:new-review-round`,
+    });
     applyRecoveryRequest(work!, { executionId: execution!.executionId, code: reviewerRetryLimitCode, at, reason: 'operator-new-review-round' });
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
@@ -215,7 +387,11 @@ const seedOfDetail = (detail: string | null) => {
  * through ticket 26's ordinary path (persisted wait; one `recoveries` unit at the confirmed start; an already pending one is kept, never a
  * second). A remedy is recorded for the NEXT preparation/boot only. Nothing is launched here.
  */
-async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInput, { retry_blocked_start: string }>, facts: { running(work_id: string): boolean }) {
+async function acceptBlockedStartRetry(
+  session: Session,
+  input: Extract<CycleInput, { retry_blocked_start: string }>,
+  facts: { running(work_id: string): boolean },
+) {
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
@@ -224,24 +400,44 @@ async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInp
     const refusal = execution?.blockedStart;
     const decision = retryBlockedStartDecision({
       work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
-      execution: execution ? { state: execution.state, started: Boolean(execution.start), slotHeld: execution.slot.held,
-        blockedStart: refusal ? { code: refusal.code, cessation: refusal.cessation, retry: refusal.retry } : undefined } : null,
-      code: input.retry_blocked_start, remedy, running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation) });
+      execution: execution
+        ? {
+            state: execution.state,
+            started: Boolean(execution.start),
+            slotHeld: execution.slot.held,
+            blockedStart: refusal ? { code: refusal.code, cessation: refusal.cessation, retry: refusal.retry } : undefined,
+          }
+        : null,
+      code: input.retry_blocked_start,
+      remedy,
+      running: facts.running(input.work_id),
+      cancelling: Boolean(work?.cancellation),
+    });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const seeds = remedy === 'recreate-artifact-seed' ? seedOfDetail(refusal!.detail) : [];
     if (remedy === 'recreate-artifact-seed' && !seeds.length) return receiptOf(input, input.work_id, 'not-applied', 'SEED_NOT_IDENTIFIED');
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
-    work!.history.push({ at, event: 'blocked-start-retried', origin: 'local-cli', executionId: execution!.executionId,
-      detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}${remedy === 'recreate-artifact-seed' ? `:${seeds.join(',')}` : ''}` : ''}`.slice(0, 512) });
+    work!.history.push({
+      at,
+      event: 'blocked-start-retried',
+      origin: 'local-cli',
+      executionId: execution!.executionId,
+      detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}${remedy === 'recreate-artifact-seed' ? `:${seeds.join(',')}` : ''}` : ''}`.slice(
+        0,
+        512,
+      ),
+    });
     const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
     work!.startRemedy = remedy ? { remedy, request_id: input.request_id, executionId: execution!.executionId, at, seeds } : null;
     // Ticket 44: retrying a failed/interrupted environment base preparation lets the NEXT preparation set it aside and prepare it again.
     work!.environmentRetry = retriesEnvironmentBase(decision.code) ? { request_id: input.request_id, executionId: execution!.executionId, at } : null;
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
-    execution!.blockedStart = { ...refusal!, retry: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at, code: decision.code, remedy,
-      recoveryRequest: opened } };
+    execution!.blockedStart = {
+      ...refusal!,
+      retry: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at, code: decision.code, remedy, recoveryRequest: opened },
+    };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }
@@ -251,13 +447,27 @@ export async function acceptReopen(session: Session, input: CycleInput & { opera
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
-    const decision = reopenDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false, work ? ownPullRequestOf(work) !== null : false);
+    const decision = reopenDecision(
+      work,
+      work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false,
+      work ? ownPullRequestOf(work) !== null : false,
+    );
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     const effectId = randomUUID();
-    work!.closure!.reopen = { effectId, request_id: input.request_id, intendedAt: at, state: 'intended', sendingAt: null, attempt: null, observation: null, settledAt: null };
-    work!.closure!.nextStep = 'Reopen intended: the own pull request is observed and reopened at most once; confirming it does not resume the Work (`factory resume`).';
+    work!.closure!.reopen = {
+      effectId,
+      request_id: input.request_id,
+      intendedAt: at,
+      state: 'intended',
+      sendingAt: null,
+      attempt: null,
+      observation: null,
+      settledAt: null,
+    };
+    work!.closure!.nextStep =
+      'Reopen intended: the own pull request is observed and reopened at most once; confirming it does not resume the Work (`factory resume`).';
     history(work!, 'reopen-intended', 'local-cli', `${input.request_id}:${effectId}`, at);
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
@@ -268,17 +478,24 @@ export async function acceptReopen(session: Session, input: CycleInput & { opera
  * same commit as the index (current/previous) and the Ticket memory, only when a fresh Ticket read at acceptance shows it authorized; it
  * waits for its first dependency evaluation; nothing of the predecessor (PR, branch, environment) is adopted, closed or removed.
  */
-export async function acceptNewCycle(session: Session, input: CycleInput & { operation: 'new' },
-  deps: { configured(repository: string): ConfiguredRepository | undefined; tracker: Pick<IssueTracker, 'readTicket'> }) {
+export async function acceptNewCycle(
+  session: Session,
+  input: CycleInput & { operation: 'new' },
+  deps: { configured(repository: string): ConfiguredRepository | undefined; tracker: Pick<IssueTracker, 'readTicket'> },
+) {
   // Supervisor decision: a FRESH complete read of the Ticket when the command is accepted (outside the commit); a replay of the same
   // request returns its recorded receipt whatever this read says.
-  const sameTicket = (ticket: TicketRef) => ticket.tracker === 'github' && ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
+  const sameTicket = (ticket: TicketRef) =>
+    ticket.tracker === 'github' && ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
   // The Ticket's CURRENT cycle (as the commit finds it). Ticket 31: a forgotten current cycle is known by its minimal memory only.
   const snapshot = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
   let current: (Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> & { result: WorkRecord['result'] }) | null = null;
   for (const entry of Object.values(snapshot?.tickets ?? {})) {
-    const candidate = snapshot?.forgotten?.[entry.current] ?? await readWork(session, entry.current);
-    if (candidate && sameTicket(candidate.ticket)) { current = candidate; break; }
+    const candidate = snapshot?.forgotten?.[entry.current] ?? (await readWork(session, entry.current));
+    if (candidate && sameTicket(candidate.ticket)) {
+      current = candidate;
+      break;
+    }
   }
   if (current && (current.result === 'open' || current.result === 'closed-unmerged')) current = null;
   let authorization: ReturnType<typeof authorizationFacts> = { kind: 'unknown', code: 'TICKET_NOT_READ' };
@@ -301,13 +518,28 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
     for (const [entryKey, entry] of Object.entries(index.tickets)) {
       // Ticket 31: a forgotten current cycle has no Work record; its minimal memory stands for it (ended, ceased, no own PR left open).
       const memory = index.forgotten?.[entry.current];
-      if (memory) { if (sameTicket(memory.ticket)) { forgotten = memory; predecessor = predecessorOf(memory); key = entryKey; break; } continue; }
+      if (memory) {
+        if (sameTicket(memory.ticket)) {
+          forgotten = memory;
+          predecessor = predecessorOf(memory);
+          key = entryKey;
+          break;
+        }
+        continue;
+      }
       const work = (await tx.doc(works, entry.current, null)).work;
-      if (work && sameTicket(work.ticket)) { predecessor = work; key = entryKey; break; }
+      if (work && sameTicket(work.ticket)) {
+        predecessor = work;
+        key = entryKey;
+        break;
+      }
     }
-    const decision = newCycleDecision(predecessor, { keepPredecessorPullRequest: input.keepPredecessorPullRequest, ownPullRequest: predecessor ? ownPullRequestOf(predecessor) !== null : false,
+    const decision = newCycleDecision(predecessor, {
+      keepPredecessorPullRequest: input.keepPredecessorPullRequest,
+      ownPullRequest: predecessor ? ownPullRequestOf(predecessor) !== null : false,
       // The read must be of THIS predecessor's Ticket (it may have changed between the read and the commit).
-      authorization: predecessor && current?.work_id === predecessor.work_id ? authorization : { kind: 'unknown', code: 'TICKET_NOT_READ' } });
+      authorization: predecessor && current?.work_id === predecessor.work_id ? authorization : { kind: 'unknown', code: 'TICKET_NOT_READ' },
+    });
     if (decision.kind === 'refuse') return receiptOf(input, predecessor?.work_id ?? null, 'not-applied', decision.code);
     const configured = limits(predecessor!.repository.repository);
     if (!configured) return receiptOf(input, predecessor!.work_id, 'not-applied', 'REPOSITORY_NOT_CONFIGURED');
@@ -319,20 +551,63 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
     const sequence = index.admissionSequence + 1;
     const previous = predecessor!;
     document.work = {
-      work_id, cycle: previous.cycle + 1, predecessor: previous.work_id, ticket: copy(previous.ticket), repository: copy(previous.repository), result: 'open',
-      authorization: { ...copy(previous.authorization), state: 'authorized', observedAt, tracking: 'New cycle requested explicitly; authorization confirmed by a fresh complete Ticket read at acceptance and tracked by every later read.',
-        lastObservedAt: observedAt, withdrawal: null,
-        ...(forgotten && freshLabel ? { source: 'github-rest' as const, basis: { repositoryConfigured: true as const, issueState: 'open' as const, label: { ...freshLabel } },
-          publication: { observedAt, completeness: 'complete' as const, associatedPullRequests: 0 as const,
-            limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`] } } : {}) } as WorkRecord['authorization'],
+      work_id,
+      cycle: previous.cycle + 1,
+      predecessor: previous.work_id,
+      ticket: copy(previous.ticket),
+      repository: copy(previous.repository),
+      result: 'open',
+      authorization: {
+        ...copy(previous.authorization),
+        state: 'authorized',
+        observedAt,
+        tracking: 'New cycle requested explicitly; authorization confirmed by a fresh complete Ticket read at acceptance and tracked by every later read.',
+        lastObservedAt: observedAt,
+        withdrawal: null,
+        ...(forgotten && freshLabel
+          ? {
+              source: 'github-rest' as const,
+              basis: { repositoryConfigured: true as const, issueState: 'open' as const, label: { ...freshLabel } },
+              publication: {
+                observedAt,
+                completeness: 'complete' as const,
+                associatedPullRequests: 0 as const,
+                limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`],
+              },
+            }
+          : {}),
+      } as WorkRecord['authorization'],
       queue: { category: 'normal', sequence, pending: true },
-      impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' },
+      impediments: [
+        {
+          code: 'DEPENDENCIES_NOT_EVALUATED',
+          scope: 'work',
+          since: at,
+          nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.',
+        },
         // Ticket 44: a new cycle is a new Work: it pins the declaration at the base tip read by the next polling round, never the predecessor's.
-        environmentNotEvaluated(at).impediment],
+        environmentNotEvaluated(at).impediment,
+      ],
       environment: environmentNotEvaluated(at).environment,
-      dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null, previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt: at,
-      budget: initialBudget(configured, previous.repository.repository, at), correction: null, pendingRecovery: null,
-      history: [{ at, event: 'cycle-created', origin: 'local-cli', detail: `${input.request_id}:predecessor:${previous.work_id}:cycle:${previous.cycle + 1}${input.keepPredecessorPullRequest ? ':predecessor-pr-kept' : ''}` }],
+      dependencies: { latest: null, lastComplete: null },
+      execution: null,
+      branch: null,
+      pullRequest: null,
+      previousExecutions: [],
+      questions: [],
+      inputs: { cursor: null },
+      admittedAt: at,
+      budget: initialBudget(configured, previous.repository.repository, at),
+      correction: null,
+      pendingRecovery: null,
+      history: [
+        {
+          at,
+          event: 'cycle-created',
+          origin: 'local-cli',
+          detail: `${input.request_id}:predecessor:${previous.work_id}:cycle:${previous.cycle + 1}${input.keepPredecessorPullRequest ? ':predecessor-pr-kept' : ''}`,
+        },
+      ],
     };
     index.admissionSequence = sequence;
     const entry = index.tickets[key!]!;
@@ -350,18 +625,49 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
  */
 function predecessorOf(memory: ForgottenWork): WorkRecord {
   const at = memory.forgottenAt;
-  return { work_id: memory.work_id, cycle: memory.cycle, predecessor: memory.predecessor, ticket: copy(memory.ticket), repository: copy(memory.repository), result: memory.result,
+  return {
+    work_id: memory.work_id,
+    cycle: memory.cycle,
+    predecessor: memory.predecessor,
+    ticket: copy(memory.ticket),
+    repository: copy(memory.repository),
+    result: memory.result,
     // Decision facts only (never copied into the new cycle: its authorization comes from the fresh read).
-    authorization: { state: 'authorized', source: 'github-rest', observedAt: at, basis: { repositoryConfigured: true, issueState: 'open', label: memory.label ?? { id: 0, name: '' } },
-      publication: { observedAt: at, completeness: 'complete', associatedPullRequests: 0, limitations: [] }, tracking: 'forgotten-memory' },
-    cancellation: memory.result === 'cancelled' ? { request_id: memory.request_id, requestedAt: at, state: 'ceased', ceasedAt: at, executionId: null, nextStep: '' } : null,
-    queue: { category: 'normal', sequence: memory.sequence, pending: false }, impediments: [], dependencies: { latest: null, lastComplete: null }, execution: null, branch: null,
-    pullRequest: null, publication: null, previousExecutions: [], questions: [], inputs: { cursor: null }, budget: null, correction: null, pendingRecovery: null, admittedAt: at, history: [] };
+    authorization: {
+      state: 'authorized',
+      source: 'github-rest',
+      observedAt: at,
+      basis: { repositoryConfigured: true, issueState: 'open', label: memory.label ?? { id: 0, name: '' } },
+      publication: { observedAt: at, completeness: 'complete', associatedPullRequests: 0, limitations: [] },
+      tracking: 'forgotten-memory',
+    },
+    cancellation:
+      memory.result === 'cancelled' ? { request_id: memory.request_id, requestedAt: at, state: 'ceased', ceasedAt: at, executionId: null, nextStep: '' } : null,
+    queue: { category: 'normal', sequence: memory.sequence, pending: false },
+    impediments: [],
+    dependencies: { latest: null, lastComplete: null },
+    execution: null,
+    branch: null,
+    pullRequest: null,
+    publication: null,
+    previousExecutions: [],
+    questions: [],
+    inputs: { cursor: null },
+    budget: null,
+    correction: null,
+    pendingRecovery: null,
+    admittedAt: at,
+    history: [],
+  };
 }
 
 /** One complete authorization read of a CURRENT open Work (cycle desk or dispatch revalidation). Unknown reads are never recorded as change. */
-export async function recordAuthorization(session: Session, work_id: string, observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] },
-  readStartedAt?: string): Promise<'recorded' | 'stale'> {
+export async function recordAuthorization(
+  session: Session,
+  work_id: string,
+  observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] },
+  readStartedAt?: string,
+): Promise<'recorded' | 'stale'> {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, work_id, null)).work;
@@ -385,7 +691,11 @@ async function beginReopen(session: Session, work_id: string, effectId: string):
     const at = new Date().toISOString();
     if (work.result !== 'closed-unmerged') {
       // Review LOW-MED: cancelled (or otherwise ended) before sending: provably never sent; settled, never sent later.
-      Object.assign(reopen, { state: 'not-applied', attempt: { at, outcome: 'not-sent', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : 'WORK_NOT_CLOSED_UNMERGED' }, settledAt: at });
+      Object.assign(reopen, {
+        state: 'not-applied',
+        attempt: { at, outcome: 'not-sent', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : 'WORK_NOT_CLOSED_UNMERGED' },
+        settledAt: at,
+      });
       history(work, 'reopen-not-applied', 'controller-cycles', `${effectId}:not-sent:${work.result}`, at);
       return 'stale' as const;
     }
@@ -395,7 +705,12 @@ async function beginReopen(session: Session, work_id: string, effectId: string):
 }
 
 /** Records the attempt and/or the independent observation of a reopen; `open` confirms it (result open, RESUME_REQUIRED), `closed` settles it not applied. */
-async function recordReopen(session: Session, work_id: string, effectId: string, input: { attempt?: { outcome: string; code: string | null }; observed?: 'open' | 'closed-unmerged' | 'other' }) {
+async function recordReopen(
+  session: Session,
+  work_id: string,
+  effectId: string,
+  input: { attempt?: { outcome: string; code: string | null }; observed?: 'open' | 'closed-unmerged' | 'other' },
+) {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, work_id, null)).work;
@@ -415,8 +730,14 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
       Object.assign(reopen, { state: 'confirmed', observation: { at, outcome: 'open' }, settledAt: at });
       work.result = 'open';
       removeImpediments(work, [cycleImpediments.closedUnmerged]);
-      addImpediment(work, { code: cycleImpediments.resumeRequired, scope: 'work', since: at, nextStep: 'The own pull request is open again. Reopening grants no resume, scope or budget: ' +
-        '`factory resume <work>` (current requirements re-read), then the usual commands (repair, update-scope, grant) decide any new activity.' });
+      addImpediment(work, {
+        code: cycleImpediments.resumeRequired,
+        scope: 'work',
+        since: at,
+        nextStep:
+          'The own pull request is open again. Reopening grants no resume, scope or budget: ' +
+          '`factory resume <work>` (current requirements re-read), then the usual commands (repair, update-scope, grant) decide any new activity.',
+      });
       work.closure!.nextStep = 'Reopened and confirmed by observation; the Work stays suspended until `factory resume`.';
       history(work, 'reopen-confirmed', 'controller-cycles', effectId, at);
       rememberResult(index, work);
@@ -428,7 +749,8 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
     } else if (input.observed === 'closed-unmerged' && (reopen.state === 'attempted' || reopen.sendingAt)) {
       // Sent (or possibly sent) and still closed: never resent implicitly; another `factory reopen` is a new decision.
       Object.assign(reopen, { state: 'not-applied', observation: { at, outcome: 'closed-unmerged' }, settledAt: at });
-      work.closure!.nextStep = 'The reopen was not applied (still closed). Nothing is repeated automatically: inspect GitHub and decide (`factory reopen` again, or `factory cancel`).';
+      work.closure!.nextStep =
+        'The reopen was not applied (still closed). Nothing is repeated automatically: inspect GitHub and decide (`factory reopen` again, or `factory cancel`).';
       history(work, 'reopen-not-applied', 'controller-cycles', effectId, at);
     }
     return 'recorded' as const;
@@ -440,11 +762,20 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
  * re-reads of current open Works, least recently observed first, recording withdrawal/restoration/confirmations; (2) the reopen effects the
  * operator intended: observe first (a human reopen needs no write), send at most once, then observe again and confirm.
  */
-export function createCycleDesk(deps: { session: Session; access: AccessDependencies; readWorks(): Promise<WorkRecord[]>; stopped(): boolean; readsPerCycle?: number }) {
+export function createCycleDesk(deps: {
+  session: Session;
+  access: AccessDependencies;
+  readWorks(): Promise<WorkRecord[]>;
+  stopped(): boolean;
+  readsPerCycle?: number;
+}) {
   const readsPerCycle = deps.readsPerCycle ?? 8;
   const configured = (repository: string) => deps.access.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   const failures: { at: string; work_id: string; step: string }[] = [];
-  const failed = (work_id: string, step: string) => { failures.push({ at: new Date().toISOString(), work_id, step }); failures.splice(0, Math.max(0, failures.length - 50)); };
+  const failed = (work_id: string, step: string) => {
+    failures.push({ at: new Date().toISOString(), work_id, step });
+    failures.splice(0, Math.max(0, failures.length - 50));
+  };
 
   /** One read; returns the decision that was recorded (null when nothing could be concluded). */
   async function observeAuthorization(work: WorkRecord) {
@@ -462,7 +793,11 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
     const scope = configured(work.repository.repository);
     let facts;
     const startedAt = new Date().toISOString();
-    try { facts = await deps.access.tracker.readTicket(ticket); } catch { return null; }
+    try {
+      facts = await deps.access.tracker.readTicket(ticket);
+    } catch {
+      return null;
+    }
     const observed = authorizationFacts({ configuredLabel: scope?.label, ticket, facts });
     if (observed.kind === 'unknown') return null;
     await recordAuthorization(deps.session, work.work_id, observed, startedAt);
@@ -472,24 +807,35 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
     const own = ownPullRequestOf(work);
     const scope = configured(work.repository.repository);
     if (!own || !scope || !deps.access.repository.readOwnMerge) return null;
-    const read = await deps.access.repository.readOwnMerge({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId })
+    const read = await deps.access.repository
+      .readOwnMerge({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId })
       .catch(() => null);
     if (!read || read.kind !== 'observed') return null;
     const decision = decideMerge(own, { repositoryId: work.repository.repositoryId, branch: work.branch, base: work.repository.base }, read.pullRequest);
-    return decision.outcome === 'open' || decision.outcome === 'closed-unmerged' ? decision.outcome : 'other' as const;
+    return decision.outcome === 'open' || decision.outcome === 'closed-unmerged' ? decision.outcome : ('other' as const);
   }
   async function reopen(work: WorkRecord) {
     const effect = work.closure?.reopen;
     if (!effect) return;
     const observed = await observeOwn(work);
     if (observed === null) return; // nothing concluded: kept for a later cycle
-    if (observed !== 'closed-unmerged' || effect.state === 'attempted' || effect.sendingAt) { await recordReopen(deps.session, work.work_id, effect.effectId, { observed }); return; }
-    if (work.result !== 'closed-unmerged') { await beginReopen(deps.session, work.work_id, effect.effectId); return; } // settles it, nothing sent
+    if (observed !== 'closed-unmerged' || effect.state === 'attempted' || effect.sendingAt) {
+      await recordReopen(deps.session, work.work_id, effect.effectId, { observed });
+      return;
+    }
+    if (work.result !== 'closed-unmerged') {
+      await beginReopen(deps.session, work.work_id, effect.effectId);
+      return;
+    } // settles it, nothing sent
     const scope = configured(work.repository.repository)!;
     const own = ownPullRequestOf(work)!;
-    if (!deps.access.repository.reopenPullRequest) { await recordReopen(deps.session, work.work_id, effect.effectId, { attempt: { outcome: 'not-sent', code: 'REOPEN_NOT_COMPOSED' } }); return; }
-    if (await beginReopen(deps.session, work.work_id, effect.effectId) !== 'sending') return; // re-checks cancellation in the sending commit
-    const result = await deps.access.repository.reopenPullRequest({ repo: scope, number: own.number, nodeId: own.nodeId }, { effectId: effect.effectId })
+    if (!deps.access.repository.reopenPullRequest) {
+      await recordReopen(deps.session, work.work_id, effect.effectId, { attempt: { outcome: 'not-sent', code: 'REOPEN_NOT_COMPOSED' } });
+      return;
+    }
+    if ((await beginReopen(deps.session, work.work_id, effect.effectId)) !== 'sending') return; // re-checks cancellation in the sending commit
+    const result = await deps.access.repository
+      .reopenPullRequest({ repo: scope, number: own.number, nodeId: own.nodeId }, { effectId: effect.effectId })
       .catch(() => ({ kind: 'unknown' as const, code: 'REOPEN_UNAVAILABLE' }));
     await recordReopen(deps.session, work.work_id, effect.effectId, { attempt: { outcome: result.kind, code: 'code' in result ? result.code : null } });
     const after = await observeOwn(work);
@@ -502,16 +848,33 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
     async cycle() {
       if (deps.stopped()) return;
       let all: WorkRecord[];
-      try { all = await deps.readWorks(); } catch { return; }
-      const tracked = all.filter(work => work.result === 'open' && configured(work.repository.repository))
+      try {
+        all = await deps.readWorks();
+      } catch {
+        return;
+      }
+      const tracked = all
+        .filter(work => work.result === 'open' && configured(work.repository.repository))
         .sort((a, b) => (a.authorization.lastObservedAt ?? '').localeCompare(b.authorization.lastObservedAt ?? ''));
       for (const work of tracked.slice(0, readsPerCycle)) {
         if (deps.stopped()) return;
-        try { await observeAuthorization(work); } catch { failed(work.work_id, 'authorization'); }
+        try {
+          await observeAuthorization(work);
+        } catch {
+          failed(work.work_id, 'authorization');
+        }
       }
-      for (const work of all.filter(item => (item.result === 'closed-unmerged' || item.result === 'cancelled') && (item.closure?.reopen?.state === 'intended' || item.closure?.reopen?.state === 'attempted'))) {
+      for (const work of all.filter(
+        item =>
+          (item.result === 'closed-unmerged' || item.result === 'cancelled') &&
+          (item.closure?.reopen?.state === 'intended' || item.closure?.reopen?.state === 'attempted'),
+      )) {
         if (deps.stopped()) return;
-        try { await reopen(work); } catch { failed(work.work_id, 'reopen'); }
+        try {
+          await reopen(work);
+        } catch {
+          failed(work.work_id, 'reopen');
+        }
       }
     },
   };

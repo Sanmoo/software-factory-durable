@@ -8,8 +8,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 
-const context = (index: number, role: 'builder' | 'standards' = 'builder') => ({ workId: 'page-work', executionId: 'e1', invocationId: `i${index}`, role,
-  environmentRef: 'env', bootRef: 'boot', callId: `c${index}` });
+const context = (index: number, role: 'builder' | 'standards' = 'builder') => ({
+  workId: 'page-work',
+  executionId: 'e1',
+  invocationId: `i${index}`,
+  role,
+  environmentRef: 'env',
+  bootRef: 'boot',
+  callId: `c${index}`,
+});
 
 test('find pages by capture id (`after`/`limit`), looks one capture up by `id` and filters by role; paging never claims more than it read', async t => {
   const root = await mkdtemp(join(tmpdir(), 'records-page-'));
@@ -23,12 +30,23 @@ test('find pages by capture id (`after`/`limit`), looks one capture up by `id` a
   const second = await records.find({ workId: 'page-work', after: first.next!, limit: 10 });
   assert.deepEqual([second.captures.map(item => item.reference.id), second.next], [sorted.slice(2), null]);
   const one = await records.find({ workId: 'page-work', id: ids[3]! });
-  assert.deepEqual(one.captures.map(item => item.context.role), ['standards']);
-  assert.deepEqual((await records.find({ workId: 'page-work', id: '00000000-0000-4000-8000-000000000000' })), { completeness: 'complete', captures: [], next: null, preservedEvidence: 0 });
-  assert.deepEqual((await records.find({ workId: 'page-work', role: 'standards' })).captures.map(item => item.reference.id), [ids[3]]);
+  assert.deepEqual(
+    one.captures.map(item => item.context.role),
+    ['standards'],
+  );
+  assert.deepEqual(await records.find({ workId: 'page-work', id: '00000000-0000-4000-8000-000000000000' }), {
+    completeness: 'complete',
+    captures: [],
+    next: null,
+    preservedEvidence: 0,
+  });
+  assert.deepEqual(
+    (await records.find({ workId: 'page-work', role: 'standards' })).captures.map(item => item.reference.id),
+    [ids[3]],
+  );
 });
 
-test('a second Records instance on a live root reads without side effects: another instance\'s partial capture stays partial and untouched', async t => {
+test("a second Records instance on a live root reads without side effects: another instance's partial capture stays partial and untouched", async t => {
   const root = await mkdtemp(join(tmpdir(), 'records-second-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const live = await createRecords({ root });
@@ -39,7 +57,15 @@ test('a second Records instance on a live root reads without side effects: anoth
     const walk = async (path: string): Promise<void> => {
       for (const name of (await readdir(path)).sort()) {
         const info = await stat(join(path, name));
-        out.push(`${join(path, name).slice(root.length)}:${info.mode}:${info.size}:${info.mtimeMs}:${info.isFile() ? createHash('sha256').update(await readFile(join(path, name))).digest('hex') : 'dir'}`);
+        out.push(
+          `${join(path, name).slice(root.length)}:${info.mode}:${info.size}:${info.mtimeMs}:${
+            info.isFile()
+              ? createHash('sha256')
+                  .update(await readFile(join(path, name)))
+                  .digest('hex')
+              : 'dir'
+          }`,
+        );
         if (info.isDirectory()) await walk(join(path, name));
       }
     };
@@ -49,7 +75,10 @@ test('a second Records instance on a live root reads without side effects: anoth
   const before = await tree();
   const reader = await createRecords({ root });
   const found = await reader.find({ workId: 'page-work' });
-  assert.deepEqual(found.captures.map(item => item.state), ['partial']);
+  assert.deepEqual(
+    found.captures.map(item => item.state),
+    ['partial'],
+  );
   const page = await reader.read({ reference: found.captures[0]!.reference, offset: 0, limit: 100 });
   assert.equal(page.state, 'partial');
   assert.deepEqual(await tree(), before, 'nothing created, removed, renamed or rewritten');
@@ -67,11 +96,16 @@ test('find recognizes ticket 17 preserved-evidence folders (real preserveEvidenc
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
   await records.record(context(0), { kind: 'tool' });
-  const preserved = await preserveEvidence({ root, workId: 'page-work', label: 'env-' + 'a'.repeat(64), stage: async destination => {
-    for (const path of ['review/r1', 'spec/v1', 'instructions/v1']) await mkdir(join(destination, path), { recursive: true, mode: 0o700 });
-    await writeFile(join(destination, 'review/r1/index.json'), '{"round":1}', { mode: 0o600 });
-    await writeFile(join(destination, 'spec/v1/ticket.json'), '{}', { mode: 0o600 });
-  } });
+  const preserved = await preserveEvidence({
+    root,
+    workId: 'page-work',
+    label: 'env-' + 'a'.repeat(64),
+    stage: async destination => {
+      for (const path of ['review/r1', 'spec/v1', 'instructions/v1']) await mkdir(join(destination, path), { recursive: true, mode: 0o700 });
+      await writeFile(join(destination, 'review/r1/index.json'), '{"round":1}', { mode: 0o600 });
+      await writeFile(join(destination, 'spec/v1/ticket.json'), '{}', { mode: 0o600 });
+    },
+  });
   assert.equal(preserved.status, 'preserved');
   const found = await records.find({ workId: 'page-work' });
   assert.deepEqual([found.completeness, found.captures.length, found.preservedEvidence], ['complete', 1, 1]);

@@ -11,4 +11,4 @@ const titles: Record<JiraLinkDesired, string> = { open: 'Abrir PR', 'closed-unme
 export const jiraLinkTitle = (workRef: string, desired: JiraLinkDesired) => `Trabalho ${workRef} · ${titles[desired]}`;
 
 /** Polling passes skipped after `failures` consecutive unconfirmed upserts of the same state: 0, 1, 3, 7, then 15 (bounded, never abandoned). */
-export const jiraLinkBackoffPasses = (failures: number) => failures <= 0 ? 0 : Math.min(2 ** Math.min(failures - 1, 4) - 1, 15);
+export const jiraLinkBackoffPasses = (failures: number) => (failures <= 0 ? 0 : Math.min(2 ** Math.min(failures - 1, 4) - 1, 15));

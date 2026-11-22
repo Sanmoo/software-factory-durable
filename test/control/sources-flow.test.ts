@@ -14,13 +14,16 @@ async function poll(t: { after(fn: () => Promise<void>): void }, sources: Ticket
   const remote: Remote = { issues: [remoteIssue(1)], pulls: {} };
   const github = githubDoubles(remote);
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty',
+  const control = await openControl({
+    storagePath: join(dir, 'control.sqlite'),
+    runtimeInventory: 'empty',
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], ...(sources ? { sources } : {}) },
-    polling: { intervalSeconds: 60, clock: time.clock } });
+    polling: { intervalSeconds: 60, clock: time.clock },
+  });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   await time.sleeping();
-  const list = await control.inspect({ kind: 'list' }) as ListView;
+  const list = (await control.inspect({ kind: 'list' })) as ListView;
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
   return { list, calls: github.calls.map(call => call.method) };
@@ -32,7 +35,10 @@ test('a GitHub source with discovery off lists but admits nothing, without re-re
   const candidate = list.polling.repositories[0]!.candidates![0]!;
   assert.equal(candidate.outcome, 'held');
   assert.deepEqual(candidate.outcome === 'held' && candidate.holds.map(hold => hold.code), ['SOURCE_DISCOVERY_DISABLED']);
-  assert.deepEqual(calls.filter(method => method === 'readTicket'), []);
+  assert.deepEqual(
+    calls.filter(method => method === 'readTicket'),
+    [],
+  );
 });
 
 test('positive controls: discovery on (v2) or no sources at all (v1) admit the same candidate', async t => {
@@ -43,7 +49,16 @@ test('positive controls: discovery on (v2) or no sources at all (v1) admit the s
 });
 
 test('a repository that is only a Jira route destination is not a GitHub source', async t => {
-  const { list } = await poll(t, [{ tracker: 'jira', siteId: 'site-A', url: 'https://equipe.atlassian.net', projectId: '10010', label: 'factory-ready', discover: false,
-    routes: [{ componentId: '10022', repository: 'acme/project' }] }]);
+  const { list } = await poll(t, [
+    {
+      tracker: 'jira',
+      siteId: 'site-A',
+      url: 'https://equipe.atlassian.net',
+      projectId: '10010',
+      label: 'factory-ready',
+      discover: false,
+      routes: [{ componentId: '10022', repository: 'acme/project' }],
+    },
+  ]);
   assert.equal(list.works.length, 0);
 });

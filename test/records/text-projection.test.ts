@@ -5,12 +5,22 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords, outputLimits, RecordsError } from '../../src/records/index.js';
 
-const context = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder' as const,
-  environmentRef: 'environment', bootRef: 'boot', callId: 'call' };
+const context = {
+  workId: 'work',
+  executionId: 'execution',
+  invocationId: 'invocation',
+  role: 'builder' as const,
+  environmentRef: 'environment',
+  bootRef: 'boot',
+  callId: 'call',
+};
 async function fixture(run: (records: Awaited<ReturnType<typeof createRecords>>, root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'rp-'));
-  try { await run(await createRecords({ root }), root); }
-  finally { await rm(root, { recursive: true, force: true }); }
+  try {
+    await run(await createRecords({ root }), root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 async function capture(records: Awaited<ReturnType<typeof createRecords>>, text: string) {
   const output = await records.openOutput(context, { format: 'text', preserveBOM: true });
@@ -27,7 +37,10 @@ test('projection re-filters whole completed text with split UTF8, split secrets,
     records.registerSecret('SECRET');
     const projection = records.projectText({ context, reference: done.reference, expectedBytes: done.bytes });
     const chunks: Buffer[] = [];
-    for await (const chunk of projection.chunks) { assert.ok(chunk.length <= outputLimits.pageBytes); chunks.push(chunk); }
+    for await (const chunk of projection.chunks) {
+      assert.ok(chunk.length <= outputLimits.pageBytes);
+      chunks.push(chunk);
+    }
     assert.equal(Buffer.concat(chunks).toString(), source.replace('SECRET', '█'));
     assert.equal(projection.state, 'complete');
     assert.ok(done.truncated);
@@ -64,7 +77,10 @@ test('projection cancellation and iterator close never report full completion', 
     await assert.rejects(reading, RecordsError);
     assert.equal(projection.state, 'failed');
     const closed = records.projectText({ context, reference: done.reference, expectedBytes: done.bytes });
-    for await (const chunk of closed.chunks) { assert.ok(chunk.length); break; }
+    for await (const chunk of closed.chunks) {
+      assert.ok(chunk.length);
+      break;
+    }
     assert.equal(closed.state, 'failed');
     const unopened = records.projectText({ context, reference: done.reference, expectedBytes: done.bytes });
     await unopened.chunks.return();
@@ -91,7 +107,9 @@ test('projection rejects partial, raw, wrong context/count and corrupt UTF8; sup
       { context, reference: done.reference, expectedBytes: Infinity },
     ]) {
       const projection = records.projectText(request);
-      await assert.rejects(async () => { for await (const chunk of projection.chunks) assert.fail(`unexpected ${chunk.length} bytes`); }, RecordsError);
+      await assert.rejects(async () => {
+        for await (const chunk of projection.chunks) assert.fail(`unexpected ${chunk.length} bytes`);
+      }, RecordsError);
       assert.equal(projection.state, 'failed');
     }
     await partial.abort();

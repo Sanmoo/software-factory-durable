@@ -8,8 +8,21 @@ import { inspectEnvironment, needsStop } from './builder09-qualification.js';
 import type { ExecutionView } from '../../src/control/index.js';
 
 // Recipe safety on temporary fixtures only (never the real root): host inspection of a guest-written environment and the stop decision.
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8',
-  env: { PATH: '/usr/bin:/bin', HOME: cwd, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 'f', GIT_AUTHOR_EMAIL: 'f@x', GIT_COMMITTER_NAME: 'f', GIT_COMMITTER_EMAIL: 'f@x' } }).trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      PATH: '/usr/bin:/bin',
+      HOME: cwd,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_AUTHOR_NAME: 'f',
+      GIT_AUTHOR_EMAIL: 'f@x',
+      GIT_COMMITTER_NAME: 'f',
+      GIT_COMMITTER_EMAIL: 'f@x',
+    },
+  }).trim();
 
 test('review 1/2: recipe inspect never runs git in the guest tree and never follows a guest symlink into host secrets', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'q09-inspect-'));
@@ -18,9 +31,14 @@ test('review 1/2: recipe inspect never runs git in the guest tree and never foll
   const checkout = join(environment, 'workspace', 'checkout');
   await mkdir(checkout, { recursive: true });
   git(checkout, 'init', '-q', '-b', 'factory/3-x');
-  await writeFile(join(checkout, 'f.txt'), 'x\n'); git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'c1');
+  await writeFile(join(checkout, 'f.txt'), 'x\n');
+  git(checkout, 'add', '.');
+  git(checkout, 'commit', '-q', '-m', 'c1');
   const base = git(checkout, 'rev-parse', 'HEAD');
-  await writeFile(join(checkout, '.git', 'config'), `[core]\n\trepositoryformatversion = 0\n\tfsmonitor = touch ${join(dir, 'RAN')}\n[log]\n\tshowSignature = true\n[gpg]\n\tprogram = touch ${join(dir, 'RAN')}\n`);
+  await writeFile(
+    join(checkout, '.git', 'config'),
+    `[core]\n\trepositoryformatversion = 0\n\tfsmonitor = touch ${join(dir, 'RAN')}\n[log]\n\tshowSignature = true\n[gpg]\n\tprogram = touch ${join(dir, 'RAN')}\n`,
+  );
   await writeFile(join(dir, 'app.pem'), 'PRIVATE KEY CANARY');
   await mkdir(join(environment, 'artifacts', 'spec', 'v1'), { recursive: true });
   await symlink(join(dir, 'app.pem'), join(environment, 'artifacts', 'spec', 'v1', 'sources.json'));

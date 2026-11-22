@@ -1,28 +1,64 @@
 export { workerBootstrapSchema, workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 // Private composition on an existing fixed child channel; no public tool/reader.
-export { createSecretPublisher, createOwnerSecretReceiver, deliverSchema, secretChannelFailures, secretSyncLimit, secretSyncSetupMargin,
-  type SecretChannelFailure } from './worker-secret-ipc.js';
+export {
+  createSecretPublisher,
+  createOwnerSecretReceiver,
+  deliverSchema,
+  secretChannelFailures,
+  secretSyncLimit,
+  secretSyncSetupMargin,
+  type SecretChannelFailure,
+} from './worker-secret-ipc.js';
 // Ticket 59: the launch's session request budget and the Execution end of an owner-closed secret channel.
 export { secretChannelEndCode, sessionRequestBudget } from './worker-launch.js';
 // Same fixed child channel: one ask_user notification per Builder activation and its Control ACK.
 // Ticket 11: confined Host reads of preserved Builder sessions (runtime tree, never guest paths).
-export { copyPreservedSession, launchToolNames, observePreservedSession, readConfinedFile, readSessionFile, recordWorkerLaunch, sessionRefOfInvocation, sessionRefSchema, sessionFileLimits,
-  type HostSessionRef, type WorkerLaunchRecord } from './worker-session-file.js';
+export {
+  copyPreservedSession,
+  launchToolNames,
+  observePreservedSession,
+  readConfinedFile,
+  readSessionFile,
+  recordWorkerLaunch,
+  sessionRefOfInvocation,
+  sessionRefSchema,
+  sessionFileLimits,
+  type HostSessionRef,
+  type WorkerLaunchRecord,
+} from './worker-session-file.js';
 export { createQuestionSender, serveQuestionRelay, workerQuestionSchema, type WorkerQuestionRequest, type QuestionRelayAck } from './worker-question-ipc.js';
 import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-export { planWorkerLaunch, launchWorker, prepareReviewerContinuation, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type HostedWorkerBoot, type WorkerBootHost } from './worker-launch.js';
+export {
+  planWorkerLaunch,
+  launchWorker,
+  prepareReviewerContinuation,
+  workerOwnerEndpoint,
+  workerRuntimeDirectory,
+  unitState,
+  type HostedWorkerBoot,
+  type WorkerBootHost,
+} from './worker-launch.js';
 
 /** A refused installation path, with the relative path that caused it (diagnosable; never repaired). */
 export class InstallationPathError extends Error {
-  constructor(readonly code: 'PRIVATE_INSTALLATION_REQUIRED' | 'UNSAFE_CONTROL_PATH', readonly path: string) { super(code); }
+  constructor(
+    readonly code: 'PRIVATE_INSTALLATION_REQUIRED' | 'UNSAFE_CONTROL_PATH',
+    readonly path: string,
+  ) {
+    super(code);
+  }
 }
 /** Stable cause of a start refusal for operator diagnostics: an upper-case code from this codebase, and the relative path when known. */
 export function startFailureCause(error: unknown): { cause: string; path?: string } {
-  const message = error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message) ? error.message
-    : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^E[A-Z]+$/.test(error.code) ? `FS_${error.code}` : 'UNEXPECTED';
+  const message =
+    error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+      ? error.message
+      : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^E[A-Z]+$/.test(error.code)
+        ? `FS_${error.code}`
+        : 'UNEXPECTED';
   return { cause: message, ...(error instanceof InstallationPathError ? { path: error.path } : {}) };
 }
 export async function controllerPaths(root: string) {
@@ -56,8 +92,8 @@ export async function prepareControllerLock(lockPath: string): Promise<void> {
 /** Linux proof that this very process, after flock's no-fork exec, owns the stable lock. */
 export async function verifyControllerLock(lockPath: string): Promise<void> {
   const lock = await lstat(lockPath, { bigint: true });
-  const sameFile = (s: BigIntStats) => s.isFile() && s.dev === lock.dev && s.ino === lock.ino &&
-    s.nlink === 1n && s.uid === BigInt(process.getuid?.() ?? -1) && !(s.mode & 0o077n);
+  const sameFile = (s: BigIntStats) =>
+    s.isFile() && s.dev === lock.dev && s.ino === lock.ino && s.nlink === 1n && s.uid === BigInt(process.getuid?.() ?? -1) && !(s.mode & 0o077n);
   if (!sameFile(lock)) throw new Error('CONTROLLER_LOCK_REQUIRED');
   // Btrfs st_dev is per-subvolume and may differ from the superblock device in
   // /proc/locks. Correlate the lock-bearing inherited FD with the canonical file
@@ -73,12 +109,20 @@ export async function verifyControllerLock(lockPath: string): Promise<void> {
       const owns = info.split('\n').some(line => {
         if (!line.startsWith('lock:')) return false;
         const fields = line.slice(5).trim().split(/\s+/);
-        return fields[1] === 'FLOCK' && fields[2] === 'ADVISORY' && fields[3] === 'WRITE' &&
-          fields[4] === String(process.pid) && fields[5]?.split(':')[2] === String(lock.ino) &&
-          fields[6] === '0' && fields[7] === 'EOF';
+        return (
+          fields[1] === 'FLOCK' &&
+          fields[2] === 'ADVISORY' &&
+          fields[3] === 'WRITE' &&
+          fields[4] === String(process.pid) &&
+          fields[5]?.split(':')[2] === String(lock.ino) &&
+          fields[6] === '0' &&
+          fields[7] === 'EOF'
+        );
       });
       if (owns && sameFile(await stat(path, { bigint: true })) && sameFile(await lstat(lockPath, { bigint: true }))) return;
-    } catch { /* Closed/reused/inaccessible FD is not ownership evidence. */ }
+    } catch {
+      /* Closed/reused/inaccessible FD is not ownership evidence. */
+    }
   }
   throw new Error('CONTROLLER_LOCK_REQUIRED');
 }
@@ -91,12 +135,19 @@ export async function controllerRuntimeInventory(root: string): Promise<'empty' 
 }
 
 export async function canAccess(path: string, mode = constants.R_OK): Promise<boolean> {
-  try { await access(path, mode); return true; } catch { return false; }
+  try {
+    await access(path, mode);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function versionOf(command: string): string | undefined {
   const result = spawnSync(command, ['--version'], {
-    encoding: 'utf8', timeout: 2000, maxBuffer: 64 * 1024,
+    encoding: 'utf8',
+    timeout: 2000,
+    maxBuffer: 64 * 1024,
     env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C' },
   });
   if (result.status !== 0 || result.error) return undefined;
@@ -106,25 +157,45 @@ export function versionOf(command: string): string | undefined {
 
 /** `/proc/meminfo` (kB units) -> bytes of MemTotal and MemAvailable; anything missing or malformed is unavailable, never zero (ticket 24). */
 export function parseMeminfo(text: string): { totalBytes: string; availableBytes: string } | undefined {
-  const field = (name: string) => { const found = new RegExp(`^${name}:\\s+(\\d+) kB$`, 'm').exec(text); return found ? BigInt(found[1]!) * 1024n : undefined; };
-  const total = field('MemTotal'), available = field('MemAvailable');
+  const field = (name: string) => {
+    const found = new RegExp(`^${name}:\\s+(\\d+) kB$`, 'm').exec(text);
+    return found ? BigInt(found[1]!) * 1024n : undefined;
+  };
+  const total = field('MemTotal'),
+    available = field('MemAvailable');
   return total === undefined || available === undefined ? undefined : { totalBytes: total.toString(), availableBytes: available.toString() };
 }
 /** Host memory observation at this instant (read-only); `undefined` when unreadable. Not a reservation. */
 export async function inspectMemory(source = '/proc/meminfo') {
-  try { return parseMeminfo(await readFile(source, 'utf8')); } catch { return undefined; }
+  try {
+    return parseMeminfo(await readFile(source, 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Pure: unit names of `systemctl --user list-units --plain --no-legend` lines that are own active sandbox units (ticket 24). */
 export function parseSandboxUnits(stdout: string): string[] {
-  return stdout.split('\n').map(line => line.trim().split(/\s+/)).filter(fields => /^factory-sandbox-boot-[a-f0-9-]{36}\.service$/.test(fields[0] ?? '') &&
-    fields[2] === 'active').map(fields => fields[0]!);
+  return stdout
+    .split('\n')
+    .map(line => line.trim().split(/\s+/))
+    .filter(fields => /^factory-sandbox-boot-[a-f0-9-]{36}\.service$/.test(fields[0] ?? '') && fields[2] === 'active')
+    .map(fields => fields[0]!);
 }
 /** Read-only listing of the own active sandbox units from the systemd user manager; undefined when it cannot be asked. */
 export async function listActiveSandboxUnits(): Promise<string[] | undefined> {
-  const result = spawnSync('systemctl', ['--user', 'list-units', '--type=service', '--all', '--plain', '--no-legend', '--no-pager', 'factory-sandbox-*'],
-    { encoding: 'utf8', timeout: 5000, maxBuffer: 1024 * 1024, env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C',
-      ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}) } });
+  const result = spawnSync('systemctl', ['--user', 'list-units', '--type=service', '--all', '--plain', '--no-legend', '--no-pager', 'factory-sandbox-*'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    maxBuffer: 1024 * 1024,
+    env: {
+      PATH: process.env.PATH ?? '',
+      LANG: 'C',
+      LC_ALL: 'C',
+      ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}),
+      ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}),
+    },
+  });
   if (result.status !== 0 || result.error) return undefined;
   return parseSandboxUnits(result.stdout);
 }
@@ -132,8 +203,13 @@ export async function listActiveSandboxUnits(): Promise<string[] | undefined> {
 export async function inspectStorage(path: string) {
   try {
     const fs = await statfs(path, { bigint: true });
-    return { type: `0x${fs.type.toString(16)}`, availableBytes: (fs.bavail * fs.bsize).toString(),
+    return {
+      type: `0x${fs.type.toString(16)}`,
+      availableBytes: (fs.bavail * fs.bsize).toString(),
       // Known remote/ephemeral filesystems cannot satisfy the persistent local storage contract.
-      unsuitable: [0x6969n, 0xff534d42n, 0x01021994n, 0x858458f6n].includes(fs.type) };
-  } catch { return undefined; }
+      unsuitable: [0x6969n, 0xff534d42n, 0x01021994n, 0x858458f6n].includes(fs.type),
+    };
+  } catch {
+    return undefined;
+  }
 }

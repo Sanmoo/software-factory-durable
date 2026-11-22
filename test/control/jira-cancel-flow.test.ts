@@ -24,24 +24,42 @@ async function harness(t: { after(fn: () => Promise<void>): void }, jira: JiraRe
   let current: { control: Control; stop: AbortController; running: Promise<unknown>; time: ReturnType<typeof manualClock> } | undefined;
   async function start() {
     const time = manualClock();
-    const control = await openControl({ storagePath, runtimeInventory: 'empty',
-      access: { tracker: github.tracker, repository: github.repository, repositories: [scope], sources: [{ tracker: 'github', repository: 'acme/project', discover: true }, jiraSource()],
-        trackers: { jira: doubles.tracker } },
-      polling: { intervalSeconds: 60, clock: time.clock } });
+    const control = await openControl({
+      storagePath,
+      runtimeInventory: 'empty',
+      access: {
+        tracker: github.tracker,
+        repository: github.repository,
+        repositories: [scope],
+        sources: [{ tracker: 'github', repository: 'acme/project', discover: true }, jiraSource()],
+        trackers: { jira: doubles.tracker },
+      },
+      polling: { intervalSeconds: 60, clock: time.clock },
+    });
     const stop = new AbortController();
     current = { control, stop, running: control.run(stop.signal), time };
     await time.sleeping();
   }
-  async function stop() { current!.stop.abort(); await current!.running; }
-  t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
+  async function stop() {
+    current!.stop.abort();
+    await current!.running;
+  }
+  t.after(async () => {
+    if (current && !current.stop.signal.aborted) await stop();
+  });
   const works = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works as WorkView[];
   const byKey = async (key: string) => (await works()).find(work => work.ticket.tracker === 'jira' && work.ticket.key === key)!;
-  const show = async (work_id: string) => await current!.control.inspect({ kind: 'show', work_id }) as Extract<ShowView, { kind: 'work' }>;
-  const settle = (label: string, predicate: () => Promise<boolean>) => untilHolds(label, async () => {
-    if (await predicate()) return true;
-    if (current!.time.isSleeping()) current!.time.advance();
-    return false;
-  }, 5);
+  const show = async (work_id: string) => (await current!.control.inspect({ kind: 'show', work_id })) as Extract<ShowView, { kind: 'work' }>;
+  const settle = (label: string, predicate: () => Promise<boolean>) =>
+    untilHolds(
+      label,
+      async () => {
+        if (await predicate()) return true;
+        if (current!.time.isSleeping()) current!.time.advance();
+        return false;
+      },
+      5,
+    );
   const posts = () => doubles.calls.filter(call => call.method === 'publishComment').map(call => call.args as { issueId?: string; lines: string[] });
   const request = (request_id: string) => current!.control.inspect({ kind: 'request', request_id }) as Promise<{ receipt: Record<string, unknown> | null }>;
   return { github, jira: doubles, storagePath, start, stop, works, byKey, show, settle, posts, request };
@@ -65,25 +83,42 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   h.jira.write('81017', '[Software Factory · Cancelamento R-1]\n/factory cancel', { accountId: 'acc-human' });
   await h.settle('four guidance replies', async () => h.posts().length === 4);
   const receipt = async (id: string) => (await h.request(requestId('81017', id))).receipt;
-  assert.deepEqual([(await receipt(please))?.reason, (await receipt(other))?.reason, (await receipt(spelled))?.reason, (await receipt(edited))?.reason],
-    ['JIRA_CANCEL_INVALID', 'JIRA_CANCEL_INVALID', 'JIRA_NO_OPEN_QUESTION', 'JIRA_COMMENT_EDITED']);
-  assert.deepEqual((await h.works()).map(work => work.result), ['open', 'open', 'open']);
+  assert.deepEqual(
+    [(await receipt(please))?.reason, (await receipt(other))?.reason, (await receipt(spelled))?.reason, (await receipt(edited))?.reason],
+    ['JIRA_CANCEL_INVALID', 'JIRA_CANCEL_INVALID', 'JIRA_NO_OPEN_QUESTION', 'JIRA_COMMENT_EDITED'],
+  );
+  assert.deepEqual(
+    (await h.works()).map(work => work.result),
+    ['open', 'open', 'open'],
+  );
   // The exact command, from any account that can comment on the Card (the Factory's shared one included).
   const cancel = h.jira.write('81017', '/factory cancel');
   await h.settle('PAG-42 cancelled', async () => (await h.byKey('PAG-42')).result === 'cancelled');
   const request_id = requestId('81017', cancel);
   await h.settle('cancellation reply posted', async () => h.posts().length === 5);
   const recorded = (await h.request(request_id)).receipt!;
-  assert.deepEqual({ ...recorded, reply: undefined }, { kind: 'durable', request_id, operation: 'cancel', work_id: pag42, outcome: 'accepted', reason: null, created: null, reply: undefined });
+  assert.deepEqual(
+    { ...recorded, reply: undefined },
+    { kind: 'durable', request_id, operation: 'cancel', work_id: pag42, outcome: 'accepted', reason: null, created: null, reply: undefined },
+  );
   assert.match(String(recorded.reply), /^R-/);
   assert.equal(h.posts()[4]!.lines[0], `[Software Factory · Cancelamento ${String(recorded.reply)}]`);
   const shown = await h.show(pag42);
-  assert.deepEqual(shown.work.history.filter(item => item.event === 'cancel-requested').map(item => item.origin), ['jira-comment']);
+  assert.deepEqual(
+    shown.work.history.filter(item => item.event === 'cancel-requested').map(item => item.origin),
+    ['jira-comment'],
+  );
   assert.equal(shown.work.cancellation?.state, 'ceased', 'nothing was running');
   // Only that Card's Work: the other Card and the GitHub Ticket of the same repository are untouched.
-  assert.deepEqual((await h.works()).filter(work => work.work_id !== pag42).map(work => work.result), ['open', 'open']);
+  assert.deepEqual(
+    (await h.works()).filter(work => work.work_id !== pag42).map(work => work.result),
+    ['open', 'open'],
+  );
   assert.equal((await h.show(pag43)).work.cancellation ?? null, null);
-  assert.deepEqual(h.jira.methods().filter(method => method.startsWith('unexpected:')), []);
+  assert.deepEqual(
+    h.jira.methods().filter(method => method.startsWith('unexpected:')),
+    [],
+  );
   // Restart with every comment re-delivered: no second cancellation, no new reply.
   await h.stop();
   remote.redeliver = true;
@@ -98,11 +133,20 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   try {
     const snapshot = async () => JSON.stringify(await readWork(opened.session, pag42));
     const before = await snapshot();
-    const again = await ingestJiraComment(opened.session, pag42, { ref: { tracker: 'jira', siteId: site.siteId, issueId: '81017', commentId: cancel }, author: { tracker: 'jira', accountId: 'acc-factory' },
-      body: '/factory cancel', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), restricted: false, url: `${site.url}/browse/PAG-42` } satisfies JiraComment);
+    const again = await ingestJiraComment(opened.session, pag42, {
+      ref: { tracker: 'jira', siteId: site.siteId, issueId: '81017', commentId: cancel },
+      author: { tracker: 'jira', accountId: 'acc-factory' },
+      body: '/factory cancel',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      restricted: false,
+      url: `${site.url}/browse/PAG-42`,
+    } satisfies JiraComment);
     assert.deepEqual(again, { kind: 'replayed', receipt: recorded });
     assert.equal(await snapshot(), before);
-  } finally { await opened.close(); }
+  } finally {
+    await opened.close();
+  }
 });
 
 test('only the exact lower-case command word cancels, from a human account too; the Work leaves its queue with the cancellation impediment', async t => {
@@ -123,8 +167,15 @@ test('only the exact lower-case command word cancels, from a human account too; 
 
 test('Cards of Works that never ran are read a bounded number per pass, least recently read first, so every one is reached', async () => {
   const reads: string[] = [];
-  const tracker = { readInputs: async (ticket: { issueId: string }) => { reads.push(ticket.issueId); return { kind: 'unavailable' } as never; } } as unknown as JiraOriginTracker;
-  const idle = ['1', '2', '3', '4', '5'].map(issueId => ({ work_id: `w-${issueId}`, result: 'open', questions: [], ticket: { tracker: 'jira', siteId: site.siteId, issueId } }) as unknown as WorkRecord);
+  const tracker = {
+    readInputs: async (ticket: { issueId: string }) => {
+      reads.push(ticket.issueId);
+      return { kind: 'unavailable' } as never;
+    },
+  } as unknown as JiraOriginTracker;
+  const idle = ['1', '2', '3', '4', '5'].map(
+    issueId => ({ work_id: `w-${issueId}`, result: 'open', questions: [], ticket: { tracker: 'jira', siteId: site.siteId, issueId } }) as unknown as WorkRecord,
+  );
   const ran = { ...idle[0]!, work_id: 'w-ran', ticket: { ...idle[0]!.ticket, issueId: '9' }, execution: { executionId: 'e-1' } } as unknown as WorkRecord;
   const desk = createJiraInputDesk({ session: undefined as never, tracker, readWorks: async () => [ran, ...idle], stopped: () => false, idleReads: 2 });
   for (let pass = 0; pass < 3; pass++) await desk.pass();

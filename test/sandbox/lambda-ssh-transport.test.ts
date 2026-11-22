@@ -12,8 +12,14 @@ import { remainingMs } from '../runner/budget.js';
 
 // v2 ticket 04 (V2-20, V2-24): the production transport and the fixed guest programs, without a guest. `ssh` and `websocat` are never
 // run: the transport gets a scripted runner. Local `bash`, `git` and `ssh-keygen` processes check the texts the host would send.
-const target: GuestTarget = { endpoint: 'microvm-0001.lambda-microvm.us-east-1.on.aws', port: 8022, token: 'secret-proxy-token', user: 'builder',
-  identityFile: '/var/lib/factory/lambda/works/env-x/boots/boot-y/session_ed25519', keepaliveSeconds: 15 };
+const target: GuestTarget = {
+  endpoint: 'microvm-0001.lambda-microvm.us-east-1.on.aws',
+  port: 8022,
+  token: 'secret-proxy-token',
+  user: 'builder',
+  identityFile: '/var/lib/factory/lambda/works/env-x/boots/boot-y/session_ed25519',
+  keepaliveSeconds: 15,
+};
 const hostKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILn928sK0SwvZiCB5HrFZBSZtuz9a5W/Mcm9n6o0+mhm';
 const local = (command: string, argv: string[], options: { input?: Uint8Array; env?: NodeJS.ProcessEnv; cwd?: string } = {}) =>
   spawnSync(command, argv, { encoding: 'utf8', timeout: remainingMs(), ...options });
@@ -25,7 +31,8 @@ async function scratch(t: TestContext) {
 }
 
 test('a session key is an ed25519 pair: the public line for the run hook payload and a private key the ssh client reads', async t => {
-  const first = generateSessionKey(), second = generateSessionKey();
+  const first = generateSessionKey(),
+    second = generateSessionKey();
   assert.match(first.publicKey, /^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{42}[A-Za-z0-9+/=]$/);
   assert.notEqual(first.publicKey, second.publicKey);
   assert.equal(sessionPublicKey(first.privateKey), first.publicKey);
@@ -41,8 +48,12 @@ test('a session key is an ed25519 pair: the public line for the run hook payload
 });
 
 test('the remote command line carries the script and no environment value: the environment arrives on stdin and the program reads the rest', () => {
-  const request = { program: 'probe', script: 'printf "%s|%s|" "$FACTORY_GIT_TOKEN" "$PLAIN"; cat', environment: { FACTORY_GIT_TOKEN: 'ghs_secret value\'"$(id)', PLAIN: 'a=b' },
-    stdin: Buffer.from('the program input\n') };
+  const request = {
+    program: 'probe',
+    script: 'printf "%s|%s|" "$FACTORY_GIT_TOKEN" "$PLAIN"; cat',
+    environment: { FACTORY_GIT_TOKEN: 'ghs_secret value\'"$(id)', PLAIN: 'a=b' },
+    stdin: Buffer.from('the program input\n'),
+  };
   const remote = remoteCommand(request)!;
   assert.doesNotMatch(remote.command, /ghs_secret/);
   // What the guest's sshd does with the command line: hand it to the login shell.
@@ -58,12 +69,27 @@ test('the remote command line carries the script and no environment value: the e
 
 test('every ssh connection goes through websocat to the ingress endpoint with keepalive, the session key only and the token out of the argument list', () => {
   const argv = sshArguments(target, '/tmp/known', 'pinned', 'true')!;
-  const options = argv.flatMap((value, index) => argv[index - 1] === '-o' ? [value] : []);
+  const options = argv.flatMap((value, index) => (argv[index - 1] === '-o' ? [value] : []));
   assert.deepEqual(argv.slice(0, 3), ['-F', 'none', '-T']);
   assert.deepEqual(argv.slice(-3), ['builder@factory-microvm', '--', 'true']);
-  for (const option of ['BatchMode=yes', 'IdentitiesOnly=yes', `IdentityFile=${target.identityFile}`, 'IdentityAgent=none', 'StrictHostKeyChecking=yes',
-    'UserKnownHostsFile=/tmp/known', 'GlobalKnownHostsFile=/dev/null', 'HostKeyAlias=factory-microvm', 'ServerAliveInterval=15', 'ForwardAgent=no']) assert.ok(options.includes(option), option);
-  assert.ok(options.includes(`ProxyCommand='websocat' --binary "--header=X-aws-proxy-auth: $FACTORY_MICROVM_TOKEN" "--header=X-aws-proxy-port: 8022" - 'wss://microvm-0001.lambda-microvm.us-east-1.on.aws/'`));
+  for (const option of [
+    'BatchMode=yes',
+    'IdentitiesOnly=yes',
+    `IdentityFile=${target.identityFile}`,
+    'IdentityAgent=none',
+    'StrictHostKeyChecking=yes',
+    'UserKnownHostsFile=/tmp/known',
+    'GlobalKnownHostsFile=/dev/null',
+    'HostKeyAlias=factory-microvm',
+    'ServerAliveInterval=15',
+    'ForwardAgent=no',
+  ])
+    assert.ok(options.includes(option), option);
+  assert.ok(
+    options.includes(
+      `ProxyCommand='websocat' --binary "--header=X-aws-proxy-auth: $FACTORY_MICROVM_TOKEN" "--header=X-aws-proxy-port: 8022" - 'wss://microvm-0001.lambda-microvm.us-east-1.on.aws/'`,
+    ),
+  );
   assert.doesNotMatch(argv.join(' '), /secret-proxy-token/);
   // Only the first contact of a boot records the key it sees; every other connection accepts the pinned key alone.
   assert.ok(sshArguments(target, '/tmp/known', 'first-contact', 'true')!.includes('StrictHostKeyChecking=accept-new'));
@@ -74,7 +100,12 @@ function scripted(answer: (argv: readonly string[], knownHostsFile: string) => P
   const runs: { argv: string[]; environment: Readonly<Record<string, string>>; knownHosts: string; stdin: string }[] = [];
   const run: SshRunner = async (argv, options) => {
     const file = argv.find(value => value.startsWith('UserKnownHostsFile='))!.slice('UserKnownHostsFile='.length);
-    runs.push({ argv: [...argv], environment: options.environment, knownHosts: await readFile(file, 'utf8'), stdin: Buffer.from(options.stdin).toString('utf8') });
+    runs.push({
+      argv: [...argv],
+      environment: options.environment,
+      knownHosts: await readFile(file, 'utf8'),
+      stdin: Buffer.from(options.stdin).toString('utf8'),
+    });
     return answer(argv, file);
   };
   return { runs, transport: createSshTransport({ run }) };
@@ -93,17 +124,26 @@ test('a program runs over a connection that accepts only the pinned host key, wi
 });
 
 test('a client failure is a refusal when the connection was never established and a lost connection otherwise', async () => {
-  const failing = (stderr: string) => scripted(() => ({ status: 'exited', exitCode: 255, stdout: '', stderr })).transport.exec({ ...target, hostKey }, { program: 'p', script: 'true' });
-  assert.deepEqual(await failing('@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\nHost key verification failed.\n'),
-    { status: 'refused', code: 'HOST_KEY_MISMATCH', detail: 'Host key verification failed.' });
+  const failing = (stderr: string) =>
+    scripted(() => ({ status: 'exited', exitCode: 255, stdout: '', stderr })).transport.exec({ ...target, hostKey }, { program: 'p', script: 'true' });
+  assert.deepEqual(await failing('@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\nHost key verification failed.\n'), {
+    status: 'refused',
+    code: 'HOST_KEY_MISMATCH',
+    detail: 'Host key verification failed.',
+  });
   // Observed in the proof (T4): websocat's text for an expired token, then ssh exit 255.
-  assert.deepEqual(await failing('websocat: WebSocketError: Received unexpected status code (403 Forbidden)\nkex_exchange_identification: Connection closed by remote host\n'),
-    { status: 'refused', code: 'TOKEN_REFUSED', detail: 'kex_exchange_identification: Connection closed by remote host' });
-  assert.equal((await failing('builder@factory-microvm: Permission denied (publickey).\n') as { code?: string }).code, 'AUTHENTICATION_REFUSED');
-  assert.equal((await failing('kex_exchange_identification: Connection closed by remote host\n') as { code?: string }).code, 'UNREACHABLE');
-  assert.deepEqual(await failing('Timeout, server factory-microvm not responding.\n'), { status: 'lost', detail: 'Timeout, server factory-microvm not responding.' });
+  assert.deepEqual(
+    await failing('websocat: WebSocketError: Received unexpected status code (403 Forbidden)\nkex_exchange_identification: Connection closed by remote host\n'),
+    { status: 'refused', code: 'TOKEN_REFUSED', detail: 'kex_exchange_identification: Connection closed by remote host' },
+  );
+  assert.equal(((await failing('builder@factory-microvm: Permission denied (publickey).\n')) as { code?: string }).code, 'AUTHENTICATION_REFUSED');
+  assert.equal(((await failing('kex_exchange_identification: Connection closed by remote host\n')) as { code?: string }).code, 'UNREACHABLE');
+  assert.deepEqual(await failing('Timeout, server factory-microvm not responding.\n'), {
+    status: 'lost',
+    detail: 'Timeout, server factory-microvm not responding.',
+  });
   const absent = scripted(() => ({ status: 'unavailable' }));
-  assert.equal((await absent.transport.exec({ ...target, hostKey }, { program: 'p', script: 'true' }) as { code?: string }).code, 'UNREACHABLE');
+  assert.equal(((await absent.transport.exec({ ...target, hostKey }, { program: 'p', script: 'true' })) as { code?: string }).code, 'UNREACHABLE');
   const killed = scripted(() => ({ status: 'exited', exitCode: null, stdout: 'partial', stderr: '' }));
   assert.deepEqual(await killed.transport.exec({ ...target, hostKey }, { program: 'p', script: 'true' }), { status: 'lost' });
 });
@@ -119,18 +159,34 @@ test('the first contact of a boot returns the host key the guest presented over 
   const silent = scripted(() => ({ status: 'exited', exitCode: 0, stdout: '', stderr: '' }));
   assert.equal((await silent.transport.readHostKey(target)).status, 'lost');
   const refused = scripted(() => ({ status: 'exited', exitCode: 255, stdout: '', stderr: 'Received unexpected status code (403 Forbidden)\n' }));
-  assert.deepEqual(await refused.transport.readHostKey(target), { status: 'refused', code: 'TOKEN_REFUSED', detail: 'Received unexpected status code (403 Forbidden)' });
+  assert.deepEqual(await refused.transport.readHostKey(target), {
+    status: 'refused',
+    code: 'TOKEN_REFUSED',
+    detail: 'Received unexpected status code (403 Forbidden)',
+  });
 });
 
 test('the clone program leaves the starting commit of origin checked out on the Work branch and writes the credential nowhere', async t => {
   const directory = await scratch(t);
   const origin = join(directory, 'origin');
-  const identity = { GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@example.test', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@example.test', GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null', PATH: process.env.PATH };
-  const git = (...argv: string[]) => { const ran = local('git', argv, { cwd: origin, env: identity }); assert.equal(ran.status, 0, ran.stderr); return ran.stdout.trim(); };
+  const identity = {
+    GIT_AUTHOR_NAME: 'a',
+    GIT_AUTHOR_EMAIL: 'a@example.test',
+    GIT_COMMITTER_NAME: 'a',
+    GIT_COMMITTER_EMAIL: 'a@example.test',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    PATH: process.env.PATH,
+  };
+  const git = (...argv: string[]) => {
+    const ran = local('git', argv, { cwd: origin, env: identity });
+    assert.equal(ran.status, 0, ran.stderr);
+    return ran.stdout.trim();
+  };
   assert.equal(local('git', ['init', '--quiet', '--initial-branch=main', origin], { env: identity }).status, 0);
   await writeFile(join(origin, 'a.txt'), 'one\n');
-  git('add', '.'); git('commit', '--quiet', '-m', 'one');
+  git('add', '.');
+  git('commit', '--quiet', '-m', 'one');
   const starting = git('rev-parse', 'HEAD');
   await writeFile(join(origin, 'a.txt'), 'two\n');
   git('commit', '--quiet', '-am', 'two');

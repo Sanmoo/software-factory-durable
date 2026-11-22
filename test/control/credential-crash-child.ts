@@ -11,12 +11,17 @@ const mode = process.argv[3] ?? 'active';
 const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3)] });
 const doubles = lifecycleDoubles(mode === 'revoking' ? { revokeHangs: true, onRevoke: () => process.stdout.write('REVOKING\n') } : {});
 const time = manualClock();
-const control = await openControl({ storagePath, runtimeInventory: 'empty', execution: doubles.ports,
-  access: { tracker: github.tracker, repository: github.repository, repositories: [scope] }, polling: { intervalSeconds: 60, clock: time.clock } });
+const control = await openControl({
+  storagePath,
+  runtimeInventory: 'empty',
+  execution: doubles.ports,
+  access: { tracker: github.tracker, repository: github.repository, repositories: [scope] },
+  polling: { intervalSeconds: 60, clock: time.clock },
+});
 void control.run(new AbortController().signal);
 await time.sleeping();
 for (;;) {
-  const list = await control.inspect({ kind: 'list' }) as ListView;
+  const list = (await control.inspect({ kind: 'list' })) as ListView;
   if (list.works[0]?.execution?.state === 'started') break;
   await new Promise(resolve => setTimeout(resolve, 5));
 }

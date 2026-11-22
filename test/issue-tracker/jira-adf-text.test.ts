@@ -12,13 +12,24 @@ test('paragraphs, headings, lists, code, mentions and links become readable plai
   const adf = doc(
     { type: 'heading', attrs: { level: 2 }, content: [text('Contexto')] },
     p(text('Cobrar em '), text('reais', [{ type: 'strong' }]), { type: 'hardBreak' }, text('sem centavos')),
-    { type: 'bulletList', content: [{ type: 'listItem', content: [p(text('um'))] }, { type: 'listItem', content: [p(text('dois'))] }] },
+    {
+      type: 'bulletList',
+      content: [
+        { type: 'listItem', content: [p(text('um'))] },
+        { type: 'listItem', content: [p(text('dois'))] },
+      ],
+    },
     { type: 'orderedList', content: [{ type: 'listItem', content: [p(text('primeiro'))] }] },
     { type: 'codeBlock', attrs: { language: 'ts' }, content: [text('const x = 1;')] },
-    p({ type: 'mention', attrs: { id: 'abc', text: '@Ana' } }, text(' ver '), { type: 'inlineCard', attrs: { url: 'https://example.org/doc' } }, text(' '),
-      { type: 'emoji', attrs: { shortName: ':smile:', text: '😄' } }),
+    p({ type: 'mention', attrs: { id: 'abc', text: '@Ana' } }, text(' ver '), { type: 'inlineCard', attrs: { url: 'https://example.org/doc' } }, text(' '), {
+      type: 'emoji',
+      attrs: { shortName: ':smile:', text: '😄' },
+    }),
   );
-  assert.deepEqual(adfPlainText(adf, 10000), { text: '## Contexto\n\nCobrar em reais\nsem centavos\n\n- um\n- dois\n\n1. primeiro\n\n```ts\nconst x = 1;\n```\n\n@Ana ver https://example.org/doc 😄', truncated: false });
+  assert.deepEqual(adfPlainText(adf, 10000), {
+    text: '## Contexto\n\nCobrar em reais\nsem centavos\n\n- um\n- dois\n\n1. primeiro\n\n```ts\nconst x = 1;\n```\n\n@Ana ver https://example.org/doc 😄',
+    truncated: false,
+  });
 });
 
 test('unknown nodes keep their text content; a non-document is null; the bound is explicit, never silent', () => {

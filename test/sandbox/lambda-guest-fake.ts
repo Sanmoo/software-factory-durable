@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { sessionPublicKey, type GuestExecRequest, type GuestExecResult, type GuestRefusal, type GuestTarget, type GuestTransport } from '../../src/sandbox/index.js';
+import {
+  sessionPublicKey,
+  type GuestExecRequest,
+  type GuestExecResult,
+  type GuestRefusal,
+  type GuestTarget,
+  type GuestTransport,
+} from '../../src/sandbox/index.js';
 import { generateSessionKey } from '../../src/sandbox/lambda/transport.js';
 import type { lambdaAccountFake } from './lambda-service-fake.js';
 
@@ -23,7 +30,8 @@ import type { lambdaAccountFake } from './lambda-service-fake.js';
  * vector): the fake recognises the fixed guest programs (read, write, edit, stream copy, Bash) and applies them to `files` AS THE USER of
  * the connection. Shell commands are handlers by exact command text (`commands`); `docker ps` is built in.
  */
-export type FakeGuest = { microvmId: string;
+export type FakeGuest = {
+  microvmId: string;
   /** Generated in this boot; a test replaces it to play a guest that is not the one the host pinned. */ hostKey: string;
   /** Session public keys the run hook wrote, per user. */ authorized: Record<string, string>;
   /** The guest disk, empty at boot. */ files: Map<string, string>;
@@ -32,33 +40,51 @@ export type FakeGuest = { microvmId: string;
   /** Unix users of the image: `login` (sshd admits it), `docker` (member of the group that owns the Docker socket). */
   users: Record<string, { login: boolean; docker: boolean }>;
   /** The user that owns `/workspace` and `/artifacts`: the only one that writes there. */ owner: string;
-  /** What `docker pull` fetched in THIS boot. */ dockerImages: string[]; pullFailed: boolean;
+  /** What `docker pull` fetched in THIS boot. */ dockerImages: string[];
+  pullFailed: boolean;
   /** `/workspace/checkout` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
   /** v2 ticket 07: what `git status` and `git stash list` would count in the checkout (tests set it; a fresh clone is clean). */
   worktree: { modified: number; untracked: number; stashes: number };
   /** v2 ticket 12: the loss marker holder the host armed in this boot (`null`: none, or ended), and how often it was armed. */
-  lossMarker: { remote: string; ref: string; token: string } | null; lossMarkerArmed: number;
+  lossMarker: { remote: string; ref: string; token: string } | null;
+  lossMarkerArmed: number;
   logs: Record<string, string>;
   /** Every program that ran here, with the NAMES of its environment (values are checked by the handlers, never kept). */
   executions: { program: string; user: string; script: string; environmentNames: string[] }[];
   /** Tool programs that registered a call marker (ticket 11): each is one process group, alive until it exits or is killed. */
-  processes: { marker: string; user: string; state: 'running' | 'exited' | 'killed' }[] };
+  processes: { marker: string; user: string; state: 'running' | 'exited' | 'killed' }[];
+};
 export type FakeProgramResult = { exitCode: number; stdout?: string | Buffer; stderr?: string };
 /** A running program: its Unix user, output it writes before it ends, and whether its connection is still open. */
-export type FakeRun = { user: string; emit(data: string | Buffer): void; readonly connected: boolean; /** Resolves when the connection closes under the program. */ disconnected: Promise<void>;
-  /** Resolves when the program's process group is killed (ticket 11); never for a program without a call marker. */ killed: Promise<void> };
+export type FakeRun = {
+  user: string;
+  emit(data: string | Buffer): void;
+  readonly connected: boolean;
+  /** Resolves when the connection closes under the program. */ disconnected: Promise<void>;
+  /** Resolves when the program's process group is killed (ticket 11); never for a program without a call marker. */ killed: Promise<void>;
+};
 export type FakeProgram = (guest: FakeGuest, request: GuestExecRequest, run: FakeRun) => FakeProgramResult | Promise<FakeProgramResult>;
 /** A shell command of the Builder's Bash, by exact text: its environment is what the command sees, its return the exit status. */
 export type FakeCommand = (guest: FakeGuest, run: FakeRun & { environment: Record<string, string>; stdin: string }) => number | Promise<number>;
-export type FakeConnection = { microvmId: string; token: string; keepaliveSeconds: number; user: string; program: string; open: boolean;
-  /** What the client presented and accepted on this connection (ticket 11: a reconnection uses the boot's own). */ identityFile: string; hostKey: string };
+export type FakeConnection = {
+  microvmId: string;
+  token: string;
+  keepaliveSeconds: number;
+  user: string;
+  program: string;
+  open: boolean;
+  /** What the client presented and accepted on this connection (ticket 11: a reconnection uses the boot's own). */ identityFile: string;
+  hostKey: string;
+};
 
 /** One file of a stored (uncompressed) build artifact. */
 function artifactFile(zip: Uint8Array | undefined, wanted: string): string {
   if (!zip) return '';
   const bytes = Buffer.from(zip);
   for (let offset = 0; offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50;) {
-    const size = bytes.readUInt32LE(offset + 18), nameLength = bytes.readUInt16LE(offset + 26), extraLength = bytes.readUInt16LE(offset + 28);
+    const size = bytes.readUInt32LE(offset + 18),
+      nameLength = bytes.readUInt16LE(offset + 26),
+      extraLength = bytes.readUInt16LE(offset + 28);
     const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
     const data = offset + 30 + nameLength + extraLength;
     if (name === wanted) return bytes.subarray(data, data + size).toString('utf8');
@@ -70,15 +96,25 @@ function artifactFile(zip: Uint8Array | undefined, wanted: string): string {
 /** The words of a script the host wrote as single-quoted words (`'it'\''s'`); anything else is not a tool program. */
 function quotedWords(text: string): string[] | null {
   const words: string[] = [];
-  let word = '', open = false;
+  let word = '',
+    open = false;
   for (let index = 0; index < text.length;) {
     const character = text[index]!;
     if (character === "'") {
       const end = text.indexOf("'", index + 1);
       if (end < 0) return null;
-      word += text.slice(index + 1, end); index = end + 1; open = true;
-    } else if (character === '\\' && text[index + 1] === "'") { word += "'"; index += 2; open = true;
-    } else if (character === ' ' && open) { words.push(word); word = ''; open = false; index += 1;
+      word += text.slice(index + 1, end);
+      index = end + 1;
+      open = true;
+    } else if (character === '\\' && text[index + 1] === "'") {
+      word += "'";
+      index += 2;
+      open = true;
+    } else if (character === ' ' && open) {
+      words.push(word);
+      word = '';
+      open = false;
+      index += 1;
     } else return null;
   }
   if (open) words.push(word);
@@ -99,12 +135,14 @@ async function toolProgram(guest: FakeGuest, request: GuestExecRequest, run: Fak
   if (!argv) return { exitCode: 2, stderr: 'not a tool program\n' };
   const stdin = Buffer.from(request.stdin ?? []).toString('utf8');
   const inside = (path: string) => roots.some(root => path.startsWith(`${root}/`)) && !path.split('/').includes('..');
-  const isDirectory = (path: string) => roots.includes(path) || guest.directories.has(path) || [...guest.files.keys()].some(file => file.startsWith(`${path}/`));
+  const isDirectory = (path: string) =>
+    roots.includes(path) || guest.directories.has(path) || [...guest.files.keys()].some(file => file.startsWith(`${path}/`));
   const mayRead = (path: string) => run.user === guest.owner || ((guest.modes.get(path) ?? 0o644) & 0o004) !== 0;
   const mayWrite = () => run.user === guest.owner;
   const python = argv.indexOf('/usr/bin/python3');
   if (python >= 0 && argv[python + 3] === '-c') {
-    const program = argv[python + 4]!, parameters = argv.slice(python + 5);
+    const program = argv[python + 4]!,
+      parameters = argv.slice(python + 5);
     const writes = program.includes('os.O_WRONLY') || program.includes('os.O_RDWR');
     if (!writes) {
       const path = parameters[0]!;
@@ -144,8 +182,20 @@ async function toolProgram(guest: FakeGuest, request: GuestExecRequest, run: Fak
     const environment = Object.fromEntries(argv.slice(5).map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]));
     if (request.environment?.GH_TOKEN !== undefined) environment.GH_TOKEN = request.environment.GH_TOKEN;
     const handler = commands[command];
-    if (!handler) { run.emit(`bash: line 1: ${command.split(' ')[0]}: command not found\n`); return { exitCode: 127 }; }
-    return { exitCode: await handler(guest, { ...run, get connected() { return run.connected; }, environment, stdin }) };
+    if (!handler) {
+      run.emit(`bash: line 1: ${command.split(' ')[0]}: command not found\n`);
+      return { exitCode: 127 };
+    }
+    return {
+      exitCode: await handler(guest, {
+        ...run,
+        get connected() {
+          return run.connected;
+        },
+        environment,
+        stdin,
+      }),
+    };
   }
   return { exitCode: 127, stderr: `${argv[0]}: not found\n` };
 }
@@ -156,8 +206,15 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     /** `token`: the exact credential, or a predicate when the host mints it per start (v2 ticket 06). */
     /** `tip` (v2 ticket 07): what `ls-remote` answers for a branch NOW (`null`: no such branch; a throw: the remote does not answer). */
     /** `push` (v2 ticket 12): what a push of `sha` to `ref` does on this remote (absent, or a throw: the remote does not take it). */
-    origins: {} as Record<string, { commits: string[]; token: string | ((token: string) => boolean); tip?: (branch: string) => string | null | Promise<string | null>;
-      push?: (ref: string, sha: string) => void }>,
+    origins: {} as Record<
+      string,
+      {
+        commits: string[];
+        token: string | ((token: string) => boolean);
+        tip?: (branch: string) => string | null | Promise<string | null>;
+        push?: (ref: string, sha: string) => void;
+      }
+    >,
     /** Seconds after the MicroVM runs until its `sshd` answers (observed: about 7 s). */
     sshReadySeconds: 7,
     /** Image references whose pull by digest fails at boot. */
@@ -170,7 +227,10 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     commands: {
       // The Docker socket belongs to root and the `docker` group.
       'docker ps': (guest, run) => {
-        if (guest.users[run.user]?.docker) { run.emit('CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES\n'); return 0; }
+        if (guest.users[run.user]?.docker) {
+          run.emit('CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES\n');
+          return 0;
+        }
         run.emit('permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock\n');
         return 1;
       },
@@ -188,7 +248,8 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       if (!remote || !checkout || !origin) return { exitCode: 128, stderr: `fatal: repository '${remote ?? ''}' not found\n` };
       if (guest.repository) return { exitCode: 4, stderr: 'The guest already has a repository directory\n' };
       const presented = request.environment?.FACTORY_GIT_TOKEN ?? '';
-      if (typeof origin.token === 'string' ? presented !== origin.token : !origin.token(presented)) return { exitCode: 128, stderr: `fatal: Authentication failed for '${remote}'\n` };
+      if (typeof origin.token === 'string' ? presented !== origin.token : !origin.token(presented))
+        return { exitCode: 128, stderr: `fatal: Authentication failed for '${remote}'\n` };
       if (!origin.commits.includes(checkout[2]!)) return { exitCode: 128, stderr: `fatal: reference is not a tree: ${checkout[2]}\n` };
       guest.repository = { remote, commit: checkout[2]!, branch: checkout[1] ?? null };
       return { exitCode: 0, stdout: `HEAD ${checkout[2]}\n` };
@@ -202,7 +263,11 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const presented = request.environment?.FACTORY_GIT_TOKEN ?? '';
       let remote = 'unavailable';
       if (origin?.tip && (typeof origin.token === 'string' ? presented === origin.token : origin.token(presented))) {
-        try { remote = await origin.tip(asked[2]!) ?? 'absent'; } catch { /* The remote did not answer. */ }
+        try {
+          remote = (await origin.tip(asked[2]!)) ?? 'absent';
+        } catch {
+          /* The remote did not answer. */
+        }
       }
       const { modified, untracked, stashes } = guest.worktree;
       return { exitCode: 0, stdout: `GATE head=${guest.repository.commit} modified=${modified} untracked=${untracked} stashes=${stashes} remote=${remote}\n` };
@@ -210,14 +275,23 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     // v2 ticket 12: the loss marker holder (`src/sandbox/lambda/loss-marker.ts`); the real programs run with the local bash and git in
     // `lambda-loss-marker.test.ts`. Here: who holds what, so `terminateHook` can do what the guest's hook would.
     'loss-marker-arm': (guest, request, run) => {
-      const remote = /FACTORY_MARKER_REMOTE='([^']+)'/.exec(request.script)?.[1], ref = /FACTORY_MARKER_REF='([^']+)'/.exec(request.script)?.[1];
+      const remote = /FACTORY_MARKER_REMOTE='([^']+)'/.exec(request.script)?.[1],
+        ref = /FACTORY_MARKER_REF='([^']+)'/.exec(request.script)?.[1];
       if (run.user !== 'builder' || !remote || !ref) return { exitCode: 0, stdout: 'MARKER unavailable\n' };
       guest.lossMarker = { remote, ref, token: request.environment?.FACTORY_GIT_TOKEN ?? '' };
       guest.lossMarkerArmed += 1;
       return { exitCode: 0, stdout: 'MARKER armed\n' };
     },
-    'loss-marker-disarm': guest => { guest.lossMarker = null; return { exitCode: 0, stdout: 'MARKER disarmed\n' }; },
-    evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
+    'loss-marker-disarm': guest => {
+      guest.lossMarker = null;
+      return { exitCode: 0, stdout: 'MARKER disarmed\n' };
+    },
+    evidence: guest => ({
+      exitCode: 0,
+      stdout: Object.entries(guest.logs)
+        .map(([file, text]) => `===== ${file}\n${text}\n`)
+        .join(''),
+    }),
     tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
     // v2 ticket 06: the fixed observation programs (`src/sandbox/lambda/artifacts.ts`), answered from the fake disk. The real programs are
     // exercised with a local interpreter in `lambda-artifacts.test.ts`; here only their contract (parameters in, one JSON line out) is modelled.
@@ -226,9 +300,20 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const raw = guest.files.get(`${artifacts}/review/r${round}/index.json`);
       if (raw === undefined) return answer({ status: 'unavailable', code: 'PROPOSAL_INDEX_MISSING' });
       const index = JSON.parse(raw) as { entries: { path: string; present: boolean; sha256?: string }[] };
-      const files = index.entries.map(entry => { const content = guest.files.get(`${checkout}/${entry.path}`); return [entry.path, content === undefined ? 'absent' : 'file', content === undefined ? null : sha256(content)]; });
-      const consistent = index.entries.every((entry, position) => entry.present ? files[position]![2] === (entry.sha256 ?? null) : files[position]![1] === 'absent');
-      return answer({ status: 'observed', sha256: sha256(JSON.stringify({ index: sha256(raw), files, head: guest.repository?.commit ?? null })), indexSha256: sha256(raw), entries: index.entries.length, consistent });
+      const files = index.entries.map(entry => {
+        const content = guest.files.get(`${checkout}/${entry.path}`);
+        return [entry.path, content === undefined ? 'absent' : 'file', content === undefined ? null : sha256(content)];
+      });
+      const consistent = index.entries.every((entry, position) =>
+        entry.present ? files[position]![2] === (entry.sha256 ?? null) : files[position]![1] === 'absent',
+      );
+      return answer({
+        status: 'observed',
+        sha256: sha256(JSON.stringify({ index: sha256(raw), files, head: guest.repository?.commit ?? null })),
+        indexSha256: sha256(raw),
+        entries: index.entries.length,
+        consistent,
+      });
     },
     'preserved-source': (guest, request) => {
       const [, artifacts, kind, version, file] = observationParameters(request);
@@ -236,19 +321,38 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       if (raw === undefined) return answer({ status: 'invalid', code: 'PRESERVED_SOURCE_INDEX_MISSING' });
       const listed = ((JSON.parse(raw) as { sources?: { copy?: string }[] }).sources ?? []).map(entry => (entry.copy ?? '').replace(/^\.\//, ''));
       if (!listed.includes(file!)) return answer({ status: 'invalid', code: 'PRESERVED_SOURCE_NOT_LISTED' });
-      return answer(guest.files.has(`${artifacts}/${kind}/${version}/${file}`) ? { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' } : { status: 'invalid', code: 'PRESERVED_SOURCE_MISSING' });
+      return answer(
+        guest.files.has(`${artifacts}/${kind}/${version}/${file}`)
+          ? { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' }
+          : { status: 'invalid', code: 'PRESERVED_SOURCE_MISSING' },
+      );
     },
     'collect-artifacts': (guest, request) => {
       const [, artifacts] = observationParameters(request);
-      const found = [...guest.files].filter(([path]) => ['review', 'spec', 'instructions'].some(tree => path.startsWith(`${artifacts}/${tree}/`))).sort(([left], [right]) => left < right ? -1 : 1);
-      const lines = found.map(([path, content]) => JSON.stringify({ path: path.slice(artifacts!.length + 1), data: Buffer.from(content, 'utf8').toString('base64') }));
-      return { exitCode: 0, stdout: [...lines, JSON.stringify({ status: 'success', files: found.length, bytes: found.reduce((sum, [, content]) => sum + Buffer.byteLength(content), 0) })].join('\n') + '\n' };
+      const found = [...guest.files]
+        .filter(([path]) => ['review', 'spec', 'instructions'].some(tree => path.startsWith(`${artifacts}/${tree}/`)))
+        .sort(([left], [right]) => (left < right ? -1 : 1));
+      const lines = found.map(([path, content]) =>
+        JSON.stringify({ path: path.slice(artifacts!.length + 1), data: Buffer.from(content, 'utf8').toString('base64') }),
+      );
+      return {
+        exitCode: 0,
+        stdout:
+          [
+            ...lines,
+            JSON.stringify({ status: 'success', files: found.length, bytes: found.reduce((sum, [, content]) => sum + Buffer.byteLength(content), 0) }),
+          ].join('\n') + '\n',
+      };
     },
     'artifact-seed': (guest, request, run) => {
       const [, target] = observationParameters(request);
       if (run.user !== guest.owner) return answer({ status: 'failure', code: 'ARTIFACT_SEED_UNAVAILABLE' });
       if ([...guest.files.keys()].some(path => path.startsWith(`${target}/`))) return answer({ status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' });
-      const entries = Buffer.from(request.stdin ?? []).toString('utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; data: string });
+      const entries = Buffer.from(request.stdin ?? [])
+        .toString('utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line) as { path: string; data: string });
       for (const entry of entries) guest.files.set(`${target}/${entry.path}`, Buffer.from(entry.data, 'base64').toString('utf8'));
       return answer({ status: 'written', files: entries.length });
     },
@@ -280,16 +384,46 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     const artifact = bucket && key ? fake.account.objects[bucket]?.[key]?.body : undefined;
     const declared = artifactFile(artifact, 'declared-images').split('\n').filter(Boolean);
     // The users are the image's: created by its Dockerfile, admitted by its sshd_config; the hook agent authorizes the session key for them.
-    const dockerfile = artifactFile(artifact, 'Dockerfile'), sshd = artifactFile(artifact, 'sshd_config');
+    const dockerfile = artifactFile(artifact, 'Dockerfile'),
+      sshd = artifactFile(artifact, 'sshd_config');
     const admitted = (/^AllowUsers (.+)$/m.exec(sshd)?.[1] ?? '').split(/\s+/);
-    const users = Object.fromEntries([...dockerfile.matchAll(/adduser -D -s \/bin\/bash ([a-z]+)/g)].map(([, name]) =>
-      [name!, { login: admitted.includes(name!), docker: new RegExp(`addgroup ${name} docker\\b`).test(dockerfile) }]));
+    const users = Object.fromEntries(
+      [...dockerfile.matchAll(/adduser -D -s \/bin\/bash ([a-z]+)/g)].map(([, name]) => [
+        name!,
+        { login: admitted.includes(name!), docker: new RegExp(`addgroup ${name} docker\\b`).test(dockerfile) },
+      ]),
+    );
     const owner = /chown ([a-z]+):[a-z]+ \/workspace/.exec(dockerfile)?.[1] ?? 'root';
     const dockerImages = declared.filter(reference => !world.pullFailures.includes(reference));
     const pullFailed = dockerImages.length !== declared.length;
-    const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? Object.fromEntries(Object.entries(users).filter(([, user]) => user.login).map(([name]) => [name, payload.builder!])) : {},
-      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, worktree: { modified: 0, untracked: 0, stashes: 0 }, lossMarker: null, lossMarkerArmed: 0, executions: [], processes: [],
-      logs: { '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`, '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n') } };
+    const guest: FakeGuest = {
+      microvmId: microvm.microvmId,
+      hostKey: generateSessionKey().publicKey,
+      authorized: payload.builder
+        ? Object.fromEntries(
+            Object.entries(users)
+              .filter(([, user]) => user.login)
+              .map(([name]) => [name, payload.builder!]),
+          )
+        : {},
+      files: new Map(),
+      modes: new Map(),
+      directories: new Set(),
+      users,
+      owner,
+      dockerImages,
+      pullFailed,
+      repository: null,
+      worktree: { modified: 0, untracked: 0, stashes: 0 },
+      lossMarker: null,
+      lossMarkerArmed: 0,
+      executions: [],
+      processes: [],
+      logs: {
+        '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`,
+        '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n'),
+      },
+    };
     guests.set(microvm.microvmId, guest);
     return guest;
   };
@@ -304,8 +438,13 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     if (fake.account.clock.now < microvm.runningAt + world.sshReadySeconds * 1000) return { status: 'refused', code: 'UNREACHABLE' };
     const guest = guestOf(target.endpoint)!;
     let presented: string | null = null;
-    try { presented = sessionPublicKey(readFileSync(target.identityFile, 'utf8')); } catch { /* No identity: refused below. */ }
-    if (!presented || guest.authorized[target.user] !== presented) return { status: 'refused', code: 'AUTHENTICATION_REFUSED', detail: 'Permission denied (publickey).' };
+    try {
+      presented = sessionPublicKey(readFileSync(target.identityFile, 'utf8'));
+    } catch {
+      /* No identity: refused below. */
+    }
+    if (!presented || guest.authorized[target.user] !== presented)
+      return { status: 'refused', code: 'AUTHENTICATION_REFUSED', detail: 'Permission denied (publickey).' };
     return { guest };
   };
 
@@ -320,8 +459,16 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const { guest } = admitted;
       // The client refuses a host key other than the pinned one before anything runs.
       if (guest.hostKey !== target.hostKey) return { status: 'refused', code: 'HOST_KEY_MISMATCH', detail: 'Host key verification failed.' };
-      const connection: FakeConnection = { microvmId: guest.microvmId, token: target.token, keepaliveSeconds: target.keepaliveSeconds, user: target.user, program: request.program, open: true,
-        identityFile: target.identityFile, hostKey: target.hostKey };
+      const connection: FakeConnection = {
+        microvmId: guest.microvmId,
+        token: target.token,
+        keepaliveSeconds: target.keepaliveSeconds,
+        user: target.user,
+        program: request.program,
+        open: true,
+        identityFile: target.identityFile,
+        hostKey: target.hostKey,
+      };
       connections.push(connection);
       guest.executions.push({ program: request.program, user: target.user, script: request.script, environmentNames: Object.keys(request.environment ?? {}) });
       const program = world.programs[request.program] ?? builtIn[request.program];
@@ -335,21 +482,45 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       };
       try {
         const aborted = new Promise<'aborted'>(resolve => {
-          if (options.signal?.aborted) resolve('aborted'); else options.signal?.addEventListener('abort', () => resolve('aborted'), { once: true });
+          if (options.signal?.aborted) resolve('aborted');
+          else options.signal?.addEventListener('abort', () => resolve('aborted'), { once: true });
         });
         // Cut from outside (ticket 11): the client loses the connection, nobody asked the program to stop.
         let cut!: () => void;
-        const dropped = new Promise<'aborted'>(resolve => { cut = () => resolve('aborted'); });
+        const dropped = new Promise<'aborted'>(resolve => {
+          cut = () => resolve('aborted');
+        });
         drops.add(cut);
         const gone = Promise.race([aborted, dropped]);
         const marker = request.program === 'tool' ? toolScriptPattern.exec(request.script)?.[1] : undefined;
         const process = marker ? { marker, user: target.user, state: 'running' as 'running' | 'exited' | 'killed' } : null;
-        const killed = new Promise<void>(resolve => { if (process) { guest.processes.push(process); kills.set(process, resolve); } });
-        const run: FakeRun = { user: target.user, emit: deliver, get connected() { return connection.open; },
-          disconnected: gone.then(() => { connection.open = false; }), killed };
+        const killed = new Promise<void>(resolve => {
+          if (process) {
+            guest.processes.push(process);
+            kills.set(process, resolve);
+          }
+        });
+        const run: FakeRun = {
+          user: target.user,
+          emit: deliver,
+          get connected() {
+            return connection.open;
+          },
+          disconnected: gone.then(() => {
+            connection.open = false;
+          }),
+          killed,
+        };
         const running = Promise.resolve(program ? program(guest, request, run) : { exitCode: 127, stderr: `${request.program}: not found\n` });
         // The program is a process of the guest: it ends when IT ends, whatever happened to the connection that started it.
-        void running.then(() => { if (process?.state === 'running') process.state = 'exited'; }, () => {}).finally(() => drops.delete(cut));
+        void running
+          .then(
+            () => {
+              if (process?.state === 'running') process.state = 'exited';
+            },
+            () => {},
+          )
+          .finally(() => drops.delete(cut));
         const outcome = await Promise.race([running, gone]);
         // A closed connection or a dead MicroVM gives the client no exit status; the token's expiry alone ends nothing.
         if (outcome === 'aborted') return { status: 'lost' };
@@ -357,7 +528,9 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
         if (!alive()) return { status: 'lost' };
         if (outcome.stdout) deliver(outcome.stdout);
         return { status: 'exited', exitCode: outcome.exitCode, stdout, stderr: outcome.stderr ?? '' };
-      } finally { connection.open = false; }
+      } finally {
+        connection.open = false;
+      }
     },
   };
   /**
@@ -366,11 +539,21 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
    */
   const inside = async (microvmId: string, user: string, request: GuestExecRequest) => {
     let output = '';
-    const result = await builtIn.tool!(guests.get(microvmId)!, request, { user, emit: data => { output += data.toString('utf8'); }, connected: true, disconnected: new Promise(() => {}), killed: new Promise(() => {}) });
+    const result = await builtIn.tool!(guests.get(microvmId)!, request, {
+      user,
+      emit: data => {
+        output += data.toString('utf8');
+      },
+      connected: true,
+      disconnected: new Promise(() => {}),
+      killed: new Promise(() => {}),
+    });
     return { exitCode: result.exitCode, output: output + (result.stdout?.toString('utf8') ?? '') };
   };
   /** Ticket 11: cuts every open connection as a network failure does. The programs keep running in their guests. */
-  const drop = () => { for (const cut of [...drops]) cut(); };
+  const drop = () => {
+    for (const cut of [...drops]) cut();
+  };
   /**
    * v2 ticket 12: what the guest's terminate hook does when the service ends the MicroVM (a test calls it right before `kill`): it takes
    * no parameter; an armed holder pushes the checkout's HEAD to its marker ref with the token it holds. Returns whether a push landed.
@@ -382,7 +565,12 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     guest.lossMarker = null;
     const origin = world.origins[held.remote];
     if (!origin?.push || !(typeof origin.token === 'string' ? held.token === origin.token : origin.token(held.token))) return false;
-    try { origin.push(held.ref, guest.repository.commit); return true; } catch { return false; }
+    try {
+      origin.push(held.ref, guest.repository.commit);
+      return true;
+    } catch {
+      return false;
+    }
   };
   return { world, guests, connections, transport, inside, drop, terminateHook, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
 }

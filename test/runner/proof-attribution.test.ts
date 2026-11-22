@@ -4,7 +4,7 @@ import { analyzedExactly, attribute, failingGates } from '../../scripts/test-run
 
 const report = (...failures: string[]) => [...failures.map(line => `FAILURE: ${line}`), failures.length ? 'RESULT: FAIL' : 'RESULT: PASS'].join('\n');
 
-test('a red run is a proof only for the gate it names, at the violation\'s location', () => {
+test("a red run is a proof only for the gate it names, at the violation's location", () => {
   const run = { exitCode: 1, report: report('quality gate Dependency rule (boundaries): pure-rules-imports at src/control/rules/budget.ts → node:fs') };
   assert.deepEqual(attribute(run, 'Dependency rule', 'src/control/rules/budget.ts').proved, true);
   assert.match(attribute(run, 'Context boundaries', 'src/control/rules/budget.ts').reason, /are Dependency rule, not only Context boundaries/);
@@ -26,6 +26,14 @@ test('a changed-set proof counts only when the gate analyzed exactly the declare
   const line = 'static: tsc 1.0 s, eslint (changed: src/a.ts, src/b.ts) 1.0 s FAILED, guide-pointers 0.1 s';
   assert.deepEqual(analyzedExactly('static: tsc 1.0 s, eslint (changed: src/a.ts) 1.0 s FAILED', 'eslint', ['src/a.ts']), { ok: true, analyzed: ['src/a.ts'] });
   assert.deepEqual(analyzedExactly(line, 'eslint', ['src/a.ts']), { ok: false, analyzed: ['src/a.ts', 'src/b.ts'] });
-  assert.deepEqual(analyzedExactly('static: eslint 3.0 s', 'eslint', ['src/a.ts']), { ok: false, analyzed: 'unavailable' }, 'a whole-tree run is not the declared scope');
-  assert.deepEqual(analyzedExactly('static: eslint (no changed files) 0.0 s', 'eslint', ['src/a.ts']), { ok: false, analyzed: 'unavailable' }, 'an empty scope never counts');
+  assert.deepEqual(
+    analyzedExactly('static: eslint 3.0 s', 'eslint', ['src/a.ts']),
+    { ok: false, analyzed: 'unavailable' },
+    'a whole-tree run is not the declared scope',
+  );
+  assert.deepEqual(
+    analyzedExactly('static: eslint (no changed files) 0.0 s', 'eslint', ['src/a.ts']),
+    { ok: false, analyzed: 'unavailable' },
+    'an empty scope never counts',
+  );
 });

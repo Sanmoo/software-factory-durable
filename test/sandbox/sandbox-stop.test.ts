@@ -18,20 +18,28 @@ async function refusalRecords(root: string, mismatch: 'host' | 'group' | 'namesp
   const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' };
   const unit = `factory-sandbox-${boot}.service`;
   const host = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
-  const otherHost = host === '00000000-0000-4000-8000-000000000000'
-    ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000000';
+  const otherHost = host === '00000000-0000-4000-8000-000000000000' ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000000';
   await mkdir(path, { recursive: true, mode: 0o700 });
   const json = (name: string, value: unknown) => writeFile(name, JSON.stringify(value), { mode: 0o600 });
-  await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration,
-    guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) } });
+  await json(join(directory, 'owner.json'), {
+    version: 1,
+    workId,
+    environment,
+    configuration,
+    guestAssets: { directory: join(root, 'assets'), manifestSha256: 'a'.repeat(64) },
+  });
   await json(join(directory, 'ready.json'), { environment });
-  await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, configuration,
-    hostBoot: mismatch === 'host' ? otherHost : host });
+  await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, configuration, hostBoot: mismatch === 'host' ? otherHost : host });
   const uid = process.getuid?.();
-  await json(join(path, 'started.json'), { version: 1, boot, unit, invocation: 'a'.repeat(32),
+  await json(join(path, 'started.json'), {
+    version: 1,
+    boot,
+    unit,
+    invocation: 'a'.repeat(32),
     cgroup: mismatch === 'group' ? '/foreign' : `/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}`,
     cgroupNamespace: await readlink('/proc/self/ns/cgroup'),
-    mountNamespace: mismatch === 'namespace' ? 'mnt:[0]' : await readlink('/proc/self/ns/mnt') });
+    mountNamespace: mismatch === 'namespace' ? 'mnt:[0]' : await readlink('/proc/self/ns/mnt'),
+  });
   return path;
 }
 
@@ -45,7 +53,9 @@ async function managerDouble() {
   const unit = `factory-sandbox-${boot}.service`;
   const uid = process.getuid?.();
   const group = `/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}`;
-  await writeFile(join(bin, 'systemctl'), `#!${process.execPath}
+  await writeFile(
+    join(bin, 'systemctl'),
+    `#!${process.execPath}
 import fs from 'node:fs';
 const root = ${JSON.stringify(root)}, unit = ${JSON.stringify(unit)}, group = ${JSON.stringify(group)};
 const args = process.argv.slice(2);
@@ -56,15 +66,28 @@ if (args[0] === '--user' && args[1] === 'show' && args[2] === unit && args.lengt
   fs.appendFileSync(root + '/audit', 'stop\\n');
   fs.writeFileSync(root + '/stopped', 'synthetic');
 } else { process.exitCode = 2; }
-`, { mode: 0o700 });
+`,
+    { mode: 0o700 },
+  );
   const previousPath = process.env.PATH;
   process.env.PATH = bin;
-  return { root, path, sandbox: createSandbox({ root }),
-    async audit() { try { return (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n'); } catch { return []; } },
+  return {
+    root,
+    path,
+    sandbox: createSandbox({ root }),
+    async audit() {
+      try {
+        return (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
+      } catch {
+        return [];
+      }
+    },
     async cleanup() {
-      if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
       await rm(root, { recursive: true, force: true });
-    } };
+    },
+  };
 }
 
 // Failure injection at Node's filesystem boundary, not a product/private-module mock.
@@ -73,7 +96,7 @@ async function syncBoundary(t: TestContext, root: string, path: string, beforeSy
   const prototype = Object.getPrototypeOf(probe) as FileHandle;
   const original = prototype.sync;
   await probe.close();
-  t.mock.method(prototype, 'sync', async function(this: FileHandle) {
+  t.mock.method(prototype, 'sync', async function (this: FileHandle) {
     const target = await readlink(`/proc/self/fd/${this.fd}`);
     const kind = target === join(path, 'stop-request.json') ? 'file' : target === path ? 'directory' : undefined;
     if (kind) await beforeSync(kind);
@@ -86,16 +109,28 @@ for (const evidence of ['valid', 'missing', 'foreign-boot', 'raw-fields'] as con
   test(`Sandbox.stop treats ${evidence} guest finalization as evidence, never graceful termination (manager double)`, async () => {
     const fixture = await managerDouble();
     try {
-      if (evidence !== 'missing') await writeFile(join(fixture.path, 'guest-synced.json'), JSON.stringify({
-        version: 1, boot: evidence === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
-        ...(evidence === 'raw-fields' ? { message: 'PRIVATE_FINALIZATION_CANARY' } : {}),
-      }), { mode: 0o600 });
+      if (evidence !== 'missing')
+        await writeFile(
+          join(fixture.path, 'guest-synced.json'),
+          JSON.stringify({
+            version: 1,
+            boot: evidence === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
+            ...(evidence === 'raw-fields' ? { message: 'PRIVATE_FINALIZATION_CANARY' } : {}),
+          }),
+          { mode: 0o600 },
+        );
       const stopped = await fixture.sandbox.stop({ environment, boot, reason: 'pause' });
-      assert.deepEqual(stopped, { status: 'success', cessationConfirmed: true,
-        termination: 'unconfirmed', guestFinalization: evidence === 'valid' ? 'observed' : 'unavailable',
-        guestShutdown: { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' } });
+      assert.deepEqual(stopped, {
+        status: 'success',
+        cessationConfirmed: true,
+        termination: 'unconfirmed',
+        guestFinalization: evidence === 'valid' ? 'observed' : 'unavailable',
+        guestShutdown: { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' },
+      });
       assert.equal(JSON.stringify(stopped).includes('PRIVATE_FINALIZATION_CANARY'), false);
-    } finally { await fixture.cleanup(); }
+    } finally {
+      await fixture.cleanup();
+    }
   });
 }
 
@@ -104,35 +139,61 @@ for (const record of ['clean', 'timeout', 'foreign-boot', 'invalid'] as const) {
   test(`ticket 47: Sandbox.stop reports the guest stop result from the boot record: ${record} (manager double)`, async () => {
     const fixture = await managerDouble();
     try {
-      await writeFile(join(fixture.path, 'guest-stop.json'), JSON.stringify({ version: 1,
-        boot: record === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
-        ...(record === 'clean' || record === 'foreign-boot' ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
-          : record === 'timeout' ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' } : { result: 'clean', reason: 'TRUST_ME' }) }), { mode: 0o600 });
+      await writeFile(
+        join(fixture.path, 'guest-stop.json'),
+        JSON.stringify({
+          version: 1,
+          boot: record === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
+          ...(record === 'clean' || record === 'foreign-boot'
+            ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
+            : record === 'timeout'
+              ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' }
+              : { result: 'clean', reason: 'TRUST_ME' }),
+        }),
+        { mode: 0o600 },
+      );
       const stopped = await fixture.sandbox.stop({ environment, boot, reason: 'builder execution ended' });
       assert.equal(stopped.status, 'success');
       if (stopped.status !== 'success') return;
-      assert.deepEqual(stopped.guestShutdown, record === 'clean' ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
-        : record === 'timeout' ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' } : { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' });
-    } finally { await fixture.cleanup(); }
+      assert.deepEqual(
+        stopped.guestShutdown,
+        record === 'clean'
+          ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
+          : record === 'timeout'
+            ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' }
+            : { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' },
+      );
+    } finally {
+      await fixture.cleanup();
+    }
   });
 }
 
 for (const failedSync of ['file', 'directory'] as const) {
-  test(`Sandbox.stop retry re-establishes file and directory durability after ${failedSync} sync failure (manager double)`, { timeout: remainingMs() }, async t => {
-    const fixture = await managerDouble();
-    try {
-      let fail = true;
-      await syncBoundary(t, fixture.root, fixture.path, async kind => {
-        if (kind === failedSync && fail) { fail = false; throw new Error('INJECTED_SYNC_FAILURE'); }
-      });
-      assert.deepEqual(await fixture.sandbox.stop({ environment, boot, reason: 'pause' }), unknown);
-      assert.equal((await fixture.audit()).includes('stop'), false);
-      assert.equal(JSON.parse(await readFile(join(fixture.path, 'stop-request.json'), 'utf8')).boot, boot);
-      const retried = await fixture.sandbox.stop({ environment, boot, reason: 'pause' });
-      assert.equal(retried.status, 'success'); // Success against a double, not a VM.
-      assert.deepEqual((await fixture.audit()).slice(-3), ['file-synced', 'directory-synced', 'stop']);
-    } finally { await fixture.cleanup(); }
-  });
+  test(
+    `Sandbox.stop retry re-establishes file and directory durability after ${failedSync} sync failure (manager double)`,
+    { timeout: remainingMs() },
+    async t => {
+      const fixture = await managerDouble();
+      try {
+        let fail = true;
+        await syncBoundary(t, fixture.root, fixture.path, async kind => {
+          if (kind === failedSync && fail) {
+            fail = false;
+            throw new Error('INJECTED_SYNC_FAILURE');
+          }
+        });
+        assert.deepEqual(await fixture.sandbox.stop({ environment, boot, reason: 'pause' }), unknown);
+        assert.equal((await fixture.audit()).includes('stop'), false);
+        assert.equal(JSON.parse(await readFile(join(fixture.path, 'stop-request.json'), 'utf8')).boot, boot);
+        const retried = await fixture.sandbox.stop({ environment, boot, reason: 'pause' });
+        assert.equal(retried.status, 'success'); // Success against a double, not a VM.
+        assert.deepEqual((await fixture.audit()).slice(-3), ['file-synced', 'directory-synced', 'stop']);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 }
 
 for (const failedSync of ['file', 'directory'] as const) {
@@ -145,7 +206,9 @@ for (const failedSync of ['file', 'directory'] as const) {
       });
       assert.deepEqual(await fixture.sandbox.stop({ environment, boot, reason: 'pause' }), unknown);
       assert.equal((await fixture.audit()).includes('stop'), false);
-    } finally { await fixture.cleanup(); }
+    } finally {
+      await fixture.cleanup();
+    }
   });
 }
 
@@ -153,13 +216,20 @@ test('Sandbox.stop concurrent retry independently syncs a still-publishing reque
   const fixture = await managerDouble();
   let release!: () => void;
   let entered!: () => void;
-  const blocked = new Promise<void>(resolve => { release = resolve; });
-  const atSync = new Promise<void>(resolve => { entered = resolve; });
+  const blocked = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  const atSync = new Promise<void>(resolve => {
+    entered = resolve;
+  });
   let first: ReturnType<typeof fixture.sandbox.stop> | undefined;
   try {
     let fileSyncs = 0;
     await syncBoundary(t, fixture.root, fixture.path, async kind => {
-      if (kind === 'file' && fileSyncs++ === 0) { entered(); await blocked; }
+      if (kind === 'file' && fileSyncs++ === 0) {
+        entered();
+        await blocked;
+      }
     });
     first = fixture.sandbox.stop({ environment, boot, reason: 'pause' });
     await atSync;
@@ -176,19 +246,29 @@ test('Sandbox.stop concurrent retry independently syncs a still-publishing reque
 test('Sandbox.stop leaves an unknown environment untouched and never confirms cessation from missing records', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-stop-'));
   try {
-    assert.deepEqual(await createSandbox({ root }).stop({ environment, boot, reason: 'pause' }),
-      { status: 'indeterminate', code: 'ENVIRONMENT_STOP_UNCONFIRMED', cessationConfirmed: false });
+    assert.deepEqual(await createSandbox({ root }).stop({ environment, boot, reason: 'pause' }), {
+      status: 'indeterminate',
+      code: 'ENVIRONMENT_STOP_UNCONFIRMED',
+      cessationConfirmed: false,
+    });
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.stop rejects an invalid reason before effects', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-stop-'));
   try {
-    assert.deepEqual(await createSandbox({ root }).stop({ environment, boot, reason: '' }),
-      { status: 'failure', code: 'STOP_REASON_INVALID', cessationConfirmed: false });
+    assert.deepEqual(await createSandbox({ root }).stop({ environment, boot, reason: '' }), {
+      status: 'failure',
+      code: 'STOP_REASON_INVALID',
+      cessationConfirmed: false,
+    });
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Sandbox.stop refuses an invalid boot reference without traversing it', async () => {
@@ -196,7 +276,9 @@ test('Sandbox.stop refuses an invalid boot reference without traversing it', asy
   try {
     assert.deepEqual(await createSandbox({ root }).stop({ environment, boot: '../foreign' as BootRef, reason: 'pause' }), unknown);
     assert.deepEqual(await readdir(root), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 for (const mismatch of ['host', 'group', 'namespace'] as const) {
@@ -208,6 +290,8 @@ for (const mismatch of ['host', 'group', 'namespace'] as const) {
       assert.deepEqual(await createSandbox({ root }).stop({ environment, boot, reason: 'pause' }), unknown);
       assert.equal(await readFile(join(path, 'started.json'), 'utf8'), before);
       assert.deepEqual((await readdir(path)).sort(), ['identity.json', 'started.json']);
-    } finally { await rm(root, { recursive: true, force: true }); }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 }

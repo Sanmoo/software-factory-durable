@@ -7,30 +7,66 @@ import type { WorkRecord } from './admission.js';
  * queue position as ONE pending operational recovery, with the persisted wait derived from the recoveries already consumed. A repeated
  * request keeps the pending one (no earlier deadline, no second unit); an exhausted counter becomes the visible impediment at once.
  */
-export function applyRecoveryRequest(work: WorkRecord, input: { executionId: string | null; code: string; at: string; serviceSeconds?: number | null; reason?: string }) {
+export function applyRecoveryRequest(
+  work: WorkRecord,
+  input: { executionId: string | null; code: string; at: string; serviceSeconds?: number | null; reason?: string },
+) {
   // Assign then read back: the stored record, never the detached value `??=` returns.
   if (!work.budget) work.budget = initialBudget({}, work.repository.repository, input.at);
   const budget = work.budget;
   const pending = work.pendingRecovery;
-  const decision = recoveryRequest({ pending: pending ? { notBeforeMs: pending.notBefore ? Date.parse(pending.notBefore) : null, requestedAtMs: Date.parse(pending.requestedAt) } : null,
-    consumed: budget.recoveries.consumed, requestedAtMs: Date.parse(input.at), serviceSeconds: input.serviceSeconds ?? null });
+  const decision = recoveryRequest({
+    pending: pending ? { notBeforeMs: pending.notBefore ? Date.parse(pending.notBefore) : null, requestedAtMs: Date.parse(pending.requestedAt) } : null,
+    consumed: budget.recoveries.consumed,
+    requestedAtMs: Date.parse(input.at),
+    serviceSeconds: input.serviceSeconds ?? null,
+  });
   const reason = input.reason ?? `interrupted:${input.code}`;
   if (decision.kind === 'keep') {
-    work.history.push({ at: input.at, event: 'recovery-wait-kept', origin: 'controller-recovery', executionId: input.executionId, detail: `${reason.slice(0, 160)}; notBefore ${pending!.notBefore}` });
+    work.history.push({
+      at: input.at,
+      event: 'recovery-wait-kept',
+      origin: 'controller-recovery',
+      executionId: input.executionId,
+      detail: `${reason.slice(0, 160)}; notBefore ${pending!.notBefore}`,
+    });
   } else {
-    work.pendingRecovery = { ...(pending ?? { reason, requestedAt: input.at, executionId: input.executionId }), notBefore: new Date(decision.notBeforeMs).toISOString(),
-      waitSeconds: decision.waitSeconds, attempt: decision.attempt };
-    work.history.push(decision.kind === 'fill'
-      ? { at: input.at, event: 'recovery-wait-kept', origin: 'controller-recovery', executionId: input.executionId, detail: `${reason.slice(0, 160)}; notBefore ${work.pendingRecovery.notBefore}` }
-      : { at: input.at, event: 'recovery-requested', origin: 'controller-budget', executionId: input.executionId, detail: `${reason.slice(0, 160)}; wait ${decision.waitSeconds}s` });
+    work.pendingRecovery = {
+      ...(pending ?? { reason, requestedAt: input.at, executionId: input.executionId }),
+      notBefore: new Date(decision.notBeforeMs).toISOString(),
+      waitSeconds: decision.waitSeconds,
+      attempt: decision.attempt,
+    };
+    work.history.push(
+      decision.kind === 'fill'
+        ? {
+            at: input.at,
+            event: 'recovery-wait-kept',
+            origin: 'controller-recovery',
+            executionId: input.executionId,
+            detail: `${reason.slice(0, 160)}; notBefore ${work.pendingRecovery.notBefore}`,
+          }
+        : {
+            at: input.at,
+            event: 'recovery-requested',
+            origin: 'controller-budget',
+            executionId: input.executionId,
+            detail: `${reason.slice(0, 160)}; wait ${decision.waitSeconds}s`,
+          },
+    );
   }
   if (availableOf(budget.recoveries) === 0 && !work.impediments.some(item => item.code === exhaustionCodes.recoveries)) {
     work.impediments.push(exhaustionImpediment('recoveries', work.work_id, input.at));
-    work.history.push({ at: input.at, event: 'budget-exhausted', origin: 'controller-budget', executionId: null,
-      detail: `recoveries:${budget.recoveries.consumed}/${budget.recoveries.limit + budget.recoveries.granted}` });
+    work.history.push({
+      at: input.at,
+      event: 'budget-exhausted',
+      origin: 'controller-budget',
+      executionId: null,
+      detail: `recoveries:${budget.recoveries.consumed}/${budget.recoveries.limit + budget.recoveries.granted}`,
+    });
   }
   work.queue = { ...work.queue, pending: true };
-  return decision.kind === 'keep' ? 'already-open' as const : 'requested' as const;
+  return decision.kind === 'keep' ? ('already-open' as const) : ('requested' as const);
 }
 
 /**
@@ -42,17 +78,40 @@ export function applyContinuationRequest(work: WorkRecord, input: { executionId:
   if (!work.budget) work.budget = initialBudget({}, work.repository.repository, input.at);
   const counter = counterOf(work.budget, 'continuations');
   if (work.pendingRecovery) {
-    work.history.push({ at: input.at, event: 'recovery-wait-kept', origin: 'controller-recovery', executionId: input.executionId, detail: `budget-continuation:${input.code}; pending kept` });
+    work.history.push({
+      at: input.at,
+      event: 'recovery-wait-kept',
+      origin: 'controller-recovery',
+      executionId: input.executionId,
+      detail: `budget-continuation:${input.code}; pending kept`,
+    });
   } else {
-    work.pendingRecovery = { reason: `budget-continuation:${input.code}`, requestedAt: input.at, executionId: input.executionId, notBefore: input.at, waitSeconds: 0,
-      attempt: counter.consumed, kind: 'budget-continuation' };
-    work.history.push({ at: input.at, event: 'continuation-requested', origin: 'controller-budget', executionId: input.executionId,
-      detail: `${input.detail}; continuations ${counter.consumed}/${counter.limit + counter.granted}`.slice(0, 512) });
+    work.pendingRecovery = {
+      reason: `budget-continuation:${input.code}`,
+      requestedAt: input.at,
+      executionId: input.executionId,
+      notBefore: input.at,
+      waitSeconds: 0,
+      attempt: counter.consumed,
+      kind: 'budget-continuation',
+    };
+    work.history.push({
+      at: input.at,
+      event: 'continuation-requested',
+      origin: 'controller-budget',
+      executionId: input.executionId,
+      detail: `${input.detail}; continuations ${counter.consumed}/${counter.limit + counter.granted}`.slice(0, 512),
+    });
   }
   if (availableOf(counter) === 0 && !work.impediments.some(item => item.code === exhaustionCodes.continuations)) {
     work.impediments.push(exhaustionImpediment('continuations', work.work_id, input.at));
-    work.history.push({ at: input.at, event: 'budget-exhausted', origin: 'controller-budget', executionId: null,
-      detail: `continuations:${counter.consumed}/${counter.limit + counter.granted}` });
+    work.history.push({
+      at: input.at,
+      event: 'budget-exhausted',
+      origin: 'controller-budget',
+      executionId: null,
+      detail: `continuations:${counter.consumed}/${counter.limit + counter.granted}`,
+    });
   }
   work.queue = { ...work.queue, pending: true };
 }
@@ -65,10 +124,22 @@ export function applyBootDeferral(work: WorkRecord, input: { executionId: string
   const attempt = work.bootDeferral ? work.bootDeferral.attempt + 1 : 0;
   const waitSeconds = bootCapacityWait(attempt);
   const notBefore = new Date(Date.parse(input.at) + waitSeconds * 1000).toISOString();
-  work.bootDeferral = { code: input.code, executionId: input.executionId, requestedAt: input.at, notBefore, waitSeconds, attempt,
-    ...(input.detail ? { detail: input.detail.slice(0, 512) } : {}) };
-  work.history.push({ at: input.at, event: 'boot-deferred', origin: 'controller-recovery', executionId: input.executionId,
-    detail: `${input.code}${input.detail ? ` (${input.detail.slice(0, 256)})` : ''}; capacity wait ${waitSeconds}s (attempt ${attempt + 1}); nothing started, nothing charged` });
+  work.bootDeferral = {
+    code: input.code,
+    executionId: input.executionId,
+    requestedAt: input.at,
+    notBefore,
+    waitSeconds,
+    attempt,
+    ...(input.detail ? { detail: input.detail.slice(0, 512) } : {}),
+  };
+  work.history.push({
+    at: input.at,
+    event: 'boot-deferred',
+    origin: 'controller-recovery',
+    executionId: input.executionId,
+    detail: `${input.code}${input.detail ? ` (${input.detail.slice(0, 256)})` : ''}; capacity wait ${waitSeconds}s (attempt ${attempt + 1}); nothing started, nothing charged`,
+  });
   work.queue = { ...work.queue, pending: true };
 }
 

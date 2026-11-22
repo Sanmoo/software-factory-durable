@@ -17,7 +17,10 @@ export const fingerprintLimits = Object.freeze({ entries: 100_000, metadataBytes
  * working tree (path, kind, size, mtime). Two fingerprints differ when commits were made or the checkout changed between them. It is not a
  * freeze nor proof against a hostile writer; it only decides continuation vs recovery after a budget end (both bounded by counters).
  */
-export async function fingerprintCheckout(environmentDirectory: string, limits: { entries: number; metadataBytes: number } = fingerprintLimits): Promise<CheckoutFingerprint> {
+export async function fingerprintCheckout(
+  environmentDirectory: string,
+  limits: { entries: number; metadataBytes: number } = fingerprintLimits,
+): Promise<CheckoutFingerprint> {
   try {
     const checkout = join(await realpath(environmentDirectory), 'workspace', 'checkout');
     const headBytes = await readConfinedAt(checkout, '.git/HEAD', 4096);
@@ -30,19 +33,30 @@ export async function fingerprintCheckout(environmentDirectory: string, limits: 
       const observed = await observeConfined(checkout, `.git/${name}`, limits.metadataBytes).catch(() => ({ kind: 'unsafe' as const }));
       git[name] = 'sha256' in observed ? `${observed.kind}:${observed.sha256}` : observed.kind;
     }
-    const ref = branch ? (await readConfinedAt(checkout, `.git/${branch}`, 4096).catch(() => null))?.toString('utf8').trim()
-      ?? (await readConfinedAt(checkout, '.git/packed-refs', limits.metadataBytes).catch(() => null))?.toString('utf8').split('\n')
-        .find(line => line.endsWith(` ${branch}`))?.split(' ')[0] ?? null : /^[0-9a-f]{40,64}$/.test(head) ? head : null;
+    const ref = branch
+      ? ((await readConfinedAt(checkout, `.git/${branch}`, 4096).catch(() => null))?.toString('utf8').trim() ??
+        (await readConfinedAt(checkout, '.git/packed-refs', limits.metadataBytes).catch(() => null))
+          ?.toString('utf8')
+          .split('\n')
+          .find(line => line.endsWith(` ${branch}`))
+          ?.split(' ')[0] ??
+        null)
+      : /^[0-9a-f]{40,64}$/.test(head)
+        ? head
+        : null;
     const tree = createHash('sha256');
     let entries = 0;
     let bounded = true;
     const walk = async (relative: string): Promise<void> => {
       if (!bounded) return;
       const listed = await readdir(join(checkout, relative), { withFileTypes: true });
-      listed.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      listed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       for (const entry of listed) {
         if (fingerprintSkipped.includes(entry.name) && (entry.isDirectory() || !relative)) continue;
-        if (++entries > limits.entries) { bounded = false; return; }
+        if (++entries > limits.entries) {
+          bounded = false;
+          return;
+        }
         const path = relative ? `${relative}/${entry.name}` : entry.name;
         // lstat: never follows a link; the link itself (size/mtime) is what is fingerprinted.
         const info = await lstat(join(checkout, path), { bigint: true });
@@ -52,8 +66,15 @@ export async function fingerprintCheckout(environmentDirectory: string, limits: 
       }
     };
     await walk('');
-    return { status: 'observed', head, ref, git: createHash('sha256').update(JSON.stringify(git)).digest('hex'), tree: bounded ? tree.digest('hex') : null,
-      entries: Math.min(entries, limits.entries), observedAt: new Date().toISOString() };
+    return {
+      status: 'observed',
+      head,
+      ref,
+      git: createHash('sha256').update(JSON.stringify(git)).digest('hex'),
+      tree: bounded ? tree.digest('hex') : null,
+      entries: Math.min(entries, limits.entries),
+      observedAt: new Date().toISOString(),
+    };
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'CONFINED_PATH_UNSAFE') return { status: 'unavailable', code: 'CHECKOUT_PATH_UNSAFE' };

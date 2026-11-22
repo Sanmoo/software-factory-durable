@@ -16,22 +16,45 @@ export function checksTarget(work: WorkRecord): ChecksTarget | null {
   const publication = work.result === 'open' && work.publication?.state === 'published' ? work.publication : null;
   const pull = publication?.pullRequest;
   if (!publication || !pull) return null;
-  return { number: pull.number, nodeId: pull.nodeId, expect: {
-    own: { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, headRef: pull.headRef, base: publication.base, authorId: pull.author.id },
-    repositoryId: work.repository.repositoryId, linkedHeads: [...new Set([pull.headSha, ...(publication.linkedHeads ?? [])])].slice(0, 20),
-    localRequiredChecks: [...(publication.verified?.requiredChecks ?? [])].slice(0, 32) } };
+  return {
+    number: pull.number,
+    nodeId: pull.nodeId,
+    expect: {
+      own: {
+        pullRequestId: pull.pullRequestId,
+        nodeId: pull.nodeId,
+        number: pull.number,
+        headRef: pull.headRef,
+        base: publication.base,
+        authorId: pull.author.id,
+      },
+      repositoryId: work.repository.repositoryId,
+      linkedHeads: [...new Set([pull.headSha, ...(publication.linkedHeads ?? [])])].slice(0, 20),
+      localRequiredChecks: [...(publication.verified?.requiredChecks ?? [])].slice(0, 32),
+    },
+  };
 }
 
-const codes = (evaluation: ChecksEvaluation) => evaluation.reasons.map(reason => `${reason.category}:${reason.code}${reason.subject ? `:${reason.subject}` : ''}`);
-const summary = (evaluation: ChecksEvaluation): ChecksView['history'][number] =>
-  ({ at: evaluation.at, headSha: evaluation.pullRequest.headSha, outcome: evaluation.outcome, reasons: codes(evaluation) });
+const codes = (evaluation: ChecksEvaluation) =>
+  evaluation.reasons.map(reason => `${reason.category}:${reason.code}${reason.subject ? `:${reason.subject}` : ''}`);
+const summary = (evaluation: ChecksEvaluation): ChecksView['history'][number] => ({
+  at: evaluation.at,
+  headSha: evaluation.pullRequest.headSha,
+  outcome: evaluation.outcome,
+  reasons: codes(evaluation),
+});
 
 /**
  * Records one explanation for the PR it was computed for: only while the Work is still open, current and linked to that SAME own PR.
  * An identical explanation replaces the latest one; a different one (outcome, head or reasons) pushes the previous one to the bounded
  * history and appends one history event. Never touches queue, Slots, impediments or the publication record.
  */
-export async function recordChecks(session: Session, work_id: string, target: Pick<ChecksTarget, 'number' | 'nodeId'>, evaluation: ChecksEvaluation): Promise<'recorded' | 'stale'> {
+export async function recordChecks(
+  session: Session,
+  work_id: string,
+  target: Pick<ChecksTarget, 'number' | 'nodeId'>,
+  evaluation: ChecksEvaluation,
+): Promise<'recorded' | 'stale'> {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const document = await tx.doc(works, work_id, null);
@@ -40,12 +63,24 @@ export async function recordChecks(session: Session, work_id: string, target: Pi
     const current = checksTarget(work);
     if (!current || current.number !== target.number || current.nodeId !== target.nodeId) return 'stale' as const;
     const previous = work.checks?.latest ?? null;
-    const changed = !previous || previous.outcome !== evaluation.outcome || previous.pullRequest.headSha !== evaluation.pullRequest.headSha ||
+    const changed =
+      !previous ||
+      previous.outcome !== evaluation.outcome ||
+      previous.pullRequest.headSha !== evaluation.pullRequest.headSha ||
       JSON.stringify(codes(previous)) !== JSON.stringify(codes(evaluation));
     const history = work.checks?.history ?? [];
     work.checks = { latest: evaluation, history: changed && previous ? [...history, summary(previous)].slice(-10) : history };
-    if (changed) work.history.push({ at: evaluation.at, event: 'checks-evaluated', origin: 'controller-checks',
-      detail: `${evaluation.outcome}@${evaluation.pullRequest.headSha ?? 'unknown'}:${evaluation.reasons.map(reason => `${reason.code}${reason.subject ? `:${reason.subject}` : ''}`).join(',')}`.slice(0, 512) });
+    if (changed)
+      work.history.push({
+        at: evaluation.at,
+        event: 'checks-evaluated',
+        origin: 'controller-checks',
+        detail:
+          `${evaluation.outcome}@${evaluation.pullRequest.headSha ?? 'unknown'}:${evaluation.reasons.map(reason => `${reason.code}${reason.subject ? `:${reason.subject}` : ''}`).join(',')}`.slice(
+            0,
+            512,
+          ),
+      });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }
@@ -57,12 +92,26 @@ const stable = new Set<ChecksEvaluation['outcome']>(['satisfied', 'failing', 'bl
 const waitOf = (observation: ChecksObservation | { kind: 'unchanged' }) => {
   if (observation.kind === 'unchanged') return 0;
   if (observation.kind === 'unavailable') return observation.waitSeconds ?? 0;
-  const reads = [observation.baseTip, observation.classic, observation.rules, observation.checkRuns, observation.statuses, observation.comparison, observation.recheck,
-    observation.final.baseTip, observation.final.classic, observation.final.rules];
-  return Math.max(0, ...reads.map(read => read && read.state === 'unknown' ? read.waitSeconds ?? 0 : 0));
+  const reads = [
+    observation.baseTip,
+    observation.classic,
+    observation.rules,
+    observation.checkRuns,
+    observation.statuses,
+    observation.comparison,
+    observation.recheck,
+    observation.final.baseTip,
+    observation.final.classic,
+    observation.final.rules,
+  ];
+  return Math.max(0, ...reads.map(read => (read && read.state === 'unknown' ? (read.waitSeconds ?? 0) : 0)));
 };
 
-export type ChecksTrackerOptions = { session: Session; access: AccessDependencies; readWorks(): Promise<WorkRecord[]>; busy(work_id: string): boolean;
+export type ChecksTrackerOptions = {
+  session: Session;
+  access: AccessDependencies;
+  readWorks(): Promise<WorkRecord[]>;
+  busy(work_id: string): boolean;
   /** Monotonic clock (the polling clock in production). */
   clock?: { monotonic(): number };
   /** Per-Work minimum interval between reads (production: the polling interval). */
@@ -73,7 +122,8 @@ export type ChecksTrackerOptions = { session: Session; access: AccessDependencie
   /** At most this many PR reads per pass. */
   perPass?: number;
   /** Rate bound per unit of time: at most `reads` FULL collections per `ms` (sliding window) for the whole installation. */
-  window?: { ms: number; reads: number } };
+  window?: { ms: number; reads: number };
+};
 
 /**
  * The checks tracking pass, run by the owner loop AFTER each polling cycle and its dispatch tick (never on the dispatch critical path).
@@ -93,39 +143,64 @@ export function createChecksTracker(deps: ChecksTrackerOptions) {
     async pass(signal: AbortSignal) {
       const now = clock.monotonic();
       while (full.length && full[0]! <= now - window.ms) full.shift();
-      const due = (await deps.readWorks()).flatMap(work => {
-        const target = checksTarget(work);
-        const active = work.execution?.state === 'reserved' || work.execution?.state === 'started';
-        const at = schedule.get(work.work_id)?.dueAt ?? Number.NEGATIVE_INFINITY;
-        return target && !active && !deps.busy(work.work_id) && at <= now ? [{ work, target, at }] : [];
-      }).sort((a, b) => a.at - b.at);
+      const due = (await deps.readWorks())
+        .flatMap(work => {
+          const target = checksTarget(work);
+          const active = work.execution?.state === 'reserved' || work.execution?.state === 'started';
+          const at = schedule.get(work.work_id)?.dueAt ?? Number.NEGATIVE_INFINITY;
+          return target && !active && !deps.busy(work.work_id) && at <= now ? [{ work, target, at }] : [];
+        })
+        .sort((a, b) => a.at - b.at);
       let reads = 0;
       for (const { work, target } of due) {
         if (signal.aborted || reads >= perPass) return;
         const state = schedule.get(work.work_id) ?? { dueAt: 0, fullDueAt: Number.NEGATIVE_INFINITY, failures: 0 };
         const latest = work.checks?.latest ?? null;
-        const light = latest !== null && stable.has(latest.outcome) && latest.pullRequest.headSha !== null && latest.pullRequest.baseRef !== null && now < state.fullDueAt;
+        const light =
+          latest !== null && stable.has(latest.outcome) && latest.pullRequest.headSha !== null && latest.pullRequest.baseRef !== null && now < state.fullDueAt;
         if (!light && full.length >= window.reads) continue;
         reads++;
         const configured = deps.access.repositories.find(item => item.repository.toLowerCase() === work.repository.repository.toLowerCase());
-        const unavailable = (code: string): ChecksObservation => ({ kind: 'unavailable', source: 'github-rest', observedAt: new Date().toISOString(),
-          repository: work.repository.repository, code, nextStep: 'Nothing about the checks is concluded; a later cycle reads again.' });
+        const unavailable = (code: string): ChecksObservation => ({
+          kind: 'unavailable',
+          source: 'github-rest',
+          observedAt: new Date().toISOString(),
+          repository: work.repository.repository,
+          code,
+          nextStep: 'Nothing about the checks is concluded; a later cycle reads again.',
+        });
         let observation: ChecksObservation | { kind: 'unchanged' };
         if (!configured) observation = unavailable('REPOSITORY_NOT_CONFIGURED');
         else {
           try {
-            observation = await deps.access.repository.readPullRequest({ repo: configured, number: target.number,
-              ...(light ? { unless: { headSha: latest.pullRequest.headSha!, baseRef: latest.pullRequest.baseRef!,
-                // Ticket 16: a draft/ready flip (e.g. a human draft) makes the light read a full one.
-                ...(latest.pullRequest.draft !== null ? { draft: latest.pullRequest.draft } : {}) } } : {}) });
-          } catch { observation = unavailable('PULL_REQUEST_QUERY_FAILED'); }
+            observation = await deps.access.repository.readPullRequest({
+              repo: configured,
+              number: target.number,
+              ...(light
+                ? {
+                    unless: {
+                      headSha: latest.pullRequest.headSha!,
+                      baseRef: latest.pullRequest.baseRef!,
+                      // Ticket 16: a draft/ready flip (e.g. a human draft) makes the light read a full one.
+                      ...(latest.pullRequest.draft !== null ? { draft: latest.pullRequest.draft } : {}),
+                    },
+                  }
+                : {}),
+            });
+          } catch {
+            observation = unavailable('PULL_REQUEST_QUERY_FAILED');
+          }
         }
         if (signal.aborted) return;
         // Every full collection counts against the window, including a light read that found a new head (the adapter then reads everything).
         if (observation.kind !== 'unchanged') full.push(now);
         const failures = observation.kind === 'unavailable' ? state.failures + 1 : 0;
         const delay = Math.max(minIntervalMs * 2 ** Math.min(failures, 4), waitOf(observation) * 1000);
-        schedule.set(work.work_id, { dueAt: now + delay, failures, fullDueAt: observation.kind === 'observed' ? now + stableIntervalMs : observation.kind === 'unchanged' ? state.fullDueAt : 0 });
+        schedule.set(work.work_id, {
+          dueAt: now + delay,
+          failures,
+          fullDueAt: observation.kind === 'observed' ? now + stableIntervalMs : observation.kind === 'unchanged' ? state.fullDueAt : 0,
+        });
         if (observation.kind === 'unchanged') continue;
         const evaluation = evaluateChecks({ at: new Date().toISOString(), expect: target.expect, observation });
         if (latest && checksFingerprint(latest) === checksFingerprint(evaluation)) continue;

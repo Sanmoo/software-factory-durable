@@ -12,15 +12,21 @@ const mode = process.argv[3] ?? 'timeout';
 const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3)] });
 const time = manualClock();
 const monotonic = executionClock();
-const doubles = budgetDoubles([mode === 'proven' ? { kind: 'handoff', beforeHandoff: () => monotonic.jump(130000) } : { kind: 'hang' }],
-  { clock: monotonic.clock, reviews: mode === 'proven' });
-const control = await openControl({ storagePath, runtimeInventory: 'empty', execution: doubles.ports,
+const doubles = budgetDoubles([mode === 'proven' ? { kind: 'handoff', beforeHandoff: () => monotonic.jump(130000) } : { kind: 'hang' }], {
+  clock: monotonic.clock,
+  reviews: mode === 'proven',
+});
+const control = await openControl({
+  storagePath,
+  runtimeInventory: 'empty',
+  execution: doubles.ports,
   access: { tracker: github.tracker, repository: github.repository, repositories: [{ ...scope, ...(mode === 'none' ? {} : { timeoutSeconds: 120 }) }] },
-  polling: { intervalSeconds: 60, clock: time.clock } });
+  polling: { intervalSeconds: 60, clock: time.clock },
+});
 void control.run(new AbortController().signal);
 await time.sleeping();
 for (;;) {
-  const execution = (await control.inspect({ kind: 'list' }) as ListView).works[0]?.execution;
+  const execution = ((await control.inspect({ kind: 'list' })) as ListView).works[0]?.execution;
   if (execution?.state === 'started' && (mode !== 'proven' || execution.timing?.lastActivity?.event.startsWith('reviewer-started'))) break;
   await new Promise(resolve => setTimeout(resolve, 5));
 }

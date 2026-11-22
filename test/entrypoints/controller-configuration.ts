@@ -5,7 +5,9 @@ import { setup } from '../../src/entrypoints/setup.js';
 /** Complete synthetic configuration; no repositories, credentials, models or sandbox are used by these tests. */
 export async function prepareController(root: string): Promise<void> {
   await setup(root);
-  await writeFile(join(root, 'config.yaml'), `schemaVersion: 1
+  await writeFile(
+    join(root, 'config.yaml'),
+    `schemaVersion: 1
 operators: []
 models:
   builder: {provider: synthetic, model: unused}
@@ -14,5 +16,7 @@ models:
 githubApp: {appId: 1, privateKeyFile: credentials/unused.pem}
 sandbox: {schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1}
 repositories: []
-`, { mode: 0o600 });
+`,
+    { mode: 0o600 },
+  );
 }

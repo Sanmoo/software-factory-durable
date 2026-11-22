@@ -14,8 +14,13 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const content = JSON.parse(body).messages.find((m: { role: string }) => m.role === 'user').content;
   const mode: string = typeof content === 'string' ? content : content.map((c: { text: string }) => c.text).join('');
   const disabled = ['absent', 'standards', 'spec'].includes(mode);
-  const tools = JSON.parse(body).tools.map((t: { function: { name: string } }) => t.function.name).sort();
-  assert.deepEqual(tools, mode === 'standards' || mode === 'spec' ? ['read'] : disabled ? ['ask_user', 'bash', 'write'] : ['ask_user', 'bash', 'edit', 'write']);
+  const tools = JSON.parse(body)
+    .tools.map((t: { function: { name: string } }) => t.function.name)
+    .sort();
+  assert.deepEqual(
+    tools,
+    mode === 'standards' || mode === 'spec' ? ['read'] : disabled ? ['ask_user', 'bash', 'write'] : ['ask_user', 'bash', 'edit', 'write'],
+  );
   const critical = ['uncertain', 'persist', 'cancel', 'eof'].includes(mode);
   // Ticket 46: a capture refused before effect (source over the 0-byte budget, or holding a known secret) reaches the model as an
   // ordinary tool error naming the Host limit (never the secret).
@@ -23,13 +28,37 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   if (mode === 'budget' && requests === 2) assert.match(body, /EDIT_SOURCE_NOT_LOSSLESS: the file exceeds the edit source limit of 0 bytes/);
   assert.ok(requests <= (critical || disabled ? 1 : mode === 'mismatch' || mode === 'no-match' ? 3 : 2), 'no provider continuation after critical Edit');
   process.send?.({ kind: 'provider-validated', count: requests });
-  const edit = (id: string, oldText: string) => ({ id, type: 'function', function: { name: 'edit', arguments: JSON.stringify({ path: 'source', edits: [{ oldText, newText: 'new' }], editSourceMaxBytes: 8192 }) } });
+  const edit = (id: string, oldText: string) => ({
+    id,
+    type: 'function',
+    function: { name: 'edit', arguments: JSON.stringify({ path: 'source', edits: [{ oldText, newText: 'new' }], editSourceMaxBytes: 8192 }) },
+  });
   const retry = mode === 'mismatch' || mode === 'no-match';
-  const calls = disabled || requests > (retry ? 2 : 1) ? [] : requests === 2 ? [edit('fresh', 'old')] : [edit('first', mode === 'no-match' ? 'missing' : 'old'),
-    { id: 'following', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'following', content: 'ok' }) } }];
-  const choices = calls.length ? [
-    { index: 0, delta: { role: 'assistant', tool_calls: calls.map((call, index) => ({ index, ...call })) }, finish_reason: null },
-    { index: 0, delta: {}, finish_reason: 'tool_calls' },
-  ] : [{ index: 0, delta: { role: 'assistant', content: 'Offline done.' }, finish_reason: null }, { index: 0, delta: {}, finish_reason: 'stop' }];
-  return new Response(choices.map(choice => 'data: ' + JSON.stringify({ id: 'edit-' + requests, object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) + '\n\n').join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+  const calls =
+    disabled || requests > (retry ? 2 : 1)
+      ? []
+      : requests === 2
+        ? [edit('fresh', 'old')]
+        : [
+            edit('first', mode === 'no-match' ? 'missing' : 'old'),
+            { id: 'following', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'following', content: 'ok' }) } },
+          ];
+  const choices = calls.length
+    ? [
+        { index: 0, delta: { role: 'assistant', tool_calls: calls.map((call, index) => ({ index, ...call })) }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'tool_calls' },
+      ]
+    : [
+        { index: 0, delta: { role: 'assistant', content: 'Offline done.' }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'stop' },
+      ];
+  return new Response(
+    choices
+      .map(
+        choice =>
+          'data: ' + JSON.stringify({ id: 'edit-' + requests, object: 'chat.completion.chunk', created: 1, model: 'reader', choices: [choice] }) + '\n\n',
+      )
+      .join('') + 'data: [DONE]\n\n',
+    { headers: { 'Content-Type': 'text/event-stream' } },
+  );
 };

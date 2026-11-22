@@ -25,7 +25,9 @@ async function fixture(run: (root: string, staging: string) => Promise<void>) {
     await cp('docs/evidence/gondolin-sdk-v1', join(root, 'docs/evidence/gondolin-sdk-v1'), { recursive: true });
     await mkdir(join(root, '.scratch'));
     await run(root, join(root, gondolinSdkProfile.directory));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 // Independent of the production inventory/verifier and its provenance comparisons.
@@ -38,7 +40,9 @@ async function originalSnapshot(root: string) {
       if (name.isDirectory()) await visit(path);
       else {
         assert.ok(name.isFile());
-        snapshot[path] = createHash('sha256').update(await readFile(join(source, path))).digest('hex');
+        snapshot[path] = createHash('sha256')
+          .update(await readFile(join(source, path)))
+          .digest('hex');
       }
     }
   }
@@ -58,7 +62,8 @@ test('Gondolin private preparation verifies exact copy/license and never rewrite
     assert.deepEqual(await originalSnapshot(root), originals);
     assert.equal((await stat(staging)).mode & 0o777, 0o700);
     const file = join(staging, 'sdk/dist/src/vm/core.js');
-    const before = await stat(file), record = await stat(join(staging, 'profile.json'));
+    const before = await stat(file),
+      record = await stat(join(staging, 'profile.json'));
     assert.deepEqual(await verifyDevelopmentGondolinSdk(root), evidence);
     assert.deepEqual(await prepareDevelopmentGondolinSdk(root), evidence);
     assert.deepEqual(await originalSnapshot(root), originals);
@@ -166,10 +171,12 @@ for (const tree of ['source', 'copied'] as const) {
         const spies = [];
         for (const operation of ['lstat', 'open', 'readFile', 'readdir'] as const) {
           const original = fs.promises[operation];
-          spies.push(mock.method(fs.promises, operation, (...args: unknown[]) => {
-            calls.push({ operation, path: String(args[0]) });
-            return Reflect.apply(original, fs.promises, args);
-          }));
+          spies.push(
+            mock.method(fs.promises, operation, (...args: unknown[]) => {
+              calls.push({ operation, path: String(args[0]) });
+              return Reflect.apply(original, fs.promises, args);
+            }),
+          );
         }
         syncBuiltinESMExports();
         try {
@@ -178,12 +185,22 @@ for (const tree of ['source', 'copied'] as const) {
           for (const spy of spies) spy.mock.restore();
           syncBuiltinESMExports();
         }
-        assert.ok(calls.some(call => call.operation === 'lstat' && call.path === join(sdk, 'dist/src/vm/core.js')), 'known core traversed before late rejection');
-        assert.deepEqual(calls.filter(call => call.path === unknown || call.path.startsWith(unknown + '/')), [], 'unknown entry never statted/opened/read/descended');
+        assert.ok(
+          calls.some(call => call.operation === 'lstat' && call.path === join(sdk, 'dist/src/vm/core.js')),
+          'known core traversed before late rejection',
+        );
+        assert.deepEqual(
+          calls.filter(call => call.path === unknown || call.path.startsWith(unknown + '/')),
+          [],
+          'unknown entry never statted/opened/read/descended',
+        );
         const content = calls.filter(call => ['open', 'readFile'].includes(call.operation) && call.path.startsWith(sdk + '/'));
         // Source package VERSION metadata is intentionally read before inventory.
         // Source validity hashing before the copied walk is legitimate and outside sdk here.
-        assert.deepEqual(content.map(call => [call.operation, call.path]), tree === 'source' ? [['readFile', join(sdk, 'package.json')]] : []);
+        assert.deepEqual(
+          content.map(call => [call.operation, call.path]),
+          tree === 'source' ? [['readFile', join(sdk, 'package.json')]] : [],
+        );
         assert.equal(await readFile(kind === 'directory' ? join(unknown, 'sentinel') : unknown, 'utf8'), 'leave untouched');
         if (kind === 'directory') assert.deepEqual(await readdir(unknown), ['sentinel']);
         if (tree === 'source') await assert.rejects(stat(staging), { code: 'ENOENT' });
@@ -215,6 +232,8 @@ test('release form (ticket 32): relative link to the SAME canonical node_modules
       await rm(link);
       await symlink(join(moved, 'node_modules'), link); // Absolute form with a relative-form record: record mismatch.
       await assert.rejects(verifyDevelopmentGondolinSdk(moved), /GONDOLIN_PROFILE_DRIFT/);
-    } finally { await rename(moved, root); }
+    } finally {
+      await rename(moved, root);
+    }
   });
 });

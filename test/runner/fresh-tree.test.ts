@@ -15,12 +15,19 @@ test('ci static analysis passes on the first run of a fresh tree (depcruise sees
   const root = join(parent, 'tree');
   execFileSync('git', ['worktree', 'add', '--detach', '--quiet', root, 'HEAD'], { stdio: 'pipe' });
   try {
-    await cp('node_modules', join(root, 'node_modules'), { recursive: true, verbatimSymlinks: true,
-      filter: source => !source.startsWith(join('node_modules', '.cache')) });
+    await cp('node_modules', join(root, 'node_modules'), {
+      recursive: true,
+      verbatimSymlinks: true,
+      filter: source => !source.startsWith(join('node_modules', '.cache')),
+    });
     assert.equal(existsSync(join(root, '.scratch/factory-development-sdk-v3')), false);
     const steps = await realSteps(root, process.env, () => {}).staticAnalysis('ci', new AbortController().signal);
     const failed = steps.filter(step => !step.ok);
-    assert.deepEqual(failed.map(step => step.name), [], failed.map(step => `${step.name}:\n${step.output ?? ''}`).join('\n'));
+    assert.deepEqual(
+      failed.map(step => step.name),
+      [],
+      failed.map(step => `${step.name}:\n${step.output ?? ''}`).join('\n'),
+    );
     assert.ok(steps.some(step => step.name === 'depcruise'));
   } finally {
     execFileSync('git', ['worktree', 'remove', '--force', root], { stdio: 'pipe' });

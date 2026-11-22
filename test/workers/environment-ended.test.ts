@@ -11,18 +11,46 @@ import { reviewerRead } from '../../src/workers/read.js';
 // owner and Records; the guest is a double and the end of the environment is stated by the binding, as the Lambda adapter states it.
 // `critical` is the callback the worker session wires to "abort the session": once it ran, the agent loop makes no further model request.
 // Not covered here: the agent SDK and a model (no worker process runs).
-const context = (role: ToolContext['role']): ToolContext => ({ workId: 'gone-work', executionId: 'gone-exec', invocationId: `gone-${role}`,
-  role, environmentRef: 'gone-env', bootRef: 'gone-boot', phaseId: 'gone-phase' });
+const context = (role: ToolContext['role']): ToolContext => ({
+  workId: 'gone-work',
+  executionId: 'gone-exec',
+  invocationId: `gone-${role}`,
+  role,
+  environmentRef: 'gone-env',
+  bootRef: 'gone-boot',
+  phaseId: 'gone-phase',
+});
 type Exec = ReturnType<Parameters<typeof nativeOwner>[1]['exec']>;
-const exited = (text = ''): Exec => ({ async *output() { if (text) yield { stream: 'stdout' as const, data: Buffer.from(text) }; }, result: Promise.resolve({ exitCode: 0 }) });
+const exited = (text = ''): Exec => ({
+  async *output() {
+    if (text) yield { stream: 'stdout' as const, data: Buffer.from(text) };
+  },
+  result: Promise.resolve({ exitCode: 0 }),
+});
 const ended = /SANDBOX_ENVIRONMENT_ENDED/;
 
 async function fixture(t: { after(fn: () => Promise<void>): void }, role: ToolContext['role'], options: { editSourceMaxBytes?: number } = {}) {
   const state = { gone: false, guestCalls: 0 };
-  const f = await nativeOwner(context(role), { exec: () => { state.guestCalls += 1; return exited('old'); } }, { ...options, environmentEnded: () => state.gone });
+  const f = await nativeOwner(
+    context(role),
+    {
+      exec: () => {
+        state.guestCalls += 1;
+        return exited('old');
+      },
+    },
+    { ...options, environmentEnded: () => state.gone },
+  );
   t.after(() => f.close());
   let critical = 0;
-  return { state, sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }), critical: () => { critical += 1; }, criticals: () => critical };
+  return {
+    state,
+    sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }),
+    critical: () => {
+      critical += 1;
+    },
+    criticals: () => critical,
+  };
 }
 
 test('Bash: a command answered "environment ended" ends the session (critical), and nothing reaches the guest afterwards', async t => {

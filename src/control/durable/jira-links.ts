@@ -12,8 +12,13 @@ import type { Session } from './store.js';
 // cleanup, retention or forgetting: the intent lives in its own document and keeps everything it needs (destination, URL, reference).
 
 /** Every Jira link intent of the installation by Work (storage format 3). One per Work; bounded only in settled ones of finished Works. */
-export const jiraLinks = defineDoc<{ links: Record<string, JiraLinkIntent> }>({ kind: 'factory.jira-link', version: 1, scope: 'session',
-  initial: () => ({ links: {} }), checkpointWhen: () => true });
+export const jiraLinks = defineDoc<{ links: Record<string, JiraLinkIntent> }>({
+  kind: 'factory.jira-link',
+  version: 1,
+  scope: 'session',
+  initial: () => ({ links: {} }),
+  checkpointWhen: () => true,
+});
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 const keep = <T>(items: T[]) => items.slice(-20);
 const maxSettledFinal = 500;
@@ -22,8 +27,10 @@ const maxSettledFinal = 500;
  * Records, INSIDE the caller's commit, the desired state of the Work's link on its Card (nothing for a GitHub Work). Same state and URL
  * as the latest one: unchanged (no new revision, nothing re-sent). Otherwise a new revision, pending, replaces the previous desire.
  */
-export async function desireJiraLink(tx: Tx, input: { work: { work_id: string; ticket: TicketRef; queue: { sequence: number } }; url: string; desired: JiraLinkDesired }):
-  Promise<JiraLinkIntent | null> {
+export async function desireJiraLink(
+  tx: Tx,
+  input: { work: { work_id: string; ticket: TicketRef; queue: { sequence: number } }; url: string; desired: JiraLinkDesired },
+): Promise<JiraLinkIntent | null> {
   const { work } = input;
   if (work.ticket.tracker !== 'jira') return null;
   const document = await tx.doc(jiraLinks);
@@ -36,12 +43,27 @@ export async function desireJiraLink(tx: Tx, input: { work: { work_id: string; t
     return previous;
   }
   const workRef = previous?.workRef ?? workShortRef(work.queue.sequence);
-  const intent: JiraLinkIntent = { workId: work.work_id, globalId: jiraLinkGlobalId(work.work_id), destination, workRef, url: input.url, desired: input.desired,
-    title: jiraLinkTitle(workRef, input.desired), revision: (previous?.revision ?? 0) + 1, state: 'pending', recordedAt: previous?.recordedAt ?? at, updatedAt: at,
-    attempts: previous?.attempts ?? [], confirmed: previous?.confirmed ?? null, diagnostic: null };
+  const intent: JiraLinkIntent = {
+    workId: work.work_id,
+    globalId: jiraLinkGlobalId(work.work_id),
+    destination,
+    workRef,
+    url: input.url,
+    desired: input.desired,
+    title: jiraLinkTitle(workRef, input.desired),
+    revision: (previous?.revision ?? 0) + 1,
+    state: 'pending',
+    recordedAt: previous?.recordedAt ?? at,
+    updatedAt: at,
+    attempts: previous?.attempts ?? [],
+    confirmed: previous?.confirmed ?? null,
+    diagnostic: null,
+  };
   document.links[work.work_id] = intent;
   // Bounded: confirmed links of finished Works (closed/delivered) beyond the bound are dropped, oldest first; pending ones never.
-  const settled = Object.values(document.links).filter(item => item.state === 'confirmed' && item.desired !== 'open').sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  const settled = Object.values(document.links)
+    .filter(item => item.state === 'confirmed' && item.desired !== 'open')
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
   for (const old of settled.slice(0, Math.max(0, settled.length - maxSettledFinal))) delete document.links[old.workId];
   return intent;
 }
@@ -70,10 +92,19 @@ export function createJiraLinkDesk(deps: { session: Session; tracker: JiraOrigin
         const now = new Date().toISOString();
         if (intent.notBefore && intent.notBefore > now) continue;
         const skipped = skip.get(intent.workId) ?? 0;
-        if (skipped > 0) { skip.set(intent.workId, skipped - 1); continue; }
+        if (skipped > 0) {
+          skip.set(intent.workId, skipped - 1);
+          continue;
+        }
         const revision = intent.revision;
-        const result: RemoteLinkResult = await tracker.upsertRemoteLink(intent.destination, { globalId: intent.globalId, url: intent.url, title: intent.title })
-          .catch(() => ({ kind: 'unknown' as const, observedAt: new Date().toISOString(), code: 'JIRA_UNEXPECTED_FAILURE', nextStep: 'The same upsert is sent again later.' }));
+        const result: RemoteLinkResult = await tracker
+          .upsertRemoteLink(intent.destination, { globalId: intent.globalId, url: intent.url, title: intent.title })
+          .catch(() => ({
+            kind: 'unknown' as const,
+            observedAt: new Date().toISOString(),
+            code: 'JIRA_UNEXPECTED_FAILURE',
+            nextStep: 'The same upsert is sent again later.',
+          }));
         await session.commit(async tx => {
           const current = (await tx.doc(jiraLinks)).links[intent.workId];
           if (!current) return;
@@ -95,9 +126,14 @@ export function createJiraLinkDesk(deps: { session: Session; tracker: JiraOrigin
           failures.set(intent.workId, count);
           skip.set(intent.workId, jiraLinkBackoffPasses(count));
           if (result.kind === 'failed' && result.waitSeconds !== undefined) current.notBefore = retryNotBefore(at, result.waitSeconds);
-          current.diagnostic = { code: result.code, at, nextStep: result.kind === 'failed'
-            ? `Jira refused the link of ${current.workRef} (${result.code}); it stays pending and the same upsert is retried with backoff. ${result.nextStep}`
-            : `The link of ${current.workRef} may or may not be applied (${result.code}); the same upsert by globalId is sent again later (never a second link).` };
+          current.diagnostic = {
+            code: result.code,
+            at,
+            nextStep:
+              result.kind === 'failed'
+                ? `Jira refused the link of ${current.workRef} (${result.code}); it stays pending and the same upsert is retried with backoff. ${result.nextStep}`
+                : `The link of ${current.workRef} may or may not be applied (${result.code}); the same upsert by globalId is sent again later (never a second link).`,
+          };
         }, BACKGROUND_CONTEXT);
       }
     },
@@ -107,5 +143,7 @@ export function createJiraLinkDesk(deps: { session: Session; tracker: JiraOrigin
 export async function jiraLinkStatus(session: Session): Promise<{ jiraLinks?: JiraLinkStatus }> {
   const links = await readJiraLinks(session);
   if (!links.length) return {};
-  return { jiraLinks: { pending: links.filter(item => item.state === 'pending').slice(-50), confirmed: links.filter(item => item.state === 'confirmed').length } };
+  return {
+    jiraLinks: { pending: links.filter(item => item.state === 'pending').slice(-50), confirmed: links.filter(item => item.state === 'confirmed').length },
+  };
 }

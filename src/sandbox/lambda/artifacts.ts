@@ -174,30 +174,44 @@ answer({"status": "failure", "code": "PROGRAM_MODE_UNKNOWN"})
 `;
 
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-const request = (name: string, roots: GuestRoots, parameters: readonly string[], stdin?: Uint8Array): GuestExecRequest => ({ program: name,
-  script: `exec ${[roots.python ?? '/usr/bin/python3', '-I', '-S', '-c', program, ...parameters].map(quote).join(' ')}`, ...(stdin ? { stdin } : {}) });
+const request = (name: string, roots: GuestRoots, parameters: readonly string[], stdin?: Uint8Array): GuestExecRequest => ({
+  program: name,
+  script: `exec ${[roots.python ?? '/usr/bin/python3', '-I', '-S', '-c', program, ...parameters].map(quote).join(' ')}`,
+  ...(stdin ? { stdin } : {}),
+});
 
 /** The fixed program requests (exported so the in-process guest of the tests can recognise them by `program` name). */
-export const proposalIdentityProgram = (round: number, roots: GuestRoots = defaultRoots) => request('proposal-identity', roots, ['identity', roots.checkout, roots.artifacts, String(round)]);
+export const proposalIdentityProgram = (round: number, roots: GuestRoots = defaultRoots) =>
+  request('proposal-identity', roots, ['identity', roots.checkout, roots.artifacts, String(round)]);
 export const preservedSourceProgram = (source: { kind: string; version: string; file: string }, roots: GuestRoots = defaultRoots) =>
   request('preserved-source', roots, ['source', roots.artifacts, source.kind, source.version, source.file]);
 export const collectArtifactsProgram = (roots: GuestRoots = defaultRoots, budget: { files: number; bytes: number } = artifactCollectionBudget) =>
   request('collect-artifacts', roots, ['collect', roots.artifacts, String(budget.files), String(budget.bytes)]);
 export const seedProgram = (name: string, files: readonly { path: string; data: Buffer }[], roots: GuestRoots = defaultRoots) =>
-  request('artifact-seed', roots, ['seed', `${roots.artifacts}/${name}`], Buffer.from(files.map(file => JSON.stringify({ path: file.path, data: file.data.toString('base64') })).join('\n') + '\n', 'utf8'));
+  request(
+    'artifact-seed',
+    roots,
+    ['seed', `${roots.artifacts}/${name}`],
+    Buffer.from(files.map(file => JSON.stringify({ path: file.path, data: file.data.toString('base64') })).join('\n') + '\n', 'utf8'),
+  );
 
 /** The last line of a program's stdout is its answer; anything else is no answer (never a guessed one). */
 function answerOf(result: Awaited<ReturnType<LambdaChannel['exec']>>): unknown {
   if (result.status !== 'exited' || result.exitCode !== 0) return null;
   const line = result.stdout.trimEnd().split('\n').at(-1) ?? '';
-  try { return JSON.parse(line) as unknown; } catch { return null; }
+  try {
+    return JSON.parse(line) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 const code = z.string().regex(/^[A-Z_]{1,64}$/);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const identitySchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('observed'), sha256, indexSha256: sha256, entries: z.number().int().nonnegative(), consistent: z.boolean() }),
-  z.strictObject({ status: z.enum(['unavailable', 'refused']), code })]);
+  z.strictObject({ status: z.enum(['unavailable', 'refused']), code }),
+]);
 
 /**
  * Decision 1A: the identity of the handed-off proposal of `round`, computed in the guest by the fixed program. Guest-attested: on this
@@ -215,17 +229,29 @@ const sourceSchema = z.strictObject({ status: z.enum(['verified', 'invalid']), c
  * Decision 2b-A: the two facts of a preserved-source authorization (listed in the version's `sources.json`, and present), read over the
  * channel before the boot stops. Same strength as the MVP host read: the content was always written by the guest.
  */
-export async function verifyLambdaPreservedSource(channel: LambdaChannel, reference: string, roots: GuestRoots = defaultRoots): Promise<{ status: 'verified' | 'invalid'; code: string }> {
+export async function verifyLambdaPreservedSource(
+  channel: LambdaChannel,
+  reference: string,
+  roots: GuestRoots = defaultRoots,
+): Promise<{ status: 'verified' | 'invalid'; code: string }> {
   const match = /^\/artifacts\/(spec|instructions)\/(v[1-9][0-9]{0,3})\/([^#]+)$/.exec(reference.split('#')[0]!);
-  if (!match || match[3]!.split('/').some(part => part === '' || part === '.' || part === '..')) return { status: 'invalid', code: 'AUTHORIZATION_REFERENCE_INVALID' };
+  if (!match || match[3]!.split('/').some(part => part === '' || part === '.' || part === '..'))
+    return { status: 'invalid', code: 'AUTHORIZATION_REFERENCE_INVALID' };
   const parsed = sourceSchema.safeParse(answerOf(await channel.exec(preservedSourceProgram({ kind: match[1]!, version: match[2]!, file: match[3]! }, roots))));
   return parsed.success ? parsed.data : { status: 'invalid', code: 'PRESERVED_SOURCE_UNAVAILABLE' };
 }
 
-const relativePath = z.string().max(4096).regex(/^(review|spec|instructions)\/[^\0]+$/).refine(path => !path.split('/').some(part => part === '' || part === '.' || part === '..'));
+const relativePath = z
+  .string()
+  .max(4096)
+  .regex(/^(review|spec|instructions)\/[^\0]+$/)
+  .refine(path => !path.split('/').some(part => part === '' || part === '.' || part === '..'));
 const fileLine = z.strictObject({ path: relativePath, data: z.string() });
-const collectSchema = z.discriminatedUnion('status', [z.strictObject({ status: z.literal('success'), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
-  z.strictObject({ status: z.literal('absent') }), z.strictObject({ status: z.literal('failure'), code })]);
+const collectSchema = z.discriminatedUnion('status', [
+  z.strictObject({ status: z.literal('success'), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+  z.strictObject({ status: z.literal('absent') }),
+  z.strictObject({ status: z.literal('failure'), code }),
+]);
 /**
  * Decision 2c: the review/spec/instructions trees of `/artifacts`, written under the caller's private `destination` exactly as the guest
  * holds them at this instant. `absent`: the guest has no artifacts tree. A failure writes a partial tree at most; the caller owns
@@ -236,7 +262,11 @@ export async function collectLambdaArtifacts(channel: LambdaChannel, destination
   if (result.status !== 'exited' || result.exitCode !== 0) return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' };
   const lines = result.stdout.trimEnd().split('\n');
   let last: unknown;
-  try { last = JSON.parse(lines.at(-1) ?? ''); } catch { return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' }; }
+  try {
+    last = JSON.parse(lines.at(-1) ?? '');
+  } catch {
+    return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' };
+  }
   const outcome = collectSchema.safeParse(last);
   if (!outcome.success) return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' };
   if (outcome.data.status !== 'success') return outcome.data;
@@ -251,15 +281,32 @@ export async function collectLambdaArtifacts(channel: LambdaChannel, destination
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await writeFile(path, data, { flag: 'wx', mode: 0o600 });
     }
-  } catch { return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' }; }
+  } catch {
+    return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' };
+  }
   if (lines.length - 1 !== outcome.data.files) return { status: 'failure', code: 'EVIDENCE_EXPORT_FAILED' };
   return { status: 'success', files: outcome.data.files, bytes };
 }
 
 const seedName = /^factory\/[a-z0-9-]+\/[a-z0-9][a-z0-9.-]{0,63}$/;
-const manifestSchema = z.object({ files: z.array(z.object({ path: z.string().regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/).refine(path => !path.split('/').some(part => part === '.' || part === '..')),
-  sha256 })).min(1).max(1024) });
-const writtenSchema = z.discriminatedUnion('status', [z.strictObject({ status: z.literal('written'), files: z.number().int() }), z.strictObject({ status: z.literal('failure'), code })]);
+const manifestSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        path: z
+          .string()
+          .regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
+          .refine(path => !path.split('/').some(part => part === '.' || part === '..')),
+        sha256,
+      }),
+    )
+    .min(1)
+    .max(1024),
+});
+const writtenSchema = z.discriminatedUnion('status', [
+  z.strictObject({ status: z.literal('written'), files: z.number().int() }),
+  z.strictObject({ status: z.literal('failure'), code }),
+]);
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 export type SeedManifest = { name: string; manifestSha256: string; reused: boolean };
 /** A seed's manifest identity from the host copy only (the same value the Gondolin adapter records when it copies the seed). */
@@ -270,8 +317,11 @@ export async function seedManifests(seeds: readonly ArtifactSeed[]): Promise<See
  * Factory material of the release (the skill pack) written into the guest of THIS boot under `/artifacts/<name>`: exactly the manifest's
  * files, verified against the manifest on the host first. A boot starts empty, so this is sent at every start, never reused.
  */
-export async function uploadLambdaSeeds(channel: LambdaChannel, seeds: readonly ArtifactSeed[], roots: GuestRoots = defaultRoots):
-  Promise<{ status: 'success'; seeds: SeedManifest[] } | { status: 'failure'; code: string }> {
+export async function uploadLambdaSeeds(
+  channel: LambdaChannel,
+  seeds: readonly ArtifactSeed[],
+  roots: GuestRoots = defaultRoots,
+): Promise<{ status: 'success'; seeds: SeedManifest[] } | { status: 'failure'; code: string }> {
   const sent: SeedManifest[] = [];
   for (const seed of seeds) {
     if (!seedName.test(seed.name)) return { status: 'failure', code: 'ARTIFACT_SEED_INVALID' };
@@ -279,12 +329,16 @@ export async function uploadLambdaSeeds(channel: LambdaChannel, seeds: readonly 
     try {
       manifest = await readFile(join(seed.directory, 'manifest.json'));
       const parsed = manifestSchema.parse(JSON.parse(manifest.toString('utf8')));
-      files = await Promise.all(parsed.files.map(async file => {
-        const data = await readFile(join(seed.directory, file.path));
-        if (sha(data) !== file.sha256) throw new Error('ARTIFACT_SEED_SOURCE_DRIFT');
-        return { path: file.path, data };
-      }));
-    } catch (error) { return { status: 'failure', code: error instanceof Error && error.message === 'ARTIFACT_SEED_SOURCE_DRIFT' ? error.message : 'ARTIFACT_SEED_INVALID' }; }
+      files = await Promise.all(
+        parsed.files.map(async file => {
+          const data = await readFile(join(seed.directory, file.path));
+          if (sha(data) !== file.sha256) throw new Error('ARTIFACT_SEED_SOURCE_DRIFT');
+          return { path: file.path, data };
+        }),
+      );
+    } catch (error) {
+      return { status: 'failure', code: error instanceof Error && error.message === 'ARTIFACT_SEED_SOURCE_DRIFT' ? error.message : 'ARTIFACT_SEED_INVALID' };
+    }
     const written = writtenSchema.safeParse(answerOf(await channel.exec(seedProgram(seed.name, [...files, { path: 'manifest.json', data: manifest }], roots))));
     if (!written.success) return { status: 'failure', code: 'ARTIFACT_SEED_UNAVAILABLE' };
     if (written.data.status === 'failure') return written.data;
@@ -295,7 +349,9 @@ export async function uploadLambdaSeeds(channel: LambdaChannel, seeds: readonly 
 }
 
 export const restoredTrees = Object.freeze(['spec', 'instructions'] as const);
-export type RestoredArtifacts = { status: 'restored'; /** `spec/v1`, `instructions/v2`…: the version directories written, in tree order. */ versions: string[]; files: number } | { status: 'failure'; code: string };
+export type RestoredArtifacts =
+  | { status: 'restored'; /** `spec/v1`, `instructions/v2`…: the version directories written, in tree order. */ versions: string[]; files: number }
+  | { status: 'failure'; code: string };
 /**
  * v2 ticket 08 (Operator decision 3D): at the start of a boot the host re-sends ONLY `spec/` and `instructions/` from `source`, the host
  * copy of what was collected before the previous stop (decision 2c). Returned as received: the host certifies nothing about the content.
@@ -313,7 +369,10 @@ export async function restoreLambdaArtifacts(channel: LambdaChannel, source: str
         for (const name of (await readdir(join(source, tree, relative))).sort()) {
           const path = relative ? `${relative}/${name}` : name;
           const info = await lstat(join(source, tree, path));
-          if (info.isDirectory()) { await walk(path); continue; }
+          if (info.isDirectory()) {
+            await walk(path);
+            continue;
+          }
           if (!info.isFile() || info.nlink !== 1) throw new Error('ARTIFACT_RESTORE_SOURCE_UNSAFE');
           total += info.size;
           if (files.length + 1 > artifactCollectionBudget.files || total > artifactCollectionBudget.bytes) throw new Error('ARTIFACT_RESTORE_TOO_LARGE');
@@ -321,19 +380,30 @@ export async function restoreLambdaArtifacts(channel: LambdaChannel, source: str
         }
       };
       let top;
-      try { top = await lstat(join(source, tree)); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
+      try {
+        top = await lstat(join(source, tree));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
       if (!top.isDirectory()) throw new Error('ARTIFACT_RESTORE_SOURCE_UNSAFE');
       await walk('');
       if (!files.length) continue;
       trees.push({ tree, files });
       versions.push(...[...new Set(files.map(file => file.path.split('/')[0]!))].map(version => `${tree}/${version}`));
     }
-  } catch (error) { return { status: 'failure', code: error instanceof Error && /^ARTIFACT_RESTORE_[A-Z_]+$/.test(error.message) ? error.message : 'ARTIFACT_RESTORE_SOURCE_UNAVAILABLE' }; }
+  } catch (error) {
+    return {
+      status: 'failure',
+      code: error instanceof Error && /^ARTIFACT_RESTORE_[A-Z_]+$/.test(error.message) ? error.message : 'ARTIFACT_RESTORE_SOURCE_UNAVAILABLE',
+    };
+  }
   let files = 0;
   for (const { tree, files: content } of trees) {
     const written = writtenSchema.safeParse(answerOf(await channel.exec(seedProgram(tree, content, roots))));
     if (!written.success) return { status: 'failure', code: 'ARTIFACT_RESTORE_UNAVAILABLE' };
-    if (written.data.status === 'failure') return { status: 'failure', code: written.data.code === 'ARTIFACT_SEED_VERSION_CONFLICT' ? 'ARTIFACT_RESTORE_CONFLICT' : 'ARTIFACT_RESTORE_FAILED' };
+    if (written.data.status === 'failure')
+      return { status: 'failure', code: written.data.code === 'ARTIFACT_SEED_VERSION_CONFLICT' ? 'ARTIFACT_RESTORE_CONFLICT' : 'ARTIFACT_RESTORE_FAILED' };
     if (written.data.files !== content.length) return { status: 'failure', code: 'ARTIFACT_RESTORE_UNAVAILABLE' };
     files += content.length;
   }

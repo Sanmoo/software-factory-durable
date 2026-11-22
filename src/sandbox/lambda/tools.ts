@@ -4,7 +4,17 @@ import type { BootRef } from '../lifecycle.js';
 import type { EnvironmentRef } from '../prepare.js';
 import { serveReadTools } from '../read-tools.js';
 import { contextSchema, type GuestOwner, type QualifiedProfileOrigin, type ReadBinding, type ToolContext } from '../tool-binding.js';
-import { defaultLambdaObservationTimer, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, readLambdaChannelReport, recordLambdaChannelEntry, type LambdaBootDependencies, type LambdaChannelEntry, type LambdaObservation } from './boot.js';
+import {
+  defaultLambdaObservationTimer,
+  observeLambdaBoot,
+  openLambdaBootChannel,
+  readLambdaBoot,
+  readLambdaChannelReport,
+  recordLambdaChannelEntry,
+  type LambdaBootDependencies,
+  type LambdaChannelEntry,
+  type LambdaObservation,
+} from './boot.js';
 import type { GuestExecRequest, GuestExecResult, GuestUser, LambdaChannel } from './transport.js';
 
 /**
@@ -21,7 +31,7 @@ import type { GuestExecRequest, GuestExecResult, GuestUser, LambdaChannel } from
  */
 export const lambdaToolOrigin: QualifiedProfileOrigin = 'factory-lambda-ssh-channel-v1';
 /** The guest Unix user of a role. Reviewers of either kind share the one read-only user. */
-export const guestUserOfRole = (role: ToolContext['role']): GuestUser => role === 'builder' ? 'builder' : 'reviewer';
+export const guestUserOfRole = (role: ToolContext['role']): GuestUser => (role === 'builder' ? 'builder' : 'reviewer');
 
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 /** Where a tool call registers its process in the guest (v2 ticket 11). `call` is a host-generated UUID: nothing in the guest can guess it. */
@@ -46,27 +56,31 @@ export const toolScript = (argv: readonly string[], cwd = '/', call?: string) =>
  * which reaps nothing: the killed members stay as zombies for the rest of the boot, and a signal to a zombie succeeds. A zombie runs
  * nothing and holds nothing, so only members in another state count. `kill -0` remains the fallback of a guest without `/proc`.
  */
-export const endCallProgram = (call: string): GuestExecRequest => ({ program: 'end-call', script: [
-  `marker=${quote(callMarker(call))}`,
-  'pid=$(cat "$marker" 2>/dev/null) || { echo call-not-started; exit 0; }',
-  'case "$pid" in \'\'|*[!0-9]*) exit 6;; esac',
-  '[ "$pid" -gt 1 ] || exit 6',
-  'alive() {',
-  '  [ -r /proc/self/stat ] || { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; return; }',
-  '  local file line',
-  '  for file in /proc/[0-9]*/stat; do',
-  '    { IFS= read -r line < "$file"; } 2>/dev/null || continue',
-  // After the command name (which may itself hold spaces and parentheses): state, parent, process group.
-  '    set -- ${line##*) }',
-  '    { [ "$3" = "$pid" ] || [ "$file" = "/proc/$pid/stat" ]; } && [ "$1" != Z ] && [ "$1" != X ] && return 0',
-  '  done',
-  '  return 1',
-  '}',
-  'kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true',
-  'for attempt in 1 2 3 4 5; do alive || break; sleep 1; done',
-  'if alive; then echo call-alive; exit 5; fi',
-  'rm -f "$marker"',
-  'echo call-ended'].join('\n') });
+export const endCallProgram = (call: string): GuestExecRequest => ({
+  program: 'end-call',
+  script: [
+    `marker=${quote(callMarker(call))}`,
+    'pid=$(cat "$marker" 2>/dev/null) || { echo call-not-started; exit 0; }',
+    'case "$pid" in \'\'|*[!0-9]*) exit 6;; esac',
+    '[ "$pid" -gt 1 ] || exit 6',
+    'alive() {',
+    '  [ -r /proc/self/stat ] || { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; return; }',
+    '  local file line',
+    '  for file in /proc/[0-9]*/stat; do',
+    '    { IFS= read -r line < "$file"; } 2>/dev/null || continue',
+    // After the command name (which may itself hold spaces and parentheses): state, parent, process group.
+    '    set -- ${line##*) }',
+    '    { [ "$3" = "$pid" ] || [ "$file" = "/proc/$pid/stat" ]; } && [ "$1" != Z ] && [ "$1" != X ] && return 0',
+    '  done',
+    '  return 1',
+    '}',
+    'kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true',
+    'for attempt in 1 2 3 4 5; do alive || break; sleep 1; done',
+    'if alive; then echo call-alive; exit 5; fi',
+    'rm -f "$marker"',
+    'echo call-ended',
+  ].join('\n'),
+});
 /** The one-line answer of `endCallProgram`, when it is one of its own fixed words (nothing else of a guest's output is ever recorded). */
 export const endCallOutcome = (stdout: string): string | undefined => /^call-[a-z-]{1,40}$/.exec(stdout.split('\n', 1)[0] ?? '')?.[0];
 
@@ -76,17 +90,26 @@ export const lambdaReconnect = Object.freeze({ attempts: 5, intervalSeconds: 5 }
  * What the tool owner of a boot gives each call to recover from a dropped channel. `condition` is the SERVICE's answer about the
  * environment (`unknown`: it could not be read, which is never taken as an end); `exhausted` latches once reconnection reached its limit.
  */
-export type ChannelRecovery = { condition(): Promise<'active' | 'ended' | 'unknown'>; sleep(milliseconds: number): Promise<void>;
-  exhausted(): boolean; exhaust(attempts: number): Promise<void>;
+export type ChannelRecovery = {
+  condition(): Promise<'active' | 'ended' | 'unknown'>;
+  sleep(milliseconds: number): Promise<void>;
+  exhausted(): boolean;
+  exhaust(attempts: number): Promise<void>;
   /** Diagnostics only: one record per recovery step (what the service said, what was run over the new connection and how it ended). */
-  attempted?(step: RecoveryStep): Promise<void> };
+  attempted?(step: RecoveryStep): Promise<void>;
+};
 /** One step of a recovery, as recorded in the boot's `channel.jsonl`. It carries no output of a tool and no connection detail. */
 export type RecoveryStep = Omit<Extract<LambdaChannelEntry, { kind: 'recovery' }>, 'kind' | 'at'>;
 /** How a program run for a recovery ended. Only `end-call` has an `outcome`: a tool's own output is never part of a record. */
 const stepEnd = (action: 'end-call' | 'rerun', result: GuestExecResult): Pick<RecoveryStep, 'action' | 'status' | 'code' | 'exitCode' | 'outcome'> => {
   const outcome = action === 'end-call' && result.status === 'exited' ? endCallOutcome(result.stdout) : undefined;
-  return { action, status: result.status, ...(result.status === 'refused' ? { code: result.code } : {}),
-    ...(result.status === 'exited' ? { exitCode: result.exitCode } : {}), ...(outcome === undefined ? {} : { outcome }) };
+  return {
+    action,
+    status: result.status,
+    ...(result.status === 'refused' ? { code: result.code } : {}),
+    ...(result.status === 'exited' ? { exitCode: result.exitCode } : {}),
+    ...(outcome === undefined ? {} : { outcome }),
+  };
 };
 /** A record that cannot be written changes nothing of the recovery it describes. */
 const noted = (recovery: ChannelRecovery | undefined, step: RecoveryStep) => recovery?.attempted?.(step).catch(() => {}) ?? Promise.resolve();
@@ -97,8 +120,14 @@ type Dropped = { status: 'dropped'; outcome: ChannelDropOutcome; /** Whether the
  * an ended environment is not reconnected to (its path is the end of the activation). With the environment alive, a call that never
  * started is simply run again; one that started has its process group ended over a new connection and is reported as dropped.
  */
-async function recovered(first: GuestExecResult, run: () => Promise<GuestExecResult>, channel: LambdaChannel, call: string, signal: AbortSignal,
-  recovery: ChannelRecovery): Promise<GuestExecResult | Dropped> {
+async function recovered(
+  first: GuestExecResult,
+  run: () => Promise<GuestExecResult>,
+  channel: LambdaChannel,
+  call: string,
+  signal: AbortSignal,
+  recovery: ChannelRecovery,
+): Promise<GuestExecResult | Dropped> {
   const down = (result: GuestExecResult) => result.status === 'lost' || (result.status === 'refused' && result.code === 'UNREACHABLE');
   if (!down(first) || signal.aborted) return first;
   let started = first.status === 'lost';
@@ -147,7 +176,8 @@ async function gather(stdin: string | AsyncIterable<Buffer> | undefined): Promis
  * the orphan was ended, answer "indeterminate" instead of ending the invocation.
  */
 const settled = (outcome: GuestExecResult | Dropped): { exitCode: number | null; channel?: ChannelDropOutcome } =>
-  outcome.status === 'dropped' ? { exitCode: null, ...(outcome.started ? { channel: outcome.outcome } : {}) }
+  outcome.status === 'dropped'
+    ? { exitCode: null, ...(outcome.started ? { channel: outcome.outcome } : {}) }
     : { exitCode: outcome.status === 'exited' ? outcome.exitCode : null };
 
 /**
@@ -162,51 +192,74 @@ const settled = (outcome: GuestExecResult | Dropped): { exitCode: number | null;
  * program) and the call answers as one whose result is not known (`orphan-ended`: "indeterminate", the invocation goes on).
  */
 export function lambdaGuestOwner(channel: LambdaChannel, recovery?: ChannelRecovery, gone?: AbortSignal, interrupts?: Set<() => void>): GuestOwner {
-  return { exec(argv, options) {
-    const pending: Buffer[] = [];
-    let wake: (() => void) | null = null;
-    let finished = false;
-    const outcome = (async (): Promise<GuestExecResult | Dropped> => {
-      const stdin = await gather(options.stdin);
-      if (options.signal.aborted) return { status: 'lost' };
-      if (gone?.aborted) return { status: 'dropped', outcome: 'environment-ended', started: false };
-      const call = randomUUID();
-      const cut = new AbortController();
-      const interrupt = () => cut.abort();
-      const signal = AbortSignal.any([options.signal, cut.signal, ...(gone ? [gone] : [])]);
-      const run = () => channel.exec({ program: 'tool', script: toolScript(argv, options.cwd, call), environment: options.env ?? {}, ...(stdin.length > 0 ? { stdin } : {}) },
-        { signal, onData: data => { pending.push(data); wake?.(); } });
-      interrupts?.add(interrupt);
-      let first: GuestExecResult;
-      try { first = await run(); } finally { interrupts?.delete(interrupt); }
-      // v2 ticket 09: interrupted by the adapter (not by the host of the invocation, not by the end of the environment). Nothing is
-      // reconnected for it: its process group is ended and the call has no result. It may have started; it is never "not executed".
-      if (cut.signal.aborted && !options.signal.aborted && !gone?.aborted && first.status !== 'exited') {
-        const ended = await channel.exec(endCallProgram(call));
-        await noted(recovery, { cause: 'interrupt', call, attempt: 1, ...stepEnd('end-call', ended) });
-        return { status: 'dropped', outcome: ended.status === 'exited' && ended.exitCode === 0 ? 'orphan-ended' : 'channel-unrecoverable', started: true };
-      }
-      const outcome = recovery && !gone?.aborted ? await recovered(first, run, channel, call, options.signal, recovery) : first;
-      // The environment ended under this call: whatever the connection reported, the program may have started and has no result.
-      if (gone?.aborted && !options.signal.aborted && outcome.status !== 'exited' && outcome.status !== 'dropped') {
-        return { status: 'dropped', outcome: 'environment-ended', started: first.status !== 'refused' };
-      }
-      return outcome;
-    })().catch((): GuestExecResult => ({ status: 'lost' })).finally(() => { finished = true; wake?.(); });
-    return {
-      result: outcome.then(settled),
-      async *output() {
-        for (;;) {
-          while (pending.length > 0) yield { stream: 'stdout' as const, data: pending.shift()! };
-          if (finished) break;
-          await new Promise<void>(resolve => { wake = resolve; });
-          wake = null;
+  return {
+    exec(argv, options) {
+      const pending: Buffer[] = [];
+      let wake: (() => void) | null = null;
+      let finished = false;
+      const outcome = (async (): Promise<GuestExecResult | Dropped> => {
+        const stdin = await gather(options.stdin);
+        if (options.signal.aborted) return { status: 'lost' };
+        if (gone?.aborted) return { status: 'dropped', outcome: 'environment-ended', started: false };
+        const call = randomUUID();
+        const cut = new AbortController();
+        const interrupt = () => cut.abort();
+        const signal = AbortSignal.any([options.signal, cut.signal, ...(gone ? [gone] : [])]);
+        const run = () =>
+          channel.exec(
+            { program: 'tool', script: toolScript(argv, options.cwd, call), environment: options.env ?? {}, ...(stdin.length > 0 ? { stdin } : {}) },
+            {
+              signal,
+              onData: data => {
+                pending.push(data);
+                wake?.();
+              },
+            },
+          );
+        interrupts?.add(interrupt);
+        let first: GuestExecResult;
+        try {
+          first = await run();
+        } finally {
+          interrupts?.delete(interrupt);
         }
-        const end = await outcome;
-        if (options.stderr === 'pipe' && end.status === 'exited' && end.stderr.length > 0) yield { stream: 'stderr' as const, data: Buffer.from(end.stderr, 'utf8') };
-      },
-    };
-  } };
+        // v2 ticket 09: interrupted by the adapter (not by the host of the invocation, not by the end of the environment). Nothing is
+        // reconnected for it: its process group is ended and the call has no result. It may have started; it is never "not executed".
+        if (cut.signal.aborted && !options.signal.aborted && !gone?.aborted && first.status !== 'exited') {
+          const ended = await channel.exec(endCallProgram(call));
+          await noted(recovery, { cause: 'interrupt', call, attempt: 1, ...stepEnd('end-call', ended) });
+          return { status: 'dropped', outcome: ended.status === 'exited' && ended.exitCode === 0 ? 'orphan-ended' : 'channel-unrecoverable', started: true };
+        }
+        const outcome = recovery && !gone?.aborted ? await recovered(first, run, channel, call, options.signal, recovery) : first;
+        // The environment ended under this call: whatever the connection reported, the program may have started and has no result.
+        if (gone?.aborted && !options.signal.aborted && outcome.status !== 'exited' && outcome.status !== 'dropped') {
+          return { status: 'dropped', outcome: 'environment-ended', started: first.status !== 'refused' };
+        }
+        return outcome;
+      })()
+        .catch((): GuestExecResult => ({ status: 'lost' }))
+        .finally(() => {
+          finished = true;
+          wake?.();
+        });
+      return {
+        result: outcome.then(settled),
+        async *output() {
+          for (;;) {
+            while (pending.length > 0) yield { stream: 'stdout' as const, data: pending.shift()! };
+            if (finished) break;
+            await new Promise<void>(resolve => {
+              wake = resolve;
+            });
+            wake = null;
+          }
+          const end = await outcome;
+          if (options.stderr === 'pipe' && end.status === 'exited' && end.stderr.length > 0)
+            yield { stream: 'stderr' as const, data: Buffer.from(end.stderr, 'utf8') };
+        },
+      };
+    },
+  };
 }
 
 /** What the host states for one invocation. The adapter's qualification and guest conventions are the adapter's, never the caller's. */
@@ -216,10 +269,15 @@ export type LambdaTools = {
    * Binds one invocation to its role on THIS boot and serves its tools on `endpoint` (the worker's `connectReadTools` side is unchanged).
    * Refused: a context of another Work, environment or boot, and an invocation this boot already bound.
    */
-  bind(binding: LambdaToolBinding): Promise<{ status: 'bound'; endpoint: string; close(): Promise<void> } | { status: 'refused';
-    /** `CHANNEL_UNRECOVERABLE` (v2 ticket 11): reconnection reached its limit on this boot; it serves no more calls. */
-    /** `ENVIRONMENT_ENDED` (v2 ticket 10): the service confirmed the end of this boot's environment; nothing is bound to it any more. */
-    code: 'STALE_TOOL_CONTEXT' | 'TOOL_BINDING_INVALID' | 'CHANNEL_UNRECOVERABLE' | 'ENVIRONMENT_ENDED' }>;
+  bind(binding: LambdaToolBinding): Promise<
+    | { status: 'bound'; endpoint: string; close(): Promise<void> }
+    | {
+        status: 'refused';
+        /** `CHANNEL_UNRECOVERABLE` (v2 ticket 11): reconnection reached its limit on this boot; it serves no more calls. */
+        /** `ENVIRONMENT_ENDED` (v2 ticket 10): the service confirmed the end of this boot's environment; nothing is bound to it any more. */
+        code: 'STALE_TOOL_CONTEXT' | 'TOOL_BINDING_INVALID' | 'CHANNEL_UNRECOVERABLE' | 'ENVIRONMENT_ENDED';
+      }
+  >;
   /**
    * v2 ticket 09 (V2-13): interrupts the calls in flight of one invocation (half the rotation margin of the boot is left and its call
    * has not returned). Returns how many were interrupted. The binding stays: the invocation goes on and reads that the result of the
@@ -244,15 +302,20 @@ export type LambdaEnvironmentEnd = { reason: string | null; terminatedAt: string
  * `SANDBOX_ENVIRONMENT_ENDED`, every later call and binding is denied without touching the channel, nothing is ever reconnected, and
  * `environmentEnded` is told once the cancelled calls have answered (the owner then ends the workers; Control ends the activation).
  */
-export async function serveLambdaTools(dependencies: LambdaBootDependencies, { environment, boot }: { environment: EnvironmentRef; boot: BootRef },
-  { environmentEnded }: { environmentEnded?: (observed: LambdaEnvironmentEnd) => void } = {}):
-  Promise<{ status: 'serving'; tools: LambdaTools } | { status: 'unavailable'; code: string }> {
+export async function serveLambdaTools(
+  dependencies: LambdaBootDependencies,
+  { environment, boot }: { environment: EnvironmentRef; boot: BootRef },
+  { environmentEnded }: { environmentEnded?: (observed: LambdaEnvironmentEnd) => void } = {},
+): Promise<{ status: 'serving'; tools: LambdaTools } | { status: 'unavailable'; code: string }> {
   const record = await readLambdaBoot(dependencies.root, environment, boot);
   if (!record) return { status: 'unavailable', code: 'BOOT_NOT_FOUND' };
   const channels = new Map<GuestUser, LambdaChannel>();
   for (const user of ['builder', 'reviewer'] as const) {
     const opened = await openLambdaBootChannel(dependencies, { environment, boot, user });
-    if (opened.status !== 'open') { for (const channel of channels.values()) channel.close(); return { status: 'unavailable', code: opened.code }; }
+    if (opened.status !== 'open') {
+      for (const channel of channels.values()) channel.close();
+      return { status: 'unavailable', code: opened.code };
+    }
     channels.set(user, opened.channel);
   }
   const owners: { close(): Promise<void>; idle(): Promise<void> }[] = [];
@@ -267,20 +330,28 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
   const gone = new AbortController();
   const watching = new AbortController();
   let ending: Promise<void> | undefined;
-  const end = (observed: LambdaObservation) => ending ??= (async () => {
-    // Synchronously, before anything else can run: no new call or binding from here on, and the connections in flight are closed.
-    gone.abort();
-    watching.abort();
-    // The cancelled calls answer (and record their uncertain effect) before anyone ends the workers that made them.
-    await Promise.allSettled(owners.map(owner => owner.idle()));
-    for (const channel of channels.values()) channel.close();
-    try { environmentEnded?.({ reason: observed.lifecycle?.stateReason ?? null, terminatedAt: observed.lifecycle?.terminatedAt ?? null }); } catch { /* The latch stands whatever the listener does. */ }
-  })();
+  const end = (observed: LambdaObservation) =>
+    (ending ??= (async () => {
+      // Synchronously, before anything else can run: no new call or binding from here on, and the connections in flight are closed.
+      gone.abort();
+      watching.abort();
+      // The cancelled calls answer (and record their uncertain effect) before anyone ends the workers that made them.
+      await Promise.allSettled(owners.map(owner => owner.idle()));
+      for (const channel of channels.values()) channel.close();
+      try {
+        environmentEnded?.({ reason: observed.lifecycle?.stateReason ?? null, terminatedAt: observed.lifecycle?.terminatedAt ?? null });
+      } catch {
+        /* The latch stands whatever the listener does. */
+      }
+    })());
   /** The service's word on the environment. `observeLambdaBoot` records a death nobody asked for as the boot's end, with its reason. */
   const condition = async (): Promise<'active' | 'ended' | 'unknown'> => {
     if (gone.signal.aborted) return 'ended';
     const observed = await observeLambdaBoot(dependencies, { environment, boot }).catch(() => null);
-    if (observed?.condition === 'stopped') { void end(observed); return 'ended'; }
+    if (observed?.condition === 'stopped') {
+      void end(observed);
+      return 'ended';
+    }
     return observed?.condition === 'active' ? 'active' : 'unknown';
   };
   if (record.observationIntervalSeconds !== undefined) {
@@ -302,45 +373,91 @@ export async function serveLambdaTools(dependencies: LambdaBootDependencies, { e
     async exhaust(attempts) {
       if (exhausted) return;
       exhausted = true;
-      await recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'unrecoverable', at: new Date(dependencies.clock.now()).toISOString(), attempts });
+      await recordLambdaChannelEntry(dependencies.root, environment, boot, {
+        kind: 'unrecoverable',
+        at: new Date(dependencies.clock.now()).toISOString(),
+        attempts,
+      });
     },
-    attempted: step => recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'recovery', at: new Date(dependencies.clock.now()).toISOString(), ...step }),
+    attempted: step =>
+      recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'recovery', at: new Date(dependencies.clock.now()).toISOString(), ...step }),
   };
-  return { status: 'serving', tools: {
-    async bind(binding) {
-      const context = contextSchema.safeParse(binding.context);
-      if (gone.signal.aborted) return { status: 'refused', code: 'ENVIRONMENT_ENDED' };
-      if (exhausted) return { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' };
-      if (closing || binding.signal.aborted || !context.success || context.data.workId !== record.workId || context.data.environmentRef !== environment ||
-          context.data.bootRef !== boot || invocations.has(context.data.invocationId)) return { status: 'refused', code: 'STALE_TOOL_CONTEXT' };
-      invocations.add(context.data.invocationId);
-      // The role the host bound picks the guest user; no call, tunnel or guest answer can change it afterwards.
-      const calls = new Set<() => void>();
-      inFlight.set(context.data.invocationId, calls);
-      const vm = lambdaGuestOwner(channels.get(guestUserOfRole(context.data.role))!, recovery, gone.signal, calls);
-      const { executionId, invocationId, role } = context.data;
-      // Written on the host before the call answers: the record does not depend on the session, the worker or this process surviving.
-      // MVP §12.2: the text of the call (a Bash command, a path) passes the Records secret filter of this binding BEFORE it is written to
-      // the boot's host file, from where Control copies it into the Work document and a substitute's prompt. A filter that cannot be
-      // applied never releases the raw text: the effect is still recorded, with its text withheld.
-      const described = (text: string) => { try { return binding.records.filterText(text).slice(0, effectDescriptionLimit); } catch { return effectTextWithheld; } };
-      const uncertainEffect: ReadBinding['uncertainEffect'] = effect => recordLambdaChannelEntry(dependencies.root, environment, boot, { kind: 'effect',
-        at: new Date(dependencies.clock.now()).toISOString(), executionId, invocationId, role, ...effect, description: described(effect.description) });
-      let owner: Awaited<ReturnType<typeof serveReadTools>>;
-      try { owner = await serveReadTools({ ...binding, context: context.data, vm, profileOrigin: lambdaToolOrigin, guestConventions: 'ssh-channel', uncertainEffect, environmentEnded: () => gone.signal.aborted }); }
-      catch { return { status: 'refused', code: 'TOOL_BINDING_INVALID' }; }
-      if (closing) { await owner.close(); return { status: 'refused', code: 'STALE_TOOL_CONTEXT' }; }
-      owners.push(owner);
-      return { status: 'bound', endpoint: owner.endpoint, close: owner.close };
+  return {
+    status: 'serving',
+    tools: {
+      async bind(binding) {
+        const context = contextSchema.safeParse(binding.context);
+        if (gone.signal.aborted) return { status: 'refused', code: 'ENVIRONMENT_ENDED' };
+        if (exhausted) return { status: 'refused', code: 'CHANNEL_UNRECOVERABLE' };
+        if (
+          closing ||
+          binding.signal.aborted ||
+          !context.success ||
+          context.data.workId !== record.workId ||
+          context.data.environmentRef !== environment ||
+          context.data.bootRef !== boot ||
+          invocations.has(context.data.invocationId)
+        )
+          return { status: 'refused', code: 'STALE_TOOL_CONTEXT' };
+        invocations.add(context.data.invocationId);
+        // The role the host bound picks the guest user; no call, tunnel or guest answer can change it afterwards.
+        const calls = new Set<() => void>();
+        inFlight.set(context.data.invocationId, calls);
+        const vm = lambdaGuestOwner(channels.get(guestUserOfRole(context.data.role))!, recovery, gone.signal, calls);
+        const { executionId, invocationId, role } = context.data;
+        // Written on the host before the call answers: the record does not depend on the session, the worker or this process surviving.
+        // MVP §12.2: the text of the call (a Bash command, a path) passes the Records secret filter of this binding BEFORE it is written to
+        // the boot's host file, from where Control copies it into the Work document and a substitute's prompt. A filter that cannot be
+        // applied never releases the raw text: the effect is still recorded, with its text withheld.
+        const described = (text: string) => {
+          try {
+            return binding.records.filterText(text).slice(0, effectDescriptionLimit);
+          } catch {
+            return effectTextWithheld;
+          }
+        };
+        const uncertainEffect: ReadBinding['uncertainEffect'] = effect =>
+          recordLambdaChannelEntry(dependencies.root, environment, boot, {
+            kind: 'effect',
+            at: new Date(dependencies.clock.now()).toISOString(),
+            executionId,
+            invocationId,
+            role,
+            ...effect,
+            description: described(effect.description),
+          });
+        let owner: Awaited<ReturnType<typeof serveReadTools>>;
+        try {
+          owner = await serveReadTools({
+            ...binding,
+            context: context.data,
+            vm,
+            profileOrigin: lambdaToolOrigin,
+            guestConventions: 'ssh-channel',
+            uncertainEffect,
+            environmentEnded: () => gone.signal.aborted,
+          });
+        } catch {
+          return { status: 'refused', code: 'TOOL_BINDING_INVALID' };
+        }
+        if (closing) {
+          await owner.close();
+          return { status: 'refused', code: 'STALE_TOOL_CONTEXT' };
+        }
+        owners.push(owner);
+        return { status: 'bound', endpoint: owner.endpoint, close: owner.close };
+      },
+      interruptCalls(invocationId) {
+        const calls = [...(inFlight.get(invocationId) ?? [])];
+        for (const interrupt of calls) interrupt();
+        return calls.length;
+      },
+      close() {
+        watching.abort();
+        return (closing ??= Promise.allSettled(owners.map(owner => owner.close())).then(() => {
+          for (const channel of channels.values()) channel.close();
+        }));
+      },
     },
-    interruptCalls(invocationId) {
-      const calls = [...(inFlight.get(invocationId) ?? [])];
-      for (const interrupt of calls) interrupt();
-      return calls.length;
-    },
-    close() {
-      watching.abort();
-      return closing ??= Promise.allSettled(owners.map(owner => owner.close())).then(() => { for (const channel of channels.values()) channel.close(); });
-    },
-  } };
+  };
 }

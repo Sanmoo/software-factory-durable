@@ -10,11 +10,19 @@ import { lambdaAccountFake } from './lambda-service-fake.js';
 const configuration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 
 /** The host of the tests has every tool of the channel unless a test removes one: the real host is never probed. */
-async function validate(t: { after(fn: () => unknown): void }, fake: ReturnType<typeof lambdaAccountFake>, extra: Record<string, unknown> = {}, concurrency = 1,
-  hostTools: readonly string[] = ['ssh', 'websocat']) {
+async function validate(
+  t: { after(fn: () => unknown): void },
+  fake: ReturnType<typeof lambdaAccountFake>,
+  extra: Record<string, unknown> = {},
+  concurrency = 1,
+  hostTools: readonly string[] = ['ssh', 'websocat'],
+) {
   const root = await mkdtemp(join(tmpdir(), 'factory-lambda-validate-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const report = await createSandbox({ root, lambdaService: fake.service, lambdaHostTool: async executable => hostTools.includes(executable) }).validate({ ...configuration, ...extra }, { concurrency });
+  const report = await createSandbox({ root, lambdaService: fake.service, lambdaHostTool: async executable => hostTools.includes(executable) }).validate(
+    { ...configuration, ...extra },
+    { concurrency },
+  );
   assert.deepEqual(await readdir(root), [], 'validate writes nothing under the installation (no credential, no cache)');
   const check = (id: string) => report.checks.find(item => item.id === id);
   return { report, check, blocked: report.checks.filter(item => item.status === 'blocked').map(item => item.id) };
@@ -24,14 +32,32 @@ test('a correctly installed account validates: identity, operation role, region,
   const fake = lambdaAccountFake();
   const { report, check, blocked } = await validate(t, fake);
   assert.equal(report.configuration.valid, true);
-  for (const id of ['lambda-ssh', 'lambda-websocat', 'lambda-aws-profile', 'lambda-identity', 'lambda-operation-role', 'lambda-region', 'lambda-permissions', 'lambda-build-role',
-    'lambda-artifact-bucket', 'lambda-quota', 'lambda-boot-duration']) assert.equal(check(id)?.status, 'ok', id);
+  for (const id of [
+    'lambda-ssh',
+    'lambda-websocat',
+    'lambda-aws-profile',
+    'lambda-identity',
+    'lambda-operation-role',
+    'lambda-region',
+    'lambda-permissions',
+    'lambda-build-role',
+    'lambda-artifact-bucket',
+    'lambda-quota',
+    'lambda-boot-duration',
+  ])
+    assert.equal(check(id)?.status, 'ok', id);
   assert.match(check('lambda-identity')!.message, /123456789012/);
   // v2 ticket 06: the adapter is composed into the controller; a correctly installed account has no blocked check.
   assert.deepEqual(blocked, []);
   assert.deepEqual(fake.mutations, [], 'nothing was created, started or tagged');
-  assert.deepEqual([...new Set(fake.calls.map(call => call.operation))].sort(),
-    ['allocatedMemoryQuota', 'bucketRegion', 'callerIdentity', 'listImages', 'role', 'simulatePermissions']);
+  assert.deepEqual([...new Set(fake.calls.map(call => call.operation))].sort(), [
+    'allocatedMemoryQuota',
+    'bucketRegion',
+    'callerIdentity',
+    'listImages',
+    'role',
+    'simulatePermissions',
+  ]);
   assert.ok(fake.calls.every(call => call.awsProfile === 'factory' && call.region === 'us-east-1'));
   // No Gondolin host diagnostics for a Lambda installation.
   assert.equal(check('kvm-access'), undefined);
@@ -45,7 +71,11 @@ test('a missing AWS profile, a profile without identity and a missing aws CLI ar
   assert.deepEqual(absent.blocked, ['lambda-aws-profile']);
   assert.match(absent.check('lambda-aws-profile')!.message, /factory/);
   assert.equal(absent.check('lambda-account')?.status, 'unverified');
-  assert.deepEqual(missing.calls.map(call => call.operation), ['callerIdentity'], 'nothing else is asked of an account without identity');
+  assert.deepEqual(
+    missing.calls.map(call => call.operation),
+    ['callerIdentity'],
+    'nothing else is asked of an account without identity',
+  );
 
   const expired = lambdaAccountFake();
   expired.account.profiles.factory = { expired: true };
@@ -82,7 +112,10 @@ test('a profile that is not the installation operation role is diagnosed and its
   assert.deepEqual(blocked, ['lambda-operation-role']);
   assert.match(check('lambda-operation-role')!.message, /factory-acme-operation/);
   assert.equal(check('lambda-permissions')?.status, 'unverified');
-  assert.equal(fake.calls.some(call => call.operation === 'simulatePermissions'), false);
+  assert.equal(
+    fake.calls.some(call => call.operation === 'simulatePermissions'),
+    false,
+  );
 });
 
 test('the wrong region is its own cause: the service does not answer there, or the build bucket lives elsewhere', async t => {
@@ -108,7 +141,9 @@ test('each missing permission is diagnosed naming the action', async t => {
   assert.match(check('lambda-permission:lambda:RunMicrovm')!.message, /lambda:RunMicrovm/);
   assert.equal(check('lambda-permissions'), undefined);
   // The installation tag is part of the simulated request: TagResource is only allowed with it.
-  const tagging = fake.calls.find(call => call.operation === 'simulatePermissions' && (call.input as { actions: string[] }).actions.includes('lambda:TagResource'));
+  const tagging = fake.calls.find(
+    call => call.operation === 'simulatePermissions' && (call.input as { actions: string[] }).actions.includes('lambda:TagResource'),
+  );
   assert.deepEqual((tagging!.input as { context: unknown }).context, [{ key: 'aws:RequestTag/software-factory-installation', value: 'acme' }]);
   assert.equal((tagging!.input as { principalArn: string }).principalArn, 'arn:aws:iam::123456789012:role/factory-acme-operation');
 

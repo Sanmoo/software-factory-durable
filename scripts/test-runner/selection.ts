@@ -6,8 +6,16 @@ import { createHash } from 'node:crypto';
 export type Mode = 'change' | 'integral';
 export type Scope = 'whole' | 'affected-tests' | 'changed';
 export interface Check {
-  id: string; gate: string; tier: 'fast' | 'full'; appliesTo: string[]; scope: Scope; cadence: 'change' | 'periodic'; costSeconds: number;
-  cron?: string; protectionBetweenRuns?: string; residualRisk?: string;
+  id: string;
+  gate: string;
+  tier: 'fast' | 'full';
+  appliesTo: string[];
+  scope: Scope;
+  cadence: 'change' | 'periodic';
+  costSeconds: number;
+  cron?: string;
+  protectionBetweenRuns?: string;
+  residualRisk?: string;
   /** The quality gate a finding belongs to, by the reporting rule's name prefix; `gate` otherwise. */
   gateByRule?: Record<string, string>;
   /** Under integral validation this check is not run separately: the named periodic check runs its whole input. */
@@ -18,26 +26,68 @@ export interface Check {
 /** The test level of a file: unit when test/levels.json declares it, integration otherwise. */
 export type Level = 'unit' | 'integration';
 export interface Policy {
-  version: number; budgetSeconds: number; base: string; core: string[]; sharedConfiguration: string[]; documentation: string[];
-  runtimeDependents: { tests: string[]; on: string[] }; checks: Check[]; policyVersion: string; raw: unknown;
+  version: number;
+  budgetSeconds: number;
+  base: string;
+  core: string[];
+  sharedConfiguration: string[];
+  documentation: string[];
+  runtimeDependents: { tests: string[]; on: string[] };
+  checks: Check[];
+  policyVersion: string;
+  raw: unknown;
 }
 /** Files changed relative to the base, or why the change set cannot be established. */
 export type Change = { files: string[]; deleted: string[]; widened?: undefined } | { widened: string; files?: undefined; deleted?: undefined };
 /** Module → the modules it imports; `unresolved` holds modules with an import the graph cannot place. */
-export interface Graph { edges: ReadonlyMap<string, readonly string[]>; unresolved: readonly string[] }
-export interface IntegralRecord { policyVersion: string; commit: string; finishedAt: string; checks: Record<string, 'passed' | 'failed' | 'not run'> }
-export interface LastIntegral { outcome: 'passed' | 'failed' | 'not run' | 'not recorded'; at?: string; commit?: string; policyVersion?: string }
+export interface Graph {
+  edges: ReadonlyMap<string, readonly string[]>;
+  unresolved: readonly string[];
+}
+export interface IntegralRecord {
+  policyVersion: string;
+  commit: string;
+  finishedAt: string;
+  checks: Record<string, 'passed' | 'failed' | 'not run'>;
+}
+export interface LastIntegral {
+  outcome: 'passed' | 'failed' | 'not run' | 'not recorded';
+  at?: string;
+  commit?: string;
+  policyVersion?: string;
+}
 export type Entry =
   | { check: Check; decision: 'run'; scope: 'whole' | 'affected' | 'changed'; files: string[] }
   | { check: Check; decision: 'not-applicable' }
   | { check: Check; decision: 'periodic'; last: LastIntegral; blocking: boolean }
   | { check: Check; decision: 'covered'; by: string };
-export interface ValidationPlan { mode: Mode; policyVersion: string; widened: string | undefined; affected: string[] | undefined; entries: Entry[] }
+export interface ValidationPlan {
+  mode: Mode;
+  policyVersion: string;
+  widened: string | undefined;
+  affected: string[] | undefined;
+  entries: Entry[];
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string');
 const topKeys = new Set(['$comment', 'version', 'budgetSeconds', 'base', 'core', 'sharedConfiguration', 'documentation', 'runtimeDependents', 'checks']);
-const checkKeys = new Set(['id', 'gate', 'tier', 'appliesTo', 'scope', 'cadence', 'costSeconds', 'cron', 'protectionBetweenRuns', 'residualRisk', 'gateByRule', 'coveredBy', 'level', '$comment']);
+const checkKeys = new Set([
+  'id',
+  'gate',
+  'tier',
+  'appliesTo',
+  'scope',
+  'cadence',
+  'costSeconds',
+  'cron',
+  'protectionBetweenRuns',
+  'residualRisk',
+  'gateByRule',
+  'coveredBy',
+  'level',
+  '$comment',
+]);
 
 export function parsePolicy(value: unknown, text: string): Policy {
   const problems: string[] = [];
@@ -51,26 +101,36 @@ export function parsePolicy(value: unknown, text: string): Policy {
   if (!isRecord(runtime) || !strings(runtime.tests) || !strings(runtime.on)) problems.push('runtimeDependents needs tests and on globs');
   const ids = new Set<string>();
   if (!Array.isArray(value.checks) || !value.checks.length) problems.push('checks must be a non-empty list');
-  else for (const raw of value.checks as unknown[]) {
-    if (!isRecord(raw) || typeof raw.id !== 'string') { problems.push('every check needs an id'); continue; }
-    const at = (message: string) => problems.push(`${raw.id as string}: ${message}`);
-    if (ids.has(raw.id)) at('duplicate id');
-    ids.add(raw.id);
-    for (const key of Object.keys(raw)) if (!checkKeys.has(key)) at(`unknown key "${key}"`);
-    if (typeof raw.gate !== 'string' || !raw.gate) at('needs gate');
-    if (raw.tier !== 'fast' && raw.tier !== 'full') at('tier must be fast or full');
-    if (!strings(raw.appliesTo) || !(raw.appliesTo as string[]).length) at('needs appliesTo globs');
-    if (!['whole', 'affected-tests', 'changed'].includes(raw.scope as string)) at('scope must be whole, affected-tests or changed');
-    if (raw.cadence !== 'change' && raw.cadence !== 'periodic') at('cadence must be change or periodic');
-    if (typeof raw.costSeconds !== 'number' || raw.costSeconds < 0) at('needs costSeconds');
-    if (raw.cadence === 'periodic' && [raw.cron, raw.protectionBetweenRuns, raw.residualRisk].some(item => typeof item !== 'string' || !item))
-      at('a periodic check needs cron, protectionBetweenRuns and residualRisk');
-    if ('level' in raw && raw.level !== 'unit' && raw.level !== 'integration') at('level must be unit or integration');
-    if ('gateByRule' in raw && (!isRecord(raw.gateByRule) || !Object.values(raw.gateByRule).every(item => typeof item === 'string'))) at('gateByRule maps rule prefixes to gates');
-  }
-  if (Array.isArray(value.checks)) for (const raw of value.checks as Record<string, unknown>[])
-    if (isRecord(raw) && 'coveredBy' in raw && !(value.checks as Record<string, unknown>[]).some(other => other.id === raw.coveredBy && other.cadence === 'periodic'))
-      problems.push(`${String(raw.id)}: coveredBy must name a periodic check`);
+  else
+    for (const raw of value.checks as unknown[]) {
+      if (!isRecord(raw) || typeof raw.id !== 'string') {
+        problems.push('every check needs an id');
+        continue;
+      }
+      const at = (message: string) => problems.push(`${raw.id as string}: ${message}`);
+      if (ids.has(raw.id)) at('duplicate id');
+      ids.add(raw.id);
+      for (const key of Object.keys(raw)) if (!checkKeys.has(key)) at(`unknown key "${key}"`);
+      if (typeof raw.gate !== 'string' || !raw.gate) at('needs gate');
+      if (raw.tier !== 'fast' && raw.tier !== 'full') at('tier must be fast or full');
+      if (!strings(raw.appliesTo) || !(raw.appliesTo as string[]).length) at('needs appliesTo globs');
+      if (!['whole', 'affected-tests', 'changed'].includes(raw.scope as string)) at('scope must be whole, affected-tests or changed');
+      if (raw.cadence !== 'change' && raw.cadence !== 'periodic') at('cadence must be change or periodic');
+      if (typeof raw.costSeconds !== 'number' || raw.costSeconds < 0) at('needs costSeconds');
+      if (raw.cadence === 'periodic' && [raw.cron, raw.protectionBetweenRuns, raw.residualRisk].some(item => typeof item !== 'string' || !item))
+        at('a periodic check needs cron, protectionBetweenRuns and residualRisk');
+      if ('level' in raw && raw.level !== 'unit' && raw.level !== 'integration') at('level must be unit or integration');
+      if ('gateByRule' in raw && (!isRecord(raw.gateByRule) || !Object.values(raw.gateByRule).every(item => typeof item === 'string')))
+        at('gateByRule maps rule prefixes to gates');
+    }
+  if (Array.isArray(value.checks))
+    for (const raw of value.checks as Record<string, unknown>[])
+      if (
+        isRecord(raw) &&
+        'coveredBy' in raw &&
+        !(value.checks as Record<string, unknown>[]).some(other => other.id === raw.coveredBy && other.cadence === 'periodic')
+      )
+        problems.push(`${String(raw.id)}: coveredBy must name a periodic check`);
   if (problems.length) throw new Error(`POLICY_INVALID: scripts/test-runner/policy.json\n  ${problems.join('\n  ')}`);
   const version = `${String(value.version)}+sha256:${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
   return { ...(value as unknown as Policy), policyVersion: version, raw: value };
@@ -96,13 +156,19 @@ export const matchesAny = (file: string, globs: readonly string[]) => globs.some
 /** Files that depend on any of `files`, transitively, from a module → imports map. */
 export function dependents(files: readonly string[], edges: ReadonlyMap<string, readonly string[]>): string[] {
   const reverse = new Map<string, Set<string>>();
-  for (const [module, imports] of edges) for (const target of imports) {
-    if (!reverse.has(target)) reverse.set(target, new Set());
-    reverse.get(target)!.add(module);
-  }
-  const seen = new Set(files), queue = [...files];
+  for (const [module, imports] of edges)
+    for (const target of imports) {
+      if (!reverse.has(target)) reverse.set(target, new Set());
+      reverse.get(target)!.add(module);
+    }
+  const seen = new Set(files),
+    queue = [...files];
   for (let next = queue.shift(); next !== undefined; next = queue.shift())
-    for (const parent of reverse.get(next) ?? []) if (!seen.has(parent)) { seen.add(parent); queue.push(parent); }
+    for (const parent of reverse.get(next) ?? [])
+      if (!seen.has(parent)) {
+        seen.add(parent);
+        queue.push(parent);
+      }
   return [...seen].filter(file => !files.includes(file)).sort();
 }
 
@@ -133,13 +199,29 @@ function lastIntegral(check: Check, integral: IntegralRecord | undefined): LastI
 }
 
 /** The plan of one mode. `tests` are the test files that exist in the tree; a level-bound check selects among its level's. */
-export function planValidation(mode: Mode, policy: Policy, change: Change, graph: Graph | undefined, tests: readonly string[],
-  integral: IntegralRecord | undefined, levelOf: (file: string) => Level = () => 'integration'): ValidationPlan {
+export function planValidation(
+  mode: Mode,
+  policy: Policy,
+  change: Change,
+  graph: Graph | undefined,
+  tests: readonly string[],
+  integral: IntegralRecord | undefined,
+  levelOf: (file: string) => Level = () => 'integration',
+): ValidationPlan {
   const allTests = [...tests].sort();
-  const testsOf = (check: Check) => check.level ? allTests.filter(file => levelOf(file) === check.level) : allTests;
-  if (mode === 'integral') return { mode, policyVersion: policy.policyVersion, widened: 'integral validation runs every check over its whole input',
-    affected: undefined, entries: policy.checks.map((check): Entry => check.coveredBy ? { check, decision: 'covered', by: check.coveredBy }
-      : { check, decision: 'run', scope: 'whole', files: check.scope === 'affected-tests' ? testsOf(check) : [] }) };
+  const testsOf = (check: Check) => (check.level ? allTests.filter(file => levelOf(file) === check.level) : allTests);
+  if (mode === 'integral')
+    return {
+      mode,
+      policyVersion: policy.policyVersion,
+      widened: 'integral validation runs every check over its whole input',
+      affected: undefined,
+      entries: policy.checks.map((check): Entry =>
+        check.coveredBy
+          ? { check, decision: 'covered', by: check.coveredBy }
+          : { check, decision: 'run', scope: 'whole', files: check.scope === 'affected-tests' ? testsOf(check) : [] },
+      ),
+    };
   const widened = wideningReason(change, policy, graph);
   const files = change.files ?? [];
   let affected: string[] | undefined;
@@ -156,8 +238,13 @@ export function planValidation(mode: Mode, policy: Policy, change: Change, graph
       const inScope = affected === undefined || affected.some(file => matchesAny(file, check.appliesTo));
       return { check, decision: 'periodic', last, blocking: last.outcome === 'failed' && inScope };
     }
-    if (affected === undefined) return { check, decision: 'run', scope: check.scope === 'changed' ? 'changed' : 'whole',
-      files: check.scope === 'affected-tests' ? testsOf(check) : check.scope === 'changed' ? files.filter(file => !deleted.includes(file)).sort() : [] };
+    if (affected === undefined)
+      return {
+        check,
+        decision: 'run',
+        scope: check.scope === 'changed' ? 'changed' : 'whole',
+        files: check.scope === 'affected-tests' ? testsOf(check) : check.scope === 'changed' ? files.filter(file => !deleted.includes(file)).sort() : [],
+      };
     if (!affected.some(file => matchesAny(file, check.appliesTo))) return { check, decision: 'not-applicable' };
     if (check.scope === 'affected-tests') {
       const own = testsOf(check);
@@ -172,7 +259,9 @@ export function planValidation(mode: Mode, policy: Policy, change: Change, graph
 
 /** The quality gate a finding of `rule` reported by `check` belongs to. */
 export function gateOf(check: Check, rule: string): string {
-  const prefix = Object.keys(check.gateByRule ?? {}).filter(key => rule === key || rule.startsWith(key)).sort((a, b) => b.length - a.length)[0];
+  const prefix = Object.keys(check.gateByRule ?? {})
+    .filter(key => rule === key || rule.startsWith(key))
+    .sort((a, b) => b.length - a.length)[0];
   return prefix === undefined ? check.gate : check.gateByRule![prefix]!;
 }
 
@@ -181,7 +270,7 @@ export function estimatedSeconds(plan: ValidationPlan, tests: readonly string[],
   return plan.entries.reduce((sum, entry) => {
     if (entry.decision !== 'run') return sum;
     const pool = entry.check.level ? tests.filter(file => levelOf(file) === entry.check.level).length : tests.length;
-    if (entry.check.scope === 'affected-tests') return sum + (pool > 0 ? entry.check.costSeconds * entry.files.length / pool : 0);
+    if (entry.check.scope === 'affected-tests') return sum + (pool > 0 ? (entry.check.costSeconds * entry.files.length) / pool : 0);
     return sum + entry.check.costSeconds;
   }, 0);
 }

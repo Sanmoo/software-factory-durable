@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSandbox, installationTagKey, selectSandboxAdapter, workTagKey, type BootRef, type EnvironmentRef, type GuestExecResult } from '../../src/sandbox/index.js';
+import {
+  createSandbox,
+  installationTagKey,
+  selectSandboxAdapter,
+  workTagKey,
+  type BootRef,
+  type EnvironmentRef,
+  type GuestExecResult,
+} from '../../src/sandbox/index.js';
 import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 
@@ -12,8 +20,14 @@ import { lambdaGuestFake } from './lambda-guest-fake.js';
 const baseConfiguration = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
 const sha = (letter: string) => letter.repeat(64);
 const ryuk = `docker.io/testcontainers/ryuk@sha256:${sha('a')}`;
-const pinned = { path: '.factory/environment.yaml', commit: 'c'.repeat(40), sha256: sha('d'), repository: 'acme/shop', repositoryId: 42,
-  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: '3.9.11-r0' }], images: [{ reference: ryuk }] } };
+const pinned = {
+  path: '.factory/environment.yaml',
+  commit: 'c'.repeat(40),
+  sha256: sha('d'),
+  repository: 'acme/shop',
+  repositoryId: 42,
+  declaration: { schemaVersion: 1 as const, apk: [{ name: 'maven', version: '3.9.11-r0' }], images: [{ reference: ryuk }] },
+};
 const workId = '0b0f6a52-6f5c-4d0e-9a53-0d6f3f7c1a01';
 const remote = 'https://github.com/acme/shop.git';
 const startingCommit = '1'.repeat(40);
@@ -30,8 +44,14 @@ async function installation(t: TestContext, profile: Record<string, unknown> = {
   /** The fake clock: every wait of the adapter only moves the account's time. */
   const clock = accountClock(fake);
   /** A sandbox as ANOTHER host process would compose it: same root, nothing shared in memory. */
-  const compose = () => createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock,
-    lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
+  const compose = () =>
+    createSandbox({
+      root,
+      lambdaService: fake.service,
+      lambdaTransport: guest.transport,
+      lambdaBootClock: clock,
+      lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep },
+    });
   const sandbox = compose();
   const prepared = await sandbox.prepare({ workId, configuration, environment: pinned });
   assert.equal(prepared.status, 'success');
@@ -46,7 +66,10 @@ async function installation(t: TestContext, profile: Record<string, unknown> = {
   const operations = () => fake.mutations.map(call => call.operation).filter(operation => operation === 'runMicrovm' || operation === 'terminateMicrovm');
   return { root, fake, guest, clock, compose, sandbox, environment, start, started, microvm, operations };
 }
-const exited = (result: GuestExecResult) => { assert.equal(result.status, 'exited', JSON.stringify(result)); return result as Extract<GuestExecResult, { status: 'exited' }>; };
+const exited = (result: GuestExecResult) => {
+  assert.equal(result.status, 'exited', JSON.stringify(result));
+  return result as Extract<GuestExecResult, { status: 'exited' }>;
+};
 
 test('Start runs a new MicroVM with installation and Work tags, no execution role and no idle suspension, and succeeds only with the channel up and the starting commit cloned', async t => {
   const { fake, guest, sandbox, environment, start, microvm } = await installation(t);
@@ -77,7 +100,10 @@ test('the run hook payload carries only the session public key; the Git credenti
   const clone = inside.executions.find(execution => execution.program === 'clone')!;
   assert.deepEqual(clone.environmentNames, ['FACTORY_GIT_TOKEN', 'GIT_TERMINAL_PROMPT']);
   assert.ok(inside.executions.every(execution => !execution.script.includes(builderToken)));
-  assert.deepEqual([...inside.files.values()].filter(text => text.includes(builderToken)), []);
+  assert.deepEqual(
+    [...inside.files.values()].filter(text => text.includes(builderToken)),
+    [],
+  );
   // Nothing AWS and no secret of the host is in what the service or the guest received.
   assert.doesNotMatch(JSON.stringify([microvm().request, inside.executions]), /AKIA|aws_secret|factory-session|PRIVATE KEY|fake-proxy-token/);
   const files = await readdir(join(root, 'lambda'), { recursive: true });
@@ -150,12 +176,21 @@ test('Start waits for the MicroVM to run and for its sshd, and gives up with the
 test('Start without a prepared image, without a checkout or with a value the host would not place in a guest script starts no MicroVM', async t => {
   const { fake, sandbox, environment, start } = await installation(t);
   const other = `env-${sha('f')}` as EnvironmentRef;
-  assert.deepEqual(await sandbox.start({ environment: other, configuration: baseConfiguration, checkout }), { status: 'failure', code: 'ENVIRONMENT_NOT_PREPARED' });
-  assert.deepEqual(await sandbox.start({ environment: '../etc' as EnvironmentRef, configuration: baseConfiguration, checkout }), { status: 'failure', code: 'ENVIRONMENT_REF_INVALID' });
+  assert.deepEqual(await sandbox.start({ environment: other, configuration: baseConfiguration, checkout }), {
+    status: 'failure',
+    code: 'ENVIRONMENT_NOT_PREPARED',
+  });
+  assert.deepEqual(await sandbox.start({ environment: '../etc' as EnvironmentRef, configuration: baseConfiguration, checkout }), {
+    status: 'failure',
+    code: 'ENVIRONMENT_REF_INVALID',
+  });
   assert.deepEqual(await sandbox.start({ environment, configuration: baseConfiguration }), { status: 'failure', code: 'CHECKOUT_REQUIRED' });
   assert.deepEqual(await start({ checkout: { ...checkout, commit: 'main; rm -rf /' } }), { status: 'failure', code: 'CHECKOUT_INVALID' });
   assert.deepEqual(await start({ checkout: { ...checkout, branch: '--upload-pack=x' } }), { status: 'failure', code: 'CHECKOUT_INVALID' });
-  assert.deepEqual(fake.mutations.filter(call => call.operation === 'runMicrovm'), []);
+  assert.deepEqual(
+    fake.mutations.filter(call => call.operation === 'runMicrovm'),
+    [],
+  );
 });
 
 test('every boot starts empty and pulls the declared Docker images by digest again; a failed pull fails the start', async t => {
@@ -211,7 +246,11 @@ test('each boot has its own session key and its own pinned host key; a guest pre
   const ran = inside.executions.length;
   // Another machine answers at the endpoint (or the guest's key changed): not the key the host pinned for this boot.
   inside.hostKey = firstRecord!.hostKey!;
-  assert.deepEqual(await opened.channel.exec({ program: 'whoami', script: 'whoami' }), { status: 'refused', code: 'HOST_KEY_MISMATCH', detail: 'Host key verification failed.' });
+  assert.deepEqual(await opened.channel.exec({ program: 'whoami', script: 'whoami' }), {
+    status: 'refused',
+    code: 'HOST_KEY_MISMATCH',
+    detail: 'Host key verification failed.',
+  });
   assert.equal(inside.executions.length, ran);
 });
 
@@ -221,14 +260,24 @@ test('a command runs over the channel with keepalive on every connection, and a 
   const opened = await sandbox.openChannel({ environment, boot });
   assert.ok(opened.status === 'open');
   guest.world.programs.build = (_guest, request) => ({ exitCode: 7, stdout: `ran ${request.script}\n`, stderr: 'warning\n' });
-  assert.deepEqual(await opened.channel.exec({ program: 'build', script: 'mvn -q verify' }), { status: 'exited', exitCode: 7, stdout: 'ran mvn -q verify\n', stderr: 'warning\n' });
+  assert.deepEqual(await opened.channel.exec({ program: 'build', script: 'mvn -q verify' }), {
+    status: 'exited',
+    exitCode: 7,
+    stdout: 'ran mvn -q verify\n',
+    stderr: 'warning\n',
+  });
   assert.ok(guest.connections.length > 0 && guest.connections.every(connection => connection.keepaliveSeconds === 15 && connection.user === 'builder'));
 
   // A connection opened with a valid token stays open after the token expires (the service only checks it when the WebSocket opens).
   let finish: (result: { exitCode: number; stdout: string }) => void = () => {};
-  guest.world.programs.long = () => new Promise(resolve => { finish = resolve; });
+  guest.world.programs.long = () =>
+    new Promise(resolve => {
+      finish = resolve;
+    });
   const long = opened.channel.exec({ program: 'long', script: 'sleep 4000' });
-  await new Promise(resolve => { setImmediate(resolve); });
+  await new Promise(resolve => {
+    setImmediate(resolve);
+  });
   await clock.sleep(61 * 60_000);
   assert.ok(fake.account.tokens.every(token => token.expiresAt <= fake.account.clock.now));
   finish({ exitCode: 0, stdout: 'done\n' });
@@ -244,9 +293,14 @@ test('withdrawing access is closing the connection: an open program is cut at on
   const boot = await started();
   const opened = await sandbox.openChannel({ environment, boot });
   assert.ok(opened.status === 'open');
-  guest.world.programs.long = () => new Promise(() => { /* Never ends by itself. */ });
+  guest.world.programs.long = () =>
+    new Promise(() => {
+      /* Never ends by itself. */
+    });
   const long = opened.channel.exec({ program: 'long', script: 'sleep 4000' });
-  await new Promise(resolve => { setImmediate(resolve); });
+  await new Promise(resolve => {
+    setImmediate(resolve);
+  });
   assert.equal(guest.connections.at(-1)?.open, true);
   opened.channel.close();
   assert.deepEqual(await long, { status: 'closed' });
@@ -278,9 +332,15 @@ test('a MicroVM that died by itself is observed as stopped and recorded as a los
   assert.equal(record.end?.reason, 'loss');
   assert.equal(record.end?.terminatedAt, new Date(microvm().terminatedAt!).toISOString());
   // What the host read at the start is kept; everything after it never left the guest.
-  assert.deepEqual(record.evidence.collected.map(entry => entry.label), ['start']);
+  assert.deepEqual(
+    record.evidence.collected.map(entry => entry.label),
+    ['start'],
+  );
   assert.match(record.evidence.lost ?? '', /guest evidence after the collection of .* is lost/);
-  assert.match(await readFile(join(root, 'lambda', 'works', environment, 'boots', boot, 'evidence', 'start.log'), 'utf8'), /===== \/var\/log\/factory-done\nboot-done pull=0/);
+  assert.match(
+    await readFile(join(root, 'lambda', 'works', environment, 'boots', boot, 'evidence', 'start.log'), 'utf8'),
+    /===== \/var\/log\/factory-done\nboot-done pull=0/,
+  );
   assert.equal((await sandbox.openChannel({ environment, boot })).status, 'unavailable');
   assert.deepEqual((await readdir(join(root, 'lambda', 'works', environment, 'boots', boot))).sort(), ['boot.json', 'evidence']);
   // Stopping a boot that is already dead confirms cessation without pretending it was a requested end.
@@ -296,12 +356,23 @@ test('Stop collects the guest evidence, withdraws access, terminates the MicroVM
   assert.equal(microvm().state, 'TERMINATED');
   assert.deepEqual(fake.mutations.at(-1), { operation: 'terminateMicrovm', awsProfile: 'factory', region: 'us-east-1', input: microvm().microvmId });
   const record = (await sandbox.bootRecord({ environment, boot }))!;
-  assert.deepEqual(record.evidence.collected.map(entry => entry.label), ['start', 'stop']);
+  assert.deepEqual(
+    record.evidence.collected.map(entry => entry.label),
+    ['start', 'stop'],
+  );
   assert.equal(record.evidence.lost, null);
   // No disk, workspace or key survives on the host: only the record and the collected evidence.
-  assert.deepEqual((await readdir(join(root, 'lambda', 'works', environment, 'boots', boot), { recursive: true })).sort(), ['boot.json', 'evidence', 'evidence/start.log', 'evidence/stop.log']);
+  assert.deepEqual((await readdir(join(root, 'lambda', 'works', environment, 'boots', boot), { recursive: true })).sort(), [
+    'boot.json',
+    'evidence',
+    'evidence/start.log',
+    'evidence/stop.log',
+  ]);
   assert.deepEqual(await sandbox.openChannel({ environment, boot }), { status: 'unavailable', code: 'BOOT_NOT_ACTIVE' });
-  assert.equal(guest.connections.every(connection => !connection.open), true);
+  assert.equal(
+    guest.connections.every(connection => !connection.open),
+    true,
+  );
   const after = await sandbox.observe({ environment });
   assert.deepEqual([after.condition, after.cessationConfirmed, after.boot], ['stopped', true, boot]);
 });
@@ -311,7 +382,11 @@ test('an end the service does not confirm is indeterminate, never success, even 
   const boot = await started();
   fake.account.terminateSeconds = null;
   const before = fake.account.clock.now;
-  assert.deepEqual(await sandbox.stop({ environment, boot, reason: 'end' }), { status: 'indeterminate', code: 'CESSATION_NOT_CONFIRMED', cessationConfirmed: false });
+  assert.deepEqual(await sandbox.stop({ environment, boot, reason: 'end' }), {
+    status: 'indeterminate',
+    code: 'CESSATION_NOT_CONFIRMED',
+    cessationConfirmed: false,
+  });
   assert.equal(microvm().state, 'TERMINATING');
   assert.ok(fake.account.clock.now - before >= 120_000);
   const observed = await sandbox.observe({ environment, boot });
@@ -335,8 +410,13 @@ test('every boot is recorded with identity, reasons, size, start and end', async
   assert.ok(second.status === 'success');
   await sandbox.stop({ environment, boot: second.boot, reason: 'the Execution completed' });
   const boots = await sandbox.boots({ environment });
-  assert.deepEqual(boots.map(record => [record.boot, record.begin.reason, record.end?.reason, record.stop?.detail]),
-    [[first, 'start', 'planned-swap', undefined], [second.boot, 'planned-swap', 'end', 'the Execution completed']]);
+  assert.deepEqual(
+    boots.map(record => [record.boot, record.begin.reason, record.end?.reason, record.stop?.detail]),
+    [
+      [first, 'start', 'planned-swap', undefined],
+      [second.boot, 'planned-swap', 'end', 'the Execution completed'],
+    ],
+  );
   const record = boots[0]!;
   assert.deepEqual([record.workId, record.microvmId, record.imageArn, record.phase], [workId, firstVm.microvmId, firstVm.imageArn, 'ended']);
   assert.deepEqual(record.size, { baselineMemoryMiB: 1024, peakMemoryMiB: 4096, peakVcpus: 2 });
@@ -377,10 +457,20 @@ test('a new boot receives only the spec and instructions collected before the pr
   assert.notEqual(next, disk, 'nothing of the previous boot is adopted: another MicroVM, another disk');
   assert.equal(next.files.get('/artifacts/spec/v1/ticket.json'), '{"body":"x"}');
   assert.equal(next.files.get('/artifacts/instructions/v1/AGENTS.md'), '# agents\n');
-  assert.deepEqual([...next.files.keys()].filter(path => path.startsWith('/artifacts/review/') || path.includes('factory-output') || path.includes('node_modules')), []);
-  assert.deepEqual((await sandbox.bootRecord({ environment, boot: second.boot }))?.restored, { restored: ['spec/v1', 'instructions/v1'], from: first.boot, lost: [] });
+  assert.deepEqual(
+    [...next.files.keys()].filter(path => path.startsWith('/artifacts/review/') || path.includes('factory-output') || path.includes('node_modules')),
+    [],
+  );
+  assert.deepEqual((await sandbox.bootRecord({ environment, boot: second.boot }))?.restored, {
+    restored: ['spec/v1', 'instructions/v1'],
+    from: first.boot,
+    lost: [],
+  });
   // The preserved source of an inherited round verifies in the new boot (end-of-Execution verification).
-  assert.deepEqual(await sandbox.verifyPreservedSource({ environment, reference: '/artifacts/spec/v1/ticket.json#body' }), { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' });
+  assert.deepEqual(await sandbox.verifyPreservedSource({ environment, reference: '/artifacts/spec/v1/ticket.json#body' }), {
+    status: 'verified',
+    code: 'PRESERVED_SOURCE_VERIFIED',
+  });
 
   // The second boot writes v2 and dies before any collection: its versions are lost, v1 is still what the host holds.
   next.files.set('/artifacts/spec/v2/ticket.json', '{"body":"y"}');

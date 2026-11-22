@@ -13,15 +13,24 @@ const [root, executable, accountFile, storagePath] = process.argv.slice(2) as [s
 installNativeAppFixture(executable, 'world');
 const installation = await composeCrashInstallation({ root, executable, accountFile });
 const time = manualClock();
-const control = await openControl({ storagePath, runtimeInventory: 'empty', execution: installation.ports,
-  access: composeProductionAccess({ github: installation.github, effective }), polling: { intervalSeconds: 60, clock: time.clock } });
+const control = await openControl({
+  storagePath,
+  runtimeInventory: 'empty',
+  execution: installation.ports,
+  access: composeProductionAccess({ github: installation.github, effective }),
+  polling: { intervalSeconds: 60, clock: time.clock },
+});
 void control.run(new AbortController().signal);
 // Bounded by the runner's budget (docs/guides/testing-strategy.md): past it this child fails naming the stage instead of polling forever.
-await untilHolds('the Execution of the Work started in a Lambda boot', async () => {
-  const work = (await control.inspect({ kind: 'list' }) as ListView).works[0];
-  if (work?.execution?.state === 'started' && installation.launched.length > 0) return true;
-  if (time.isSleeping()) time.advance();
-  return false;
-}, 10);
+await untilHolds(
+  'the Execution of the Work started in a Lambda boot',
+  async () => {
+    const work = ((await control.inspect({ kind: 'list' })) as ListView).works[0];
+    if (work?.execution?.state === 'started' && installation.launched.length > 0) return true;
+    if (time.isSleeping()) time.advance();
+    return false;
+  },
+  10,
+);
 process.stdout.write('CUT\n');
 await new Promise(() => {});

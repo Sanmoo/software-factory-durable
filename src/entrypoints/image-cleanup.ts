@@ -12,15 +12,24 @@ import { cleanupLambdaImages, type ImageCleanupResult, type LambdaServiceFactory
  *
  * `lambdaService`: composition input (the `aws` CLI by default, the in-memory account in tests).
  */
-export type ImageCleanupReport = (ImageCleanupResult & { root: string }) | { status: 'refused'; code: 'CONFIGURATION_INVALID' | 'IMAGE_CLEANUP_NOT_APPLICABLE'; root: string; images: [] };
+export type ImageCleanupReport =
+  (ImageCleanupResult & { root: string }) | { status: 'refused'; code: 'CONFIGURATION_INVALID' | 'IMAGE_CLEANUP_NOT_APPLICABLE'; root: string; images: [] };
 
-export async function cleanupImages(root: string, options: { image?: string | undefined; confirm: boolean; lambdaService?: LambdaServiceFactory }): Promise<ImageCleanupReport> {
+export async function cleanupImages(
+  root: string,
+  options: { image?: string | undefined; confirm: boolean; lambdaService?: LambdaServiceFactory },
+): Promise<ImageCleanupReport> {
   const canonicalRoot = await realpath(root).catch(() => resolve(root));
   const release = await inspectRelease(canonicalRoot);
   const { configuration } = await readConfiguration(canonicalRoot, release.guestAssets, options.lambdaService ? { lambdaService: options.lambdaService } : {});
   if (!configuration.valid) return { status: 'refused', code: 'CONFIGURATION_INVALID', root: canonicalRoot, images: [] };
-  const result = await cleanupLambdaImages({ root: canonicalRoot, configuration: configuration.effective.sandbox, image: options.image, confirm: options.confirm,
-    ...(options.lambdaService ? { lambdaService: options.lambdaService } : {}) });
+  const result = await cleanupLambdaImages({
+    root: canonicalRoot,
+    configuration: configuration.effective.sandbox,
+    image: options.image,
+    confirm: options.confirm,
+    ...(options.lambdaService ? { lambdaService: options.lambdaService } : {}),
+  });
   // Only the Lambda adapter keeps images in an account; another adapter's environments are removed with their Works.
   if (!result) return { status: 'refused', code: 'IMAGE_CLEANUP_NOT_APPLICABLE', root: canonicalRoot, images: [] };
   return { ...result, root: canonicalRoot };
@@ -31,9 +40,18 @@ export const imageCleanupExitCode = (report: ImageCleanupReport): number =>
   report.code === 'CONFIGURATION_INVALID' || report.code === 'IMAGE_CLEANUP_NOT_APPLICABLE' ? 2 : report.code ? 1 : 0;
 
 export function imageCleanupText(report: ImageCleanupReport): string {
-  const lines = report.images.map(image => `${image.imageName}: ${image.outcome ?? image.decision} (${image.state}` +
-    `${image.works.length ? `; Works ${image.works.join(', ')}` : ''}${image.running ? `; ${image.running} MicroVM(s) running` : ''})${image.detail ? ` — ${image.detail}` : ''}`);
-  const head = report.status === 'planned' ? 'Plan (nothing was changed; repeat with --yes to delete what is removable):'
-    : report.status === 'cleaned' ? `Cleanup ${report.code ? 'incomplete' : 'done'}:` : `${report.code}${'detail' in report && report.detail ? `: ${report.detail}` : ''}`;
-  return [head, ...(lines.length || report.status === 'refused' || report.status === 'unavailable' ? lines : ['No MicroVM image of this installation.'])].join('\n');
+  const lines = report.images.map(
+    image =>
+      `${image.imageName}: ${image.outcome ?? image.decision} (${image.state}` +
+      `${image.works.length ? `; Works ${image.works.join(', ')}` : ''}${image.running ? `; ${image.running} MicroVM(s) running` : ''})${image.detail ? ` — ${image.detail}` : ''}`,
+  );
+  const head =
+    report.status === 'planned'
+      ? 'Plan (nothing was changed; repeat with --yes to delete what is removable):'
+      : report.status === 'cleaned'
+        ? `Cleanup ${report.code ? 'incomplete' : 'done'}:`
+        : `${report.code}${'detail' in report && report.detail ? `: ${report.detail}` : ''}`;
+  return [head, ...(lines.length || report.status === 'refused' || report.status === 'unavailable' ? lines : ['No MicroVM image of this installation.'])].join(
+    '\n',
+  );
 }

@@ -3,16 +3,39 @@ import { mock, test } from 'node:test';
 
 // Import and --plan of the ticket 30 LOCAL recipe must be inert: no process, socket, filesystem or SDK effect.
 let forbidden = 0;
-const deny = () => { forbidden++; throw new Error('FORBIDDEN_EFFECT'); };
+const deny = () => {
+  forbidden++;
+  throw new Error('FORBIDDEN_EFFECT');
+};
 for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'node:fs/promises', 'node:https', '@earendil-works/gondolin']) {
-  mock.module(name, { namedExports: { connect: deny, createServer: deny, execFile: deny, execFileSync: deny, request: deny, open: deny, mkdir: deny, readFile: deny, access: deny,
-    readdir: deny, copyFile: deny, stat: deny, lstat: deny, realpath: deny, chmod: deny }, defaultExport: deny });
+  mock.module(name, {
+    namedExports: {
+      connect: deny,
+      createServer: deny,
+      execFile: deny,
+      execFileSync: deny,
+      request: deny,
+      open: deny,
+      mkdir: deny,
+      readFile: deny,
+      access: deny,
+      readdir: deny,
+      copyFile: deny,
+      stat: deny,
+      lstat: deny,
+      realpath: deny,
+      chmod: deny,
+    },
+    defaultExport: deny,
+  });
 }
 const recipe = await import('./retention30-qualification.js');
 
 test('recipe: import and --plan are inert; own namespace, COPY of q17-delivery-v4, local only, verdict declared; remote selections refused', async () => {
   const logged: string[] = [];
-  const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
+  const log = mock.method(console, 'log', (text: string) => {
+    logged.push(text);
+  });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);

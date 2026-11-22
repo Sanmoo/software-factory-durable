@@ -12,7 +12,11 @@ const real = async () => JSON.parse(await readFile('test/workers/fixtures/real-r
 const text = (result: { content: { type: string; text?: string }[] }) => result.content.map(block => block.text ?? '').join('');
 const call = async (gate: ReturnType<typeof builderHandoff>, args: object) => {
   gate.batch(1);
-  return await gate.tool.execute('call', args as never, undefined, undefined, undefined as never) as { content: { type: string; text?: string }[]; isError?: boolean; terminate?: boolean };
+  return (await gate.tool.execute('call', args as never, undefined, undefined, undefined as never)) as {
+    content: { type: string; text?: string }[];
+    isError?: boolean;
+    terminate?: boolean;
+  };
 };
 
 test('AC1 real-run regression: placeholder treatments for reviewers without findings are refused at handoff, without consuming a round', async () => {
@@ -20,8 +24,15 @@ test('AC1 real-run regression: placeholder treatments for reviewers without find
   // Ticket 56: a `run` gate is accepted only after a green bash call of exactly its command (as in the real run).
   const ledger = createToolLedger();
   ledger.begin('bash', 'gate');
-  ledger.bash('gate', { command: (fixture.handoffs['2']!.gates[0] as { command: string }).command, cwd: '/workspace', exitCode: 0, output: null, code: null,
-    contentBeforeSha: 'a', contentAfterSha: 'a' });
+  ledger.bash('gate', {
+    command: (fixture.handoffs['2']!.gates[0] as { command: string }).command,
+    cwd: '/workspace',
+    exitCode: 0,
+    output: null,
+    code: null,
+    contentBeforeSha: 'a',
+    contentAfterSha: 'a',
+  });
   const gate = builderHandoff({ first: 1, max: 4 }, ledger);
   const first = await call(gate, { gates: fixture.handoffs['2']!.gates });
   assert.equal(first.terminate, true, 'round 1 handoff accepted');
@@ -41,7 +52,10 @@ test('AC1 real-run regression: placeholder treatments for reviewers without find
   const accepted = await call(gate, { ...fixture.handoffs['2']!, treatments: fixture.handoffs['2']!.treatments.slice(0, 1) });
   assert.equal(accepted.terminate, true);
   assert.equal(gate.round(), 2);
-  assert.deepEqual(gate.declarations()!.treatments!.map(item => item.findingId), ['S1']);
+  assert.deepEqual(
+    gate.declarations()!.treatments!.map(item => item.findingId),
+    ['S1'],
+  );
   gate.listed(2, fixture.findings['2']!);
   gate.resume();
   // Real round 3 declarations: two placeholders for a clean round.
@@ -69,8 +83,24 @@ test('AC1: a treatment of a round that was never delivered is refused; a round d
 
 test('real run R-CAND v2: a continuation knows the findings its predecessor delivered before the Question; unknown ones are still refused', async () => {
   // Work 4b2d22b4: round 4 Spec S1 delivered, the Builder asked a Question, and the continuation Execution (first round 5) treated S1.
-  const gate = builderHandoff({ first: 5, max: 4, delivered: [{ round: 4, standards: [], spec: ['S1'] }, { round: 9, standards: ['X'], spec: [] }] }, createToolLedger());
-  const treatment = (round: number, role: string, findingId: string) => ({ round, role, findingId, outcome: 'not-adopted', justification: 'Operator answered.' });
+  const gate = builderHandoff(
+    {
+      first: 5,
+      max: 4,
+      delivered: [
+        { round: 4, standards: [], spec: ['S1'] },
+        { round: 9, standards: ['X'], spec: [] },
+      ],
+    },
+    createToolLedger(),
+  );
+  const treatment = (round: number, role: string, findingId: string) => ({
+    round,
+    role,
+    findingId,
+    outcome: 'not-adopted',
+    justification: 'Operator answered.',
+  });
   for (const unknown of [treatment(4, 'spec', 'S2'), treatment(4, 'standards', 'S1'), treatment(3, 'spec', 'S1'), treatment(9, 'standards', 'X')]) {
     const refused = await call(gate, { treatments: [unknown] });
     assert.match(text(refused), /^HANDOFF_TREATMENT_UNKNOWN_FINDING/, JSON.stringify(unknown));
@@ -79,5 +109,8 @@ test('real run R-CAND v2: a continuation knows the findings its predecessor deli
   const accepted = await call(gate, { treatments: [treatment(4, 'spec', 'S1')] });
   assert.equal(accepted.terminate, true);
   assert.equal(gate.round(), 5);
-  assert.deepEqual(gate.declarations()!.treatments!.map(item => `${item.round}/${item.role}/${item.findingId}`), ['4/spec/S1']);
+  assert.deepEqual(
+    gate.declarations()!.treatments!.map(item => `${item.round}/${item.role}/${item.findingId}`),
+    ['4/spec/S1'],
+  );
 });

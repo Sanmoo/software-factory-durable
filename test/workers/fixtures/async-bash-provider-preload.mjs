@@ -8,7 +8,8 @@ const original = fs.createWriteStream;
 let entry;
 fs.createWriteStream = (path, options) => {
   assert.ok(path.startsWith(process.env.TMPDIR + '/'));
-  assert.equal(options.flags, 'wx'); assert.equal(options.mode, 0o600);
+  assert.equal(options.flags, 'wx');
+  assert.equal(options.mode, 0o600);
   const stream = original(path, { ...options, highWaterMark: 16384 });
   assert.equal(entry, undefined, 'one owned native spill only');
   entry = { stream, writes: 0, maxPending: 0, held: false };
@@ -29,8 +30,8 @@ fs.createWriteStream = (path, options) => {
 };
 syncBuiltinESMExports();
 const control = message => {
-  if (message?.kind === 'test-native-snapshot') process.send?.({ kind: 'test-native-snapshot',
-    writes: entry.writes, pending: entry.stream.writableLength, bytesWritten: entry.stream.bytesWritten });
+  if (message?.kind === 'test-native-snapshot')
+    process.send?.({ kind: 'test-native-snapshot', writes: entry.writes, pending: entry.stream.writableLength, bytesWritten: entry.stream.bytesWritten });
   if (message?.kind === 'test-native-release') entry.stream.uncork();
   if (message?.kind === 'test-native-fail') entry.stream.destroy(new Error('FIXED_STREAM_FAILURE'));
 };
@@ -40,6 +41,7 @@ try {
   await import('../../../dist/src/entrypoints/worker.js');
 } finally {
   process.off('message', control);
-  fs.createWriteStream = original; syncBuiltinESMExports();
+  fs.createWriteStream = original;
+  syncBuiltinESMExports();
   entry?.stream.destroy();
 }

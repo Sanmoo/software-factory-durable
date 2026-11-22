@@ -6,7 +6,7 @@ import { createIssueTracker } from '../../src/issue-tracker/index.js';
 import { createCodeRepository } from '../../src/code-repository/index.js';
 import { defaultEnvironmentFile, githubWorld, issue, pull, worldScope, crossReferenced, connected, type World } from './github-world-fixture.js';
 
-const code = (observation: object) => 'code' in observation ? observation.code : undefined;
+const code = (observation: object) => ('code' in observation ? observation.code : undefined);
 // Real adapters/issuer/transport; only gh/GitHub (and App HTTPS) are substituted by the local world fixture.
 async function compose(t: Parameters<typeof githubWorld>[0], world: World, scenario?: string) {
   const fixture = await githubWorld(t, world, scenario);
@@ -15,21 +15,42 @@ async function compose(t: Parameters<typeof githubWorld>[0], world: World, scena
 }
 
 test('listCandidates returns only open labelled issues with stable qualified identities across Link pages, without bodies', async t => {
-  const world = await compose(t, { pageSize: 1, issues: [
-    issue(1), issue(2, { labels: [{ id: 56, name: 'Ready-For-Agent' }] }), issue(3, { labels: [] }),
-    issue(4, { state: 'closed', state_reason: 'completed' }), issue(5, { pull_request: {} }), issue(6),
-  ], pulls: [] });
+  const world = await compose(t, {
+    pageSize: 1,
+    issues: [
+      issue(1),
+      issue(2, { labels: [{ id: 56, name: 'Ready-For-Agent' }] }),
+      issue(3, { labels: [] }),
+      issue(4, { state: 'closed', state_reason: 'completed' }),
+      issue(5, { pull_request: {} }),
+      issue(6),
+    ],
+    pulls: [],
+  });
   const observed = await world.tracker.listCandidates(worldScope);
   assert.equal(observed.kind, 'observed');
   if (observed.kind !== 'observed') return;
   assert.equal(observed.completeness, 'complete');
   assert.equal(observed.repositoryId, 3);
-  assert.deepEqual(observed.candidates.map(ticket => ticket.number), [1, 2, 6]);
-  assert.deepEqual(observed.candidates[0], { tracker: 'github', repository: 'acme/project', repositoryId: 3, issueId: 7001, nodeId: 'I_node1', number: 1,
-    url: 'https://github.com/acme/project/issues/1' });
+  assert.deepEqual(
+    observed.candidates.map(ticket => ticket.number),
+    [1, 2, 6],
+  );
+  assert.deepEqual(observed.candidates[0], {
+    tracker: 'github',
+    repository: 'acme/project',
+    repositoryId: 3,
+    issueId: 7001,
+    nodeId: 'I_node1',
+    number: 1,
+    url: 'https://github.com/acme/project/issues/1',
+  });
   assert.doesNotMatch(JSON.stringify(observed), /SPEC-BODY|synthetic-installation-secret/);
   const trace = await world.trace();
-  assert.ok(trace.some(entry => entry.endpoint.startsWith('/repositories/3/issues?')), 'GitHub id-based next links are followed');
+  assert.ok(
+    trace.some(entry => entry.endpoint.startsWith('/repositories/3/issues?')),
+    'GitHub id-based next links are followed',
+  );
 });
 
 test('listCandidates never turns a later-page failure into partial success or proven absence', async t => {
@@ -43,7 +64,11 @@ test('listCandidates never turns a later-page failure into partial success or pr
 });
 
 test('rate limit headers are honoured: the wait is reported and no further request is sent before it elapses', async t => {
-  const world = await compose(t, { issues: [issue(1)], pulls: [], faults: { '/issues?': { status: 403, headers: { 'retry-after': '120', 'x-ratelimit-remaining': '0' } } } });
+  const world = await compose(t, {
+    issues: [issue(1)],
+    pulls: [],
+    faults: { '/issues?': { status: 403, headers: { 'retry-after': '120', 'x-ratelimit-remaining': '0' } } },
+  });
   const first = await world.tracker.listCandidates(worldScope);
   assert.equal(first.kind, 'unavailable');
   assert.equal(first.code, 'GITHUB_RATE_LIMITED');
@@ -66,7 +91,15 @@ test('an exhausted remaining quota on a successful response defers the next read
 
 test('readTicket returns state, reason, labels and identity only; unconfigured repositories are refused without a request', async t => {
   const world = await compose(t, { issues: [issue(1, { state: 'closed', state_reason: 'not_planned' })], pulls: [] });
-  const ref = { tracker: 'github' as const, repository: 'acme/project', repositoryId: 3, issueId: 7001, nodeId: 'I_node1', number: 1, url: 'https://github.com/acme/project/issues/1' };
+  const ref = {
+    tracker: 'github' as const,
+    repository: 'acme/project',
+    repositoryId: 3,
+    issueId: 7001,
+    nodeId: 'I_node1',
+    number: 1,
+    url: 'https://github.com/acme/project/issues/1',
+  };
   const observed = await world.tracker.readTicket(ref);
   assert.equal(observed.kind, 'observed');
   if (observed.kind !== 'observed') return;
@@ -86,7 +119,15 @@ test('readTicket returns state, reason, labels and identity only; unconfigured r
 // Ticket 53 (pilot 35, #126): the issue's `updated_at` moves with every comment, including the Factory's own Question and answer comments.
 // The Factory's Ticket read never carries it (nor the comment count), so a comment can never look like a change of the Ticket.
 test('readTicket is the same observation when only comments moved the issue (updated_at, comment count): no timestamp is a Ticket change', async t => {
-  const ref = { tracker: 'github' as const, repository: 'acme/project', repositoryId: 3, issueId: 7001, nodeId: 'I_node1', number: 1, url: 'https://github.com/acme/project/issues/1' };
+  const ref = {
+    tracker: 'github' as const,
+    repository: 'acme/project',
+    repositoryId: 3,
+    issueId: 7001,
+    nodeId: 'I_node1',
+    number: 1,
+    url: 'https://github.com/acme/project/issues/1',
+  };
   const read = async (overrides: Parameters<typeof issue>[1]) => {
     const world = await compose(t, { issues: [issue(1, overrides)], pulls: [] });
     const observed = await world.tracker.readTicket(ref);
@@ -115,7 +156,14 @@ test('operational reads reuse one reduced in-memory grant per purpose and only e
   const trace = await world.trace();
   const posts = trace.filter(entry => entry.method === 'POST');
   // tracker-read, repository-read (pulls) and association-read (issue timeline): each least privilege, none with write.
-  assert.deepEqual(posts.map(entry => entry.permissions), [{ metadata: 'read', issues: 'read' }, { metadata: 'read', pull_requests: 'read' }, { metadata: 'read', issues: 'read' }]);
+  assert.deepEqual(
+    posts.map(entry => entry.permissions),
+    [
+      { metadata: 'read', issues: 'read' },
+      { metadata: 'read', pull_requests: 'read' },
+      { metadata: 'read', issues: 'read' },
+    ],
+  );
   assert.ok(trace.filter(entry => entry.credential === 'installation').every(entry => entry.method === 'GET'));
   assert.ok(!trace.some(entry => /labels\/|assignees|projects|\/comments/.test(entry.endpoint.split('?')[0]!)), 'no triage/project/status endpoints');
 });
@@ -144,32 +192,68 @@ test('Retry-After given as an HTTP-date is honoured', async t => {
   const world = await compose(t, { issues: [issue(1)], pulls: [], faults: { '/issues?': { status: 429, headers: { 'retry-after': date } } } });
   const first = await world.tracker.listCandidates(worldScope);
   assert.equal(code(first), 'GITHUB_RATE_LIMITED');
-  const wait = first.kind === 'unavailable' ? first.waitSeconds ?? 0 : 0;
+  const wait = first.kind === 'unavailable' ? (first.waitSeconds ?? 0) : 0;
   assert.ok(wait >= 110 && wait <= 121, String(wait));
 });
 
 test('findPublication reports closing-reference, native timeline and known-branch pull requests with GitHub identities', async t => {
-  const world = await compose(t, { issues: [issue(1, { timeline: [crossReferenced(11), crossReferenced(10), crossReferenced(30, 'acme/other'), connected(17), { event: 'labeled' }] })], pulls: [
-    pull(10, { body: 'Fixes #1' }), pull(11, { body: 'see #1 for context' }), pull(12, { title: 'resolves: acme/project#1', state: 'closed', merged_at: '2026-01-01T00:00:00Z' }),
-    pull(13, { body: 'Closes https://github.com/acme/project/issues/1' }), pull(14, { body: 'fixes acme/other#1' }), pull(15, { body: 'fixes #12' }),
-    pull(16, { head: { ref: 'factory/work-x', repo: { id: 3 } } }), pull(17),
-  ] });
+  const world = await compose(t, {
+    issues: [issue(1, { timeline: [crossReferenced(11), crossReferenced(10), crossReferenced(30, 'acme/other'), connected(17), { event: 'labeled' }] })],
+    pulls: [
+      pull(10, { body: 'Fixes #1' }),
+      pull(11, { body: 'see #1 for context' }),
+      pull(12, { title: 'resolves: acme/project#1', state: 'closed', merged_at: '2026-01-01T00:00:00Z' }),
+      pull(13, { body: 'Closes https://github.com/acme/project/issues/1' }),
+      pull(14, { body: 'fixes acme/other#1' }),
+      pull(15, { body: 'fixes #12' }),
+      pull(16, { head: { ref: 'factory/work-x', repo: { id: 3 } } }),
+      pull(17),
+    ],
+  });
   const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1], knownBranches: ['factory/work-x'] });
   const result = issueOf(observed, 1);
   assert.equal(result?.completeness, 'complete');
   if (result?.completeness !== 'complete') return;
-  assert.deepEqual(result.candidates.map(candidate => [candidate.number, candidate.association]),
-    [[10, ['closing-reference', 'cross-reference']], [11, ['cross-reference']], [12, ['closing-reference']], [13, ['closing-reference']], [16, ['known-branch']], [17, ['development-link']]]);
-  assert.deepEqual(result.candidates[2], { pullRequestId: 9012, nodeId: 'PR_node12', number: 12, url: 'https://github.com/acme/project/pull/12', state: 'closed', merged: true,
-    headRef: 'human/change-12', headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'],
-    headSha: 'c'.repeat(40), baseRef: 'main', draft: false, body: null });
+  assert.deepEqual(
+    result.candidates.map(candidate => [candidate.number, candidate.association]),
+    [
+      [10, ['closing-reference', 'cross-reference']],
+      [11, ['cross-reference']],
+      [12, ['closing-reference']],
+      [13, ['closing-reference']],
+      [16, ['known-branch']],
+      [17, ['development-link']],
+    ],
+  );
+  assert.deepEqual(result.candidates[2], {
+    pullRequestId: 9012,
+    nodeId: 'PR_node12',
+    number: 12,
+    url: 'https://github.com/acme/project/pull/12',
+    state: 'closed',
+    merged: true,
+    headRef: 'human/change-12',
+    headRepositoryId: 3,
+    author: { id: 10, login: 'someone', type: 'User' },
+    association: ['closing-reference'],
+    headSha: 'c'.repeat(40),
+    baseRef: 'main',
+    draft: false,
+    body: null,
+  });
   assert.ok(observed.kind === 'observed' && observed.limitations.some(limitation => /other repositories/i.test(limitation)));
-  assert.ok(observed.kind === 'observed' && !observed.limitations.some(limitation => /manual .*not observable/i.test(limitation)), 'limitation text stays accurate');
+  assert.ok(
+    observed.kind === 'observed' && !observed.limitations.some(limitation => /manual .*not observable/i.test(limitation)),
+    'limitation text stays accurate',
+  );
 });
 
 test('an association that cannot be identified, or a failed timeline, is incomplete — never an empty candidate list', async t => {
-  const world = await compose(t, { issues: [issue(1, { timeline: [connected()] }), issue(2, { timeline: [connected(), connected(undefined, 'disconnected')] }), issue(3)],
-    pulls: [], faults: { '/issues/3/timeline': { status: 502 } } });
+  const world = await compose(t, {
+    issues: [issue(1, { timeline: [connected()] }), issue(2, { timeline: [connected(), connected(undefined, 'disconnected')] }), issue(3)],
+    pulls: [],
+    faults: { '/issues/3/timeline': { status: 502 } },
+  });
   const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1, 2, 3], knownBranches: [] });
   assert.deepEqual([issueOf(observed, 1)?.completeness, (issueOf(observed, 1) as { code?: string }).code], ['incomplete', 'ASSOCIATION_UNIDENTIFIED']);
   assert.equal(issueOf(observed, 2)?.completeness, 'complete', 'a disconnected link cancels the unidentified connection');
@@ -180,7 +264,13 @@ test('an association that cannot be identified, or a failed timeline, is incompl
 test('findPublication lists pull requests once per call for several Tickets, keeping page-cap/failure semantics', async t => {
   const world = await compose(t, { pageSize: 1, issues: [issue(1), issue(2), issue(3)], pulls: [pull(10, { body: 'Fixes #2' }), pull(11)] });
   const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1, 2, 3], knownBranches: [] });
-  assert.deepEqual([1, 2, 3].map(n => { const r = issueOf(observed, n); return r?.completeness === 'complete' ? r.candidates.map(c => c.number) : r; }), [[], [10], []]);
+  assert.deepEqual(
+    [1, 2, 3].map(n => {
+      const r = issueOf(observed, n);
+      return r?.completeness === 'complete' ? r.candidates.map(c => c.number) : r;
+    }),
+    [[], [10], []],
+  );
   const trace = (await world.trace()).filter(entry => entry.credential === 'installation');
   assert.equal(trace.filter(entry => /\/pulls\?/.test(entry.endpoint)).length, 2, 'two Link pages, listed once for all three Tickets');
   assert.equal(trace.filter(entry => entry.endpoint.includes('/timeline')).length, 3, 'one timeline read per Ticket');
@@ -198,7 +288,9 @@ test('configured owner/repository casing differs from GitHub canonical URLs with
   assert.equal(listed.kind, 'observed');
   assert.deepEqual(listed.kind === 'observed' && listed.candidates.map(ticket => ticket.issueId), [7001]);
   const found = issueOf(await createCodeRepository({ github }).findPublication({ repo: mixed, issueNumbers: [1], knownBranches: [] }), 1);
-  assert.deepEqual(found?.completeness === 'complete' && found.candidates.map(candidate => [candidate.number, candidate.association]), [[10, ['closing-reference', 'cross-reference']]]);
+  assert.deepEqual(found?.completeness === 'complete' && found.candidates.map(candidate => [candidate.number, candidate.association]), [
+    [10, ['closing-reference', 'cross-reference']],
+  ]);
 });
 
 test('ticket 44: readEnvironmentDeclaration reads .factory/environment.yaml AT the base tip commit (narrow Contents grant), hashes its bytes and validates it closed', async t => {
@@ -211,13 +303,23 @@ test('ticket 44: readEnvironmentDeclaration reads .factory/environment.yaml AT t
   assert.deepEqual(declared.declaration, { schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] });
   const trace = await world.trace();
   const read = trace.find(entry => entry.endpoint.includes('/contents/'));
-  assert.ok(read && read.endpoint.endsWith(`/contents/.factory/environment.yaml?ref=${'a'.repeat(40)}`), 'the file of the pinned commit, never of a moving branch name');
+  assert.ok(
+    read && read.endpoint.endsWith(`/contents/.factory/environment.yaml?ref=${'a'.repeat(40)}`),
+    'the file of the pinned commit, never of a moving branch name',
+  );
 });
 
 test('ticket 44: a missing file is `missing` at a known commit; an invalid one names the error paths; a transport failure is never absence', async t => {
   const absent = await compose(t, { issues: [], pulls: [], environmentFiles: { 'acme/project': null } });
-  assert.deepEqual(await absent.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' }).then(o => [o.kind, 'commit' in o ? o.commit : null]), ['missing', 'b'.repeat(40)]);
-  const invalid = await compose(t, { issues: [], pulls: [], environmentFiles: { 'acme/project': 'schemaVersion: 1\napk:\n  - name: openjdk25-jdk\n    version: "25"\nrun: ./install.sh\n' } });
+  assert.deepEqual(
+    await absent.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' }).then(o => [o.kind, 'commit' in o ? o.commit : null]),
+    ['missing', 'b'.repeat(40)],
+  );
+  const invalid = await compose(t, {
+    issues: [],
+    pulls: [],
+    environmentFiles: { 'acme/project': 'schemaVersion: 1\napk:\n  - name: openjdk25-jdk\n    version: "25"\nrun: ./install.sh\n' },
+  });
   const observed = await invalid.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' });
   assert.equal(observed.kind, 'invalid');
   assert.deepEqual(observed.kind === 'invalid' ? observed.errors.map(error => error.path) : [], ['run', 'apk[0].version']);

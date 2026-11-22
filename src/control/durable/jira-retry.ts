@@ -7,4 +7,4 @@ export const retryNotBefore = (at: string, waitSeconds: number) => new Date(Date
  * Seconds to wait before the next POST of a Jira comment after `failures` consecutive unsuccessful attempts (known refusals, or uncertain
  * POSTs then found absent): 0, 60, 180, 420, then 900 (bounded, never abandoned). The first failure is retried on the next pass.
  */
-export const jiraCommentBackoffSeconds = (failures: number) => failures <= 0 ? 0 : Math.min(2 ** Math.min(failures - 1, 4) - 1, 15) * 60;
+export const jiraCommentBackoffSeconds = (failures: number) => (failures <= 0 ? 0 : Math.min(2 ** Math.min(failures - 1, 4) - 1, 15) * 60);

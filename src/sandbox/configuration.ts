@@ -21,19 +21,26 @@ export const defaultMinFreeMemoryMiB = 1024;
 
 /** v2 (V2-01): the sandbox adapters an installation can name in `sandbox.adapter`. Absent = `gondolin` (every installation before v2). */
 export const sandboxAdapters = ['gondolin', 'lambda'] as const;
-export type SandboxAdapter = typeof sandboxAdapters[number];
+export type SandboxAdapter = (typeof sandboxAdapters)[number];
 
 /** V2-03: what the Gondolin adapter declares. Docker in the guest, a root disk and workspace that survive the boot (so `stop` preserves
  * them), no maximum boot duration (no rotation) and the MVP egress: public HTTP(S) through the adapter's mediation only. */
-export const gondolinCapabilities: SandboxCapabilities = Object.freeze({ docker: true, persistentDisk: true, bootDuration: null,
-  egress: Object.freeze({ mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false }) });
+export const gondolinCapabilities: SandboxCapabilities = Object.freeze({
+  docker: true,
+  persistentDisk: true,
+  bootDuration: null,
+  egress: Object.freeze({ mediation: 'http', publicTcp: false, udp: false, ipv6: false, privateNetwork: false }),
+});
 
 export type SandboxAdapterSelection =
-  { status: 'selected'; adapter: 'gondolin'; capabilities: SandboxCapabilities; configuration: SandboxConfiguration } |
+  | { status: 'selected'; adapter: 'gondolin'; capabilities: SandboxCapabilities; configuration: SandboxConfiguration }
   /** v2 ticket 02: the effective Lambda profile keeps `adapter: 'lambda'` (it is what tells the two effective configurations apart). */
-  { status: 'selected'; adapter: 'lambda'; capabilities: SandboxCapabilities; configuration: LambdaProfile } |
-  { status: 'refused'; /** The adapter the configuration names (`null`: it names none that exists). */ adapter: SandboxAdapter | null;
-    errors: { code: 'SANDBOX_CONFIGURATION_INVALID'; path: string }[] };
+  | { status: 'selected'; adapter: 'lambda'; capabilities: SandboxCapabilities; configuration: LambdaProfile }
+  | {
+      status: 'refused';
+      /** The adapter the configuration names (`null`: it names none that exists). */ adapter: SandboxAdapter | null;
+      errors: { code: 'SANDBOX_CONFIGURATION_INVALID'; path: string }[];
+    };
 
 /**
  * V2-01 (pure): the ONE adapter the installation configuration selects, statically, for every repository, with its declared capabilities
@@ -46,7 +53,8 @@ export function selectSandboxAdapter(configuration: unknown): SandboxAdapterSele
   let profile = configuration;
   if (configuration && typeof configuration === 'object' && !Array.isArray(configuration) && 'adapter' in configuration) {
     const { adapter: named, ...rest } = configuration as Record<string, unknown>;
-    adapter = named; profile = rest;
+    adapter = named;
+    profile = rest;
   }
   if (adapter === 'lambda') {
     const parsed = lambdaProfileSchema.safeParse(configuration);
@@ -82,11 +90,15 @@ export type SandboxConfiguration = z.infer<typeof configurationSchema>;
  * `shutdownGraceSeconds`) are read from the CURRENT configuration at each boot (recorded per boot in its `identity.json`), so changing them
  * never invalidates a prepared environment. Returns the changed identity fields, human readable; empty = the environment stays usable.
  */
-export function environmentIdentityChanges(prepared: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } },
-  current: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } | undefined }): string[] {
+export function environmentIdentityChanges(
+  prepared: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } },
+  current: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } | undefined },
+): string[] {
   const changes: string[] = [];
-  if (prepared.configuration.profile !== current.configuration.profile) changes.push(`sandbox.profile ${prepared.configuration.profile} -> ${current.configuration.profile}`);
-  if (prepared.configuration.diskGiB !== current.configuration.diskGiB) changes.push(`sandbox.diskGiB ${prepared.configuration.diskGiB} -> ${current.configuration.diskGiB}`);
+  if (prepared.configuration.profile !== current.configuration.profile)
+    changes.push(`sandbox.profile ${prepared.configuration.profile} -> ${current.configuration.profile}`);
+  if (prepared.configuration.diskGiB !== current.configuration.diskGiB)
+    changes.push(`sandbox.diskGiB ${prepared.configuration.diskGiB} -> ${current.configuration.diskGiB}`);
   const pin = current.guestAssets;
   if (!pin || pin.directory !== prepared.guestAssets.directory || pin.manifestSha256 !== prepared.guestAssets.manifestSha256) {
     changes.push(`guest assets ${prepared.guestAssets.manifestSha256.slice(0, 12)} -> ${pin ? pin.manifestSha256.slice(0, 12) : 'none'}`);

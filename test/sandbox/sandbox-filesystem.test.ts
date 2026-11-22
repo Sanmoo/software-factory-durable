@@ -18,8 +18,12 @@ const native = () => ({ stdio: 'pipe' as const, timeout: remainingMs() });
 async function shortRoot() {
   for (let attempt = 0; attempt < 10; attempt++) {
     const root = join(dirname(testRoot!), randomBytes(1).toString('hex'));
-    try { await mkdir(root, { mode: 0o700 }); return root; }
-    catch (e) { if (!(e instanceof Error && 'code' in e && e.code === 'EEXIST')) throw e; }
+    try {
+      await mkdir(root, { mode: 0o700 });
+      return root;
+    } catch (e) {
+      if (!(e instanceof Error && 'code' in e && e.code === 'EEXIST')) throw e;
+    }
   }
   throw new Error('NO_NEW_SHORT_FILESYSTEM_TEST_ROOT');
 }
@@ -36,9 +40,12 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
       execFileSync('/usr/bin/qemu-img', ['create', '-f', 'raw', raw, '32M'], native());
       execFileSync('/usr/bin/mke2fs', ['-q', '-t', 'ext4', '-O', '^has_journal', '-F', raw], native());
       for (const name of ['kernel', 'initramfs']) await writeFile(join(assets, name), name);
-      const manifest = JSON.stringify({ version: 1, config: { arch: 'x86_64', distro: 'alpine' },
+      const manifest = JSON.stringify({
+        version: 1,
+        config: { arch: 'x86_64', distro: 'alpine' },
         assets: { kernel: 'kernel', initramfs: 'initramfs', rootfs: 'rootfs.ext4' },
-        checksums: { kernel: hash('kernel'), initramfs: hash('initramfs'), rootfs: hash(await readFile(raw)) } });
+        checksums: { kernel: hash('kernel'), initramfs: hash('initramfs'), rootfs: hash(await readFile(raw)) },
+      });
       await writeFile(join(assets, 'manifest.json'), manifest);
       const sandbox = createSandbox({ root, guestAssets: { directory: assets, manifestSha256: hash(manifest) } });
       const prepared = await sandbox.prepare({ workId: 'filesystem-check-work', configuration });
@@ -54,7 +61,11 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
         const damaged = join(root, 'damaged.ext4');
         execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native());
         const file = await open(damaged, 'r+');
-        try { await file.write(Buffer.alloc(2), 0, 2, 1024 + 0x38); } finally { await file.close(); }
+        try {
+          await file.write(Buffer.alloc(2), 0, 2, 1024 + 0x38);
+        } finally {
+          await file.close();
+        }
         execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native());
       } else if (variant === 'allocation-bitmap') {
         // New fixture ONLY: model an allocated metadata block missing from its
@@ -64,18 +75,25 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
         const allocation = execFileSync('/usr/bin/debugfs', ['-R', 'testb 100', damaged], { ...native(), encoding: 'utf8' });
         assert.match(allocation, /marked in use/);
         execFileSync('/usr/bin/debugfs', ['-w', '-R', 'freeb 100', damaged], native());
-        assert.throws(() => execFileSync('/usr/bin/e2fsck', ['-f', '-n', damaged], native()), e => {
-          assert.ok(e instanceof Error && 'status' in e && e.status === 4);
-          assert.ok('stdout' in e && String(e.stdout).includes('Block bitmap differences'));
-          return true;
-        });
+        assert.throws(
+          () => execFileSync('/usr/bin/e2fsck', ['-f', '-n', damaged], native()),
+          e => {
+            assert.ok(e instanceof Error && 'status' in e && e.status === 4);
+            assert.ok('stdout' in e && String(e.stdout).includes('Block bitmap differences'));
+            return true;
+          },
+        );
         execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native());
       } else if (variant === 'backing-file') {
         await rm(disk);
         execFileSync('/usr/bin/qemu-img', ['create', '-f', 'qcow2', '-F', 'raw', '-b', raw, disk, '1G'], native());
       }
       const file = await open(disk, 'r+');
-      try { await file.chmod(0o600); } finally { await file.close(); }
+      try {
+        await file.chmod(0o600);
+      } finally {
+        await file.close();
+      }
       const before = hash(await readFile(disk));
       const old = join(directory, oldBoot);
       const unit = `factory-sandbox-${oldBoot}.service`;
@@ -83,20 +101,41 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
       await mkdir(old, { mode: 0o700 });
       const json = (name: string, value: unknown) => writeFile(name, JSON.stringify(value), { mode: 0o600 });
       await json(join(directory, 'current.json'), { version: 1, environment, boot: oldBoot });
-      await json(join(old, 'identity.json'), { version: 1, environment, boot: oldBoot, unit, configuration,
-        hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() });
-      await json(join(old, 'started.json'), { version: 1, boot: oldBoot, unit, invocation: 'a'.repeat(32), cgroup: group,
-        cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') });
+      await json(join(old, 'identity.json'), {
+        version: 1,
+        environment,
+        boot: oldBoot,
+        unit,
+        configuration,
+        hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
+      });
+      await json(join(old, 'started.json'), {
+        version: 1,
+        boot: oldBoot,
+        unit,
+        invocation: 'a'.repeat(32),
+        cgroup: group,
+        cgroupNamespace: await readlink('/proc/self/ns/cgroup'),
+        mountNamespace: await readlink('/proc/self/ns/mnt'),
+      });
       const bin = join(root, 'bin');
       await mkdir(bin, { mode: 0o700 });
-      await writeFile(join(bin, 'systemctl'), `#!${process.execPath}
+      await writeFile(
+        join(bin, 'systemctl'),
+        `#!${process.execPath}
 const active = ${JSON.stringify(variant === 'prior-unknown')};
 console.log('LoadState=loaded\\nActiveState=' + (active ? 'active' : 'inactive') + '\\nMainPID=0\\nInvocationID=${'a'.repeat(32)}\\nControlGroup=' + (active ? ${JSON.stringify(group)} : '') + '\\nResult=success');
-`, { mode: 0o700 });
-      await writeFile(join(bin, 'systemd-run'), `#!${process.execPath}
+`,
+        { mode: 0o700 },
+      );
+      await writeFile(
+        join(bin, 'systemd-run'),
+        `#!${process.execPath}
 require('node:fs').writeFileSync(${JSON.stringify(join(root, 'manager-request'))}, 'synthetic request only');
 process.exit(77);
-`, { mode: 0o700 });
+`,
+        { mode: 0o700 },
+      );
       process.env.PATH = bin; // All disk helpers fixed paths; no real manager fallback.
       if (variant === 'low-space') {
         const statfs = fs.statfs;
@@ -105,24 +144,34 @@ process.exit(77);
           return args[0] === root || args[0] === directory ? { ...actual, bavail: 0n } : actual;
         });
         syncBuiltinESMExports();
-        restoreStorage = () => { boundary.mock.restore(); syncBuiltinESMExports(); };
+        restoreStorage = () => {
+          boundary.mock.restore();
+          syncBuiltinESMExports();
+        };
       }
       const result = await sandbox.start({ environment, configuration });
       assert.equal(hash(await readFile(disk)), before, 'checking must never repair or rewrite preserved data');
       if (variant === 'valid') {
         assert.equal(result.status, 'indeterminate'); // Deliberately refused manager double; not an operational boot.
         assert.equal((await readdir(root)).includes('manager-request'), true);
-        assert.notEqual((JSON.parse(await readFile(join(directory, 'current.json'), 'utf8'))).boot, oldBoot);
+        assert.notEqual(JSON.parse(await readFile(join(directory, 'current.json'), 'utf8')).boot, oldBoot);
       } else {
         assert.equal((await readdir(root)).includes('manager-request'), false);
         assert.deepEqual(JSON.parse(await readFile(join(directory, 'current.json'), 'utf8')), { version: 1, environment, boot: oldBoot });
         if (result.status === 'success') assert.fail('unverified filesystem must not start');
-        assert.equal(result.code, variant === 'prior-unknown' ? 'PREVIOUS_BOOT_NOT_STOPPED'
-          : variant === 'low-space' ? 'INSUFFICIENT_STORAGE_FOR_BOOT' : 'PRESERVED_DISK_CHECK_REQUIRED');
+        assert.equal(
+          result.code,
+          variant === 'prior-unknown'
+            ? 'PREVIOUS_BOOT_NOT_STOPPED'
+            : variant === 'low-space'
+              ? 'INSUFFICIENT_STORAGE_FOR_BOOT'
+              : 'PRESERVED_DISK_CHECK_REQUIRED',
+        );
       }
     } finally {
       restoreStorage?.();
-      if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
       await rm(root, { recursive: true, force: true });
     }
   });

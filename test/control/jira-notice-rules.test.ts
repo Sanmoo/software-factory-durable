@@ -5,8 +5,14 @@ import type { JiraEvaluation } from '../../src/control/rules/jira-admission.js';
 
 // Jira ticket 05 (spec §3 step 4, §4 last paragraph): when a refused Card is told why, and how an uncertain comment POST is reconciled.
 const none: JiraEvaluation = { decision: 'blocked', reasons: [{ code: 'JIRA_ROUTE_NONE', nextStep: 'No component routes; set one.' }] };
-const divergent = (repositories: string[]): JiraEvaluation => ({ decision: 'blocked', reasons: [{ code: 'JIRA_ROUTE_DIVERGENT', repositories, nextStep: `Different repositories (${repositories.join(', ')}).` }] });
-const blockerA: JiraEvaluation = { decision: 'blocked', reasons: [{ code: 'JIRA_BLOCKER_NOT_DONE', blocker: { issueId: '70301', key: 'SEC-10' }, nextStep: 'A visible blocker is not Done.' }] };
+const divergent = (repositories: string[]): JiraEvaluation => ({
+  decision: 'blocked',
+  reasons: [{ code: 'JIRA_ROUTE_DIVERGENT', repositories, nextStep: `Different repositories (${repositories.join(', ')}).` }],
+});
+const blockerA: JiraEvaluation = {
+  decision: 'blocked',
+  reasons: [{ code: 'JIRA_BLOCKER_NOT_DONE', blocker: { issueId: '70301', key: 'SEC-10' }, nextStep: 'A visible blocker is not Done.' }],
+};
 
 test('a blocked Card with confirmed intent and audience is told once per impediment; a new reason is told again', () => {
   const first = impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/b']), cardReread: true, notified: null });
@@ -28,8 +34,11 @@ test('another restricted blocker is the same Card-visible impediment, and the re
 });
 
 test('label removed, unverifiable facts, eligibility or an uncertain audience never post: local diagnosis only', () => {
-  assert.deepEqual(impedimentNotice({ evaluation: { decision: 'not-candidate', reasons: [] }, cardReread: true, notified: null }),
-    { kind: 'local', code: 'JIRA_NOTICE_NOT_CANDIDATE', reasonKey: null });
+  assert.deepEqual(impedimentNotice({ evaluation: { decision: 'not-candidate', reasons: [] }, cardReread: true, notified: null }), {
+    kind: 'local',
+    code: 'JIRA_NOTICE_NOT_CANDIDATE',
+    reasonKey: null,
+  });
   const unverifiable: JiraEvaluation = { decision: 'unverifiable', reasons: [{ code: 'JIRA_COMPONENTS_UNVERIFIABLE', nextStep: 'Read again.' }] };
   assert.equal(impedimentNotice({ evaluation: unverifiable, cardReread: true, notified: null }).kind, 'local');
   assert.equal(impedimentNotice({ evaluation: { decision: 'eligible', repository: 'equipe/a', reasons: [] }, cardReread: true, notified: null }).kind, 'local');
@@ -38,19 +47,25 @@ test('label removed, unverifiable facts, eligibility or an uncertain audience ne
   assert.equal(uncertain.kind === 'local' && uncertain.code, 'JIRA_NOTICE_AUDIENCE_UNCERTAIN');
 });
 
-test('the audience is confirmed only from observed facts: the Card just re-read by ID and a text that carries no other issue\'s data', () => {
+test("the audience is confirmed only from observed facts: the Card just re-read by ID and a text that carries no other issue's data", () => {
   assert.equal(impedimentNotice({ evaluation: blockerA, cardReread: true, notified: null }).kind, 'notify');
   for (const nextStep of ['Finish SEC-10 first.', 'Neighbour 70301 is open.']) {
     const leaking: JiraEvaluation = { decision: 'blocked', reasons: [{ ...blockerA.reasons[0]!, nextStep }] };
     const decision = impedimentNotice({ evaluation: leaking, cardReread: true, notified: null });
     assert.deepEqual(decision.kind === 'local' && decision.code, 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', nextStep);
   }
-  assert.deepEqual(impedimentNotice({ evaluation: blockerA, cardReread: false, notified: null }),
-    { kind: 'local', code: 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', reasonKey: 'JIRA_BLOCKER_NOT_DONE' }, 'not re-read by ID: never posted');
+  assert.deepEqual(
+    impedimentNotice({ evaluation: blockerA, cardReread: false, notified: null }),
+    { kind: 'local', code: 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', reasonKey: 'JIRA_BLOCKER_NOT_DONE' },
+    'not re-read by ID: never posted',
+  );
 });
 
 test('a blocked Card with an unverifiable side tells only the known impediments', () => {
-  const mixed: JiraEvaluation = { decision: 'blocked', reasons: [none.reasons[0]!, { code: 'JIRA_BLOCKERS_UNVERIFIABLE', observedCode: 'JIRA_FORBIDDEN', nextStep: 'Could not verify.' }] };
+  const mixed: JiraEvaluation = {
+    decision: 'blocked',
+    reasons: [none.reasons[0]!, { code: 'JIRA_BLOCKERS_UNVERIFIABLE', observedCode: 'JIRA_FORBIDDEN', nextStep: 'Could not verify.' }],
+  };
   const decision = impedimentNotice({ evaluation: mixed, cardReread: true, notified: null });
   assert.equal(decision.kind, 'notify');
   assert.equal(decision.kind === 'notify' && decision.reasonKey, impedimentNotice({ evaluation: none, cardReread: true, notified: null }).reasonKey);
@@ -66,37 +81,72 @@ test('the notice starts with the reserved header and carries only the Card-safe 
 });
 
 const expected = impedimentComment({ ref: 'I-1a2b3c4d', steps: ['Fix it.'] });
-const own = (commentId: string, lines = expected.lines, extra: { accountId?: string; restricted?: boolean } = {}) =>
-  ({ commentId, accountId: extra.accountId ?? 'acc-factory', text: lines.join('\n'), restricted: extra.restricted ?? false });
+const own = (commentId: string, lines = expected.lines, extra: { accountId?: string; restricted?: boolean } = {}) => ({
+  commentId,
+  accountId: extra.accountId ?? 'acc-factory',
+  text: lines.join('\n'),
+  restricted: extra.restricted ?? false,
+});
 
 test('reconciliation: one exact own comment confirms; zero in a complete read is absent', () => {
-  assert.deepEqual(commentReconciliation({ listing: { kind: 'complete', comments: [own('100', ['hello']), own('101')] }, account: 'acc-factory', expected }),
-    { kind: 'confirmed', commentId: '101' });
-  assert.deepEqual(commentReconciliation({ listing: { kind: 'complete', comments: [own('100', ['hello'])] }, account: 'acc-factory', expected }), { kind: 'absent' });
+  assert.deepEqual(commentReconciliation({ listing: { kind: 'complete', comments: [own('100', ['hello']), own('101')] }, account: 'acc-factory', expected }), {
+    kind: 'confirmed',
+    commentId: '101',
+  });
+  assert.deepEqual(commentReconciliation({ listing: { kind: 'complete', comments: [own('100', ['hello'])] }, account: 'acc-factory', expected }), {
+    kind: 'absent',
+  });
   // The header copied by another account (or the same text by a human) proves nothing.
-  assert.deepEqual(commentReconciliation({ listing: { kind: 'complete', comments: [own('102', expected.lines, { accountId: 'acc-human' })] }, account: 'acc-factory', expected }),
-    { kind: 'absent' });
+  assert.deepEqual(
+    commentReconciliation({
+      listing: { kind: 'complete', comments: [own('102', expected.lines, { accountId: 'acc-human' })] },
+      account: 'acc-factory',
+      expected,
+    }),
+    { kind: 'absent' },
+  );
 });
 
 test('reconciliation: two copies, an edited or restricted own copy, an incomplete read or an unknown account stay pending', () => {
-  const pending = (input: Parameters<typeof commentReconciliation>[0]) => { const result = commentReconciliation(input); return result.kind === 'pending' ? result.code : result.kind; };
+  const pending = (input: Parameters<typeof commentReconciliation>[0]) => {
+    const result = commentReconciliation(input);
+    return result.kind === 'pending' ? result.code : result.kind;
+  };
   assert.equal(pending({ listing: { kind: 'complete', comments: [own('101'), own('102')] }, account: 'acc-factory', expected }), 'JIRA_COMMENT_MULTIPLE');
-  assert.equal(pending({ listing: { kind: 'complete', comments: [own('101', [expected.header, 'edited'])] }, account: 'acc-factory', expected }), 'JIRA_COMMENT_SIMILAR');
-  assert.equal(pending({ listing: { kind: 'complete', comments: [own('101', expected.lines, { restricted: true })] }, account: 'acc-factory', expected }), 'JIRA_COMMENT_SIMILAR');
+  assert.equal(
+    pending({ listing: { kind: 'complete', comments: [own('101', [expected.header, 'edited'])] }, account: 'acc-factory', expected }),
+    'JIRA_COMMENT_SIMILAR',
+  );
+  assert.equal(
+    pending({ listing: { kind: 'complete', comments: [own('101', expected.lines, { restricted: true })] }, account: 'acc-factory', expected }),
+    'JIRA_COMMENT_SIMILAR',
+  );
   assert.equal(pending({ listing: { kind: 'incomplete', code: 'JIRA_COMMENTS_INCOMPLETE' }, account: 'acc-factory', expected }), 'JIRA_COMMENTS_INCOMPLETE');
   assert.equal(pending({ listing: { kind: 'complete', comments: [] }, account: null, expected }), 'JIRA_ACCOUNT_UNKNOWN');
 });
 
 test('Jira ticket 09: the delivery notice is ONE line led by its reserved header; reconciliation recognises it and a same-header variant stays ambiguous', () => {
   const expected = deliveryComment({ workRef: 'T-17', base: 'main', url: 'https://github.com/acme/payments-api/pull/9' });
-  assert.deepEqual(expected, { header: '[Software Factory · Entrega T-17]', lines: ['[Software Factory · Entrega T-17] O PR foi integrado a main: https://github.com/acme/payments-api/pull/9'] });
+  assert.deepEqual(expected, {
+    header: '[Software Factory · Entrega T-17]',
+    lines: ['[Software Factory · Entrega T-17] O PR foi integrado a main: https://github.com/acme/payments-api/pull/9'],
+  });
   const comment = (commentId: string, text: string) => ({ commentId, accountId: 'acc-factory', text, restricted: false });
   const listing = (...comments: ReturnType<typeof comment>[]) => ({ listing: { kind: 'complete' as const, comments }, account: 'acc-factory', expected });
   assert.deepEqual(commentReconciliation(listing(comment('1', expected.lines[0]!))), { kind: 'confirmed', commentId: '1' });
-  assert.deepEqual(commentReconciliation(listing(comment('1', expected.lines[0]!), comment('2', expected.lines[0]!))),
-    { kind: 'pending', code: 'JIRA_COMMENT_MULTIPLE', candidates: ['1', '2'] });
-  assert.deepEqual(commentReconciliation(listing(comment('3', '[Software Factory · Entrega T-17] O PR foi integrado a release: x'))),
-    { kind: 'pending', code: 'JIRA_COMMENT_SIMILAR', candidates: ['3'] });
-  assert.deepEqual(commentReconciliation(listing(comment('4', '[Software Factory · Entrega T-170] O PR foi integrado a main: x'))), { kind: 'absent' },
-    'another Work\'s header is not a prefix match');
+  assert.deepEqual(commentReconciliation(listing(comment('1', expected.lines[0]!), comment('2', expected.lines[0]!))), {
+    kind: 'pending',
+    code: 'JIRA_COMMENT_MULTIPLE',
+    candidates: ['1', '2'],
+  });
+  assert.deepEqual(commentReconciliation(listing(comment('3', '[Software Factory · Entrega T-17] O PR foi integrado a release: x'))), {
+    kind: 'pending',
+    code: 'JIRA_COMMENT_SIMILAR',
+    candidates: ['3'],
+  });
+  assert.deepEqual(
+    commentReconciliation(listing(comment('4', '[Software Factory · Entrega T-170] O PR foi integrado a main: x'))),
+    { kind: 'absent' },
+    "another Work's header is not a prefix match",
+  );
 });
