@@ -334,3 +334,8 @@ Decisão do Operador (2026-11-22): "sim" para A9 parte B, A6 e A14.
   `factory-sfv2acc` apagada (verificado: stack inexistente, as duas roles `NoSuchEntity`, bucket 404); usuário IAM
   `factory-sfv2acc-operator` apagado com sua chave e a política inline (verificado `NoSuchEntity`); perfis AWS locais
   `factory-sfv2acc` e `factory-sfv2acc-source` removidos; `lb1/credentials` removido sem leitura.
+- Três itens conferidos depois (a pedido do Operador): rótulo `factory-acc` (criado pela campanha em 2026-11-21, presente só nas issues
+  fechadas #127, #128, #133, #135) apagado do repositório real e verificado ausente; branch `prototype/v2-lambda-acceptance` ausente
+  localmente e na origem (nunca foi criada ou publicada); instalação do GitHub App NÃO verificável pelo agente (a listagem exige
+  autenticação do App, e a cópia da chave em lb1 já foi removida) — o repositório de apoio foi apagado, e o Operador pode conferir em
+  Settings → Applications → Installed GitHub Apps.

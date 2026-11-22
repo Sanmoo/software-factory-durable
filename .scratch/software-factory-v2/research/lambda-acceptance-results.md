@@ -199,15 +199,15 @@ Remoções no GitHub:
 
 - [x] Repositório de apoio `Sanmoo/sfv2acc-fixture` apagado — **feito**; com ele saíram as refs de marcador, branches, PRs e Tickets de teste (listas salvas antes em `fixture-refs-before-delete.txt`, `fixture-issues-before-delete.json`, `fixture-prs-before-delete.json`).
 - [x] Repositório real: nenhuma ref da Factory — **feito e verificado**. A branch `chore/factory-environment` é anterior à campanha e foi deixada.
-- [x] Repositório real: nenhum PR da campanha aberto — **feito e verificado** (PRs #134, #136, #137 e #138 mesclados). A remoção do rótulo `factory-acc` não consta do registro.
+- [x] Repositório real: nenhum PR da campanha aberto — **feito e verificado** (PRs #134, #136, #137 e #138 mesclados). O rótulo `factory-acc`, criado pela campanha, foi apagado do repositório depois do fechamento e verificado ausente.
 - [x] Ruleset do repositório real igual ao anterior — **feito e verificado**.
-- [ ] Instalação do GitHub App sem o repositório de apoio — não consta do registro como passo próprio; o repositório foi apagado.
+- [ ] Instalação do GitHub App sem o repositório de apoio — **não verificável pelo agente**: a listagem exige autenticação do App. O repositório de apoio foi apagado; o Operador pode conferir em Settings → Applications → Installed GitHub Apps.
 
 Local:
 
 - [x] Worktrees e branches já integrados removidos — **feito**. Fica o worktree `lambda-concurrent-wip-push` (correção A18, pendente de integração).
 - [ ] `lb1/credentials` — **pendente do Operador**. A remoção do restante da raiz `lb1` não consta do registro.
-- [ ] Branch local `prototype/v2-lambda-acceptance` — não consta do registro.
+- [x] Branch local `prototype/v2-lambda-acceptance` — **verificado**: não existe localmente nem na origem (não chegou a ser criada).
 - [ ] Evidência bruta — conservada no diretório local da campanha; não foi apagada.
 
 ## 7. Resposta do ticket 16
@@ -228,3 +228,7 @@ os perfis AWS locais `factory-sfv2acc` e `factory-sfv2acc-source` foram removido
 X2 continua `inconclusive` (parcial): a limpeza do próprio produto não removeu tudo sozinha (A19 aberta; a A18 só foi corrigida durante
 a limpeza), e três itens seguem sem registro de verificação (rótulo `factory-acc` no repositório real, instalação do GitHub App e a
 branch de protótipo).
+
+Os três itens sem registro foram conferidos em seguida. O rótulo `factory-acc` foi apagado do repositório real e a branch
+`prototype/v2-lambda-acceptance` não existe em lugar nenhum. A instalação do GitHub App não pôde ser verificada pelo agente e fica
+como conferência do Operador. X2 continua `inconclusive` (parcial) por esse item e pela A19.

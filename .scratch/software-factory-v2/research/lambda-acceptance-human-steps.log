@@ -94,3 +94,4 @@
 2026-11-22T17:58:54Z cleanup (requested by the user in chat): lb1/credentials removed without reading its contents
 2026-11-22T18:09:59Z cleanup (requested by the user in chat, with the profile the user chose): stack factory-sfv2acc deleted and verified absent (roles and bucket gone); IAM user factory-sfv2acc-operator, its access key and inline policy deleted and verified absent
 2026-11-22T18:10:09Z cleanup (requested by the user in chat): local AWS profiles factory-sfv2acc and factory-sfv2acc-source removed from ~/.aws/config and ~/.aws/credentials (contents not printed)
+2026-11-22T18:12:42Z cleanup: label factory-acc (created by the campaign on 2026-11-21) deleted from the real repository; verified absent. Prototype branch prototype/v2-lambda-acceptance verified absent locally and on origin. GitHub App installation not verifiable by the agent (needs App authentication; lb1 key copy already removed)
