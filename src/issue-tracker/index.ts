@@ -449,3 +449,73 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
     },
   };
 }
+
+/**
+ * One closed REST v3 request of the Jira adapter. `path` is always `/rest/api/3/...` built by the adapter; the host transport supplies the
+ * configured HTTPS origin and the credential (never the adapter, the Control or the agent).
+ */
+export type JiraRequest = { method: 'GET' | 'POST' | 'PUT'; path: string; query?: Record<string, string>; body?: unknown };
+/** A known response (any HTTP status the transport passes through as data) or a failure that concludes nothing. */
+export type JiraResponse = { ok: true; status: number; body: unknown; observedAt: string } |
+  { ok: false; code: string; status?: number; waitSeconds?: number; observedAt: string; nextStep: string };
+export interface JiraTransport { request(input: JiraRequest): Promise<JiraResponse> }
+
+const jiraIssueSchema = z.object({
+  id: z.string().regex(/^[1-9][0-9]{0,17}$/), key: z.string().regex(/^[A-Z][A-Z0-9_]{0,254}-[1-9][0-9]{0,17}$/),
+  fields: z.object({
+    labels: z.array(z.string().min(1).max(255)),
+    components: z.array(z.object({ id: z.string().regex(/^[1-9][0-9]{0,17}$/), name: z.string().max(255) })),
+    project: z.object({ id: z.string().regex(/^[1-9][0-9]{0,17}$/) }),
+    status: z.object({ statusCategory: z.object({ key: z.string().min(1).max(64) }) }),
+  }),
+});
+
+/**
+ * Jira Cloud adapter of the common tracker contract (Jira ticket 01: composition and the re-read by ID). The transport of each configured
+ * site is created lazily, on the first request to that site; listing, visible blockers, inputs and comments answer unavailable (ticket 03,
+ * 05/06) and the remote link is refused without any call (tickets 08/09). Nothing here admits Work or authorizes commands.
+ */
+export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transport: (scope: JiraTrackerScope) => JiraTransport }): IssueTracker<'jira'> & JiraRemoteLinks {
+  const transports = new Map<string, JiraTransport>();
+  const site = (siteId: string) => options.scopes.find(scope => scope.siteId === siteId);
+  const transportOf = (scope: JiraTrackerScope) => {
+    let transport = transports.get(scope.siteId);
+    if (!transport) { transport = options.transport(scope); transports.set(scope.siteId, transport); }
+    return transport;
+  };
+  const unavailable = (siteId: string, code: string, nextStep: string, observedAt = new Date().toISOString(), waitSeconds?: number): JiraUnavailable => ({
+    kind: 'unavailable', source: 'jira-rest', observedAt, siteId, completeness: 'incomplete', code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep });
+  const notConfigured = (siteId: string) => unavailable(siteId, 'JIRA_SITE_NOT_CONFIGURED', 'Only explicitly configured Jira sites are read.');
+  const notAvailable = (siteId: string) => unavailable(siteId, 'JIRA_CAPABILITY_NOT_AVAILABLE', 'This release does not read it from Jira yet; nothing is concluded.');
+  const notSent = () => ({ kind: 'failed' as const, observedAt: new Date().toISOString(), code: 'JIRA_CAPABILITY_NOT_AVAILABLE',
+    nextStep: 'This release does not write to Jira yet; nothing was sent.' });
+  return {
+    async checkAccess(scope) {
+      return { source: 'jira-rest', purpose: 'tracker', observedAt: new Date().toISOString(), siteId: scope.siteId, projectId: scope.projectId, status: 'blocked',
+        code: 'JIRA_CAPABILITY_NOT_AVAILABLE', completeness: 'incomplete', nextStep: 'Jira access diagnosis is not available in this release.' };
+    },
+    async listCandidates(scope) { return notAvailable(scope.siteId); },
+    async readTicket(ticket) {
+      const scope = site(ticket.siteId);
+      if (!scope) return notConfigured(ticket.siteId);
+      const response = await transportOf(scope).request({ method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}`,
+        query: { fields: 'labels,components,project,status' } });
+      if (!response.ok) return unavailable(scope.siteId, response.code, response.nextStep, response.observedAt, response.waitSeconds);
+      const parsed = response.status === 200 ? jiraIssueSchema.safeParse(response.body) : undefined;
+      if (!parsed?.success || parsed.data.id !== ticket.issueId) {
+        return unavailable(scope.siteId, 'JIRA_OBSERVATION_INVALID', 'Jira returned an issue that could not be verified; nothing is concluded.', response.observedAt);
+      }
+      const { key, fields } = parsed.data;
+      return { kind: 'observed', source: 'jira-rest', observedAt: response.observedAt, completeness: 'complete',
+        ticket: { tracker: 'jira', siteId: scope.siteId, issueId: ticket.issueId, key, url: `${scope.url}/browse/${key}` },
+        projectId: fields.project.id, labels: fields.labels, components: fields.components.map(item => ({ id: item.id, name: item.name })),
+        statusCategory: fields.status.statusCategory.key };
+    },
+    async readDependencyGraph(ticket) { return notAvailable(ticket.siteId); },
+    async readInputs(ticket) { return notAvailable(ticket.siteId); },
+    async findQuestion(ticket) { return notAvailable(ticket.siteId); },
+    async findReply(ticket) { return notAvailable(ticket.siteId); },
+    async postComment() { return notSent(); },
+    async upsertRemoteLink() { return notSent(); },
+  };
+}

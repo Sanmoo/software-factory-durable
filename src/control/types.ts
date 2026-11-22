@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
+import type { IssueTracker, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -21,7 +21,17 @@ export type AccessDependencies = { tracker: IssueTracker; repository: CodeReposi
   /** Login, or `{login, id}` with the pinned GitHub user id (then matched by id only). */
   operators?: (string | { login: string; id?: number })[];
   /** Ticket 14: resolves the Factory App's bot identity (lazy, safe read); null/absent = unknown, and then nothing is publishable. */
-  factoryApp?: () => Promise<FactoryAppIdentity | null> };
+  factoryApp?: () => Promise<FactoryAppIdentity | null>;
+  /** Jira ticket 01: the configured Ticket sources (absent = every executable repository is a GitHub source with discovery on, YAML v1). */
+  sources?: TicketSource[];
+  /** Jira ticket 01: adapters of the other origins, selected by the Ticket's persisted `tracker` (`tracker` above stays the GitHub one). */
+  trackers?: { jira?: IssueTracker<'jira'> & JiraRemoteLinks } };
+/**
+ * Jira ticket 01: one Ticket source. `discover` gates NEW admissions only: Works already admitted keep their origin, destination and
+ * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
+ */
+export type TicketSource = { tracker: 'github'; repository: string; discover: boolean } |
+  { tracker: 'jira'; siteId: string; url: string; projectId: string; label: string; discover: boolean; routes: { componentId: string; repository: string }[] };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };

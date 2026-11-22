@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/rules/admission.js';
+import { githubOnly } from '../../src/control/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';

@@ -92,6 +92,7 @@ test('YAML v2 refuses routes, IDs, origins and secrets it cannot trust, naming t
     ['invalid e-mail', v2.replace('email: fabrica@example.org', 'email: fabrica'), 'ticketSources.1.email'],
     ['site with two origins', v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('https://equipe.atlassian.net', 'https://other.atlassian.net')), 'ticketSources'],
     ['same project twice', v2.replace(jira, jira + jira), 'ticketSources'],
+    ['site with two accounts', v2.replace(jira, jira + jira.replace("projectId: '10010'", "projectId: '10011'").replace('email: fabrica@example.org', 'email: other@example.org')), 'ticketSources'],
     ['Jira source without routes', v2.replace(/ {4}routes:\n(?: {6}- .*\n)+/, '    routes: []\n'), 'ticketSources.1.routes'],
     ['label on a GitHub source (the v2 repository keeps its label)', v2.replace('{tracker: github, repository: equipe/payments-api, discover: true}',
       '{tracker: github, repository: equipe/payments-api, discover: true, label: other}'), 'ticketSources.0'],

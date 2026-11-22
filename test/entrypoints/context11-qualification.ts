@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/rules/admission.js';
+import { githubOnly } from '../../src/control/index.js';
 import type { ExecutionPorts, ExecutionView, ListView, QuestionView, ShowView } from '../../src/control/index.js';
 
 // TEST ONLY. Ticket 11 one-shot real qualification recipe: inaccessible private source -> durable Question (incomplete capture), answer while

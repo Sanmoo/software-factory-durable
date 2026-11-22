@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/rules/admission.js';
+import { githubOnly } from '../../src/control/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { keySource, pushViolations, requireKeySource, resolveOperator } from './humanchanges21-qualification.js';

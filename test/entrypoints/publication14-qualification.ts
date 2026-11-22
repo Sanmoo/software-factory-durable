@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/rules/admission.js';
+import { githubOnly } from '../../src/control/index.js';
 import type { ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, snapshotStorage } from './review12-qualification.js';
 export { readBounded, snapshotStorage };

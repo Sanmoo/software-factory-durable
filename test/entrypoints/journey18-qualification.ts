@@ -1,4 +1,4 @@
-import { githubOnly } from '../../src/control/rules/admission.js';
+import { githubOnly } from '../../src/control/index.js';
 import type { ExecutionPorts, ListView, QuestionView, RuntimeInventory, ShowView, WorkView } from '../../src/control/index.js';
 import type { AccessDependencies } from '../../src/control/index.js';
 import type { IssueTracker } from '../../src/issue-tracker/index.js';

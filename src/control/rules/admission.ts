@@ -1,7 +1,9 @@
 // Pure admission rules over observed facts. No I/O, clock, storage or GitHub types: callers pass data and time.
 
 export type HoldCode = 'REPOSITORY_NOT_CONFIGURED' | 'TICKET_READ_UNAVAILABLE' | 'TICKET_IDENTITY_MISMATCH' | 'TICKET_IS_PULL_REQUEST' |
-  'TICKET_NOT_OPEN' | 'LABEL_NOT_PRESENT' | 'PUBLICATION_UNKNOWN' | 'FOREIGN_PULL_REQUEST' | 'GLOBAL_PAUSE';
+  'TICKET_NOT_OPEN' | 'LABEL_NOT_PRESENT' | 'PUBLICATION_UNKNOWN' | 'FOREIGN_PULL_REQUEST' | 'GLOBAL_PAUSE' |
+  /** Jira ticket 01: the repository is not a GitHub Ticket source with discovery on (v2 `ticketSources`); existing Works are unaffected. */
+  'SOURCE_DISCOVERY_DISABLED';
 export type Hold = { code: HoldCode; nextStep: string; observedCode?: string; waitSeconds?: number;
   pullRequests?: { pullRequestId: number; number: number; url: string; state: 'open' | 'closed'; merged: boolean; association: string[] }[] };
 

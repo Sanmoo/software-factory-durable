@@ -71,7 +71,7 @@ async function own(root: string): Promise<number> {
     message: 'The installation\'s MicroVMs could not be listed; nothing was terminated and dispatch stays closed. Restore the access (`factory doctor`) and restart the controller.' }));
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory,
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by (composeProductionAccess).
-    access: composeProductionAccess({ github, effective }),
+    access: composeProductionAccess({ root: paths.root, github, effective }),
     polling: { intervalSeconds: effective.pollingSeconds }, ...(composed?.status === 'composed' ? { execution: composed.ports } : {}) });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

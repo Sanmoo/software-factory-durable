@@ -112,9 +112,11 @@ const schemaV2 = z.strictObject({ schemaVersion: z.literal(2), ...common, ticket
       const project = `${source.siteId}\n${source.projectId}`;
       if (projects.has(project)) context.addIssue({ code: 'custom', path: ['ticketSources'], message: 'One Jira source per site project' });
       projects.add(project);
-      const origin = origins.get(source.siteId);
-      if (origin !== undefined && origin !== source.url) context.addIssue({ code: 'custom', path: ['ticketSources'], message: 'A siteId names one origin' });
-      origins.set(source.siteId, source.url);
+      // One origin and one account (e-mail + token file) per site: the host transport of a site is unique.
+      const account = `${source.url}\n${source.email.toLowerCase()}\n${source.tokenFile}`;
+      const known = origins.get(source.siteId);
+      if (known !== undefined && known !== account) context.addIssue({ code: 'custom', path: ['ticketSources'], message: 'A siteId names one origin and one account' });
+      origins.set(source.siteId, account);
     });
   });
 const schema = z.union([schemaV1, schemaV2]);

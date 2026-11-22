@@ -75,6 +75,10 @@ export function createPoller(deps: {
   const transient = new Set(['POLLING_QUERY_FAILED', 'GITHUB_TRANSPORT_UNAVAILABLE', 'GITHUB_QUERY_FAILED', 'GITHUB_READ_FAILED']);
   type Pending = { ref: GitHubTicketRef; configured: ConfiguredRepository; ticket: GitHubTicketRef; observedAt: string; label: { id: number; name: string } };
   type Outcome = { view: CandidateView; waitSeconds?: number; failed?: boolean };
+  // v1 (no sources): every executable repository discovers. v2: only a GitHub source with `discover: true` admits new Tickets; the round
+  // still lists and re-evaluates the repository, so Works already admitted keep being tracked.
+  const discovers = (configured: ConfiguredRepository) => !deps.access.sources || deps.access.sources.some(source =>
+    source.tracker === 'github' && source.discover && source.repository.toLowerCase() === configured.repository.toLowerCase());
   const held = (ref: TicketRef, holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
 
   /** Phase 1: index, pause, configured repository and current Ticket facts. Authorized candidates wait for the shared publication read. */
@@ -83,6 +87,8 @@ export function createPoller(deps: {
     if (existing) return { view: { ticket: ref, observedAt: new Date().toISOString(), outcome: 'existing', work_id: existing } };
     if (await deps.paused()) return { view: held(ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Global pause holds new admissions; tracking continues. Unpause to admit on the next poll.' }]) };
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === ref.repository.toLowerCase());
+    if (configured && !discovers(configured)) return { view: held(ref, [{ code: 'SOURCE_DISCOVERY_DISABLED',
+      nextStep: 'This repository is not a GitHub Ticket source with discovery on; add `{tracker: github, repository, discover: true}` to ticketSources to admit new Tickets.' }]) };
     if (!configured) {
       const result = evaluateEntry({ configuredLabel: undefined, listed: ref, facts: { kind: 'unavailable', code: 'NOT_READ', nextStep: '' } });
       return { view: held(ref, result.authorized ? [] : result.holds) };

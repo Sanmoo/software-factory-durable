@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory } from '../../control/index.js';
-import { createIssueTracker } from '../../issue-tracker/index.js';
+import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory, TicketSource } from '../../control/index.js';
+import { createIssueTracker, createJiraTracker, type JiraTransport } from '../../issue-tracker/index.js';
+import type { TicketSourceConfiguration } from '../configuration.js';
+import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import { createPreparationVm, createSandbox, inventoryRuntime, reconcileInterruptedCaches, reconcileLambdaRuntime, selectSandboxAdapter, type GuestAssetPin, type GuestTransport, type LambdaBootClock, type LambdaImageWait, type LambdaServiceFactory,
   type LambdaObservationTimer, type LambdaWorkerLauncher } from '../../sandbox/index.js';
@@ -75,12 +77,49 @@ export async function composeRuntimeInventory(input: { root: string; effective: 
  * blocked_by, with their own installation; operators answer Questions; the Factory App bot identity is resolved lazily (ticket 14), never
  * configured. One function for the controller owner, the composed journey test and the ticket 18 recipe (no per-ticket wiring).
  */
-export function composeProductionAccess(input: { github: GitHubAccess; effective: { repositories: ConfiguredRepository[];
-  dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[] } }): AccessDependencies {
+/** Host access of one configured Jira site, given to its transport only: the credential is read lazily from the installation root. */
+export type JiraSiteAccess = { siteId: string; url: string; email: string; credential: () => Promise<string> };
+/**
+ * Jira ticket 01: discovery of NEW Jira Tickets is not released yet (ticket 10 enables it once the whole flow exists). A configured
+ * `discover: true` is composed as off; the adapter is still composed, so existing Works keep their origin.
+ */
+export const jiraDiscoveryReleased = false;
+/** Until the REST v3 client exists (ticket 03): a transport that sends nothing and reads no credential; every Jira read is unavailable. */
+const jiraClientNotComposed = (): JiraTransport => ({ request: async () => ({ ok: false, code: 'JIRA_CLIENT_NOT_COMPOSED', observedAt: new Date().toISOString(),
+  nextStep: 'This release has no Jira REST client; nothing was sent and nothing is concluded.' }) });
+
+/**
+ * Owner access: GitHub as before and, only when the v2 configuration names Jira sources, the Jira adapter beside it (selected by the
+ * Ticket's persisted origin, never by its destination). `repositories` stay the executable destinations; `sources` the Ticket sources.
+ * On YAML v1 no Jira client is created and no Jira credential is opened.
+ */
+export function composeProductionAccess(input: { github: GitHubAccess; root?: string; effective: { repositories: ConfiguredRepository[];
+  dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[];
+  ticketSources?: readonly TicketSourceConfiguration[] };
+  /** Tests substitute the host transport of each Jira site (the production one arrives with ticket 03). */
+  jira?: { transport?: (site: JiraSiteAccess) => JiraTransport } }): AccessDependencies {
   const { github, effective } = input;
   const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
+  const configured = effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
+  const sources: TicketSource[] = configured.map(source => source.tracker === 'github' ? { tracker: 'github', repository: source.repository, discover: source.discover }
+    : { tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label, discover: source.discover && jiraDiscoveryReleased,
+      routes: source.routes.map(route => ({ componentId: route.componentId, repository: route.repository })) });
+  const jiraSources = configured.filter(source => source.tracker === 'jira');
+  const root = input.root;
+  const transport = input.jira?.transport ?? jiraClientNotComposed;
+  const jira = jiraSources.length ? createJiraTracker({
+    scopes: jiraSources.map(source => ({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label })),
+    transport: scope => {
+      // One account per site (validated by the configuration): its first source names the e-mail and token file.
+      const account = jiraSources.find(source => source.siteId === scope.siteId)!;
+      return transport({ siteId: scope.siteId, url: scope.url, email: account.email, credential: () => {
+        if (root === undefined) return Promise.reject(new Error('JIRA_CREDENTIAL_ROOT_UNKNOWN'));
+        return readJiraToken(root, account.tokenFile);
+      } });
+    } }) : undefined;
   return { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
-    repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
+    repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators, sources,
+    ...(jira ? { trackers: { jira } } : {}),
     factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null };
 }
 
