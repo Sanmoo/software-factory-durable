@@ -631,3 +631,18 @@ Toda diretiva `eslint-disable` esconde um achado do Lint, então cada uma é um 
 - **Passo do operador agora possível**: instalar o hook, como decidido em S1. Emendado pelo mantenedor em 2026-11-22: por worktree, não para o repositório (`extensions.worktreeConfig` ativo; `git config --worktree core.hooksPath .githooks` em cada worktree que o queira). O `core.hooksPath` do repositório alcançaria o checkout principal, que não tem `node_modules` e onde as sessões de planejamento commitam (o runner recusaria e bloquearia esses commits), e os worktrees de outras sessões, onde cada commit pagaria ~54 s. Os worktrees de etapa desta adoção o instalam.
 - **Continuam pendentes**: Format (S4); Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests. Os checks periódicos dependem de o timer noturno estar instalado.
 
+### S4 — concluída em 2026-11-22
+
+- **Mudou**: Prettier 3.9.10 fixado como dependência de desenvolvimento, `.prettierrc.json` (largura 160, aspas simples, vírgulas finais, `arrowParens: avoid`) e `.prettierignore` (`dist/`, `node_modules/`, `.worktrees/`, `.scratch/`). O quality gate Format roda `prettier --list-different`: no fast e na validação por mudança, sobre os arquivos alterados; na validação integral, e sempre que a configuração do Prettier muda, sobre `**/*.{ts,mts,cts,js,mjs,cjs}`. Ele entrou na política de seleção e nas Gate Proofs, e `coding-standards.md` ganhou os ponteiros.
+- **Reformat**: um commit só de formatação (`df1d6dd4`, 756 arquivos), listado em `.git-blame-ignore-revs`. O Prettier precisou de duas passadas para estabilizar, porque alguns literais de tipo longos expandem e depois recolhem; uma terceira passada não muda nada. Feito na árvore do `main` depois da integração do Jira; os branches ativos fazem rebase sobre ele, como decidido pelo mantenedor.
+- **Atualização de expectativa aprovada** (testes que afirmam a forma do texto-fonte): `publication-boundary`, `long34-recipe-safety`, `bash-copy`, `gondolin-sdk-runtime`, `native-builder-write` e `native-builder-edit` leem a fonte por `test/architecture/source-text.ts` (`sourceShape`: espaços colapsados, sem vírgulas finais, sem espaço junto a parênteses e colchetes). As asserções afirmam o mesmo código. Duas correções depois do reformat, na mesma regra:
+  - a regex de `publication-boundary` sobre os documentos GraphQL foi ancorada neles, porque com os espaços normalizados também casava com uma declaração TypeScript;
+  - o ternário aninhado de `lostMarker` perdeu parênteses que não mudavam o significado.
+  
+  A comparação do gate do Builder em `native-builder-write` passou a ler os dois lados por `sourceShape`.
+- **Identidade das supressões do Lint**: passou de "linha seguinte" para o comando inteiro em forma normalizada, porque o reformat movia o alvo de uma supressão. As 8 entradas de `scripts/test-runner/lint-tolerated.json` foram re-identificadas sem mudar a decisão de nenhuma.
+- **Rehearsal**: o cenário integral alterava um teste acrescentando uma linha em branco final, o que o Format agora rejeita; a alteração passou a ser um comentário final.
+- **Achados tolerados**: nenhum.
+- **Regressão**: `test:ci` verde (2338 testes, 305 s de 900 s), e de novo após o rebase sobre `main` (2338 testes, 314 s). Uma execução anterior, sobre a base antiga, ficou vermelha por cota de `/tmp` (`release-install`) e por carga (prova de Context boundaries acima de 180 s); as duas são ambientais e não se repetiram.
+- **Adotados**: Format; todos os quality gates já adotados provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
+- **Continuam pendentes**: Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
