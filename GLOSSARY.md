@@ -42,6 +42,12 @@ Agente principal que implementa e decide como tratar os achados dos Reviewers.
 **Reviewers** (Revisores):
 Subagentes paralelos de Standards e Spec, sem escrita na worktree do Builder.
 
+**Triager** (Triador):
+Agente que avalia sozinho um Ticket ainda não especificado e decide seu estado de triagem.
+
+**Triage** (Triagem):
+Avaliação de um Ticket pelo Triager, anterior a qualquer Work e distinta de uma Execution.
+
 ## issue-tracker
 
 Dono da leitura de tickets e de suas dependências nativas no GitHub.
