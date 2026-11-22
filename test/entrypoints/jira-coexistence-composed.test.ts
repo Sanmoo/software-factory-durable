@@ -7,7 +7,7 @@ import { readConfiguration } from '../../src/entrypoints/configuration.js';
 import { composeProductionAccess, type JiraSiteAccess } from '../../src/entrypoints/controller/composition.js';
 import { createJiraHttpTransport, type JiraTransport } from '../../src/issue-tracker/index.js';
 import { openControl } from '../../src/control/index.js';
-import type { AccessDependencies, AccessView, Control, ControlStatus, ListView, WorkView } from '../../src/control/types.js';
+import type { AccessDependencies, AccessView, Control, ControlStatus, ListView, WorkView } from '../../src/control/index.js';
 import type { GitHubAccess } from '../../src/platform/github/index.js';
 import type { OwnPullRequestObservation, PullRequestCandidate } from '../../src/code-repository/index.js';
 import { githubDoubles, manualClock, remoteIssue, type Remote } from '../control/doubles.js';
@@ -268,4 +268,23 @@ test('factory doctor diagnoses the Jira account beside GitHub: permissions as fa
   assert.match(missing.nextStep, /tokenFile/);
   assert.ok(h.world.requests().every(request => request.startsWith('GET ') || request === 'POST /rest/api/3/search/jql'), 'the diagnosis only reads');
   assert.doesNotMatch(JSON.stringify(await h.doctor()), /SENTINEL/);
+});
+
+test('an exact /factory cancel on the Card cancels only that Card\'s Work, with its reply on the Card; the GitHub Work of the same number is untouched', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(42, { blockedBy: [41] }), remoteIssue(41, { labels: [] })] };
+  const h = await harness(t, { remote, cards: [pag('81042', 'PAG-42')], scripts: [{ kind: 'ask', head: 'd'.repeat(40), question: 'Preservo a API v1?', questionId: qid }] });
+  await h.start(v2(false));
+  await h.settle('GitHub Ticket admitted', async () => (await h.githubWork()) !== undefined);
+  assert.equal(await h.jiraWork(), undefined, 'discover:false from the start: the marked Card is never admitted');
+  assert.ok(!h.world.requests().includes('POST /rest/api/3/search/jql'));
+  await h.stop();
+  await h.start(v2(true));
+  await h.settle('Question published on the Card', async () => h.world.posted('81042').some(text => text.startsWith('[Software Factory · Pergunta Q-1]')));
+  h.world.write('81042', '/factory cancel', 'acc-human');
+  await h.settle('cancelled, reply on the Card', async () => (await h.jiraWork())!.result === 'cancelled' &&
+    h.world.posted('81042').some(text => text.startsWith('[Software Factory · Cancelamento R-')));
+  const github = (await h.githubWork())!;
+  assert.deepEqual([github.result, github.queue.pending], ['open', true]);
+  assert.deepEqual(h.github.calls.filter(call => call.method === 'postComment'), [], 'no GitHub write');
+  onlyAllowedJira(h.world);
 });

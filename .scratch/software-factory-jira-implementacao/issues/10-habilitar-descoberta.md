@@ -30,7 +30,7 @@ continua composto e Trabalhos existentes seguem no Card persistido.
   (transporte HTTPS do host, arquivo de token, dublê HTTP cru `jira-http-world.ts`), contratos GitHub por `githubDoubles`, Control real.
   v2 com `acme/project#42` e `PAG-42` no mesmo destino (dois Trabalhos, origens distintas; o GitHub segue a regra de bloqueio nativo);
   Card marcado → pergunta → `/factory sim` → PR → merge → link `Entregue` + aviso, uma vez; `discover:false` com Card novo ignorado e
-  conversa do existente; token removido/restaurado; v1 até a entrega sem criar cliente Jira, sem ler token, zero trocas Jira; sentinela
+  conversa do existente; token removido/restaurado; `/factory cancel` exato só cancela o Trabalho do Card (resposta no Card, Trabalho GitHub #42 intacto); v1 até a entrega sem criar cliente Jira, sem ler token, zero trocas Jira; sentinela
   ausente de views, SQLite, prompts e comentários (controle positivo: o Basic auth carrega o token). Teste de adapter
   `test/issue-tracker/jira-access.test.ts`.
 - **Docs**: `docs/jira-installation.md` (conta/token/permissões mínimas, YAML v2, doctor, comandos no Card, suspensão, recuperação,
@@ -38,4 +38,4 @@ continua composto e Trabalhos existentes seguem no Card persistido.
 - Matriz §7: linhas 1-6 e 8 já cobertas pelos testes dos tickets 02-09 (`test/control/jira-*`, `storage-migration-2-to-3`,
   `test/issue-tracker/jira-*`); linha "Coexistência" coberta aqui. Stderr do controlador não é exercido (teste em processo).
 
-Commits: 008f86ca (feat), seguido do registro desta resposta.
+Commits: 008f86ca (feat), 1b76b119 (resposta), seguido do teste composto de cancelamento e do ajuste de entrada pública.
