@@ -108,6 +108,89 @@ const failures = {
   JIRA_RESPONSE_INVALID: 'Jira answered something that is not a verifiable JSON response; nothing is concluded.',
 } as const satisfies Record<string, string>;
 
+type FailureCode = keyof typeof failures;
+const failure = (now: () => Date, code: FailureCode, extra: { status?: number; waitSeconds?: number } = {}): JiraResponse => ({
+  ok: false,
+  code,
+  ...extra,
+  observedAt: now().toISOString(),
+  nextStep: failures[code],
+});
+
+/** The configured origin, only when `url` is exactly an HTTPS origin without credentials. */
+function siteOrigin(url: string): URL | null {
+  let origin: URL;
+  try {
+    origin = new URL(url);
+  } catch {
+    return null;
+  }
+  if (origin.protocol !== 'https:' || origin.origin !== url.replace(/\/$/, '') || origin.username || origin.password) return null;
+  return origin;
+}
+
+/** The request URL toward the origin, only for a closed `/rest/api/3/...` path that resolves to itself. */
+function requestUrl(input: JiraRequest, origin: URL): URL | null {
+  if (!/^\/rest\/api\/3\/[A-Za-z0-9._~%-]+(\/[A-Za-z0-9._~%-]+)*$/.test(input.path) || input.path.split('/').some(part => part === '.' || part === '..'))
+    return null;
+  const url = new URL(input.path, origin.origin);
+  for (const [name, value] of Object.entries(input.query ?? {})) url.searchParams.set(name, value);
+  // The resolved path must be the one requested: WHATWG URL resolves percent-encoded dot segments (`%2e%2e`).
+  if (url.origin !== origin.origin || url.pathname !== input.path) return null;
+  return url;
+}
+
+function exchangeOf(input: JiraRequest, url: URL, authorization: string): JiraHttpExchange {
+  const body = input.body === undefined ? undefined : JSON.stringify(input.body);
+  return {
+    method: input.method,
+    url: url.toString(),
+    headers: {
+      authorization,
+      accept: 'application/json',
+      'user-agent': 'software-factory-controller',
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body }),
+  };
+}
+
+const transportFailureCode = (reason: Extract<JiraHttpResult, { kind: 'failed' }>['reason']): FailureCode =>
+  reason === 'timeout' ? 'JIRA_TIMEOUT' : reason === 'too-large' ? 'JIRA_RESPONSE_TOO_LARGE' : 'JIRA_TRANSPORT_UNAVAILABLE';
+
+type HttpAnswer = Extract<JiraHttpResult, { kind: 'response' }>;
+/** The typed failure of a non-2xx status (`null` for 2xx). */
+function statusFailure(result: HttpAnswer, now: () => Date): JiraResponse | null {
+  const { status } = result;
+  if (status === 401) return failure(now, 'JIRA_UNAUTHENTICATED', { status });
+  if (status === 403) return failure(now, 'JIRA_FORBIDDEN', { status });
+  if (status === 404) return failure(now, 'JIRA_NOT_FOUND', { status });
+  if (status === 429) return failure(now, 'JIRA_RATE_LIMITED', { status, waitSeconds: retryAfter(result.headers['retry-after'], now()) });
+  if (status >= 500)
+    return failure(now, 'JIRA_UNAVAILABLE', {
+      status,
+      ...(result.headers['retry-after'] !== undefined ? { waitSeconds: retryAfter(result.headers['retry-after'], now()) } : {}),
+    });
+  if (status < 200 || status >= 300) return failure(now, 'JIRA_REQUEST_REJECTED', { status });
+  return null;
+}
+
+/** A 2xx answer: bounded JSON that never echoes the credential, or a failure. */
+function answerOf(result: HttpAnswer, credential: { token: string; authorization: string }, now: () => Date): JiraResponse {
+  const { status } = result;
+  if (!/^application\/json(?:;|$)/i.test(result.headers['content-type'] ?? '') || Buffer.byteLength(result.body) > maxResponseBytes)
+    return failure(now, 'JIRA_RESPONSE_INVALID', { status });
+  // An answer that echoes the credential is never handed on (it could reach an observation, a log or a comment).
+  if (result.body.includes(credential.token) || result.body.includes(credential.authorization)) return failure(now, 'JIRA_RESPONSE_INVALID', { status });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.body) as unknown;
+  } catch {
+    return failure(now, 'JIRA_RESPONSE_INVALID', { status });
+  }
+  return { ok: true, status, body: parsed, observedAt: now().toISOString() };
+}
+
 /**
  * The host's Jira Cloud REST v3 transport for ONE configured site. The origin is fixed by the configured `url`; callers only name
  * `/rest/api/3/...` paths (no URL, `..`, `//`, query or fragment inside the path). The API token is read on the host at each request and
@@ -122,70 +205,20 @@ export function createJiraHttpTransport(
   const now = options.now ?? (() => new Date());
   return {
     async request(input: JiraRequest): Promise<JiraResponse> {
-      const fail = (code: keyof typeof failures, extra: { status?: number; waitSeconds?: number } = {}): JiraResponse => ({
-        ok: false,
-        code,
-        ...extra,
-        observedAt: now().toISOString(),
-        nextStep: failures[code],
-      });
-      let origin: URL;
-      try {
-        origin = new URL(site.url);
-      } catch {
-        return fail('JIRA_SITE_URL_INVALID');
-      }
-      if (origin.protocol !== 'https:' || origin.origin !== site.url.replace(/\/$/, '') || origin.username || origin.password)
-        return fail('JIRA_SITE_URL_INVALID');
-      if (!/^\/rest\/api\/3\/[A-Za-z0-9._~%-]+(\/[A-Za-z0-9._~%-]+)*$/.test(input.path) || input.path.split('/').some(part => part === '.' || part === '..'))
-        return fail('JIRA_REQUEST_REFUSED');
-      const url = new URL(input.path, origin.origin);
-      for (const [name, value] of Object.entries(input.query ?? {})) url.searchParams.set(name, value);
-      // The resolved path must be the one requested: WHATWG URL resolves percent-encoded dot segments (`%2e%2e`).
-      if (url.origin !== origin.origin || url.pathname !== input.path) return fail('JIRA_REQUEST_REFUSED');
+      const origin = siteOrigin(site.url);
+      if (!origin) return failure(now, 'JIRA_SITE_URL_INVALID');
+      const url = requestUrl(input, origin);
+      if (!url) return failure(now, 'JIRA_REQUEST_REFUSED');
       let token: string;
       try {
         token = await site.credential();
       } catch {
-        return fail('JIRA_CREDENTIAL_UNAVAILABLE');
+        return failure(now, 'JIRA_CREDENTIAL_UNAVAILABLE');
       }
       const authorization = `Basic ${Buffer.from(`${site.email}:${token}`).toString('base64')}`;
-      const body = input.body === undefined ? undefined : JSON.stringify(input.body);
-      const result = await send({
-        method: input.method,
-        url: url.toString(),
-        headers: {
-          authorization,
-          accept: 'application/json',
-          'user-agent': 'software-factory-controller',
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-        },
-        ...(body === undefined ? {} : { body }),
-      });
-      if (result.kind === 'failed')
-        return fail(result.reason === 'timeout' ? 'JIRA_TIMEOUT' : result.reason === 'too-large' ? 'JIRA_RESPONSE_TOO_LARGE' : 'JIRA_TRANSPORT_UNAVAILABLE');
-      const { status } = result;
-      if (status === 401) return fail('JIRA_UNAUTHENTICATED', { status });
-      if (status === 403) return fail('JIRA_FORBIDDEN', { status });
-      if (status === 404) return fail('JIRA_NOT_FOUND', { status });
-      if (status === 429) return fail('JIRA_RATE_LIMITED', { status, waitSeconds: retryAfter(result.headers['retry-after'], now()) });
-      if (status >= 500)
-        return fail('JIRA_UNAVAILABLE', {
-          status,
-          ...(result.headers['retry-after'] !== undefined ? { waitSeconds: retryAfter(result.headers['retry-after'], now()) } : {}),
-        });
-      if (status < 200 || status >= 300) return fail('JIRA_REQUEST_REJECTED', { status });
-      if (!/^application\/json(?:;|$)/i.test(result.headers['content-type'] ?? '') || Buffer.byteLength(result.body) > maxResponseBytes)
-        return fail('JIRA_RESPONSE_INVALID', { status });
-      // An answer that echoes the credential is never handed on (it could reach an observation, a log or a comment).
-      if (result.body.includes(token) || result.body.includes(authorization)) return fail('JIRA_RESPONSE_INVALID', { status });
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(result.body) as unknown;
-      } catch {
-        return fail('JIRA_RESPONSE_INVALID', { status });
-      }
-      return { ok: true, status, body: parsed, observedAt: now().toISOString() };
+      const result = await send(exchangeOf(input, url, authorization));
+      if (result.kind === 'failed') return failure(now, transportFailureCode(result.reason));
+      return statusFailure(result, now) ?? answerOf(result, { token, authorization }, now);
     },
   };
 }

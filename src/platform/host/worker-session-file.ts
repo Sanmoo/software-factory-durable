@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
@@ -244,6 +244,9 @@ export async function recordWorkerLaunch(directory: string, launch: WorkerLaunch
     await handle.close();
   }
 }
+/** Not a regular single-link file of this uid, not group/world-writable, of 1 to 4096 bytes. */
+const unsafeLaunchRecord = (info: Stats) =>
+  !info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || Boolean(info.mode & 0o022) || info.size === 0 || info.size > 4096;
 /** The launch record of one worker directory, read no-follow (a private regular single-link file of this uid, bounded), or null. */
 async function readWorkerLaunch(directory: string): Promise<WorkerLaunchRecord | null> {
   let file;
@@ -255,7 +258,7 @@ async function readWorkerLaunch(directory: string): Promise<WorkerLaunchRecord |
   }
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || info.mode & 0o022 || info.size === 0 || info.size > 4096) return null;
+    if (unsafeLaunchRecord(info)) return null;
     const parsed = launchRecordSchema.safeParse(JSON.parse((await file.readFile()).toString('utf8')));
     return parsed.success ? parsed.data : null;
   } catch {
@@ -263,6 +266,22 @@ async function readWorkerLaunch(directory: string): Promise<WorkerLaunchRecord |
   } finally {
     await file.close().catch(() => {});
   }
+}
+/** The launch record is the Builder launch of exactly this invocation. */
+const builderLaunchOf = (launch: WorkerLaunchRecord | null, invocation: { workId: string; executionId: string; invocationId: string }) =>
+  launch !== null &&
+  launch.role === 'builder' &&
+  launch.workId === invocation.workId &&
+  launch.executionId === invocation.executionId &&
+  launch.invocationId === invocation.invocationId;
+/** The `ref` of every session file of one worker's sessions directory, in name order (an unreadable directory has none). */
+async function sessionRefsIn(root: string, sessions: string): Promise<string[]> {
+  const refs: string[] = [];
+  for (const name of (await readdir(sessions).catch(() => [] as string[])).filter(file => fileName.test(file)).sort()) {
+    const ref = sessionRefOf(root, sessions, join(sessions, name));
+    if (ref) refs.push(ref);
+  }
+  return refs;
 }
 /**
  * The `ref` of the ONE session file a Builder invocation wrote in the runtime tree of its boot (`runtime`, under `root`), found by the
@@ -285,19 +304,8 @@ export async function sessionRefOfInvocation(
   const refs: string[] = [];
   for (const worker of workers) {
     const launch = await readWorkerLaunch(join(runtime, worker));
-    if (
-      !launch ||
-      launch.role !== 'builder' ||
-      launch.workId !== invocation.workId ||
-      launch.executionId !== invocation.executionId ||
-      launch.invocationId !== invocation.invocationId
-    )
-      continue;
-    const sessions = join(runtime, worker, 'profile', 'sessions');
-    for (const name of (await readdir(sessions).catch(() => [] as string[])).filter(file => fileName.test(file)).sort()) {
-      const ref = sessionRefOf(root, sessions, join(sessions, name));
-      if (ref) refs.push(ref);
-    }
+    if (!builderLaunchOf(launch, invocation)) continue;
+    refs.push(...(await sessionRefsIn(root, join(runtime, worker, 'profile', 'sessions'))));
   }
   if (refs.length > 1) return { state: 'unavailable', code: 'SESSION_AMBIGUOUS' };
   return refs.length ? { state: 'found', ref: refs[0]! } : { state: 'unavailable', code: 'SESSION_NOT_RECORDED' };

@@ -52,16 +52,18 @@ const refOf = (digits: string) => `Q-${Number(digits)}`;
  */
 export function parseJiraCommand(body: string): JiraCommand {
   const text = body.replace(/\r\n?/g, '\n');
-  if ((text.split('\n')[0] ?? '').trimStart().startsWith(reservedPrefix)) return { kind: 'reserved' };
+  if (reservedFirstLine(text)) return { kind: 'reserved' };
   if (!/^\/factory(?=\s|$)/.test(text)) return { kind: 'prose' };
   const rest = text.slice('/factory'.length).trim();
   if (!rest) return { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
+  return factoryCommand(rest);
+}
+
+const reservedFirstLine = (text: string) => (text.split('\n')[0] ?? '').trimStart().startsWith(reservedPrefix);
+/** What follows `/factory` (trimmed, never empty). */
+function factoryCommand(rest: string): JiraCommand {
   const word = (/^\S+/.exec(rest)?.[0] ?? '').toLowerCase();
-  if (word === 'answer') {
-    const match = /^answer(?:\s+(\S+))?(?:\s+([\s\S]*))?$/i.exec(rest);
-    const ref = /^q-?(\d{1,9})$/i.exec(match?.[1] ?? '');
-    return ref ? withRef(refOf(ref[1]!), match?.[2] ?? '') : { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
-  }
+  if (word === 'answer') return answerCommand(rest);
   const short = /^q-?(\d{1,9}):([\s\S]*)$/i.exec(rest);
   if (short) return withRef(refOf(short[1]!), short[2]!);
   if (/^q-?\d{1,9}(?=\s|$)/i.test(rest)) return { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
@@ -69,6 +71,12 @@ export function parseJiraCommand(body: string): JiraCommand {
   if (/^cancel(?=\s|$)/.test(rest)) return rest === 'cancel' ? { kind: 'cancel' } : { kind: 'guide', code: 'JIRA_CANCEL_INVALID' };
   if (unsupported.has(word)) return { kind: 'guide', code: 'JIRA_COMMAND_UNSUPPORTED' };
   return answerText(rest);
+}
+/** `/factory answer Q-17 <text>`: without a valid reference it asks for guidance. */
+function answerCommand(rest: string): JiraCommand {
+  const match = /^answer(?:\s+(\S+))?(?:\s+([\s\S]*))?$/i.exec(rest);
+  const ref = /^q-?(\d{1,9})$/i.exec(match?.[1] ?? '');
+  return ref ? withRef(refOf(ref[1]!), match?.[2] ?? '') : { kind: 'guide', code: 'JIRA_COMMAND_INCOMPLETE' };
 }
 
 /** A Question of the Work of THIS Card: its short reference and the instant after which a comment may answer it (epoch ms). */
@@ -95,15 +103,30 @@ export function jiraCommentDecision(input: {
   if (input.comment.text === null) return { kind: 'ignore', code: 'JIRA_COMMENT_ADF_INVALID' };
   const command = parseJiraCommand(input.comment.text);
   if (command.kind === 'reserved' || command.kind === 'prose') return { kind: 'none' };
-  if (!input.comment.authorObserved) return { kind: 'ignore', code: 'JIRA_COMMENT_AUTHOR_UNOBSERVED' };
-  if (input.comment.restricted) return { kind: 'ignore', code: 'JIRA_COMMENT_RESTRICTED' };
+  const ignored = ignoredInstruction(input.comment);
+  if (ignored) return ignored;
   const { createdAt: created, updatedAt: updated } = input.comment;
-  if (!Number.isFinite(created) || !Number.isFinite(updated)) return { kind: 'ignore', code: 'JIRA_COMMENT_TIME_INVALID' };
   const open = input.questions
     .filter(question => question.state === 'open' && created > question.since)
     .sort((a, b) => Number(a.ref.slice(2)) - Number(b.ref.slice(2)) || a.ref.localeCompare(b.ref));
   const refs = open.map(question => question.ref);
   if (updated !== created) return { kind: 'guide', code: 'JIRA_COMMENT_EDITED', refs };
+  return instructionDecision(command, open, refs);
+}
+
+/** A `/factory` comment whose author was not observed, that is restricted or whose times are not valid is ignored. */
+function ignoredInstruction(comment: { authorObserved: boolean; createdAt: number; updatedAt: number; restricted: boolean }) {
+  if (!comment.authorObserved) return { kind: 'ignore', code: 'JIRA_COMMENT_AUTHOR_UNOBSERVED' } as const;
+  if (comment.restricted) return { kind: 'ignore', code: 'JIRA_COMMENT_RESTRICTED' } as const;
+  if (!Number.isFinite(comment.createdAt) || !Number.isFinite(comment.updatedAt)) return { kind: 'ignore', code: 'JIRA_COMMENT_TIME_INVALID' } as const;
+  return null;
+}
+/** An applicable instruction, given the Card's open Questions asked before it (in reference order). */
+function instructionDecision(
+  command: Exclude<JiraCommand, { kind: 'reserved' | 'prose' }>,
+  open: readonly CardQuestion[],
+  refs: string[],
+): JiraCommentDecision {
   if (command.kind === 'guide') return { kind: 'guide', code: command.code, refs };
   if (command.kind === 'cancel') return { kind: 'cancel' };
   if (command.kind === 'answer') {

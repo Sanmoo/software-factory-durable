@@ -94,6 +94,14 @@ export async function recordJiraImpediment(session: Session, source: JiraSource,
   }, BACKGROUND_CONTEXT);
 }
 
+type ImpedimentPurpose = Extract<JiraCommentPurpose, { kind: 'impediment' }>;
+/** The latest evaluation of the notice's own Card decides: gone or superseded withdraws, the same impediment evaluated now posts. */
+function impedimentNoticeWanted(latest: JiraImpedimentRecord['latest'], purpose: ImpedimentPurpose, evaluated: ReadonlySet<string>): CommentWanted {
+  if (latest.decision === 'not-candidate' || latest.decision === 'eligible') return 'withdraw';
+  if (latest.reasonKey !== null && latest.reasonKey !== purpose.reasonKey) return 'withdraw';
+  return evaluated.has(purpose.ticketKey) && latest.reasonKey === purpose.reasonKey && latest.notice !== 'local' ? 'post' : 'wait';
+}
+
 /**
  * Whether an impediment notice is still wanted. Posted only when its Card was evaluated in THIS round and is still blocked by the same
  * impediment (a Card that left the listing is never told on old facts); withdrawn when the label is gone, it became eligible or another
@@ -105,10 +113,7 @@ function impedimentOwner(evaluated: ReadonlySet<string>): JiraCommentOwner {
       if (effect.purpose.kind !== 'impediment') return 'wait';
       const record = (await tx.doc(jiraImpediments)).tickets[effect.purpose.ticketKey];
       if (!record || record.effects.at(-1) !== effect.effectId) return 'withdraw';
-      const { latest } = record;
-      if (latest.decision === 'not-candidate' || latest.decision === 'eligible') return 'withdraw';
-      if (latest.reasonKey !== null && latest.reasonKey !== effect.purpose.reasonKey) return 'withdraw';
-      return evaluated.has(effect.purpose.ticketKey) && latest.reasonKey === effect.purpose.reasonKey && latest.notice !== 'local' ? 'post' : 'wait';
+      return impedimentNoticeWanted(record.latest, effect.purpose, evaluated);
     },
     async withdrawn(tx, effect) {
       if (effect.purpose.kind !== 'impediment') return;

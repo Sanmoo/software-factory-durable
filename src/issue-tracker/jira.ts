@@ -155,6 +155,53 @@ const accessLimitation =
 /** JQL string literal: quotes and backslashes escaped (labels are validated without spaces). */
 const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\\${character}`)}"`;
 
+/** The listing's scope is exactly the configured one (site, project and label). */
+const configuredAs = (configured: JiraTrackerScope | undefined, scope: JiraTrackerScope): configured is JiraTrackerScope =>
+  configured !== undefined && configured.projectId === scope.projectId && configured.label === scope.label;
+const searchBody = (jql: string, token: string | undefined) => ({
+  jql,
+  fields: ['project'],
+  maxResults: 100,
+  ...(token === undefined ? {} : { nextPageToken: token }),
+});
+/** One verified page of the JQL search, only when every issue belongs to the project. */
+function searchPageOf(body: unknown, projectId: string) {
+  const parsed = jiraSearchPageSchema.safeParse(body);
+  if (!parsed.success || parsed.data.issues.some(item => item.fields.project.id !== projectId)) return null;
+  return parsed.data;
+}
+/** First sighting wins: an issue repeated on a later page is listed once. */
+function addCandidates(seen: Map<string, JiraTicketRef>, issues: readonly { id: string; key: string }[], configured: JiraTrackerScope) {
+  for (const item of issues)
+    if (!seen.has(item.id))
+      seen.set(item.id, { tracker: 'jira', siteId: configured.siteId, issueId: item.id, key: item.key, url: `${configured.url}/browse/${item.key}` });
+}
+/** A next page token not seen before (a repeated or absent one would not reach the end). */
+const freshToken = (token: string | undefined, tokens: ReadonlySet<string>): token is string => token !== undefined && !tokens.has(token);
+/** The description as plain text: `null` when absent, `invalid` when present but not an ADF document. */
+function descriptionText(description: unknown) {
+  if (description === null || description === undefined) return null;
+  return adfPlainText(description, maxDescriptionChars) ?? 'invalid';
+}
+const descriptionFields = (text: { text: string; truncated: boolean } | null) => ({ description: text?.text ?? null, truncated: text?.truncated ?? false });
+/** One verified comment page, only when it starts where the listing is. */
+function commentPageOf(body: unknown, startAt: number) {
+  const page = jiraCommentPageSchema.safeParse(body);
+  if (!page.success || page.data.startAt !== startAt) return null;
+  return page.data;
+}
+function visibleComment(item: z.infer<typeof jiraCommentSchema>): JiraVisibleComment {
+  const body = adfDocSchema.safeParse(item.body);
+  return {
+    commentId: item.id,
+    authorAccountId: item.author?.accountId || null,
+    text: body.success ? adfText(body.data) : null,
+    createdAt: item.created,
+    updatedAt: item.updated,
+    restricted: Boolean(item.visibility),
+  };
+}
+
 /**
  * Jira Cloud adapter of the common tracker contract. Jira ticket 01: composition and the re-read by ID; ticket 03: the JQL listing (all
  * pages, `nextPageToken`/`isLast` of the enhanced search), the re-read with components and links, the link type catalogue and a
@@ -274,7 +321,7 @@ export function createJiraTracker(options: {
     },
     async listCandidates(scope) {
       const configured = site(scope.siteId);
-      if (!configured || configured.projectId !== scope.projectId || configured.label !== scope.label) return notConfigured(scope.siteId);
+      if (!configuredAs(configured, scope)) return notConfigured(scope.siteId);
       const jql = `project = ${scope.projectId} AND labels = ${jqlString(scope.label)}`;
       const seen = new Map<string, JiraTicketRef>();
       const tokens = new Set<string>();
@@ -291,18 +338,16 @@ export function createJiraTracker(options: {
         const answer = await read(scope.siteId, {
           method: 'POST',
           path: '/rest/api/3/search/jql',
-          body: { jql, fields: ['project'], maxResults: 100, ...(token === undefined ? {} : { nextPageToken: token }) },
+          body: searchBody(jql, token),
         });
         if (!answer.ok) return answer.fact;
         observedAt ||= answer.observedAt;
-        const parsed = jiraSearchPageSchema.safeParse(answer.body);
-        if (!parsed.success || parsed.data.issues.some(item => item.fields.project.id !== scope.projectId)) return invalid(scope.siteId, answer.observedAt);
-        for (const item of parsed.data.issues)
-          if (!seen.has(item.id))
-            seen.set(item.id, { tracker: 'jira', siteId: scope.siteId, issueId: item.id, key: item.key, url: `${configured.url}/browse/${item.key}` });
-        if (parsed.data.isLast) break;
-        token = parsed.data.nextPageToken;
-        if (token === undefined || tokens.has(token))
+        const page = searchPageOf(answer.body, scope.projectId);
+        if (!page) return invalid(scope.siteId, answer.observedAt);
+        addCandidates(seen, page.issues, configured);
+        if (page.isLast) break;
+        token = page.nextPageToken;
+        if (!freshToken(token, tokens))
           return unavailable(
             scope.siteId,
             'JIRA_SEARCH_INCOMPLETE',
@@ -368,10 +413,9 @@ export function createJiraTracker(options: {
       if (!answer.ok) return answer.fact;
       const parsed = jiraContentSchema.safeParse(answer.body);
       if (!parsed.success || parsed.data.id !== ticket.issueId) return invalid(ticket.siteId, answer.observedAt);
-      const { description } = parsed.data.fields;
-      const text = description === null || description === undefined ? null : adfPlainText(description, maxDescriptionChars);
+      const text = descriptionText(parsed.data.fields.description);
       // A description that is present but not an ADF document is not guessed at.
-      if (description !== null && description !== undefined && text === null) return invalid(ticket.siteId, answer.observedAt);
+      if (text === 'invalid') return invalid(ticket.siteId, answer.observedAt);
       return {
         kind: 'observed',
         source: 'jira-rest',
@@ -384,8 +428,7 @@ export function createJiraTracker(options: {
           url: `${site(ticket.siteId)!.url}/browse/${parsed.data.key}`,
         },
         summary: parsed.data.fields.summary ?? null,
-        description: text?.text ?? null,
-        truncated: text?.truncated ?? false,
+        ...descriptionFields(text),
       };
     },
     async readLinkTypes(siteId) {
@@ -482,22 +525,12 @@ export function createJiraTracker(options: {
         });
         if (!answer.ok) return answer.fact;
         observedAt ||= answer.observedAt;
-        const page = jiraCommentPageSchema.safeParse(answer.body);
-        if (!page.success || page.data.startAt !== startAt) return invalid(ticket.siteId, answer.observedAt);
-        for (const item of page.data.comments) {
-          const body = adfDocSchema.safeParse(item.body);
-          comments.set(item.id, {
-            commentId: item.id,
-            authorAccountId: item.author?.accountId || null,
-            text: body.success ? adfText(body.data) : null,
-            createdAt: item.created,
-            updatedAt: item.updated,
-            restricted: Boolean(item.visibility),
-          });
-        }
-        startAt += page.data.comments.length;
-        if (startAt >= page.data.total) break;
-        if (!page.data.comments.length)
+        const page = commentPageOf(answer.body, startAt);
+        if (!page) return invalid(ticket.siteId, answer.observedAt);
+        for (const item of page.comments) comments.set(item.id, visibleComment(item));
+        startAt += page.comments.length;
+        if (startAt >= page.total) break;
+        if (!page.comments.length)
           return unavailable(
             ticket.siteId,
             'JIRA_COMMENTS_INCOMPLETE',

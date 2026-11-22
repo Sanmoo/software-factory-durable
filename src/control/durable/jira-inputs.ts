@@ -1,8 +1,9 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { jiraInputOrder } from '../../contracts/index.js';
-import type { JiraComment, JiraInputCursor } from '../../issue-tracker/index.js';
+import type { DocFamilyToken } from '@earendil-works/pi-durable';
+import type { JiraComment, JiraInputCursor, JiraTicketRef } from '../../issue-tracker/index.js';
 import type { ControlReceipt, JiraOriginTracker, QuestionView } from '../types.js';
-import { jiraCancelComment, jiraCommentDecision, jiraGuidanceComment, jiraRequestId } from '../rules/jira-conversation.js';
+import { jiraCancelComment, jiraCommentDecision, jiraGuidanceComment, jiraRequestId, type JiraCommentDecision } from '../rules/jira-conversation.js';
 import { requests, works, type WorkRecord } from './admission.js';
 import { cancelIn } from './cycles.js';
 import { intendJiraComment } from './jira-comments.js';
@@ -26,32 +27,12 @@ export async function ingestJiraComment(session: Session, work_id: string, comme
   const request_id = jiraRequestId(comment.ref);
   return session.commit(async (tx): Promise<JiraIngestOutcome> => {
     const request = await tx.doc(requests, request_id, null);
-    // A copy: the stored receipt is a view of this commit's overlay, unusable once it settled.
-    if (request.input) return { kind: 'replayed', receipt: request.receipt ? (JSON.parse(JSON.stringify(request.receipt)) as ControlReceipt) : null };
+    if (request.input) return replayed(request.receipt);
     const work = (await tx.doc(works, work_id, null)).work;
-    if (!work || work.ticket.tracker !== 'jira' || work.ticket.siteId !== comment.ref.siteId || work.ticket.issueId !== comment.ref.issueId)
-      return { kind: 'none' };
-    const known: QuestionView[] = [];
-    for (const id of work.questions ?? []) {
-      const question = (await tx.doc(questions, id, null)).question;
-      if (question?.jira) known.push(question);
-    }
-    const accountId = comment.author?.accountId ?? null;
-    const decision = jiraCommentDecision({
-      comment: {
-        text: comment.body,
-        authorObserved: accountId !== null,
-        createdAt: Date.parse(comment.createdAt),
-        updatedAt: Date.parse(comment.updatedAt),
-        restricted: comment.restricted,
-      },
-      questions: known.map(question => ({
-        questionId: question.questionId,
-        ref: question.jira!.ref,
-        state: question.state,
-        since: Date.parse(question.jira!.publishedAt ?? question.recordedAt),
-      })),
-    });
+    if (!work || !onOriginCard(work, comment)) return { kind: 'none' };
+    const known = await jiraQuestionsOf(tx, work);
+    const accountId = authorOf(comment);
+    const decision = jiraCommentDecision({ comment: commentFacts(comment, accountId), questions: known.map(cardQuestion) });
     if (decision.kind === 'none') return { kind: 'none' };
     const { siteId, issueId, commentId } = comment.ref;
     const ingress = { siteId, issueId, commentId, accountId };
@@ -69,41 +50,100 @@ export async function ingestJiraComment(session: Session, work_id: string, comme
           }),
         };
       }
-      const cancelled = await cancelIn(tx, { request_id, operation: 'cancel', work_id: work.work_id }, { kind: 'jira-comment', accountId, commentId });
-      const effect = await intendJiraComment(tx, {
-        destination: work.ticket,
-        purpose: { kind: 'reply', workId: work.work_id, request_id },
-        refPrefix: 'R',
-        content: ref => jiraCancelComment({ ref, commentId, outcome: cancelled.outcome, reason: cancelled.reason }),
-      });
-      const receipt: ControlReceipt = { ...cancelled, reply: effect.logicalRef };
-      request.input = { request_id, operation: 'cancel', work_id: work.work_id, origin: 'jira-comment', comment: { siteId, issueId, commentId, accountId } };
-      request.receipt = receipt;
-      return { kind: 'recorded', receipt: structuredClone(receipt) };
+      return recordJiraCancel(tx, request, work, request_id, { ...ingress, accountId });
     }
-    let reply: string | null = null;
-    if (decision.kind === 'guide') {
-      const effect = await intendJiraComment(tx, {
-        destination: work.ticket,
-        purpose: { kind: 'reply', workId: work.work_id, request_id },
-        refPrefix: 'R',
-        content: ref => jiraGuidanceComment({ ref, code: decision.code, refs: decision.refs, commentId }),
-      });
-      reply = effect.logicalRef;
-    }
-    const receipt: ControlReceipt = {
-      kind: 'durable',
-      request_id,
-      operation: 'jira-comment',
-      work_id: work.work_id,
-      outcome: decision.kind === 'guide' ? 'guided' : 'ignored',
-      reason: decision.code,
-      reply,
-    };
-    request.input = { request_id, operation: 'jira-comment', work_id: work.work_id, origin: 'jira-comment', comment: ingress };
-    request.receipt = receipt;
-    return { kind: 'recorded', receipt: structuredClone(receipt) };
+    return recordJiraCommentReceipt(tx, request, work, request_id, decision, ingress);
   }, BACKGROUND_CONTEXT);
+}
+
+type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
+type IngressRequest = typeof requests extends DocFamilyToken<infer T, infer _I, infer _D> ? T : never;
+type JiraWork = WorkRecord & { ticket: JiraTicketRef };
+type Ingress = { siteId: string; issueId: string; commentId: string; accountId: string | null };
+
+/** A copy: the stored receipt is a view of this commit's overlay, unusable once it settled. */
+const replayed = (receipt: ControlReceipt | null): JiraIngestOutcome => ({
+  kind: 'replayed',
+  receipt: receipt ? (JSON.parse(JSON.stringify(receipt)) as ControlReceipt) : null,
+});
+/** The comment belongs to the Work's own origin Card (same site and issue). */
+const onOriginCard = (work: WorkRecord, comment: JiraComment): work is JiraWork =>
+  work.ticket.tracker === 'jira' && work.ticket.siteId === comment.ref.siteId && work.ticket.issueId === comment.ref.issueId;
+const authorOf = (comment: JiraComment) => comment.author?.accountId ?? null;
+const commentFacts = (comment: JiraComment, accountId: string | null) => ({
+  text: comment.body,
+  authorObserved: accountId !== null,
+  createdAt: Date.parse(comment.createdAt),
+  updatedAt: Date.parse(comment.updatedAt),
+  restricted: comment.restricted,
+});
+const cardQuestion = (question: QuestionView) => ({
+  questionId: question.questionId,
+  ref: question.jira!.ref,
+  state: question.state,
+  since: Date.parse(question.jira!.publishedAt ?? question.recordedAt),
+});
+/** The Work's Questions published on its Card, in the Work's order. */
+async function jiraQuestionsOf(tx: Tx, work: WorkRecord): Promise<QuestionView[]> {
+  const known: QuestionView[] = [];
+  for (const id of work.questions ?? []) {
+    const question = (await tx.doc(questions, id, null)).question;
+    if (question?.jira) known.push(question);
+  }
+  return known;
+}
+/** `/factory cancel`: the same cancellation as the local `cancel`, its reply intended on the Card, in the commit of its receipt. */
+async function recordJiraCancel(
+  tx: Tx,
+  request: IngressRequest,
+  work: JiraWork,
+  request_id: string,
+  ingress: Ingress & { accountId: string },
+): Promise<JiraIngestOutcome> {
+  const { accountId, commentId } = ingress;
+  const cancelled = await cancelIn(tx, { request_id, operation: 'cancel', work_id: work.work_id }, { kind: 'jira-comment', accountId, commentId });
+  const effect = await intendJiraComment(tx, {
+    destination: work.ticket,
+    purpose: { kind: 'reply', workId: work.work_id, request_id },
+    refPrefix: 'R',
+    content: ref => jiraCancelComment({ ref, commentId, outcome: cancelled.outcome, reason: cancelled.reason }),
+  });
+  const receipt: ControlReceipt = { ...cancelled, reply: effect.logicalRef };
+  request.input = { request_id, operation: 'cancel', work_id: work.work_id, origin: 'jira-comment', comment: { ...ingress } };
+  request.receipt = receipt;
+  return { kind: 'recorded', receipt: structuredClone(receipt) };
+}
+/** A `/factory` comment that did not apply: guided (its guidance intended on the Card) or ignored, with its receipt. */
+async function recordJiraCommentReceipt(
+  tx: Tx,
+  request: IngressRequest,
+  work: JiraWork,
+  request_id: string,
+  decision: Extract<JiraCommentDecision, { kind: 'guide' | 'ignore' }>,
+  ingress: Ingress,
+): Promise<JiraIngestOutcome> {
+  let reply: string | null = null;
+  if (decision.kind === 'guide') {
+    const effect = await intendJiraComment(tx, {
+      destination: work.ticket,
+      purpose: { kind: 'reply', workId: work.work_id, request_id },
+      refPrefix: 'R',
+      content: ref => jiraGuidanceComment({ ref, code: decision.code, refs: decision.refs, commentId: ingress.commentId }),
+    });
+    reply = effect.logicalRef;
+  }
+  const receipt: ControlReceipt = {
+    kind: 'durable',
+    request_id,
+    operation: 'jira-comment',
+    work_id: work.work_id,
+    outcome: decision.kind === 'guide' ? 'guided' : 'ignored',
+    reason: decision.code,
+    reply,
+  };
+  request.input = { request_id, operation: 'jira-comment', work_id: work.work_id, origin: 'jira-comment', comment: ingress };
+  request.receipt = receipt;
+  return { kind: 'recorded', receipt: structuredClone(receipt) };
 }
 
 /** Monotone Jira cursor of the Work's origin Card (only after its comments were processed). */
@@ -123,6 +163,15 @@ const ranOrAsks: JiraInputScope = (work, known) =>
   known.some(question => question.state === 'open') || Boolean(work.pullRequest || work.correction || work.execution);
 /** Jira ticket 07: open Jira Works outside the scope (admitted, never ran: `/factory cancel` must reach them) read per pass, least recently read first. */
 export const idleReadsPerPass = 8;
+
+/** The Jira cursor of the Work's Card, if one was recorded. */
+function jiraCursorOf(work: WorkRecord): JiraInputCursor | null {
+  const known = work.inputs?.cursor ?? null;
+  return known !== null && typeof known === 'object' ? known : null;
+}
+/** An ingested `/factory cancel` whose cancellation was accepted. */
+const acceptedCancel = (outcome: JiraIngestOutcome) =>
+  outcome.kind === 'recorded' && outcome.receipt.kind === 'durable' && outcome.receipt.operation === 'cancel' && outcome.receipt.outcome === 'accepted';
 
 /**
  * The input pass of the owner loop: for each open Jira Work in scope, ONE complete read of its Card's comments after the cursor, each one
@@ -147,13 +196,11 @@ export function createJiraInputDesk(deps: {
   async function read(work: WorkRecord) {
     if (work.ticket.tracker !== 'jira') return;
     lastRead.set(work.work_id, passes);
-    const known = work.inputs?.cursor ?? null;
-    const inputs = await deps.tracker.readInputs(work.ticket, known !== null && typeof known === 'object' ? known : null).catch(() => undefined);
+    const inputs = await deps.tracker.readInputs(work.ticket, jiraCursorOf(work)).catch(() => undefined);
     if (!inputs || inputs.kind !== 'observed') return;
     for (const comment of inputs.comments) {
       const outcome = await ingestJiraComment(deps.session, work.work_id, comment);
-      if (outcome.kind === 'recorded' && outcome.receipt.kind === 'durable' && outcome.receipt.operation === 'cancel' && outcome.receipt.outcome === 'accepted')
-        deps.cancelled?.(work.work_id);
+      if (acceptedCancel(outcome)) deps.cancelled?.(work.work_id);
     }
     if (inputs.cursor) await recordJiraInputsCursor(deps.session, work.work_id, inputs.cursor);
   }

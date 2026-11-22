@@ -52,6 +52,9 @@ export type JiraSourceEvaluation =
 /** Upper bound of distinct blocker neighbours read for one Card; beyond it the blockers are unverifiable (never a partial list). */
 const maxBlockerReads = 50;
 
+/** The component IDs of a Card (`null`: the list was not read completely). */
+const componentIds = (components: readonly { id: string }[] | null | undefined) => components?.map(item => item.id) ?? null;
+
 /**
  * Whether ONE Jira Ticket may start now (spec §3 steps 1-3), from a fresh read by ID with the CURRENT source configuration: label, project,
  * components -> destination, links -> catalogue -> visible blockers' status category. Read-only: it creates no Work, comments nothing and
@@ -74,7 +77,7 @@ export async function evaluateJiraTicket(input: {
     return { ticket, evaluation: { decision: 'not-candidate', reasons: [] }, observedAt: observation.observedAt, route: null, blockers: null };
   }
   const route = routeTicket({
-    components: observation.components?.map(item => item.id) ?? null,
+    components: componentIds(observation.components),
     routes: source.routes,
     authorizedRepositories: input.authorizedRepositories,
   });
@@ -92,7 +95,7 @@ export async function evaluateJiraTicket(input: {
     links,
     blockers: blockers.kind === 'observed' ? { kind: 'observed', blockers: blockers.blockers } : blockers,
   });
-  return { ticket, evaluation, observedAt: observation.observedAt, route, blockers, components: observation.components?.map(item => item.id) ?? null };
+  return { ticket, evaluation, observedAt: observation.observedAt, route, blockers, components: componentIds(observation.components) };
 }
 
 async function visibleBlockers(
