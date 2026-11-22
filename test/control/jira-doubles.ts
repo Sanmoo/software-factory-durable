@@ -133,10 +133,11 @@ export function jiraDoubles(remote: JiraRemote) {
     },
   }) as JiraOriginTracker;
   /** Jira ticket 06: a comment written on the Card by `accountId` (the Factory's shared account by default), a second after now. */
-  const write = (issueId: string, text: string, options: { accountId?: string; edited?: boolean; restricted?: boolean } = {}) => {
+  /** `accountId: null`: Jira gave no author; `text: null`: the body was not a valid ADF document. */
+  const write = (issueId: string, text: string | null, options: { accountId?: string | null; edited?: boolean; restricted?: boolean } = {}) => {
     const commentId = String(commentSequence += 1);
     const created = new Date(Date.now() + 1000).toISOString();
-    (comments[issueId] ??= []).push({ commentId, authorAccountId: options.accountId ?? 'acc-factory', text, createdAt: created,
+    (comments[issueId] ??= []).push({ commentId, authorAccountId: options.accountId === undefined ? 'acc-factory' : options.accountId, text, createdAt: created,
       updatedAt: options.edited ? new Date(Date.now() + 2000).toISOString() : created, restricted: Boolean(options.restricted) });
     return commentId;
   };

@@ -130,3 +130,19 @@ test('readInputs concludes nothing from an incomplete comment listing', async ()
   const inputs = await createJiraTracker({ scopes: [scope], transport: () => transport }).readInputs(ref, null);
   assert.deepEqual([inputs.kind, inputs.kind === 'unavailable' && inputs.code], ['unavailable', 'JIRA_COMMENTS_INCOMPLETE']);
 });
+
+test('a comment without author or with a body that is not an ADF document is reported as such, never as an empty author or text', async () => {
+  const page = { startAt: 0, maxResults: 100, total: 3, comments: [
+    { ...comment('101', ['/factory sim']), author: undefined },
+    { ...comment('102', ['/factory sim']), author: { accountId: '' } },
+    { ...comment('103', ['x']), body: { type: 'paragraph', content: 'not adf' } }] };
+  const { transport } = recording(() => answer(page));
+  const tracker = createJiraTracker({ scopes: [scope], transport: () => transport });
+  const listing = await tracker.listComments(ref);
+  assert.deepEqual(listing.kind === 'observed' && listing.comments.map(item => [item.commentId, item.authorAccountId, item.text]),
+    [['101', null, '/factory sim'], ['102', null, '/factory sim'], ['103', 'acc-factory', null]]);
+  const inputs = await tracker.readInputs(ref, null);
+  assert.deepEqual(inputs.kind === 'observed' && inputs.comments.map(item => [item.ref.commentId, item.author, item.body]),
+    [['101', null, '/factory sim'], ['102', null, '/factory sim'], ['103', { tracker: 'jira', accountId: 'acc-factory' }, null]]);
+  assert.deepEqual(inputs.kind === 'observed' && inputs.cursor, { tracker: 'jira', createdAt: '2026-11-21T10:03:00.000+0000', commentId: '103' });
+});

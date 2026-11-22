@@ -180,3 +180,20 @@ test('an uncertain Question POST is reconciled: confirmed by its one own copy; a
   assert.equal(shown!.state, 'open');
   assert.match(String(shown!.publication.comment!.url), /focusedCommentId=/);
 });
+
+test('a /factory comment without observed author or with an invalid ADF body is recorded as ignored, never answers, and the cursor moves past it', async t => {
+  const remote: JiraRemote = { cards: [card('81017', 'PAG-42')] };
+  const h = await harness(t, remote);
+  await h.start();
+  await h.settle('question published', async () => (await question(h))?.publication.state === 'published');
+  const anonymous = h.jira.write('81017', '/factory sim', { accountId: null });
+  const unreadable = h.jira.write('81017', null, { accountId: 'acc-human' });
+  const receipt = async (id: string) => (await h.request(`jira-comment-site_002dA-81017-${id}`)).receipt ?? null;
+  await h.settle('both recorded', async () => Boolean(await receipt(anonymous)) && Boolean(await receipt(unreadable)));
+  assert.deepEqual([(await receipt(anonymous))?.outcome, (await receipt(anonymous))?.reason], ['ignored', 'JIRA_COMMENT_AUTHOR_UNOBSERVED']);
+  assert.deepEqual([(await receipt(unreadable))?.outcome, (await receipt(unreadable))?.reason], ['ignored', 'JIRA_COMMENT_ADF_INVALID']);
+  assert.equal((await question(h))!.state, 'open', 'neither answered the single open question');
+  assert.equal(h.posts().length, 1, 'no reply on the Card: only the question');
+  h.jira.write('81017', '/factory sim', { accountId: 'acc-human' });
+  await h.settle('answered', async () => (await question(h))?.state === 'answered');
+});

@@ -48,7 +48,8 @@ export const installation = defineDoc<Installation>({ kind: 'factory.installatio
 export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' | 'jira-comment' } |
   { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'github-comment' } |
   /** Jira ticket 06: a `/factory` comment of a Jira Card that did not apply (its guidance/ignored receipt). */
-  { request_id: string; operation: 'jira-comment'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string } } |
+  /** `accountId: null`: Jira gave no author (the comment was ignored, never applied). */
+  { request_id: string; operation: 'jira-comment'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string | null } } |
   /** Jira ticket 07: `/factory cancel` on the Work's origin Card (its cancel receipt, the same cancellation as the local `cancel`). */
   { request_id: string; operation: 'cancel'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string } } |
   null; receipt: ControlReceipt | null }, null>({

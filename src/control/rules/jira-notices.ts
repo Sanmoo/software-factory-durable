@@ -57,8 +57,11 @@ export function deliveryComment(input: { workRef: string; base: string; url: str
 /** Whether a comment's first line is led by `header` (alone, or followed by a space and the rest of that line). */
 const ledBy = (text: string, header: string) => { const first = text.split('\n')[0]?.trim() ?? ''; return first === header || first.startsWith(`${header} `); };
 
-/** A visible comment as reconciliation compares it: author account, plain text projected from its ADF, and whether it carries a visibility restriction. */
-export type ObservedComment = { commentId: string; accountId: string; text: string; restricted: boolean };
+/**
+ * A visible comment as reconciliation compares it: author account, plain text projected from its ADF, and whether it carries a visibility
+ * restriction. `null` = not observed (no author, or a body that is not ADF): such a comment is never one of the Factory's copies.
+ */
+export type ObservedComment = { commentId: string; accountId: string | null; text: string | null; restricted: boolean };
 export type CommentReconciliation = { kind: 'confirmed'; commentId: string } | { kind: 'absent' } |
   { kind: 'pending'; code: 'JIRA_COMMENT_MULTIPLE' | 'JIRA_COMMENT_SIMILAR' | 'JIRA_ACCOUNT_UNKNOWN' | string; candidates?: string[] };
 
@@ -73,7 +76,7 @@ export function commentReconciliation(input: { listing: { kind: 'complete'; comm
   if (input.listing.kind === 'incomplete') return { kind: 'pending', code: input.listing.code };
   if (input.account === null) return { kind: 'pending', code: 'JIRA_ACCOUNT_UNKNOWN' };
   const text = input.expected.lines.join('\n');
-  const own = input.listing.comments.filter(comment => comment.accountId === input.account && ledBy(comment.text, input.expected.header));
+  const own = input.listing.comments.filter(comment => comment.accountId === input.account && comment.text !== null && ledBy(comment.text, input.expected.header));
   const exact = own.filter(comment => comment.text === text && !comment.restricted);
   if (own.length > exact.length) return { kind: 'pending', code: 'JIRA_COMMENT_SIMILAR', candidates: own.map(comment => comment.commentId) };
   if (exact.length > 1) return { kind: 'pending', code: 'JIRA_COMMENT_MULTIPLE', candidates: exact.map(comment => comment.commentId) };

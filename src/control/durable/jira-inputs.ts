@@ -33,24 +33,27 @@ export async function ingestJiraComment(session: Session, work_id: string, comme
       const question = (await tx.doc(questions, id, null)).question;
       if (question?.jira) known.push(question);
     }
-    const decision = jiraCommentDecision({ comment: { text: comment.body, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt), restricted: comment.restricted },
+    const accountId = comment.author?.accountId ?? null;
+    const decision = jiraCommentDecision({ comment: { text: comment.body, authorObserved: accountId !== null, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt), restricted: comment.restricted },
       questions: known.map(question => ({ questionId: question.questionId, ref: question.jira!.ref, state: question.state,
         since: Date.parse(question.jira!.publishedAt ?? question.recordedAt) })) });
     if (decision.kind === 'none') return { kind: 'none' };
     const { siteId, issueId, commentId } = comment.ref;
-    const ingress = { siteId, issueId, commentId, accountId: comment.author.accountId };
-    if (decision.kind === 'cancel') {
-      const cancelled = await cancelIn(tx, { request_id, operation: 'cancel', work_id: work.work_id }, { kind: 'jira-comment', accountId: comment.author.accountId, commentId });
+    const ingress = { siteId, issueId, commentId, accountId };
+    if (decision.kind === 'cancel' || decision.kind === 'accept') {
+      // The rule never applies a comment whose author was not observed; an unobserved author here would be a broken invariant.
+      if (accountId === null) throw new Error('JIRA_COMMENT_AUTHOR_UNOBSERVED');
+      if (decision.kind === 'accept') {
+        return { kind: 'recorded', receipt: await answerIn(tx, { request_id, question_id: decision.questionId, text: decision.text,
+          origin: { kind: 'jira-comment', workId: work.work_id, comment: { siteId, issueId, commentId, url: comment.url, accountId } } }) };
+      }
+      const cancelled = await cancelIn(tx, { request_id, operation: 'cancel', work_id: work.work_id }, { kind: 'jira-comment', accountId, commentId });
       const effect = await intendJiraComment(tx, { destination: work.ticket, purpose: { kind: 'reply', workId: work.work_id, request_id }, refPrefix: 'R',
         content: ref => jiraCancelComment({ ref, commentId, outcome: cancelled.outcome, reason: cancelled.reason }) });
       const receipt: ControlReceipt = { ...cancelled, reply: effect.logicalRef };
-      request.input = { request_id, operation: 'cancel', work_id: work.work_id, origin: 'jira-comment', comment: ingress };
+      request.input = { request_id, operation: 'cancel', work_id: work.work_id, origin: 'jira-comment', comment: { siteId, issueId, commentId, accountId } };
       request.receipt = receipt;
       return { kind: 'recorded', receipt: structuredClone(receipt) };
-    }
-    if (decision.kind === 'accept') {
-      return { kind: 'recorded', receipt: await answerIn(tx, { request_id, question_id: decision.questionId, text: decision.text,
-        origin: { kind: 'jira-comment', workId: work.work_id, comment: { siteId, issueId, commentId, url: comment.url, accountId: comment.author.accountId } } }) };
     }
     let reply: string | null = null;
     if (decision.kind === 'guide') {

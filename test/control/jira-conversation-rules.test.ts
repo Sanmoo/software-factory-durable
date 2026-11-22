@@ -8,8 +8,8 @@ const t0 = Date.parse('2026-11-22T10:00:00.000Z');
 const at = (minutes: number) => t0 + minutes * 60000;
 const q17 = { questionId: 'qid-17', ref: 'Q-17', state: 'open' as const, since: t0 };
 const q18 = { questionId: 'qid-18', ref: 'Q-18', state: 'open' as const, since: t0 };
-const comment = (text: string, overrides: Partial<{ createdAt: number; updatedAt: number; restricted: boolean }> = {}) =>
-  ({ text, createdAt: at(5), updatedAt: at(5), restricted: false, ...overrides });
+const comment = (text: string | null, overrides: Partial<{ createdAt: number; updatedAt: number; restricted: boolean; authorObserved: boolean }> = {}) =>
+  ({ text, createdAt: at(5), updatedAt: at(5), restricted: false, authorObserved: true, ...overrides });
 
 test('the reserved header is never an instruction, even when the comment carries /factory; text without the leading prefix is conversation', () => {
   assert.deepEqual(parseJiraCommand('[Software Factory · Pergunta Q-17]\n/factory sim'), { kind: 'reserved' });
@@ -112,4 +112,13 @@ test('the cancellation reply carries its reserved header, names the comment and 
   const already = jiraCancelComment({ ref: 'R-1', commentId: '10078', outcome: 'already-satisfied', reason: 'ALREADY_CANCELLED' });
   assert.notEqual(already.lines.join('\n'), accepted.lines.join('\n').replace('R-1a2b3c4d', 'R-1').replace('10077', '10078'));
   assert.doesNotMatch(accepted.lines.join('\n'), /\/factory cancel/);
+});
+
+test('a comment without an observed author never answers nor cancels; an invalid ADF body is an ignored input, never an instruction', () => {
+  for (const text of ['/factory sim', '/factory cancel', '/factory q17: sim']) {
+    assert.deepEqual(jiraCommentDecision({ comment: comment(text, { authorObserved: false }), questions: [q17] }), { kind: 'ignore', code: 'JIRA_COMMENT_AUTHOR_UNOBSERVED' }, text);
+  }
+  assert.deepEqual(jiraCommentDecision({ comment: comment('acho que sim', { authorObserved: false }), questions: [q17] }), { kind: 'none' }, 'conversation stays conversation');
+  assert.deepEqual(jiraCommentDecision({ comment: comment(null), questions: [q17] }), { kind: 'ignore', code: 'JIRA_COMMENT_ADF_INVALID' });
+  assert.deepEqual(jiraCommentDecision({ comment: comment(null, { authorObserved: false }), questions: [] }), { kind: 'ignore', code: 'JIRA_COMMENT_ADF_INVALID' });
 });

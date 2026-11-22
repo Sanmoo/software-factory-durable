@@ -60,7 +60,8 @@ export function parseJiraCommand(body: string): JiraCommand {
 
 /** A Question of the Work of THIS Card: its short reference and the instant after which a comment may answer it (epoch ms). */
 export type CardQuestion = { questionId: string; ref: string; state: 'open' | 'answered'; since: number };
-export type JiraCommentDecision = { kind: 'none' } | { kind: 'ignore'; code: 'JIRA_COMMENT_RESTRICTED' | 'JIRA_COMMENT_TIME_INVALID' } |
+export type JiraCommentDecision = { kind: 'none' } |
+  { kind: 'ignore'; code: 'JIRA_COMMENT_RESTRICTED' | 'JIRA_COMMENT_TIME_INVALID' | 'JIRA_COMMENT_AUTHOR_UNOBSERVED' | 'JIRA_COMMENT_ADF_INVALID' } |
   { kind: 'accept'; questionId: string; text: string } | { kind: 'cancel' } | { kind: 'guide'; code: JiraGuidanceCode; refs: string[] };
 
 /**
@@ -68,11 +69,15 @@ export type JiraCommentDecision = { kind: 'none' } | { kind: 'ignore'; code: 'JI
  * applied nor quoted to a broader audience (no reply either). An instruction already edited when first observed asks for a new comment.
  * Times are epoch milliseconds observed by Jira (`created`/`updated`).
  * Free text answers only when exactly ONE Question is open (and was asked before the comment); an explicit reference must be one of them.
+ * `text: null` (the body was not a valid ADF document) is an ignored input whatever it may say; a `/factory` comment whose author account
+ * was not observed is ignored too: authority comes from the observed `author.accountId`, never from the text.
  */
-export function jiraCommentDecision(input: { comment: { text: string; createdAt: number; updatedAt: number; restricted: boolean }; questions: readonly CardQuestion[] }):
-  JiraCommentDecision {
+export function jiraCommentDecision(input: { comment: { text: string | null; authorObserved: boolean; createdAt: number; updatedAt: number; restricted: boolean };
+  questions: readonly CardQuestion[] }): JiraCommentDecision {
+  if (input.comment.text === null) return { kind: 'ignore', code: 'JIRA_COMMENT_ADF_INVALID' };
   const command = parseJiraCommand(input.comment.text);
   if (command.kind === 'reserved' || command.kind === 'prose') return { kind: 'none' };
+  if (!input.comment.authorObserved) return { kind: 'ignore', code: 'JIRA_COMMENT_AUTHOR_UNOBSERVED' };
   if (input.comment.restricted) return { kind: 'ignore', code: 'JIRA_COMMENT_RESTRICTED' };
   const { createdAt: created, updatedAt: updated } = input.comment;
   if (!Number.isFinite(created) || !Number.isFinite(updated)) return { kind: 'ignore', code: 'JIRA_COMMENT_TIME_INVALID' };

@@ -103,8 +103,11 @@ export type JiraBlockersObservation = { kind: 'observed'; source: 'jira-rest'; o
 export type JiraCommentAuthor = { tracker: 'jira'; accountId: string };
 /** Stable reference of one Jira input: (siteId, issueId, commentId). */
 export type JiraInputRef = { tracker: 'jira'; siteId: string; issueId: string; commentId: string };
-/** One ordinary Platform comment of the origin Card; `body` is the plain text projected from validated ADF. */
-export type JiraComment = { ref: JiraInputRef; url: string; author: JiraCommentAuthor; body: string; createdAt: string; updatedAt: string;
+/**
+ * One ordinary Platform comment of the origin Card; `body` is the plain text projected from validated ADF. `author: null` = Jira gave no
+ * author account; `body: null` = the body was not a valid ADF document. Neither is ever an instruction (the Control records it as ignored).
+ */
+export type JiraComment = { ref: JiraInputRef; url: string; author: JiraCommentAuthor | null; body: string | null; createdAt: string; updatedAt: string;
   /** A visibility restriction applies: its text is never applied nor projected to a broader audience. */
   restricted: boolean };
 /** Read position in a Card's comments: the last processed comment (ascending created instant, then id); advanced only over processed inputs. */
@@ -189,8 +192,11 @@ export type JiraFactoryComment = { lines: string[] };
 export type JiraCommentPost = { kind: 'published'; observedAt: string; commentId: string; url: string; createdAt: string; authorAccountId: string | null } |
   { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
   { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
-/** One visible comment: author account, plain text projected from its current ADF, and whether a visibility restriction applies. */
-export type JiraVisibleComment = { commentId: string; authorAccountId: string; text: string; createdAt: string; updatedAt: string; restricted: boolean };
+/**
+ * One visible comment: author account (`null`: none observed), plain text projected from its current ADF (`null`: the body is not a valid
+ * ADF document, nothing is guessed), and whether a visibility restriction applies.
+ */
+export type JiraVisibleComment = { commentId: string; authorAccountId: string | null; text: string | null; createdAt: string; updatedAt: string; restricted: boolean };
 /** Every visible comment of a Card, all pages (never a shorter list); what this account sees, not an atomic snapshot. */
 export type JiraCommentListing = { kind: 'observed'; source: 'jira-rest'; observedAt: string; siteId: string; issueId: string; completeness: 'complete';
   comments: JiraVisibleComment[]; limitations: string[] } | JiraUnavailable;
@@ -215,7 +221,7 @@ export function jiraInputsOf(ticket: JiraTicketRef, listing: JiraCommentListing,
   const comments = [...listing.comments].sort((a, b) => jiraInputOrder(a, b))
     .filter(item => cursor === null || jiraInputOrder(item, cursor) > 0)
     .map((item): JiraComment => ({ ref: { tracker: 'jira', siteId: ticket.siteId, issueId: ticket.issueId, commentId: item.commentId },
-      url: `${ticket.url}?focusedCommentId=${item.commentId}`, author: { tracker: 'jira', accountId: item.authorAccountId }, body: item.text,
+      url: `${ticket.url}?focusedCommentId=${item.commentId}`, author: item.authorAccountId === null ? null : { tracker: 'jira', accountId: item.authorAccountId }, body: item.text,
       createdAt: item.createdAt, updatedAt: item.updatedAt, restricted: item.restricted }));
   const last = comments.at(-1);
   return { kind: 'observed', source: 'jira-rest', observedAt: listing.observedAt, ticket, completeness: 'complete', comments,
@@ -749,7 +755,7 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
         if (!page.success || page.data.startAt !== startAt) return invalid(ticket.siteId, answer.observedAt);
         for (const item of page.data.comments) {
           const body = adfDocSchema.safeParse(item.body);
-          comments.set(item.id, { commentId: item.id, authorAccountId: item.author?.accountId ?? '', text: body.success ? adfText(body.data) : '',
+          comments.set(item.id, { commentId: item.id, authorAccountId: item.author?.accountId || null, text: body.success ? adfText(body.data) : null,
             createdAt: item.created, updatedAt: item.updated, restricted: Boolean(item.visibility) });
         }
         startAt += page.data.comments.length;
