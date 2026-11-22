@@ -358,7 +358,12 @@ export async function openControl(options: { storagePath: string;
         });
         const dependencyResults = [];
         for (const repo of options.access.dependencyRepositories ?? []) dependencyResults.push(await options.access.tracker.checkAccess({ ...repo, role: 'dependency-only' }));
-        return { kind: 'access', scope: 'authenticated', results, dependencyResults };
+        // Jira ticket 10: each configured Jira source, through its own adapter (a read of the account's project permissions; never on YAML v1).
+        const jiraResults = [];
+        const jira = options.access.trackers?.jira;
+        for (const source of options.access.sources ?? []) if (source.tracker === 'jira' && jira) jiraResults.push(await jira.checkAccess({ tracker: 'jira',
+          siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }));
+        return { kind: 'access', scope: 'authenticated', results, dependencyResults, ...(jiraResults.length ? { jiraResults } : {}) };
       }
       if (query.kind === 'request') {
         if (!requestId.safeParse(query.request_id).success) throw new Error('INVALID_REQUEST_ID');

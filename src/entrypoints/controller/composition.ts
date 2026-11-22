@@ -80,14 +80,10 @@ export async function composeRuntimeInventory(input: { root: string; effective: 
 /** Host access of one configured Jira site, given to its transport only: the credential is read lazily from the installation root. */
 export type JiraSiteAccess = JiraHostSite;
 /**
- * Jira ticket 01: discovery of NEW Jira Tickets is not released yet (ticket 10 enables it once the whole flow exists). A configured
- * `discover: true` is composed as off; the adapter is still composed, so existing Works keep their origin.
- */
-export const jiraDiscoveryReleased = false;
-/**
  * Owner access: GitHub as before and, only when the v2 configuration names Jira sources, the Jira adapter beside it (selected by the
  * Ticket's persisted origin, never by its destination). `repositories` stay the executable destinations; `sources` the Ticket sources.
- * On YAML v1 no Jira client is created and no Jira credential is opened.
+ * On YAML v1 no Jira client is created and no Jira credential is opened. Jira ticket 10: a Jira source's `discover` is composed as configured;
+ * `discover: false` stops only NEW admissions of that source (the adapter stays composed, so existing Works keep their origin).
  */
 export function composeProductionAccess(input: { github: GitHubAccess; root?: string; effective: { repositories: ConfiguredRepository[];
   dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[];
@@ -101,7 +97,7 @@ export function composeProductionAccess(input: { github: GitHubAccess; root?: st
   const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   const configured = effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
   const sources: TicketSource[] = configured.map(source => source.tracker === 'github' ? { tracker: 'github', repository: source.repository, discover: source.discover }
-    : { tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label, discover: source.discover && jiraDiscoveryReleased,
+    : { tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label, discover: source.discover,
       routes: source.routes.map(route => ({ componentId: route.componentId, repository: route.repository })) });
   const jiraSources = configured.filter(source => source.tracker === 'jira');
   const root = input.root;

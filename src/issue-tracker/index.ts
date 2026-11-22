@@ -116,8 +116,14 @@ export type JiraQuestionSearch = { kind: 'observed'; source: 'jira-rest'; observ
 export type JiraCommentResult = { kind: 'published'; observedAt: string; commentId: string; url: string; createdAt: string } |
   { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
   { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
+/** Jira ticket 10: one capability the Factory needs on the configured project, as observed by the account's own permissions read. */
+export type JiraCapabilityFact = 'granted' | 'missing' | 'unverified';
 export type JiraAccessDiagnostic = { source: 'jira-rest'; purpose: 'tracker'; observedAt: string; siteId: string; projectId: string;
-  status: 'ok' | 'blocked'; code: string; completeness: 'complete' | 'incomplete'; nextStep: string; limitations?: string[] };
+  status: 'ok' | 'blocked'; code: string; completeness: 'complete' | 'incomplete'; nextStep: string; limitations?: string[];
+  /** Read project/issues/links/comments (Browse projects), create comments (Add comments), keep remote links (Link issues); audience and
+   * visibility of what Jira hides from this account can never be proved by it. */
+  facts?: { projectRead: JiraCapabilityFact; commentCreate: JiraCapabilityFact; remoteLinks: JiraCapabilityFact; commentAudience: 'unverified';
+    blockerVisibility: 'unverified' } };
 
 /** Author of an input, discriminated by provider (GitHub keeps its untagged `{id, login, type}`). */
 export type TrackerCommentAuthor = CommentAuthorRef | JiraCommentAuthor;
@@ -575,6 +581,11 @@ const commentNotCreated = new Set(['JIRA_UNAUTHENTICATED', 'JIRA_FORBIDDEN', 'JI
   'JIRA_CREDENTIAL_UNAVAILABLE', 'JIRA_SITE_URL_INVALID']);
 const maxJiraCommentPages = 50;
 
+/** Jira ticket 10: project permissions the Factory's account needs (reads; ordinary comments; remote links). */
+const jiraPermissions = [{ key: 'BROWSE_PROJECTS', name: 'Browse projects' }, { key: 'ADD_COMMENTS', name: 'Add comments' }, { key: 'LINK_ISSUES', name: 'Link issues' }] as const;
+const jiraPermissionsSchema = z.object({ permissions: z.record(z.string(), z.object({ havePermission: z.boolean().optional() })) });
+const accessLimitation = 'Permissions of the configured account only: who can see the Factory\'s comments, and blockers in projects it cannot read, are not verified.';
+
 /** JQL string literal: quotes and backslashes escaped (labels are validated without spaces). */
 const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\\${character}`)}"`;
 
@@ -611,9 +622,30 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
     return { ok: true, body: response.body, observedAt: response.observedAt };
   }
   const tracker: ReturnType<typeof createJiraTracker> = {
+    // Jira ticket 10: one read of the account's own permissions on the configured project (diagnosis only, never a request for more access).
     async checkAccess(scope) {
-      return { source: 'jira-rest', purpose: 'tracker', observedAt: new Date().toISOString(), siteId: scope.siteId, projectId: scope.projectId, status: 'blocked',
-        code: 'JIRA_CAPABILITY_NOT_AVAILABLE', completeness: 'incomplete', nextStep: 'Jira access diagnosis is not available in this release.' };
+      const unverified = { projectRead: 'unverified', commentCreate: 'unverified', remoteLinks: 'unverified', commentAudience: 'unverified', blockerVisibility: 'unverified' } as const;
+      const base = { source: 'jira-rest' as const, purpose: 'tracker' as const, siteId: scope.siteId, projectId: scope.projectId, limitations: [accessLimitation] };
+      const answer = await read(scope.siteId, { method: 'GET', path: '/rest/api/3/mypermissions',
+        query: { projectId: scope.projectId, permissions: jiraPermissions.map(item => item.key).join(',') } });
+      if (!answer.ok) return { ...base, observedAt: answer.fact.observedAt, status: 'blocked', code: answer.fact.code, completeness: 'incomplete', nextStep: answer.fact.nextStep, facts: unverified };
+      const parsed = jiraPermissionsSchema.safeParse(answer.body);
+      if (!parsed.success) return { ...base, observedAt: answer.observedAt, status: 'blocked', code: 'JIRA_OBSERVATION_INVALID', completeness: 'incomplete',
+        nextStep: 'Jira returned a permissions answer that could not be verified; nothing is concluded.', facts: unverified };
+      const fact = (key: string): JiraCapabilityFact => {
+        const have = parsed.data.permissions[key]?.havePermission;
+        return have === true ? 'granted' : have === false ? 'missing' : 'unverified';
+      };
+      const facts = { ...unverified, projectRead: fact('BROWSE_PROJECTS'), commentCreate: fact('ADD_COMMENTS'), remoteLinks: fact('LINK_ISSUES') };
+      const missing = jiraPermissions.filter(item => fact(item.key) === 'missing');
+      const open = jiraPermissions.filter(item => fact(item.key) === 'unverified');
+      const ok = !missing.length && !open.length;
+      return { ...base, observedAt: answer.observedAt, status: ok ? 'ok' : 'blocked', code: ok ? 'JIRA_ACCESS_OK' : missing.length ? 'JIRA_PERMISSION_MISSING' : 'JIRA_PERMISSION_UNVERIFIED',
+        completeness: open.length ? 'incomplete' : 'complete', facts,
+        nextStep: ok ? 'The configured account holds the project permissions the Factory uses; comment audience and blocker visibility are not provable by it.'
+          : missing.length ? `Ask a Jira administrator to grant the configured account ${missing.map(item => `"${item.name}"`).join(', ')} on project ${scope.projectId} ` +
+            '(the Factory never requests or widens access itself).'
+            : `Jira did not answer for ${open.map(item => `"${item.name}"`).join(', ')}; nothing is concluded.` };
     },
     async listCandidates(scope) {
       const configured = site(scope.siteId);

@@ -131,6 +131,9 @@ async function operational(root: string, command: string, requestId: string | un
         !result.repository || typeof result.repository !== 'object' || Array.isArray(result.repository) || result.repository.status !== 'ok')) return 3;
     if (response.payload.kind === 'access' && (!Array.isArray(response.payload.dependencyResults) || response.payload.dependencyResults.some(result =>
       !result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'ok'))) return 3;
+    // Jira ticket 10: a Jira source whose account diagnosis is not ok (permission missing/unverified, token unreadable) is not a success.
+    if (response.payload.kind === 'access' && response.payload.jiraResults !== undefined && (!Array.isArray(response.payload.jiraResults) ||
+      response.payload.jiraResults.some(result => !result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'ok'))) return 3;
     // `answer` not applied (already answered, unknown question, closed Work) is a durable refusal of the request: exit 2, nothing changed.
     return response.payload.kind === 'refused' || response.payload.kind === 'work-not-found' || response.payload.kind === 'question-not-found' ||
       response.payload.outcome === 'not-applied' ? 2 : 0;

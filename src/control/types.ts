@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { InputCursor, IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, JiraTicketRef, TicketRef } from '../issue-tracker/index.js';
+import type { InputCursor, IssueTracker, JiraAccessDiagnostic, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, JiraTicketRef, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -10,7 +10,9 @@ import type { Hold } from './rules/admission.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
 /** `dependencyResults`: preflight of repositories accessible only for dependency reads (no issue/relation is created). */
-export type AccessView = { kind: 'access'; scope: 'authenticated'; results: { tracker: AccessDiagnostic; repository: AccessDiagnostic }[]; dependencyResults: AccessDiagnostic[] };
+export type AccessView = { kind: 'access'; scope: 'authenticated'; results: { tracker: AccessDiagnostic; repository: AccessDiagnostic }[]; dependencyResults: AccessDiagnostic[];
+  /** Jira ticket 10: one diagnosis per configured Jira source (absent on YAML v1 / without Jira sources). */
+  jiraResults?: JiraAccessDiagnostic[] };
 /** Per-repository limits of the validated configuration (spec §11.2): defaults 3/3, timeout absent (no implicit cut). */
 export type ConfiguredRepository = GitHubScope & { base: string; label: string; correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined;
   /** Ticket 48: the repository's Builder budget adjustment (validated by the configuration: at most 2x the release values). */

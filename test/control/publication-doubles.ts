@@ -81,6 +81,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
   /** v2 ticket 09: the monotonic clock of the Executions (boot clock and timeout), when the test controls it. */ clock?: ExecutionPorts['clock'] } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   let sessions = 0;
+  let lastBranch: string | undefined;
   let delivered: ((directive: BuilderDirective) => void) | undefined;
   // v2 ticket 09: how the working Builder of a `work` script yields (set while it runs).
   let yielding: { directive(): boolean; interrupt(): void } | undefined;
@@ -156,6 +157,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           continuation: invocation.continuation ?? null, handoff: invocation.handoff ?? null, editSourceMaxBytes: invocation.editSourceMaxBytes, token: delivery?.credential?.token ?? '',
           pushPolicy: invocation.pushPolicy ?? null };
         calls.push({ kind: 'activate', detail: activation });
+        lastBranch = /branch=(\S+)/.exec(invocation.prompt)?.[1] ?? lastBranch;
         // The recorded profile is the one of THIS activation's policies, as the real Workers record it (a correction or a swap notice has no handoff).
         const session = sessionRef(++sessions, { skillPack: invocation.skillPack, copyOutput: invocation.copyOutput, editSourceMaxBytes: invocation.editSourceMaxBytes,
           handoff: invocation.handoff !== undefined });
@@ -202,7 +204,10 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         }
         // Implementation with ticket 13's handoff: round 1 (gate declared) reviewed by both reviewers, then the Host's closing capture.
         // A continuation in a recreated environment names the branch in its notice only (v2 ticket 08).
-        const branch = (/branch=(\S+)/.exec(invocation.prompt) ?? /\(the tip of (\S+) on origin/.exec(invocation.prompt))![1]!;
+        // Jira ticket 10: a continuation of the SAME session after an answered Question names no branch; it keeps the one it was given.
+        const branch = (/branch=(\S+)/.exec(invocation.prompt) ?? /\(the tip of (\S+) on origin/.exec(invocation.prompt))?.[1] ?? lastBranch;
+        if (!branch) throw new Error('DOUBLE_BRANCH_UNKNOWN');
+        lastBranch = branch;
         const committed = script.committed ?? true;
         guest.head = script.head;
         script.during?.(remote, activation);

@@ -42,6 +42,11 @@ const unsettledStates: ReadonlySet<JiraCommentState> = new Set(['intended', 'att
 export const commentUnsettled = (effect: Pick<JiraCommentEffect, 'state'>) => unsettledStates.has(effect.state);
 const maxSettled = 200;
 const maxKnownFailures = 5;
+/**
+ * Jira ticket 10 (spec §1): the host could not read the Jira token, so nothing was sent and Jira refused nothing. Such an attempt never
+ * counts toward `maxKnownFailures`: the effect stays pending (retried every pass) until the token file is restored, never abandoned.
+ */
+const credentialMissing = 'JIRA_CREDENTIAL_UNAVAILABLE';
 /** POSTs whose outcome stayed unknown and were then found absent: beyond this the effect is abandoned (never an endless repost loop). */
 const maxUncertainPosts = 3;
 const keep = <T>(items: T[]) => items.slice(-20);
@@ -184,10 +189,12 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
       const code = result?.code ?? 'JIRA_UNEXPECTED_FAILURE';
       current.attempts = keep([...current.attempts, { at, outcome: result?.kind === 'failed' ? 'failed' : 'unknown', code }]);
       if (result?.kind === 'failed') {
-        const failures = current.attempts.filter(item => item.outcome === 'failed').length;
+        const failures = current.attempts.filter(item => item.outcome === 'failed' && item.code !== credentialMissing).length;
         current.state = failures >= maxKnownFailures ? 'abandoned' : 'failed';
         if (result.waitSeconds !== undefined) current.notBefore = new Date(Date.parse(at) + result.waitSeconds * 1000).toISOString();
-        current.diagnostic = { code, at, nextStep: failures >= maxKnownFailures ? `Jira refused ${current.logicalRef} ${failures} times; it is not sent again. ${result.nextStep}` : result.nextStep };
+        current.diagnostic = { code, at, nextStep: failures >= maxKnownFailures ? `Jira refused ${current.logicalRef} ${failures} times; it is not sent again. ${result.nextStep}`
+          : code === credentialMissing ? `${result.nextStep} ${current.logicalRef} stays pending on this Card and is sent on the next poll after the token file is restored; it is never sent elsewhere.`
+            : result.nextStep };
       } else {
         current.state = 'unknown';
         current.diagnostic = { code, at, nextStep: 'The comment may exist: the next pass reconciles it against the Card\'s visible comments before any new POST.' };

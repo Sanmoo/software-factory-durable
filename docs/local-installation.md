@@ -97,6 +97,14 @@ Configuração inválida não produz `effective`, aplicação parcial, escrita d
 ou substituição pelo perfil pessoal. Alterações operacionais futuras entram por
 reinício, não hot reload; este incremento nunca aplica configuração ao controlador.
 
+## YAML schemaVersion 2 (fontes de Tickets e Jira)
+
+O schemaVersion 2 acrescenta `ticketSources`, que separa as origens de Tickets (GitHub e Jira Cloud)
+dos repositórios executáveis. Configuração do Jira no host (URL, e-mail, arquivo de token, permissões
+mínimas), suspensão com `discover: false` e recuperação de acesso: ver
+[Jira Cloud como origem de Tickets](jira-installation.md). O schemaVersion 1 continua válido e não
+abre credencial Jira.
+
 ## O que doctor prova (e o que não prova)
 
 Read-only, sem banco operacional: informa Node e versões QEMU/qemu-img/systemctl,
@@ -191,6 +199,9 @@ tracker/repositório com origem, instante, identidade, completude, limitações,
 metadados de concessão sem segredo, causa/ação e espera de rate limit quando
 pertinente. Resultado bloqueado retorna exit 3; observações bem-sucedidas retornam
 0, **sem qualificar escrita não exercida, runtime ou barreiras de merge/CI**.
+Com fontes Jira no schemaVersion 2, `jiraResults` traz o diagnóstico da conta Jira de cada fonte
+(ver [Jira Cloud como origem de Tickets](jira-installation.md#3-conferir-o-acesso)); resultado Jira
+bloqueado também retorna exit 3.
 Sem `--authenticated`, o doctor conserva o comportamento offline acima.
 
 Esse caminho lê a chave protegida e emite concessões somente no controlador;

@@ -9,7 +9,7 @@ import type { GitHubAccess } from '../../src/platform/github/index.js';
 import type { JiraRequest } from '../../src/issue-tracker/index.js';
 
 // Jira ticket 01 (spec §1, §7 "Coexistência"): v1 composes GitHub only, never opening a Jira credential nor creating a Jira client; v2
-// composes the Jira adapter beside it, selected by the Ticket's origin, with discovery of new Jira Tickets still off in this release.
+// composes the Jira adapter beside it, selected by the Ticket's origin, with discovery of new Jira Tickets as configured (ticket 10).
 const sentinel = 'SYNTHETIC-JIRA-TOKEN-0f6c';
 const header = `operators: [operator-one]
 models:
@@ -98,7 +98,7 @@ test('YAML v1 composes GitHub only: GitHub calls are recorded, no Jira client is
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('YAML v2 composes the Jira adapter beside GitHub, reads the token only on a Jira request and keeps Jira discovery off', async () => {
+test('YAML v2 composes the Jira adapter beside GitHub, reads the token only on a Jira request and composes Jira discovery as configured', async () => {
   const { root, effective } = await installation(v2);
   try {
     const { github, calls } = recordingGitHub();
@@ -106,8 +106,8 @@ test('YAML v2 composes the Jira adapter beside GitHub, reads the token only on a
     const access = composeProductionAccess({ root, github, effective, jira: { transport: jira.transport } });
     assert.deepEqual(access.sources, [
       { tracker: 'github', repository: 'equipe/payments-api', discover: true },
-      { tracker: 'jira', siteId: 'site-A', url: 'https://equipe.atlassian.net', projectId: '10010', label: 'factory-ready', discover: false,
-        routes: [{ componentId: '10022', repository: 'equipe/payments-api' }] }], 'Jira discovery stays off in this release even when configured');
+      { tracker: 'jira', siteId: 'site-A', url: 'https://equipe.atlassian.net', projectId: '10010', label: 'factory-ready', discover: true,
+        routes: [{ componentId: '10022', repository: 'equipe/payments-api' }] }], 'Jira discovery is composed as configured (ticket 10)');
     assert.deepEqual(access.repositories.map(item => item.repository), ['equipe/checkout-web', 'equipe/payments-api'], 'destinations are unchanged');
     assert.ok(access.trackers?.jira);
     assert.equal(jira.sites.length, 0, 'no Jira client before a Jira request');
