@@ -30,9 +30,10 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 
 - [Definir o vínculo durável entre Ticket Jira, Trabalho e pull request](issues/06-correlacao.md): o merge do PR próprio confirma a entrega; um link por Trabalho e um comentário comunicam o resultado no Card, mesmo que o aviso precise esperar o Jira voltar.
 
+- [Definir contratos, persistência e compatibilidade com GitHub Issues](issues/07-contratos.md): cada Trabalho conserva origem e destino separados; desligar a descoberta não interrompe a retomada, e o retorno de versão depende da compatibilidade dos dados e da configuração.
+
 ## Not yet specified
 
-- O desenho de persistência e reconciliação mostrará se algum estado legado exige um procedimento específico de atualização ou recuperação; não pressupor migração destrutiva nem ferramenta nova.
 - A matriz de testes mostrará quais propriedades não são demonstráveis offline e se alguma exige um ensaio separado antes da aprovação da spec.
 
 ## Out of scope
