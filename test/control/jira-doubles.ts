@@ -1,12 +1,12 @@
 // Jira ticket 04: an in-memory Jira site behind the Jira tracker contract (JiraOriginTracker). Every call is recorded, unexpected ones
 // included (a Proxy records any method not modelled and answers unavailable), so a test can assert absence of comments/writes.
-import { jiraInputsOf, type JiraLink, type JiraLinkType, type JiraTicketRef, type JiraVisibleComment } from '../../src/issue-tracker/index.js';
+import { jiraInputsOf, type JiraLink, type JiraLinkType, type JiraStatusCategory, type JiraTicketRef, type JiraVisibleComment } from '../../src/issue-tracker/index.js';
 import type { JiraOriginTracker, TicketSource } from '../../src/control/types.js';
 
 export const site = { siteId: 'site-A', url: 'https://equipe.atlassian.net' };
 export const blocksType: JiraLinkType = { id: '10000', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
 export type JiraCard = { issueId: string; key: string; projectId: string; labels: string[]; components: string[] | null; links: JiraLink[] | null;
-  statusCategory: string; summary: string | null; description?: string | null };
+  statusCategory: JiraStatusCategory; summary: string | null; description?: string | null };
 export type JiraRemote = {
   cards: JiraCard[];
   /** What the listing returns (refs as listed then); absent = the cards carrying the label now. */

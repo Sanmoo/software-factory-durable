@@ -112,6 +112,9 @@ test('the link type catalogue and a neighbour status category are read by ID fro
   const missing = recording(() => ok({ id: '70202', key: 'OPS-9', fields: { status: { name: 'Done' } } }));
   const unknown = await createJiraTracker({ scopes: [scope], transport: () => missing.transport }).readIssueStatus('site-A', '70202');
   assert.equal(unknown.kind === 'unavailable' && unknown.code, 'JIRA_OBSERVATION_INVALID', 'a status name without its category concludes nothing');
+  const strange = recording(() => ok({ id: '70202', key: 'OPS-9', fields: { status: { name: 'Feito', statusCategory: { key: 'finished' } } } }));
+  const unverifiable = await createJiraTracker({ scopes: [scope], transport: () => strange.transport }).readIssueStatus('site-A', '70202');
+  assert.equal(unverifiable.kind === 'unavailable' && unverifiable.code, 'JIRA_OBSERVATION_INVALID', 'a category key outside Jira\'s keys is unverifiable, never a status');
 });
 
 test('capabilities not built yet answer unavailable without any call', async () => {

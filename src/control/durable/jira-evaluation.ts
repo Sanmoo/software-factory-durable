@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { JiraBlockersObservation, JiraCandidateObservation, JiraLinkTypesObservation, JiraTicketObservation, JiraTicketRef, JiraUnavailable } from '../../issue-tracker/index.js';
+import type { JiraBlocker, JiraBlockersObservation, JiraCandidateObservation, JiraLinkTypesObservation, JiraTicketObservation, JiraTicketRef, JiraUnavailable } from '../../issue-tracker/index.js';
 import type { AccessDependencies, DependencyEvaluation, JiraOriginTracker, TicketContent, TicketSource } from '../types.js';
 import { jiraAuthorizationFacts } from '../rules/cycles.js';
 import type { WorkRecord } from './admission.js';
@@ -60,7 +60,7 @@ async function visibleBlockers(tracker: JiraOriginTracker, root: JiraTicketRef, 
   if (neighbours.length > maxBlockerReads) {
     return { links, blockers: unavailable('JIRA_BLOCKERS_TOO_MANY', `More than ${maxBlockerReads} visible blockers; nothing is concluded.`, types.observedAt) };
   }
-  const blockers: { issueId: string; key: string; statusCategory: string }[] = [];
+  const blockers: JiraBlocker[] = [];
   let observedAt = types.observedAt > readAt ? types.observedAt : readAt;
   for (const issueId of neighbours) {
     const status = await tracker.readIssueStatus(root.siteId, issueId);

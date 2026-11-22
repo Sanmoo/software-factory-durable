@@ -61,7 +61,7 @@ function retryAfter(value: string | undefined, now: Date): number {
   return Math.min(maxWaitSeconds, Math.max(1, seconds));
 }
 
-const failures: Record<string, string> = {
+const failures = {
   JIRA_REQUEST_REFUSED: 'Only REST v3 paths of the configured site are requested; nothing was sent.',
   JIRA_SITE_URL_INVALID: 'The configured Jira URL is not an HTTPS origin; fix `url` in the configuration. Nothing was sent.',
   JIRA_CREDENTIAL_UNAVAILABLE: 'The Jira token file could not be read safely on the host; check the configured `tokenFile` (private regular file of this user). Nothing was sent.',
@@ -75,7 +75,7 @@ const failures: Record<string, string> = {
   JIRA_TRANSPORT_UNAVAILABLE: 'Jira could not be reached; nothing is concluded, the next poll reads again.',
   JIRA_RESPONSE_TOO_LARGE: 'The Jira answer exceeded the size limit; nothing is concluded.',
   JIRA_RESPONSE_INVALID: 'Jira answered something that is not a verifiable JSON response; nothing is concluded.',
-};
+} as const satisfies Record<string, string>;
 
 /**
  * The host's Jira Cloud REST v3 transport for ONE configured site. The origin is fixed by the configured `url`; callers only name
@@ -88,8 +88,8 @@ export function createJiraHttpTransport(site: JiraHostSite, options: { send?: (e
   const now = options.now ?? (() => new Date());
   return {
     async request(input: JiraRequest): Promise<JiraResponse> {
-      const fail = (code: string, extra: { status?: number; waitSeconds?: number } = {}): JiraResponse =>
-        ({ ok: false, code, ...extra, observedAt: now().toISOString(), nextStep: failures[code]! });
+      const fail = (code: keyof typeof failures, extra: { status?: number; waitSeconds?: number } = {}): JiraResponse =>
+        ({ ok: false, code, ...extra, observedAt: now().toISOString(), nextStep: failures[code] });
       let origin: URL;
       try { origin = new URL(site.url); } catch { return fail('JIRA_SITE_URL_INVALID'); }
       if (origin.protocol !== 'https:' || origin.origin !== site.url.replace(/\/$/, '') || origin.username || origin.password) return fail('JIRA_SITE_URL_INVALID');
