@@ -99,3 +99,34 @@ test('over the host transport the comment goes to the configured origin with the
   assert.doesNotMatch(exchanges[0]!.body ?? '', /SENTINEL/);
   assert.deepEqual(JSON.parse(exchanges[0]!.body!), { body: adf('hello') });
 });
+
+// Jira ticket 06: the inputs of a Work are every visible comment of its origin Card, ordered by (created, id), after the processed cursor.
+test('readInputs lists every comment after the cursor, in (created, id) order, with author, audience and edit times', async () => {
+  const page = { startAt: 0, maxResults: 100, total: 4, comments: [
+    comment('104', ['/factory sim'], 'acc-human', { created: '2026-11-21T10:05:00.000+0000', updated: '2026-11-21T10:06:00.000+0000' }),
+    comment('101', ['antes']),
+    comment('103', ['/factory restrito'], 'acc-human', { visibility: { type: 'role', value: 'Developers' } }),
+    comment('102', ['[Software Factory · Pergunta Q-1]', '/factory x'])] };
+  const { calls, transport } = recording(() => answer(page));
+  const tracker = createJiraTracker({ scopes: [scope], transport: () => transport });
+  const all = await tracker.readInputs(ref, null);
+  assert.equal(all.kind, 'observed');
+  if (all.kind !== 'observed') return;
+  assert.deepEqual(all.comments.map(item => item.ref.commentId), ['101', '102', '103', '104']);
+  assert.deepEqual(all.comments[3], { ref: { tracker: 'jira', siteId: 'site-A', issueId: '81017', commentId: '104' }, url: 'https://equipe.atlassian.net/browse/PAG-42?focusedCommentId=104',
+    author: { tracker: 'jira', accountId: 'acc-human' }, body: '/factory sim', createdAt: '2026-11-21T10:05:00.000+0000', updatedAt: '2026-11-21T10:06:00.000+0000', restricted: false });
+  assert.equal(all.comments[2]!.restricted, true);
+  assert.deepEqual(all.cursor, { tracker: 'jira', createdAt: '2026-11-21T10:05:00.000+0000', commentId: '104' });
+  const after = await tracker.readInputs(ref, { tracker: 'jira', createdAt: '2026-11-21T10:02:00.000+0000', commentId: '102' });
+  assert.deepEqual(after.kind === 'observed' && after.comments.map(item => item.ref.commentId), ['103', '104']);
+  // Nothing new: the cursor stays where it was.
+  const none = await tracker.readInputs(ref, { tracker: 'jira', createdAt: '2026-11-21T10:05:00.000+0000', commentId: '104' });
+  assert.deepEqual(none.kind === 'observed' && [none.comments, none.cursor], [[], { tracker: 'jira', createdAt: '2026-11-21T10:05:00.000+0000', commentId: '104' }]);
+  assert.ok(calls.every(call => call.method === 'GET'));
+});
+
+test('readInputs concludes nothing from an incomplete comment listing', async () => {
+  const { transport } = recording(() => answer({ startAt: 0, maxResults: 100, total: 3, comments: [] }));
+  const inputs = await createJiraTracker({ scopes: [scope], transport: () => transport }).readInputs(ref, null);
+  assert.deepEqual([inputs.kind, inputs.kind === 'unavailable' && inputs.code], ['unavailable', 'JIRA_COMMENTS_INCOMPLETE']);
+});

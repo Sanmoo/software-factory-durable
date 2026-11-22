@@ -69,7 +69,7 @@ export function commentEligibility(comment: { commentId: number; createdAt: numb
   return { eligible: true };
 }
 
-export type AnswerContext = { kind: 'local-cli' } | { kind: 'github-comment'; workId: string };
+export type AnswerContext = { kind: 'local-cli' } | { kind: 'github-comment' | 'jira-comment'; workId: string };
 /**
  * One accepted answer per Question: the first authorized, correlated answer that reaches a durable commit. A comment only answers a
  * Question of the Work whose Ticket/PR hosts it. Closed results (cancelled/delivered/closed unmerged) are never reactivated.
@@ -77,12 +77,16 @@ export type AnswerContext = { kind: 'local-cli' } | { kind: 'github-comment'; wo
 export function answerDecision(input: { question: { questionId: string; workId: string; state: 'open' | 'answered' } | null;
   work: { work_id: string; result: string; current: boolean } | null; context: AnswerContext }): { kind: 'accept' } | { kind: 'refuse'; code: string } {
   if (!input.question || !input.work || input.work.work_id !== input.question.workId) return { kind: 'refuse', code: 'QUESTION_NOT_FOUND' };
-  if (input.context.kind === 'github-comment' && input.context.workId !== input.question.workId) return { kind: 'refuse', code: 'QUESTION_NOT_IN_CONTEXT' };
+  if (input.context.kind !== 'local-cli' && input.context.workId !== input.question.workId) return { kind: 'refuse', code: 'QUESTION_NOT_IN_CONTEXT' };
   if (input.work.result !== 'open') return { kind: 'refuse', code: 'WORK_NOT_OPEN' };
   if (!input.work.current) return { kind: 'refuse', code: 'WORK_NOT_CURRENT' };
   if (input.question.state !== 'open') return { kind: 'refuse', code: 'QUESTION_ALREADY_ANSWERED' };
   return { kind: 'accept' };
 }
+
+/** Who answered, as the Builder prompt and the PR text name it (Jira: the observed account id; Jira ticket 06). */
+export const answerAuthorLabel = (author: { kind: 'github'; login: string } | { kind: 'local-administrator' } | { kind: 'jira'; accountId: string }, mention = false) =>
+  author.kind === 'github' ? `${mention ? '@' : ''}${author.login}` : author.kind === 'jira' ? `Jira account ${author.accountId}` : 'local administrator';
 
 /** Shape of an ask_user request before any commit; the worker assigned the identity and preserved the request first. */
 export function validateQuestionRequest(input: { questionId: unknown; question: unknown; context: unknown }): { valid: true } | { valid: false; code: string } {

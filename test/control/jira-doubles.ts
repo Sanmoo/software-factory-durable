@@ -1,6 +1,6 @@
 // Jira ticket 04: an in-memory Jira site behind the Jira tracker contract (JiraOriginTracker). Every call is recorded, unexpected ones
 // included (a Proxy records any method not modelled and answers unavailable), so a test can assert absence of comments/writes.
-import type { JiraLink, JiraLinkType, JiraTicketRef, JiraVisibleComment } from '../../src/issue-tracker/index.js';
+import { jiraInputsOf, type JiraLink, type JiraLinkType, type JiraTicketRef, type JiraVisibleComment } from '../../src/issue-tracker/index.js';
 import type { JiraOriginTracker, TicketSource } from '../../src/control/types.js';
 
 export const site = { siteId: 'site-A', url: 'https://equipe.atlassian.net' };
@@ -17,6 +17,12 @@ export type JiraRemote = {
   readFailures?: Record<string, string>;
   /** Called after the listing, before any re-read (models an edit between discovery and admission). */
   afterListing?: () => void;
+  /** Jira ticket 06: outcome of the next comment POSTs (default ok): `lost-created` = created, answer lost; `lost-not-created` = not created, unknown. */
+  postOutcomes?: ('ok' | 'lost-created' | 'lost-not-created')[];
+  /** Comment listings (inputs and reconciliation) answer unavailable while set. */
+  commentsFailure?: string;
+  /** Inputs ignore the cursor (a re-delivery of every comment, as after a lost cursor). */
+  redeliver?: boolean;
 };
 export const jiraSource = (overrides: Partial<Extract<TicketSource, { tracker: 'jira' }>> = {}): Extract<TicketSource, { tracker: 'jira' }> => ({
   tracker: 'jira', siteId: site.siteId, url: site.url, projectId: '10010', label: 'factory-ready', discover: true,
@@ -63,14 +69,24 @@ export function jiraDoubles(remote: JiraRemote) {
     },
     publishComment: async (ticket, comment) => {
       calls.push({ method: 'publishComment', args: { issueId: ticket.issueId, lines: comment.lines } });
+      const outcome = remote.postOutcomes?.shift() ?? 'ok';
+      if (outcome === 'lost-not-created') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
       const commentId = String(commentSequence += 1), at = observedAt();
       (comments[ticket.issueId] ??= []).push({ commentId, authorAccountId: 'acc-factory', text: comment.lines.join('\n'), createdAt: at, updatedAt: at, restricted: false });
+      if (outcome === 'lost-created') return { kind: 'unknown', observedAt: at, code: 'JIRA_TIMEOUT', nextStep: 'synthetic lost answer' };
       return { kind: 'published', observedAt: at, commentId, createdAt: at, authorAccountId: 'acc-factory', url: `${ticket.url}?focusedCommentId=${commentId}` };
     },
     listComments: async ticket => {
       calls.push({ method: 'listComments', args: ticket.issueId });
+      if (remote.commentsFailure) return unavailable(remote.commentsFailure);
       return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId: site.siteId, issueId: ticket.issueId, completeness: 'complete',
         comments: [...(comments[ticket.issueId] ?? [])], limitations: [] };
+    },
+    readInputs: async (ticket, cursor) => {
+      calls.push({ method: 'readInputs', args: ticket.issueId });
+      const listing = remote.commentsFailure ? unavailable(remote.commentsFailure) : { kind: 'observed' as const, source: 'jira-rest' as const, observedAt: observedAt(), siteId: site.siteId,
+        issueId: ticket.issueId, completeness: 'complete' as const, comments: structuredClone(comments[ticket.issueId] ?? []), limitations: [] };
+      return jiraInputsOf(ticket, listing, remote.redeliver ? null : cursor);
     },
     readAccount: async siteId => { calls.push({ method: 'readAccount' }); return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, accountId: 'acc-factory' }; },
     readLinkTypes: async siteId => {
@@ -91,5 +107,13 @@ export function jiraDoubles(remote: JiraRemote) {
       return async (...args: unknown[]) => { calls.push({ method: `unexpected:${name}`, args }); return unavailable('JIRA_CAPABILITY_NOT_AVAILABLE'); };
     },
   }) as JiraOriginTracker;
-  return { tracker, calls, comments, methods: () => calls.map(call => call.method) };
+  /** Jira ticket 06: a comment written on the Card by `accountId` (the Factory's shared account by default), a second after now. */
+  const write = (issueId: string, text: string, options: { accountId?: string; edited?: boolean; restricted?: boolean } = {}) => {
+    const commentId = String(commentSequence += 1);
+    const created = new Date(Date.now() + 1000).toISOString();
+    (comments[issueId] ??= []).push({ commentId, authorAccountId: options.accountId ?? 'acc-factory', text, createdAt: created,
+      updatedAt: options.edited ? new Date(Date.now() + 2000).toISOString() : created, restricted: Boolean(options.restricted) });
+    return commentId;
+  };
+  return { tracker, calls, comments, write, methods: () => calls.map(call => call.method) };
 }

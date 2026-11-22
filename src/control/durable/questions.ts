@@ -114,10 +114,17 @@ export async function recordContentLost(session: Session, work_id: string, execu
 }
 
 export type AnswerOrigin = { kind: 'local-cli' } |
-  { kind: 'github-comment'; workId: string; comment: { commentId: number; url: string; author: { id: number; login: string; type: string } } };
-type Ingress = { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' | 'github-comment'; commentId?: number };
+  { kind: 'github-comment'; workId: string; comment: { commentId: number; url: string; author: { id: number; login: string; type: string } } } |
+  /** Jira ticket 06: an ordinary comment of the Jira Work's origin Card, identified by (siteId, issueId, commentId) and its observed account. */
+  { kind: 'jira-comment'; workId: string; comment: { siteId: string; issueId: string; commentId: string; url: string; accountId: string } };
+type Ingress = { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' | 'github-comment' | 'jira-comment'; commentId?: number;
+  comment?: { siteId: string; issueId: string; commentId: string; accountId: string } };
 const ingressOf = (input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin }): Ingress => ({ request_id: input.request_id, operation: 'answer',
-  question_id: input.question_id, text: input.text, origin: input.origin.kind, ...(input.origin.kind === 'github-comment' ? { commentId: input.origin.comment.commentId } : {}) });
+  question_id: input.question_id, text: input.text, origin: input.origin.kind, ...(input.origin.kind === 'github-comment' ? { commentId: input.origin.comment.commentId } : {}),
+  ...(input.origin.kind === 'jira-comment' ? { comment: { siteId: input.origin.comment.siteId, issueId: input.origin.comment.issueId, commentId: input.origin.comment.commentId,
+    accountId: input.origin.comment.accountId } } : {}) });
+type AnswerReceipt = Extract<ControlReceipt, { operation: 'answer' }>;
+type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 
 /**
  * "Aceitar resposta/comando" (spec §3.4): deduplication by ingress identity, correlation, the single answer, the removal of ONLY this
@@ -125,43 +132,51 @@ const ingressOf = (input: { request_id: string; question_id: string; text: strin
  * waits for the normal dispatch revalidation. `refusal` carries an authorization failure decided before (bot/third party).
  */
 export async function acceptAnswer(session: Session, input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string }):
-  Promise<Extract<ControlReceipt, { operation: 'answer' }> | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+  Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+  return session.commit(tx => answerIn(tx, input), BACKGROUND_CONTEXT);
+}
+
+/** The body of {@link acceptAnswer} inside the caller's commit (Jira ticket 06 decides the target Question in the same commit). */
+export async function answerIn(tx: Tx, input: { request_id: string; question_id: string; text: string; origin: AnswerOrigin; refusal?: string }):
+  Promise<AnswerReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   const ingress = ingressOf(input);
-  return session.commit(async tx => {
-    const request = await tx.doc(requests, input.request_id, null);
-    if (request.input) {
-      if (JSON.stringify(request.input) !== JSON.stringify(ingress)) return { kind: 'refused' as const, code: 'REQUEST_ID_CONFLICT' as const };
-      return JSON.parse(JSON.stringify(request.receipt)) as Extract<ControlReceipt, { operation: 'answer' }>;
-    }
-    const document = await tx.doc(questions, input.question_id, null);
-    const question = document.question;
-    const workDocument = question ? await tx.doc(works, question.workId, null) : null;
-    const work = workDocument?.work ?? null;
-    const index = await tx.doc(ticketIndex);
-    const decision = input.refusal ? { kind: 'refuse' as const, code: input.refusal } : answerDecision({ question, context: input.origin.kind === 'local-cli' ? { kind: 'local-cli' }
-      : { kind: 'github-comment', workId: input.origin.workId }, work: work ? { work_id: work.work_id, result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id } : null });
-    const now = new Date().toISOString();
-    const originLabel = input.origin.kind === 'github-comment' ? `github-comment:${input.origin.comment.commentId}` : `local-cli:${input.request_id}`;
-    let receipt: Extract<ControlReceipt, { operation: 'answer' }>;
-    if (decision.kind === 'refuse') {
-      if (question) question.ignored = keep([...question.ignored, { at: now, origin: originLabel, code: decision.code }]);
-      receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'not-applied', reason: decision.code, work_id: question?.workId ?? null };
-    } else {
-      question!.state = 'answered';
-      question!.answer = { text: input.text, sha256: sha256(input.text), acceptedAt: now,
-        author: input.origin.kind === 'github-comment' ? { kind: 'github', id: input.origin.comment.author.id, login: input.origin.comment.author.login } : { kind: 'local-administrator' },
-        origin: input.origin.kind === 'github-comment' ? { kind: 'github-comment', commentId: input.origin.comment.commentId, url: input.origin.comment.url } : { kind: 'local-cli', request_id: input.request_id } };
-      // Only THIS Question's impediment; authorization, dependencies, other Questions and limits are untouched.
-      work!.impediments = work!.impediments.filter(item => !(item.code === 'QUESTION_PENDING' && item.questionId === input.question_id));
-      work!.history.push({ at: now, event: 'question-answered', origin: input.origin.kind === 'github-comment' ? 'github-comment' : 'local-cli', questionId: input.question_id, detail: originLabel });
-      receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'accepted', reason: null, work_id: work!.work_id };
-    }
-    request.input = ingress as never;
-    request.receipt = receipt;
-    // Ticket 31: the answer text is linked to the Question's Work whatever the outcome (forget erases it).
-    if (question) await linkRequest(tx, question.workId, input.request_id);
-    return JSON.parse(JSON.stringify(receipt)) as typeof receipt;
-  }, BACKGROUND_CONTEXT);
+  const request = await tx.doc(requests, input.request_id, null);
+  if (request.input) {
+    if (JSON.stringify(request.input) !== JSON.stringify(ingress)) return { kind: 'refused' as const, code: 'REQUEST_ID_CONFLICT' as const };
+    return JSON.parse(JSON.stringify(request.receipt)) as AnswerReceipt;
+  }
+  const document = await tx.doc(questions, input.question_id, null);
+  const question = document.question;
+  const workDocument = question ? await tx.doc(works, question.workId, null) : null;
+  const work = workDocument?.work ?? null;
+  const index = await tx.doc(ticketIndex);
+  const decision = input.refusal ? { kind: 'refuse' as const, code: input.refusal } : answerDecision({ question, context: input.origin.kind === 'local-cli' ? { kind: 'local-cli' }
+    : { kind: input.origin.kind, workId: input.origin.workId }, work: work ? { work_id: work.work_id, result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id } : null });
+  const now = new Date().toISOString();
+  const origin = input.origin;
+  const originLabel = origin.kind === 'github-comment' ? `github-comment:${origin.comment.commentId}` : origin.kind === 'jira-comment' ? `jira-comment:${input.request_id}` : `local-cli:${input.request_id}`;
+  let receipt: AnswerReceipt;
+  if (decision.kind === 'refuse') {
+    if (question) question.ignored = keep([...question.ignored, { at: now, origin: originLabel, code: decision.code }]);
+    receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'not-applied', reason: decision.code, work_id: question?.workId ?? null };
+  } else {
+    question!.state = 'answered';
+    question!.answer = { text: input.text, sha256: sha256(input.text), acceptedAt: now,
+      author: origin.kind === 'github-comment' ? { kind: 'github', id: origin.comment.author.id, login: origin.comment.author.login }
+        : origin.kind === 'jira-comment' ? { kind: 'jira', accountId: origin.comment.accountId } : { kind: 'local-administrator' },
+      origin: origin.kind === 'github-comment' ? { kind: 'github-comment', commentId: origin.comment.commentId, url: origin.comment.url }
+        : origin.kind === 'jira-comment' ? { kind: 'jira-comment', siteId: origin.comment.siteId, issueId: origin.comment.issueId, commentId: origin.comment.commentId,
+          url: origin.comment.url, request_id: input.request_id } : { kind: 'local-cli', request_id: input.request_id } };
+    // Only THIS Question's impediment; authorization, dependencies, other Questions and limits are untouched.
+    work!.impediments = work!.impediments.filter(item => !(item.code === 'QUESTION_PENDING' && item.questionId === input.question_id));
+    work!.history.push({ at: now, event: 'question-answered', origin: origin.kind, questionId: input.question_id, detail: originLabel });
+    receipt = { kind: 'durable', request_id: input.request_id, operation: 'answer', question_id: input.question_id, outcome: 'accepted', reason: null, work_id: work!.work_id };
+  }
+  request.input = ingress as never;
+  request.receipt = receipt;
+  // Ticket 31: the answer text is linked to the Question's Work whatever the outcome (forget erases it).
+  if (question) await linkRequest(tx, question.workId, input.request_id);
+  return JSON.parse(JSON.stringify(receipt)) as typeof receipt;
 }
 
 type PublicationUpdate = { kind: 'begin' } | { kind: 'result'; outcome: 'published'; comment: { commentId: number; url: string }; revocation?: string } |
@@ -185,7 +200,8 @@ export async function recordPublication(session: Session, questionId: string, up
       const work = (await tx.doc(works, question.workId, null)).work;
       work?.history.push({ at: now, event: 'question-published', origin: 'controller-publication', questionId, detail: comment.url });
       // Comments up to the Question's own comment can never answer it: start reading after it.
-      if (work && (work.inputs?.cursor ?? 0) < comment.commentId) work.inputs = { cursor: comment.commentId };
+      const cursor = work?.inputs?.cursor ?? 0;
+      if (work && typeof cursor === 'number' && cursor < comment.commentId) work.inputs = { cursor: comment.commentId };
     };
     if (update.kind === 'begin') {
       if (publication.state !== 'intended' && publication.state !== 'failed') return 'stale' as const;
@@ -234,7 +250,8 @@ export async function recordInputsCursor(session: Session, work_id: string, curs
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     if (!document.work) return;
-    if (cursor !== null && (document.work.inputs?.cursor ?? null) !== null && cursor <= document.work.inputs!.cursor!) return;
+    const known = document.work.inputs?.cursor ?? null;
+    if (cursor !== null && typeof known === 'number' && cursor <= known) return;
     document.work.inputs = { cursor };
   }, BACKGROUND_CONTEXT);
 }

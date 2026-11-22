@@ -43,9 +43,13 @@ export const installation = defineDoc<Installation>({ kind: 'factory.installatio
     const two = fromVersion === 1 ? installationOneToTwo(value as Record<string, unknown>) : value as Record<string, unknown>;
     return installationTwoToThree(two) as unknown as Installation;
   } });
-/** Identified ingresses (CLI request ids, `github-comment-<id>` for comments) with their single durable result. */
-export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } |
-  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'github-comment' } | null; receipt: ControlReceipt | null }, null>({
+/** Identified ingresses (CLI request ids, `github-comment-<id>` for comments, `jira-comment-<site>-<issue>-<comment>` for Jira Card comments) with
+ * their single durable result. */
+export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' | 'jira-comment' } |
+  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'github-comment' } |
+  /** Jira ticket 06: a `/factory` comment of a Jira Card that did not apply (its guidance/ignored receipt). */
+  { request_id: string; operation: 'jira-comment'; work_id: string; origin: 'jira-comment'; comment: { siteId: string; issueId: string; commentId: string; accountId: string } } |
+  null; receipt: ControlReceipt | null }, null>({
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
 });
 /** Installation-level Ticket → cycle index and FIFO admission sequence (spec §3.2), committed with each Work. */

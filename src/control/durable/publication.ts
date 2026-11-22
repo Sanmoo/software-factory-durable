@@ -5,7 +5,7 @@ import { ticketKey } from '../rules/admission.js';
 import { authorizationInForce, divergenceQuestion, reconciliationAnswer } from '../rules/divergence.js';
 import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, liveBasisRecoverable, reevaluationEligibility,
   reevaluationGuidance, undecidedRead, unpublishedBeforeStop, unpublishedBeforeStopStep, verifiedHeadOnOrigin, type DiscoveryDecision } from '../rules/publication.js';
-import { validateQuestionRequest } from '../rules/questions.js';
+import { answerAuthorLabel, validateQuestionRequest } from '../rules/questions.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions, questionSha256 } from './questions.js';
 import type { Session } from './store.js';
@@ -370,7 +370,7 @@ Promise<{ decision: 'incorporate' | 'discard' | 'not-authorized'; code: string |
     if (!question || question.state !== 'answered' || !question.answer) return 'waiting' as const;
     const answer = reconciliationAnswer(question.answer.text, divergence);
     const at = new Date().toISOString();
-    const author = question.answer.author.kind === 'github' ? `@${question.answer.author.login}` : 'local administrator';
+    const author = answerAuthorLabel(question.answer.author, true);
     divergence.resolvedAt = at;
     divergence.answer = { sha256: question.answer.sha256, author, decision: answer.decision, code: answer.decision === 'not-authorized' ? answer.code : null };
     work.impediments = work.impediments.filter(item => item.code !== reconciliationImpediment);

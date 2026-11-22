@@ -170,7 +170,7 @@ export async function ingestComment(session: Session, work: Pick<WorkRecord, 'wo
   }
   const question = await readQuestion(session, command.questionId);
   const eligibility = question ? commentEligibility({ commentId: comment.commentId, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
-    { recordedAt: Date.parse(question.recordedAt), publishedCommentId: question.publication.comment?.commentId ?? null }) : { eligible: true as const };
+    { recordedAt: Date.parse(question.recordedAt), publishedCommentId: typeof question.publication.comment?.commentId === 'number' ? question.publication.comment.commentId : null }) : { eligible: true as const };
   if (!eligibility.eligible) { await recordIgnored(session, command.questionId, origin, eligibility.code); return; }
   await acceptAnswer(session, { request_id: `github-comment-${comment.commentId}`, question_id: command.questionId, text: command.text,
     origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } } });

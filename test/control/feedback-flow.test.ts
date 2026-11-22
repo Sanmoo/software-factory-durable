@@ -286,7 +286,7 @@ test('review fixes: `/factory repair` on the Ticket of a Work without its own PR
   await h.settle(work => work.publication?.state === 'not-publishable' && !work.pullRequest, 'idle without an own PR');
   const source = comment('/factory repair Rename the flag to --dry-run in docs/a.md.', operator, 3);
   (remote.comments ??= {})[3] = [source];
-  await h.settle(work => (work.inputs.cursor ?? 0) >= source.commentId, 'cursor advanced');
+  await h.settle(work => Number(work.inputs.cursor ?? 0) >= source.commentId, 'cursor advanced');
   const receipt = (await h.control.inspect({ kind: 'request', request_id: `github-comment-${source.commentId}` })) as { receipt: { outcome: string; reason: string; nextStep: string } };
   assert.deepEqual([receipt.receipt.outcome, receipt.receipt.reason], ['not-applied', 'REPAIR_REQUIRES_OWN_PULL_REQUEST']);
   assert.match(receipt.receipt.nextStep, /factory update-scope .* --reason <text>/);

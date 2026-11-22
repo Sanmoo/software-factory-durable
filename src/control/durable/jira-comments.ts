@@ -13,20 +13,26 @@ import type { Session } from './store.js';
 // incomplete read or denied access stay pending with a diagnosis and no blind POST.
 
 /** What the comment is for; its owner decides whether it is still wanted (tickets 06/09 add their kinds). */
-export type JiraCommentPurpose = { kind: 'impediment'; ticketKey: string; reasonKey: string };
+export type JiraCommentPurpose = { kind: 'impediment'; ticketKey: string; reasonKey: string } |
+  /** Jira ticket 06: a Question of a Jira Work, published on its origin Card. */
+  { kind: 'question'; questionId: string; workId: string } |
+  /** Jira ticket 06: guidance to a `/factory` comment of the Card that did not apply (by its ingress request). */
+  { kind: 'reply'; workId: string; request_id: string };
 export type JiraCommentState = 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned';
 export type JiraCommentEffect = { effectId: string; logicalRef: string; destination: JiraTicketRef; purpose: JiraCommentPurpose;
   /** Plain lines (header first); the ADF sent is one paragraph per line, so the stored lines ARE the content. */
   content: FactoryCommentContent; state: JiraCommentState; recordedAt: string; updatedAt: string;
   attempts: { at: string; outcome: 'published' | 'failed' | 'unknown' | 'interrupted'; code?: string }[];
   reconciliations: { at: string; outcome: 'confirmed' | 'absent' | 'pending'; code?: string; candidates?: string[] }[];
-  comment: { commentId: string; url: string } | null;
+  /** `createdAt`: Jira's own creation instant of the comment, when observed (POST answer or reconciliation listing). */
+  comment: { commentId: string; url: string; createdAt?: string } | null;
   /** Earliest instant of the next POST after Jira asked to wait (429/5xx Retry-After). */
   notBefore?: string;
   diagnostic: { code: string; nextStep: string; at: string } | null };
 
 /** Every Jira comment effect of the installation (storage format 3); settled ones are kept, bounded, unsettled ones never dropped. */
-export const jiraComments = defineDoc<{ effects: Record<string, JiraCommentEffect> }>({ kind: 'factory.jira-comment', version: 1, scope: 'session',
+/** `sequences`: per prefix, the last short reference handed out (`Q-17`); never reused. */
+export const jiraComments = defineDoc<{ effects: Record<string, JiraCommentEffect>; sequences?: Record<string, number> }>({ kind: 'factory.jira-comment', version: 1, scope: 'session',
   initial: () => ({ effects: {} }), checkpointWhen: () => true });
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 
@@ -38,12 +44,20 @@ const maxKnownFailures = 5;
 const maxUncertainPosts = 3;
 const keep = <T>(items: T[]) => items.slice(-20);
 
-/** Records the intent of one automatic comment INSIDE the caller's commit (with whatever decided it). The logical reference is fixed here. */
+/**
+ * Records the intent of one automatic comment INSIDE the caller's commit (with whatever decided it). The logical reference is fixed here:
+ * `<prefix>-<effect id prefix>`, or with `sequenced` the next installation-wide number of that prefix (`Q-17`, short enough to type).
+ */
 export async function intendJiraComment(tx: Tx, input: { destination: JiraTicketRef; purpose: JiraCommentPurpose; content: (ref: string) => FactoryCommentContent;
-  refPrefix: string }): Promise<JiraCommentEffect> {
+  refPrefix: string; sequenced?: boolean }): Promise<JiraCommentEffect> {
   const document = await tx.doc(jiraComments);
   const effectId = randomUUID();
-  const logicalRef = `${input.refPrefix}-${effectId.slice(0, 8)}`;
+  let logicalRef = `${input.refPrefix}-${effectId.slice(0, 8)}`;
+  if (input.sequenced) {
+    const sequences = document.sequences ??= {};
+    sequences[input.refPrefix] = (sequences[input.refPrefix] ?? 0) + 1;
+    logicalRef = `${input.refPrefix}-${sequences[input.refPrefix]}`;
+  }
   const at = new Date().toISOString();
   const effect: JiraCommentEffect = { effectId, logicalRef, destination: input.destination, purpose: input.purpose, content: input.content(logicalRef), state: 'intended',
     recordedAt: at, updatedAt: at, attempts: [], reconciliations: [], comment: null, diagnostic: null };
@@ -60,7 +74,21 @@ export async function readJiraComments(session: Session): Promise<JiraCommentEff
 
 /** `post`: send now; `wait`: keep the intent for a later pass; `withdraw`: the reason is gone (label removed, superseded), never sent. */
 export type CommentWanted = 'post' | 'wait' | 'withdraw';
-export type JiraCommentOwner = { wanted(tx: Tx, effect: JiraCommentEffect): Promise<CommentWanted>; withdrawn?(tx: Tx, effect: JiraCommentEffect): Promise<void> };
+/** `observed`: called inside every commit that changed the effect (its owner may mirror the state, e.g. the Question's publication). */
+export type JiraCommentOwner = { wanted(tx: Tx, effect: JiraCommentEffect): Promise<CommentWanted>; withdrawn?(tx: Tx, effect: JiraCommentEffect): Promise<void>;
+  observed?(tx: Tx, effect: JiraCommentEffect): Promise<void> };
+/**
+ * One owner for the single desk: each purpose kind is handled by its own owner; a kind without one waits (never posted nor withdrawn by a
+ * stranger). Tickets 06/09 add their kinds here.
+ */
+export function composeJiraCommentOwners(owners: { [K in JiraCommentPurpose['kind']]?: JiraCommentOwner }): JiraCommentOwner {
+  const of = (effect: JiraCommentEffect) => owners[effect.purpose.kind];
+  return {
+    wanted: async (tx, effect) => await of(effect)?.wanted(tx, effect) ?? 'wait',
+    withdrawn: async (tx, effect) => { await of(effect)?.withdrawn?.(tx, effect); },
+    observed: async (tx, effect) => { await of(effect)?.observed?.(tx, effect); },
+  };
+}
 
 /**
  * One pass over every unsettled Jira comment: reconcile first whatever may already exist (interrupted attempt, unknown outcome, pending
@@ -76,7 +104,9 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
     if (!effect) return 'stale' as const;
     const at = new Date().toISOString();
     const result = await change(effect, tx, at);
+    if (result === 'stale') return result;
     effect.updatedAt = at;
+    await deps.owner.observed?.(tx, effect);
     return result;
   }, BACKGROUND_CONTEXT);
 
@@ -102,7 +132,8 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
         ...(outcome.candidates ? { candidates: outcome.candidates.slice(0, 10) } : {}) } : {}) }]);
       if (outcome.kind === 'confirmed') {
         current.state = 'published';
-        current.comment = { commentId: outcome.commentId, url: `${current.destination.url}?focusedCommentId=${outcome.commentId}` };
+        const createdAt = listing?.kind === 'observed' ? listing.comments.find(item => item.commentId === outcome.commentId)?.createdAt : undefined;
+        current.comment = { commentId: outcome.commentId, url: `${current.destination.url}?focusedCommentId=${outcome.commentId}`, ...(createdAt ? { createdAt } : {}) };
         current.diagnostic = null;
       } else if (outcome.kind === 'pending') {
         current.state = 'pending';
@@ -142,7 +173,7 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
       if (result?.kind === 'published') {
         if (result.authorAccountId) accounts.set(current.destination.siteId, result.authorAccountId);
         current.state = 'published';
-        current.comment = { commentId: result.commentId, url: result.url };
+        current.comment = { commentId: result.commentId, url: result.url, createdAt: result.createdAt };
         current.attempts = keep([...current.attempts, { at, outcome: 'published' }]);
         current.diagnostic = null;
         return;

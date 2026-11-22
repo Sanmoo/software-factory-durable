@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { questionMarkerPrefix, replyMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
+import { jiraInputOrder, questionMarkerPrefix, replyMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead, type TokenRevocation } from '../platform/github/index.js';
 import type { JiraRequest, JiraTransport } from './jira-http.js';
 
@@ -104,7 +104,9 @@ export type JiraCommentAuthor = { tracker: 'jira'; accountId: string };
 /** Stable reference of one Jira input: (siteId, issueId, commentId). */
 export type JiraInputRef = { tracker: 'jira'; siteId: string; issueId: string; commentId: string };
 /** One ordinary Platform comment of the origin Card; `body` is the plain text projected from validated ADF. */
-export type JiraComment = { ref: JiraInputRef; url: string; author: JiraCommentAuthor; body: string; createdAt: string; updatedAt: string };
+export type JiraComment = { ref: JiraInputRef; url: string; author: JiraCommentAuthor; body: string; createdAt: string; updatedAt: string;
+  /** A visibility restriction applies: its text is never applied nor projected to a broader audience. */
+  restricted: boolean };
 /** Read position in a Card's comments: the last processed comment (ascending created instant, then id); advanced only over processed inputs. */
 export type JiraInputCursor = { tracker: 'jira'; createdAt: string; commentId: string };
 export type JiraInputsObservation = { kind: 'observed'; source: 'jira-rest'; observedAt: string; ticket: JiraTicketRef; completeness: 'complete';
@@ -194,6 +196,22 @@ export interface JiraComments {
   publishComment(ticket: JiraTicketRef, comment: JiraFactoryComment): Promise<JiraCommentPost>;
   listComments(ticket: JiraTicketRef): Promise<JiraCommentListing>;
   readAccount(siteId: string): Promise<JiraAccountObservation>;
+}
+
+/**
+ * Jira ticket 06: the inputs after `cursor` from a COMPLETE listing of the Card's comments (an incomplete one is returned as is: nothing
+ * concluded). The observation's cursor is the last listed input (or the given cursor): the Control stores it only after processing them.
+ */
+export function jiraInputsOf(ticket: JiraTicketRef, listing: JiraCommentListing, cursor: JiraInputCursor | null): JiraInputsObservation {
+  if (listing.kind !== 'observed') return listing;
+  const comments = [...listing.comments].sort((a, b) => jiraInputOrder(a, b))
+    .filter(item => cursor === null || jiraInputOrder(item, cursor) > 0)
+    .map((item): JiraComment => ({ ref: { tracker: 'jira', siteId: ticket.siteId, issueId: ticket.issueId, commentId: item.commentId },
+      url: `${ticket.url}?focusedCommentId=${item.commentId}`, author: { tracker: 'jira', accountId: item.authorAccountId }, body: item.text,
+      createdAt: item.createdAt, updatedAt: item.updatedAt, restricted: item.restricted }));
+  const last = comments.at(-1);
+  return { kind: 'observed', source: 'jira-rest', observedAt: listing.observedAt, ticket, completeness: 'complete', comments,
+    cursor: last ? { tracker: 'jira', createdAt: last.createdAt, commentId: last.ref.commentId } : cursor, limitations: [...listing.limitations] };
 }
 
 const issueSchema = z.object({
@@ -590,7 +608,7 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
     if (response.status !== 200) return { ok: false, fact: invalid(siteId, response.observedAt) };
     return { ok: true, body: response.body, observedAt: response.observedAt };
   }
-  return {
+  const tracker: ReturnType<typeof createJiraTracker> = {
     async checkAccess(scope) {
       return { source: 'jira-rest', purpose: 'tracker', observedAt: new Date().toISOString(), siteId: scope.siteId, projectId: scope.projectId, status: 'blocked',
         code: 'JIRA_CAPABILITY_NOT_AVAILABLE', completeness: 'incomplete', nextStep: 'Jira access diagnosis is not available in this release.' };
@@ -715,10 +733,12 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
       return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, siteId, accountId: parsed.data.accountId };
     },
     async readDependencyGraph(ticket) { return notAvailable(ticket.siteId); },
-    async readInputs(ticket) { return notAvailable(ticket.siteId); },
+    // Jira ticket 06: the inputs of a Work are the visible comments of its origin Card after the processed cursor (all pages, or nothing).
+    async readInputs(ticket, cursor) { return jiraInputsOf(ticket, await tracker.listComments(ticket), cursor); },
     async findQuestion(ticket) { return notAvailable(ticket.siteId); },
     async findReply(ticket) { return notAvailable(ticket.siteId); },
     async postComment() { return notSent(); },
     async upsertRemoteLink() { return notSent(); },
   };
+  return tracker;
 }

@@ -24,7 +24,7 @@ import { systemClock } from './polling.js';
 import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
-import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
+import { answerAuthorLabel, recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
@@ -665,7 +665,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       originChanged: prepared.recreated?.continuity === 'rewritten' ? 'ORIGIN_HISTORY_REWRITTEN' : prepared.recreated?.continuity === 'restarted' ? 'ORIGIN_BRANCH_ABSENT' : null },
       next: { skillPack: pack, policies: execution.request.policies }, observation });
     const decision = { mode: decided.mode, reason: decided.reason, previousExecutionId: previous.executionId, previous: recorded, decidedAt: new Date().toISOString() };
-    const answer = answered?.answer ? { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator',
+    const answer = answered?.answer ? { text: answered.answer.text, author: answerAuthorLabel(answered.answer.author),
       origin: answered.answer.origin.kind } : null;
     if (decided.mode === 'continue') {
       const continued = continuationPrompt({ executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
@@ -809,7 +809,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       workId: work.work_id, repository: work.repository.repository, base: work.repository.base, baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch,
       checkout: prepared.checkout.path, pullRequest: current?.pullRequest ?? null, expected: request.expected, authorizedRemote: request.authorizedRemote,
       localHead: request.localHead, questionId: request.questionId,
-      answer: { author: answered.answer.author.kind === 'github' ? `@${answered.answer.author.login}` : 'local administrator', note }, commits,
+      answer: { author: answerAuthorLabel(answered.answer.author, true), note }, commits,
       recreated: prepared.recreated?.notice ?? null });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };

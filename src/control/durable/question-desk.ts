@@ -91,7 +91,8 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
       const open = (await readQuestions(session, work)).some(question => question.state === 'open');
       if (!open && !work.pullRequest && !work.correction && !work.execution) continue;
 
-      const inputs = await tracker.readInputs(work.ticket, work.inputs?.cursor ?? null).catch(unexpected);
+      const cursor = work.inputs?.cursor ?? null;
+      const inputs = await tracker.readInputs(work.ticket, typeof cursor === 'number' ? cursor : null).catch(unexpected);
       // Unavailable/partial listing: no conclusion and the cursor does not move.
       if (!inputs || inputs.kind !== 'observed') continue;
       // The single ingestion of `/factory` comments (answers and repairs; ticket 23); unauthorized ones leave a bounded summary only.

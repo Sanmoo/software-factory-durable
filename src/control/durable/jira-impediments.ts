@@ -5,7 +5,8 @@ import type { JiraNoticeStatus, JiraOriginTracker, TicketSource } from '../types
 import { ticketKey } from '../rules/admission.js';
 import type { JiraEvaluation, JiraReason } from '../rules/jira-admission.js';
 import { impedimentComment, impedimentNotice, type NoticeDecision } from '../rules/jira-notices.js';
-import { createJiraCommentDesk, intendJiraComment, readJiraComments, type CommentWanted, type JiraCommentEffect, type JiraCommentOwner } from './jira-comments.js';
+import { composeJiraCommentOwners, createJiraCommentDesk, intendJiraComment, readJiraComments, type CommentWanted, type JiraCommentEffect, type JiraCommentOwner,
+  type JiraCommentPurpose } from './jira-comments.js';
 import type { JiraCandidateEvaluation, JiraSourceEvaluation } from './jira-evaluation.js';
 import type { Session } from './store.js';
 
@@ -93,7 +94,9 @@ export type JiraNoticeRound = { decisions: { ticket: JiraTicketRef; notice: Noti
  * admitting them is ticket 04's. Callers run one round at a time.
  */
 export async function noticeJiraImpediments(input: { session: Session; tracker: JiraOriginTracker; source: JiraSource;
-  evaluation: JiraSourceEvaluation | { kind: 'candidates'; candidates: JiraCandidateEvaluation[] }; stopped?: () => boolean }): Promise<JiraNoticeRound> {
+  evaluation: JiraSourceEvaluation | { kind: 'candidates'; candidates: JiraCandidateEvaluation[] }; stopped?: () => boolean;
+  /** Owners of the other comment purposes sharing this single desk pass (Jira ticket 06: questions, replies; 09: delivery). */
+  owners?: { [K in Exclude<JiraCommentPurpose['kind'], 'impediment'>]?: JiraCommentOwner } }): Promise<JiraNoticeRound> {
   const candidates = input.evaluation.kind === 'unavailable' ? [] : input.evaluation.candidates;
   const decisions: JiraNoticeRound['decisions'] = [];
   const evaluated = new Set<string>();
@@ -102,7 +105,7 @@ export async function noticeJiraImpediments(input: { session: Session; tracker: 
     decisions.push({ ticket: candidate.ticket, notice: await recordJiraImpediment(input.session, input.source, candidate) });
     evaluated.add(ticketKey(candidate.ticket));
   }
-  const desk = createJiraCommentDesk({ session: input.session, tracker: input.tracker, owner: impedimentOwner(evaluated), ...(input.stopped ? { stopped: input.stopped } : {}) });
+  const desk = createJiraCommentDesk({ session: input.session, tracker: input.tracker, owner: composeJiraCommentOwners({ ...input.owners, impediment: impedimentOwner(evaluated) }), ...(input.stopped ? { stopped: input.stopped } : {}) });
   await desk.pass();
   return { decisions };
 }

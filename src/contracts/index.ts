@@ -222,6 +222,16 @@ export type FactorySkillPackId = typeof factorySkillPackIds[number];
  */
 // Jira ticket 02: format 3 (installation v3) marks every storage that may hold state of the Jira origin, so a format-2 release refuses it.
 // `documents` is the document kind → version matrix of that format (Control's format table uses it as is; later Jira tickets add their kinds here).
+/**
+ * Jira ticket 06: order of the comments of a Jira Card as inputs: ascending `created` instant, then comment id (numeric ids by value).
+ * Shared by the Jira adapter (listing after a cursor) and Control (monotone cursor).
+ */
+export function jiraInputOrder(a: { createdAt: string; commentId: string }, b: { createdAt: string; commentId: string }): number {
+  const time = (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0);
+  if (time) return time;
+  return a.commentId.length - b.commentId.length || (a.commentId < b.commentId ? -1 : a.commentId > b.commentId ? 1 : 0);
+}
+
 export const controlStorageCompatibility = Object.freeze({ format: 3, migratesFrom: Object.freeze([1, 2]),
   migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3']),
   documents: Object.freeze({ 'factory.installation': 3, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1,

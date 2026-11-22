@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
+import type { InputCursor, IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -80,6 +80,9 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
+  /** Jira ticket 06: a `/factory` comment of a Jira Card that did not apply: `guided` = a guidance reply (`reply`, its logical reference) was
+   * intended; `ignored` = nothing is replied (restricted audience, unreadable times). Nothing changed in the Work. */
+  { kind: 'durable'; request_id: string; operation: 'jira-comment'; work_id: string; outcome: 'guided' | 'ignored'; reason: string; reply: string | null } |
   /** `grant`: `accepted` added capacity (history kept, counters untouched); `not-applied` changed nothing (unknown/closed/old Work). */
   { kind: 'durable'; request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries' | 'continuations'; amount: number;
     outcome: 'accepted' | 'not-applied'; reason: string | null; budget: CounterView | null } |
@@ -686,9 +689,15 @@ export type QuestionView = {
   publication: { effectId: string; state: 'intended' | 'attempting' | 'published' | 'ambiguous' | 'unconfirmed' | 'failed' | 'conflict'; updatedAt: string;
     attempts: { at: string; outcome: 'attempting' | 'published' | 'failed' | 'unknown' | 'discovered' | 'absent' | 'discovery-incomplete' | 'multiple'; code?: string;
       /** Self-revocation of the single-use publication credential after this attempt. */ revocation?: string }[];
-    comment: { commentId: number; url: string } | null; nextStep: string | null };
-  answer: { text: string; sha256: string; acceptedAt: string; author: { kind: 'github'; id: number; login: string } | { kind: 'local-administrator' };
-    origin: { kind: 'github-comment'; commentId: number; url: string } | { kind: 'local-cli'; request_id: string } } | null;
+    /** GitHub: numeric comment id; Jira (ticket 06): the Card's comment id, mirrored from the Jira comment effect. */
+    comment: { commentId: number | string; url: string } | null; nextStep: string | null };
+  answer: { text: string; sha256: string; acceptedAt: string;
+    author: { kind: 'github'; id: number; login: string } | { kind: 'local-administrator' } | { kind: 'jira'; accountId: string };
+    origin: { kind: 'github-comment'; commentId: number; url: string } | { kind: 'local-cli'; request_id: string } |
+      { kind: 'jira-comment'; siteId: string; issueId: string; commentId: string; url: string; request_id: string } } | null;
+  /** Jira ticket 06: a Question of a Jira Work has a short installation-wide reference (`Q-17`) and its Jira comment effect; `publishedAt` is
+   * Jira's creation instant of the published comment (only later comments may answer it). Absent until the Jira publication is intended. */
+  jira?: { ref: string; effectId: string; publishedAt: string | null };
   /** Bounded record of answers/commands that did not apply (duplicate, unauthorized, other Work...). */
   ignored: { at: string; origin: string; code: string }[];
 };
@@ -953,8 +962,8 @@ export type WorkView = {
   previousExecutions: ExecutionView[];
   /** Question identities of this Work, in recording order. */
   questions: string[];
-  /** Last processed comment of the Ticket issue (complete listings only). */
-  inputs: { cursor: number | null };
+  /** Last processed comment of the Ticket (complete listings only): GitHub comment id, or Jira `(created, commentId)` of the origin Card. */
+  inputs: { cursor: InputCursor | null };
   /** Ticket 19: budget snapshot (null on Works admitted before it, until their next budget commit). */
   budget: WorkBudget | null;
   /** The correction under way (identity kept across its activations); opened by the repair flows (tickets 22/23). */
@@ -1016,7 +1025,7 @@ export type WorkView = {
       /* v2 ticket 13 */ 'origin-rewrite-followed' | 'origin-branch-absent-asked' | 'origin-branch-absent-resolved';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
-      origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
+      origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery' | 'jira-comment';
       questionId: string; detail?: string } |
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested' |
       /* ticket 48 */ 'continuation-requested' | 'budget-end-observed';

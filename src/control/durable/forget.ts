@@ -146,14 +146,16 @@ export async function beginForget(session: Session, work_id: string, planId: str
 }
 
 /** Request receipts of this Work whose input carries operator text (answers, scope updates, readiness authorizations). */
-export function contentRequestIds(work: WorkRecord, questionViews: { answer: { origin: { kind: string; request_id?: string; commentId?: number } } | null; ignored: { origin: string }[] }[]): string[] {
+export function contentRequestIds(work: WorkRecord, questionViews: { answer: { origin: { kind: string; request_id?: string; commentId?: number | string } } | null; ignored: { origin: string }[] }[]): string[] {
   const ids = new Set<string>();
   const fromLabel = (label: string) => { const [kind, id] = [label.slice(0, label.indexOf(':')), label.slice(label.indexOf(':') + 1)];
+    if (kind === 'jira-comment' && id) ids.add(id);
     if (kind === 'local-cli' && id) ids.add(id); if (kind === 'github-comment' && /^\d+$/.test(id)) ids.add(`github-comment-${id}`); };
   for (const question of questionViews) {
     const origin = question.answer?.origin;
     if (origin?.kind === 'local-cli' && origin.request_id) ids.add(origin.request_id);
     if (origin?.kind === 'github-comment' && origin.commentId !== undefined) ids.add(`github-comment-${origin.commentId}`);
+    if (origin?.kind === 'jira-comment' && origin.request_id) ids.add(origin.request_id);
     for (const item of question.ignored) fromLabel(item.origin);
   }
   for (const update of work.scopeUpdates ?? []) if (update.origin.kind === 'local-cli') ids.add(update.origin.request_id);

@@ -18,6 +18,8 @@ import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
+import { jiraConversationOwners, prepareJiraQuestions } from './jira-questions.js';
+import { createJiraInputDesk } from './jira-inputs.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { acceptPublicationReevaluation } from './publication.js';
@@ -145,6 +147,9 @@ export async function openControl(options: { storagePath: string;
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
     readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
+  // Jira ticket 06: answers (and guidance) read from the origin Card of each Jira Work; publication goes through the Jira source round below.
+  const jiraInputs = options.access?.trackers?.jira && options.polling ? createJiraInputDesk({ session: state, tracker: options.access.trackers.jira,
+    readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   const poller = options.access && options.polling ? createPoller({
     access: options.access, intervalSeconds: options.polling.intervalSeconds, clock: options.polling.clock ?? systemClock,
     paused: async () => (await readInstallation(state)).paused,
@@ -155,7 +160,10 @@ export async function openControl(options: { storagePath: string;
     // Jira ticket 05: notices on the Card for this round's evaluated Cards (needs the Jira adapter; none composed = nothing to tell).
     noticeImpediments: async (source, candidates) => {
       const tracker = options.access?.trackers?.jira;
-      if (tracker) await noticeJiraImpediments({ session: state, tracker, source, evaluation: { kind: 'candidates', candidates }, stopped: () => stopped });
+      if (!tracker) return;
+      // Jira ticket 06: Questions of Jira Works get their comment intent first, then ONE desk pass posts/reconciles every purpose.
+      await prepareJiraQuestions(state, () => readWorks(state));
+      await noticeJiraImpediments({ session: state, tracker, source, evaluation: { kind: 'candidates', candidates }, stopped: () => stopped, owners: jiraConversationOwners });
     },
     presentation: async (work_id, fresh) => {
       const current = await readWork(state, work_id);
@@ -166,7 +174,7 @@ export async function openControl(options: { storagePath: string;
     recordEnvironment: (work_id, observation) => recordEnvironment(state, work_id, observation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle();
+    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); await jiraInputs?.pass();
       // Ticket 23: human feedback of the own PRs is recorded before the tick (whatever the Work is doing; recording is never delivery).
       await feedback?.pass().catch(() => {});
       if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});

@@ -117,7 +117,7 @@ test('the link type catalogue and a neighbour status category are read by ID fro
 test('capabilities not built yet answer unavailable without any call; remote links are a Jira-only capability', async () => {
   const { calls, transport } = recording(() => ok(issue));
   const tracker = createJiraTracker({ scopes: [scope], transport: () => transport });
-  for (const observation of [await tracker.readDependencyGraph(ref), await tracker.readInputs(ref, null),
+  for (const observation of [await tracker.readDependencyGraph(ref),
     await tracker.findQuestion(ref, '7d9f8a52-6a1f-4f0e-9a43-2f3a7f1f0c11')]) {
     assert.equal(observation.kind === 'unavailable' && observation.code, 'JIRA_CAPABILITY_NOT_AVAILABLE');
   }
