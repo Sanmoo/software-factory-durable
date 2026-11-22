@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { DependencyGraphObservation, GitHubTicketRef, TicketRef } from '../../issue-tracker/index.js';
+import type { DependencyGraphObservation, GitHubTicketRef, JiraLinkTypesObservation, JiraTicketRef, TicketRef } from '../../issue-tracker/index.js';
 import type { EnvironmentDeclarationObservation } from '../../contracts/index.js';
 import type { WorkEnvironment } from '../types.js';
-import type { AccessDependencies, CandidateView, ConfiguredRepository, DependencyEvaluation, PollingClock, PollingView, RepositoryPollView } from '../types.js';
+import type { AccessDependencies, CandidateView, ConfiguredRepository, DependencyEvaluation, JiraSourcePollView, PollingClock, PollingView, RepositoryPollView, TicketSource } from '../types.js';
 import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
 import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.js';
-import type { AdmissionEvidence, AdmissionResult } from './admission.js';
+import type { AdmissionEvidence, AdmissionResult, WorkRecord } from './admission.js';
+import { admittedJiraEvaluation, evaluateJiraTicket, evaluateJiraWork } from './jira-evaluation.js';
 
 const maxTimer = 2 ** 31 - 1;
 
@@ -37,6 +38,20 @@ export const systemClock: PollingClock = {
 
 type Unavailable = { kind: 'unavailable'; observedAt: string; code: string; waitSeconds?: number; nextStep: string };
 type RepositoryState = { scope: ConfiguredRepository; dueAt: number; failures: number; view: RepositoryPollView };
+type JiraSource = Extract<TicketSource, { tracker: 'jira' }>;
+type SourceState = { source: JiraSource; dueAt: number; failures: number; view: JiraSourcePollView };
+
+/**
+ * Jira ticket 04: the polling round whose evaluation may release a Work. GitHub: the round of its destination repository (native graph);
+ * Jira: the round of its ORIGIN source (site + project recorded at admission), never the GitHub round of the destination.
+ */
+export function attemptKey(work: Pick<WorkRecord, 'ticket' | 'repository' | 'authorization'>): string {
+  if (work.ticket.tracker !== 'jira') return work.repository.repository.toLowerCase();
+  return jiraSourceKey({ siteId: work.ticket.siteId, projectId: work.authorization.source === 'jira-rest' ? work.authorization.basis.projectId : '' });
+}
+const jiraSourceKey = (source: { siteId: string; projectId: string }) => `jira:${encodeURIComponent(source.siteId)}:${encodeURIComponent(source.projectId)}`;
+/** Jira failures that count as a failed round for backoff (transient), like GitHub's. */
+const jiraTransient = new Set(['POLLING_QUERY_FAILED', 'JIRA_UNAVAILABLE', 'JIRA_TIMEOUT', 'JIRA_TRANSPORT_UNAVAILABLE', 'JIRA_RATE_LIMITED']);
 
 /**
  * Single sequential polling loop in the existing owner (no scheduler/broker). Each cycle visits due repositories one at a time, so
@@ -46,6 +61,9 @@ export function createPoller(deps: {
   access: AccessDependencies; intervalSeconds: number; clock: PollingClock;
   paused(): Promise<boolean>; indexed(ticket: TicketRef): Promise<string | undefined>; admit(evidence: AdmissionEvidence): Promise<AdmissionResult>;
   pending(repositoryId: number): Promise<{ work_id: string; ticket: TicketRef; environment?: WorkEnvironment | undefined }[]>;
+  /** Jira ticket 04: open pending Works admitted from one Jira source; and the presentation update of a Work whose Card key changed. */
+  pendingJira?(source: { siteId: string; projectId: string }): Promise<{ work_id: string; ticket: TicketRef; repository: { repository: string }; environment?: WorkEnvironment | undefined }[]>;
+  presentation?(work_id: string, fresh: JiraTicketRef): Promise<unknown>;
   /** Ticket 44: record a read of the environment declaration on a pending Work not pinned yet. */
   recordEnvironment?(work_id: string, observation: EnvironmentDeclarationObservation): Promise<unknown>;
   ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
@@ -58,6 +76,11 @@ export function createPoller(deps: {
   const repositories: RepositoryState[] = deps.access.repositories.map(scope => ({ scope, dueAt: 0, failures: 0,
     view: { repository: scope.repository, label: scope.label, state: 'pending', observedAt: null, completeness: null, absenceProven: false,
       consecutiveFailures: 0, nextPollInSeconds: null, candidates: null } }));
+  const sources: SourceState[] = (deps.access.sources ?? []).flatMap(source => source.tracker === 'jira' ? [{ source, dueAt: 0, failures: 0,
+    view: { tracker: 'jira' as const, siteId: source.siteId, projectId: source.projectId, label: source.label, discover: source.discover, state: 'pending' as const, observedAt: null,
+      completeness: null, absenceProven: false as const, consecutiveFailures: 0, nextPollInSeconds: null, candidates: null } }] : []);
+  // Jira ticket 04: GitHub identity of each executable repository, from its latest complete listing in this owner run (destination of a Jira Work).
+  const repositoryIds = new Map<string, number>();
   let state: PollingView['state'] = repositories.length ? 'starting' : 'disabled';
   let cycles = 0;
   let lastCycleAt: string | null = null;
@@ -219,6 +242,7 @@ export function createPoller(deps: {
       }
       entry_.failures = failed ? entry_.failures + 1 : 0;
       delay = pollDelaySeconds({ intervalSeconds: interval, outcome: failed ? 'unavailable' : 'observed', consecutiveFailures: entry_.failures, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
+      repositoryIds.set(entry_.scope.repository.toLowerCase(), listing.repositoryId);
       entry_.view = { repository: entry_.scope.repository, label: entry_.scope.label, state: 'observed', observedAt: listing.observedAt, completeness: 'complete',
         absenceProven: false, ...(waitSeconds !== undefined ? { code: 'GITHUB_WAIT_WINDOW', waitSeconds } : failed ? { code: 'CANDIDATE_EVALUATION_FAILED' } : {}),
         consecutiveFailures: entry_.failures, nextPollInSeconds: delay, candidates: outcomes.map(outcome => outcome.view) };
@@ -226,13 +250,126 @@ export function createPoller(deps: {
     entry_.dueAt = deps.clock.monotonic() + delay * 1000;
   }
 
+  const executable = () => deps.access.repositories.map(scope => scope.repository);
+  const waitOf = (reasons: readonly { waitSeconds?: number }[]) => reasons.reduce<number | undefined>((max, reason) =>
+    reason.waitSeconds === undefined ? max : Math.max(max ?? 0, reason.waitSeconds), undefined);
+
+  /**
+   * Jira ticket 04, one listed Card: index -> pause -> FRESH re-read by ID with the CURRENT source configuration (label, components ->
+   * destination, visible blockers) -> admission of an eligible Card to its single revalidated destination. Refusals create nothing and
+   * write nothing to Jira (impediment notices are ticket 05's); index and pause are checked again inside the admission commit.
+   */
+  async function jiraEntry(source: JiraSource, ref: JiraTicketRef, attemptId: string, catalogue: () => Promise<JiraLinkTypesObservation>): Promise<Outcome> {
+    const tracker = deps.access.trackers!.jira!;
+    const existing = await deps.indexed(ref);
+    if (existing) {
+      await deps.presentation?.(existing, ref);
+      return { view: { ticket: ref, observedAt: new Date().toISOString(), outcome: 'existing', work_id: existing } };
+    }
+    if (await deps.paused()) return { view: held(ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Global pause holds new admissions; tracking continues. Unpause to admit on the next poll.' }]) };
+    let evaluated;
+    try { evaluated = await evaluateJiraTicket({ tracker, source, authorizedRepositories: executable(), ticket: ref, catalogue }); } catch {
+      return { view: held(ref, [{ code: 'JIRA_TICKET_UNVERIFIABLE', observedCode: 'POLLING_QUERY_FAILED', nextStep: 'Unexpected failure while re-reading the Card; nothing is concluded. Polling retries with backoff.' }]),
+        failed: true };
+    }
+    const { evaluation, ticket, observedAt } = evaluated;
+    if (evaluation.decision === 'not-candidate') return { view: held(ticket, [{ code: 'LABEL_NOT_PRESENT',
+      nextStep: `The Card no longer carries the entry label "${source.label}" in its project; nothing is admitted and nothing is commented.` }], observedAt) };
+    if (evaluation.decision !== 'eligible') {
+      const waitSeconds = waitOf(evaluation.reasons);
+      return { view: held(ticket, evaluation.reasons.map(reason => ({ ...reason })), observedAt), ...(waitSeconds !== undefined ? { waitSeconds } : {}),
+        ...(evaluation.reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode)) ? { failed: true } : {}) };
+    }
+    const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === evaluation.repository.toLowerCase())!;
+    const repositoryId = repositoryIds.get(configured.repository.toLowerCase());
+    const blockers = evaluated.blockers;
+    if (repositoryId === undefined || blockers?.kind !== 'observed') return { view: held(ticket, [{ code: 'DESTINATION_NOT_OBSERVED',
+      nextStep: `The GitHub identity of ${configured.repository} was not observed by its polling in this run yet; the Card is admitted on a later poll.` }], observedAt) };
+    const environment = await readEnvironment(configured, attemptId);
+    const admitted = await deps.admit({ ticket, repository: { repository: configured.repository, repositoryId, base: configured.base }, observedAt, environment,
+      dependencies: admittedJiraEvaluation(blockers, attemptId),
+      authorization: { source: 'jira-rest', basis: { sourceConfigured: true, siteId: source.siteId, projectId: source.projectId, label: { name: source.label },
+        route: { componentIds: source.routes.filter(route => route.repository.toLowerCase() === configured.repository.toLowerCase() &&
+          (evaluated.components ?? []).includes(route.componentId)).map(route => route.componentId), repository: configured.repository },
+        blockers: { observedAt: blockers.observedAt, coverage: 'visible', blockers: structuredClone(blockers.blockers), limitations: [...blockers.limitations] } } } });
+    return admitted.kind === 'paused'
+      ? { view: held(ticket, [{ code: 'GLOBAL_PAUSE', nextStep: 'Pause committed before admission; unpause to admit on the next poll.' }]) }
+      : { view: { ticket, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } };
+  }
+
+  /** Jira ticket 04: one round of a Jira source (listing + admissions when discovery is on; re-evaluation of its pending Works always). */
+  async function jiraCycle(entry_: SourceState) {
+    const { source } = entry_;
+    const attemptId = randomUUID();
+    attempts.set(jiraSourceKey(source), attemptId);
+    const base = { tracker: 'jira' as const, siteId: source.siteId, projectId: source.projectId, label: source.label, discover: source.discover, absenceProven: false as const };
+    const tracker = deps.access.trackers?.jira;
+    const unavailable = (code: string, nextStep: string, observedAt: string, waitSeconds?: number) => {
+      entry_.failures++;
+      const delay = pollDelaySeconds({ intervalSeconds: interval, outcome: 'unavailable', consecutiveFailures: entry_.failures, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
+      entry_.view = { ...base, state: 'unavailable', observedAt, completeness: 'incomplete', code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep,
+        consecutiveFailures: entry_.failures, nextPollInSeconds: delay, candidates: null };
+      entry_.dueAt = deps.clock.monotonic() + delay * 1000;
+    };
+    if (!tracker) { unavailable('JIRA_TRACKER_NOT_COMPOSED', 'This installation has no Jira adapter composed; nothing is read from the source.', new Date().toISOString()); return; }
+    let types: Promise<JiraLinkTypesObservation> | undefined;
+    const catalogue = () => types ??= tracker.readLinkTypes(source.siteId).catch(() => ({ kind: 'unavailable' as const, source: 'jira-rest' as const,
+      observedAt: new Date().toISOString(), siteId: source.siteId, completeness: 'incomplete' as const, code: 'POLLING_QUERY_FAILED', nextStep: 'Unexpected failure while reading the link types.' }));
+    let waitSeconds: number | undefined;
+    let failed = false;
+    let candidates: CandidateView[] | null = null;
+    let observedAt: string | null = null;
+    if (source.discover) {
+      const listing = await guarded(source.siteId, () => tracker.listCandidates({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }));
+      if (listing.kind !== 'observed') {
+        unavailable(listing.code, `Listing unavailable; absence of Cards or labels is not concluded. ${listing.nextStep}`, listing.observedAt, listing.waitSeconds);
+        return;
+      }
+      observedAt = listing.observedAt;
+      candidates = [];
+      for (const ref of listing.candidates) {
+        if (waitSeconds !== undefined) { candidates.push({ ticket: ref, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'Jira asked to wait; evaluated on a later poll.' }); continue; }
+        const outcome = await jiraEntry(source, ref, attemptId, catalogue);
+        if (outcome.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, outcome.waitSeconds);
+        failed ||= Boolean(outcome.failed);
+        candidates.push(outcome.view);
+      }
+    }
+    // Pending Works of this source: a FRESH visible-blockers evaluation of this round (tracking continues while paused or with discovery off).
+    for (const work of await deps.pendingJira?.(source) ?? []) {
+      if (waitSeconds !== undefined) break;
+      if (work.ticket.tracker !== 'jira') continue;
+      const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+      if (configured && deps.recordEnvironment && work.environment && work.environment.state !== 'pinned') {
+        const observation = await readEnvironment(configured, attemptId);
+        await deps.recordEnvironment(work.work_id, observation);
+        if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
+        if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
+      }
+      const { observation, evaluation } = await evaluateJiraWork({ tracker, ticket: work.ticket, attemptId, catalogue });
+      if (observation.kind === 'observed') await deps.presentation?.(work.work_id, observation.ticket);
+      await deps.record(work.work_id, evaluation);
+      const wait = waitOf(evaluation.reasons);
+      if (wait !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, wait);
+      if (evaluation.reasons.some(reason => reason.observedCode && jiraTransient.has(reason.observedCode))) failed = true;
+    }
+    entry_.failures = failed ? entry_.failures + 1 : 0;
+    const delay = pollDelaySeconds({ intervalSeconds: interval, outcome: failed ? 'unavailable' : 'observed', consecutiveFailures: entry_.failures, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
+    entry_.view = { ...base, state: 'observed', observedAt, completeness: source.discover ? 'complete' : null,
+      ...(waitSeconds !== undefined ? { code: 'JIRA_WAIT_WINDOW', waitSeconds } : failed ? { code: 'CANDIDATE_EVALUATION_FAILED' } : {}),
+      consecutiveFailures: entry_.failures, nextPollInSeconds: delay, candidates };
+    entry_.dueAt = deps.clock.monotonic() + delay * 1000;
+  }
+
   return {
-    /** Current polling round of a configured repository; null before its first round in this owner run. */
-    currentAttempt(repository: string): string | null { return attempts.get(repository.toLowerCase()) ?? null; },
+    /** Current polling round of a Work's evaluation source (see `attemptKey`); null before its first round in this owner run. */
+    currentAttempt(work: Pick<WorkRecord, 'ticket' | 'repository' | 'authorization'>): string | null { return attempts.get(attemptKey(work)) ?? null; },
     view(): PollingView {
       const now = deps.clock.monotonic();
+      const due = (view: { state: string }, dueAt: number) => view.state === 'pending' ? null : Math.max(0, Math.ceil((dueAt - now) / 1000));
       return { state, intervalSeconds: interval, cycles, lastCycleAt, source: 'in-memory-observation',
-        repositories: repositories.map(entry => ({ ...entry.view, nextPollInSeconds: entry.view.state === 'pending' ? null : Math.max(0, Math.ceil((entry.dueAt - now) / 1000)) })) };
+        repositories: repositories.map(entry => ({ ...entry.view, nextPollInSeconds: due(entry.view, entry.dueAt) })),
+        ...(sources.length ? { sources: sources.map(entry => ({ ...entry.view, nextPollInSeconds: due(entry.view, entry.dueAt) })) } : {}) };
     },
     /** Resolves when signalled; rejects only for durable-authority failures (never for remote observation failures). */
     async run(signal: AbortSignal): Promise<void> {
@@ -247,12 +384,17 @@ export function createPoller(deps: {
             if (signal.aborted) break;
             if (entry.dueAt <= deps.clock.monotonic()) await cycle(entry);
           }
+          // Jira sources after the GitHub repositories: a destination's GitHub identity is then observed in this iteration.
+          for (const entry of sources) {
+            if (signal.aborted) break;
+            if (entry.dueAt <= deps.clock.monotonic()) await jiraCycle(entry);
+          }
           cycles++;
           lastCycleAt = new Date().toISOString();
           if (!signal.aborted && deps.afterCycle) await deps.afterCycle();
           if (signal.aborted) break;
           state = 'sleeping';
-          await deps.clock.sleep(Math.max(0, Math.min(...repositories.map(entry => entry.dueAt)) - deps.clock.monotonic()), signal);
+          await deps.clock.sleep(Math.max(0, Math.min(...repositories.map(entry => entry.dueAt), ...sources.map(entry => entry.dueAt)) - deps.clock.monotonic()), signal);
         }
       } finally { state = 'stopped'; }
     },

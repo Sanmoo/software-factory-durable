@@ -35,6 +35,19 @@ export function authorizationFacts(input: { configuredLabel: string | undefined;
   if (decision.authorized) return { kind: 'authorized' };
   return confirmedWithdrawal(decision.holds.map(hold => hold.code));
 }
+/**
+ * Jira ticket 04: one complete re-read by ID of a Jira Work's Card against its ORIGIN source (site + project recorded at admission, label of
+ * the source in force). Label absent in a complete read = withdrawn (`LABEL_NOT_PRESENT`, same rule as GitHub); the Card moved to another
+ * project, a source no longer configured or an unavailable read conclude nothing. The destination is never re-routed here.
+ */
+export function jiraAuthorizationFacts(input: { source: { projectId: string; label: string } | undefined;
+  observation: { kind: 'observed'; projectId: string; labels: string[] } | { kind: 'unavailable'; code: string } }):
+  { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] } | { kind: 'unknown'; code: string } {
+  if (input.observation.kind !== 'observed') return { kind: 'unknown', code: input.observation.code };
+  if (!input.source) return { kind: 'unknown', code: 'JIRA_SOURCE_NOT_CONFIGURED' };
+  if (input.observation.projectId !== input.source.projectId) return { kind: 'unknown', code: 'JIRA_PROJECT_CHANGED' };
+  return input.observation.labels.includes(input.source.label) ? { kind: 'authorized' } : { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] };
+}
 /** Review MED: only a CONFIRMED observation withdraws (issue closed, label absent in a complete read); any other code is transient. */
 export function confirmedWithdrawal(codes: string[]): { kind: 'withdrawn'; codes: string[] } | { kind: 'unknown'; code: string } {
   const confirmed = codes.filter(code => code === 'TICKET_NOT_OPEN' || code === 'LABEL_NOT_PRESENT');

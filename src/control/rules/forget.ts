@@ -72,7 +72,8 @@ export function minimalMemoryOf(work: Work, input: { at: string; request_id: str
     result: work.result === 'delivered' ? 'delivered' : 'cancelled',
     pullRequest: pull ? { number: pull.number, pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, url: pull.url } : null,
     mergeConfirmed: delivered, mergeConfirmedAt: delivered ? work.delivery!.merge!.confirmedAt : null,
-    label: work.authorization?.basis?.label ? { id: work.authorization.basis.label.id, name: work.authorization.basis.label.name } : null,
+    // A Jira entry label has no GitHub id: the memory keeps none (a new cycle of a Jira Ticket is re-authorized by its own re-read).
+    label: work.authorization?.source !== 'jira-rest' && work.authorization?.basis?.label ? { id: work.authorization.basis.label.id, name: work.authorization.basis.label.name } : null,
     questions: [...(work.questions ?? [])],
     watch: !delivered && own ? { pullRequest: { ...own, heads: [...own.heads] }, branch: work.branch, state: 'watching', lastReadAt: null,
       lastOutcome: work.delivery?.observations.at(-1)?.outcome ?? null } : null,

@@ -109,3 +109,15 @@ export function ticketUnverifiable(facts: { code: string; waitSeconds?: number; 
   return { decision: 'unverifiable', reasons: [{ code: 'JIRA_TICKET_UNVERIFIABLE', observedCode: facts.code, ...(facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
     nextStep: `The Card could not be re-read (${facts.code}); nothing is concluded. ${facts.nextStep}` }] };
 }
+
+/**
+ * Jira ticket 04: the visible-blockers criterion alone, for a Work already admitted (its destination was fixed at admission and is never
+ * recomputed). No reason = satisfied; only known blockers not in Done = pending; anything unverifiable or needing the operator = inconclusive.
+ */
+export function jiraBlockersConclusion(input: { links: readonly LinkDirection[]; blockers: JiraBlockerFacts }):
+  { conclusion: 'satisfied' | 'pending' | 'inconclusive'; completeness: 'complete' | 'incomplete'; reasons: JiraReason[] } {
+  const { reasons } = evaluateJiraCandidate({ labelPresent: true, route: { kind: 'single', repository: '' }, links: input.links, blockers: input.blockers });
+  if (!reasons.length) return { conclusion: 'satisfied', completeness: 'complete', reasons: [] };
+  return { conclusion: reasons.every(reason => reason.code === 'JIRA_BLOCKER_NOT_DONE') ? 'pending' : 'inconclusive',
+    completeness: reasons.some(reason => unverifiableCodes.has(reason.code)) ? 'incomplete' : 'complete', reasons };
+}

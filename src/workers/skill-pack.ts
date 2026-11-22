@@ -15,7 +15,8 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * plus Ticket-named seams matching the repository as approved, answers already given never asked again, and Ticket change by title/body;
  * v10 = ticket 44: v9 plus the repository's declared environment (`.factory/environment.yaml`) already installed: never reinstalled or
  * swapped, extras the Ticket needs installed and recorded; v11 = ticket 56: v10 plus each documented gate run exactly, alone, as the last
- * command before the handoff, never inside a compound command). */
+ * command before the handoff, never inside a compound command); v12 = Jira ticket 04: v11 plus a Jira Card as Ticket from the controller's
+ * `Ticket content` section (no Jira access, no `gh issue view`) and the Card reference instead of `Closes #N`). */
 const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
   directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
 export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as { readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>> };

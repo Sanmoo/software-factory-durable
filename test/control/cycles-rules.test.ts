@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { authorizationChange, authorizationFacts, cancelDecision, newCycleDecision, reopenDecision, resumeDecision, settleCancellation } from '../../src/control/rules/cycles.js';
+import { authorizationChange, authorizationFacts, cancelDecision, jiraAuthorizationFacts, newCycleDecision, reopenDecision, resumeDecision, settleCancellation } from '../../src/control/rules/cycles.js';
 import type { ExecutionView, WorkView } from '../../src/control/types.js';
 import { ticket } from './doubles.js';
 
@@ -90,4 +90,16 @@ test('new cycle decision: only after delivery or a ceased cancellation; unreconc
   assert.deepEqual(decide(cancelled(), false, false, { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] }), { kind: 'refuse', code: 'TICKET_NOT_AUTHORIZED' });
   assert.deepEqual(decide(cancelled(), false, false, { kind: 'unknown', code: 'GITHUB_RATE_LIMITED' }), { kind: 'refuse', code: 'AUTHORIZATION_READ_UNAVAILABLE' });
   assert.deepEqual(decide(work(), false, false, { kind: 'withdrawn', codes: ['X'] }), { kind: 'refuse', code: 'CYCLE_STILL_CURRENT' }, 'cycle rules first');
+});
+
+test('Jira ticket 04: a Jira Work is authorized by its ORIGIN source label; only a complete read without it withdraws', () => {
+  const source = { projectId: '10010', label: 'factory-ready' };
+  const observed = (labels: string[], projectId = '10010') => ({ kind: 'observed' as const, projectId, labels });
+  assert.deepEqual(jiraAuthorizationFacts({ source, observation: observed(['factory-ready', 'x']) }), { kind: 'authorized' });
+  assert.deepEqual(jiraAuthorizationFacts({ source, observation: observed(['x']) }), { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] });
+  // Labels are case-sensitive in Jira; another project, an unconfigured source or a failed read conclude nothing.
+  assert.deepEqual(jiraAuthorizationFacts({ source, observation: observed(['Factory-Ready']) }), { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] });
+  assert.deepEqual(jiraAuthorizationFacts({ source, observation: observed(['factory-ready'], '20020') }), { kind: 'unknown', code: 'JIRA_PROJECT_CHANGED' });
+  assert.deepEqual(jiraAuthorizationFacts({ source: undefined, observation: observed(['factory-ready']) }), { kind: 'unknown', code: 'JIRA_SOURCE_NOT_CONFIGURED' });
+  assert.deepEqual(jiraAuthorizationFacts({ source, observation: { kind: 'unavailable', code: 'JIRA_TIMEOUT' } }), { kind: 'unknown', code: 'JIRA_TIMEOUT' });
 });

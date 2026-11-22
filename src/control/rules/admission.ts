@@ -1,10 +1,15 @@
 // Pure admission rules over observed facts. No I/O, clock, storage or GitHub types: callers pass data and time.
+import type { JiraReasonCode } from './jira-admission.js';
 
 export type HoldCode = 'REPOSITORY_NOT_CONFIGURED' | 'TICKET_READ_UNAVAILABLE' | 'TICKET_IDENTITY_MISMATCH' | 'TICKET_IS_PULL_REQUEST' |
   'TICKET_NOT_OPEN' | 'LABEL_NOT_PRESENT' | 'PUBLICATION_UNKNOWN' | 'FOREIGN_PULL_REQUEST' | 'GLOBAL_PAUSE' |
   /** Jira ticket 01: the repository is not a GitHub Ticket source with discovery on (v2 `ticketSources`); existing Works are unaffected. */
-  'SOURCE_DISCOVERY_DISABLED';
+  'SOURCE_DISCOVERY_DISABLED' |
+  /** Jira ticket 04: why a Jira candidate was not admitted (rules/jira-admission), and a destination whose GitHub identity is not observed yet. */
+  JiraReasonCode | 'DESTINATION_NOT_OBSERVED';
 export type Hold = { code: HoldCode; nextStep: string; observedCode?: string; waitSeconds?: number;
+  /** Jira ticket 04 (local diagnosis only): divergent destinations, a blocker neighbour, a link needing the operator. */
+  repositories?: string[]; blocker?: { issueId: string; key: string }; linkId?: string;
   pullRequests?: { pullRequestId: number; number: number; url: string; state: 'open' | 'closed'; merged: boolean; association: string[] }[] };
 
 type Ref = { repository: string; repositoryId: number; issueId: number; nodeId: string; number: number };
@@ -32,6 +37,19 @@ export function ticketKey(ref: GitHubKeyRef | JiraKeyRef): string {
 export function githubOnly<T extends { tracker: string }>(ref: T): Extract<T, { tracker: 'github' }> {
   if (ref.tracker !== 'github') throw new Error('TICKET_ORIGIN_NOT_GITHUB');
   return ref as Extract<T, { tracker: 'github' }>;
+}
+
+/**
+ * Jira ticket 04: the Work's own branch. GitHub keeps `factory/<number>-<work8>`; Jira uses the immutable issue ID, never the visible key
+ * (a key change never renames the branch): `factory/jira-<issueId>-<work8>`.
+ */
+export function workBranchName(ticket: { tracker: 'github'; number: number } | { tracker: 'jira'; issueId: string }, workId: string): string {
+  const suffix = workId.slice(0, 8);
+  if (ticket.tracker === 'jira') {
+    if (!/^[1-9][0-9]{0,17}$/.test(ticket.issueId)) throw new Error('TICKET_ID_INVALID');
+    return `factory/jira-${ticket.issueId}-${suffix}`;
+  }
+  return `factory/${ticket.number}-${suffix}`;
 }
 
 /** Presentation of a Ticket for views, CLI, history and prompts: `owner/repo#n` (GitHub) or the Jira key (`PAG-42`). Never an identity. */

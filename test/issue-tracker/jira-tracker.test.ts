@@ -128,3 +128,19 @@ test('capabilities not built yet answer unavailable without any call; remote lin
   assert.equal(linked.kind, 'failed');
   assert.equal(calls.length, 0);
 });
+
+test('Jira ticket 04: readTicketContent reads summary and description by ID and hands the description over as bounded plain text', async () => {
+  const description = { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cobrar em reais' }] }] };
+  const { calls, transport } = recording(() => ok({ id: '81017', key: 'FIN-18', fields: { summary: 'Cobrança', description } }));
+  const tracker = createJiraTracker({ scopes: [scope], transport: () => transport });
+  assert.deepEqual(await tracker.readTicketContent(ref), { kind: 'observed', source: 'jira-rest', observedAt: '2026-11-21T10:00:00.000Z',
+    ticket: { ...ref, key: 'FIN-18', url: 'https://equipe.atlassian.net/browse/FIN-18' }, summary: 'Cobrança', description: 'Cobrar em reais', truncated: false });
+  assert.deepEqual(calls, [{ method: 'GET', path: '/rest/api/3/issue/81017', query: { fields: 'summary,description' } }]);
+  const empty = await createJiraTracker({ scopes: [scope], transport: () => recording(() => ok({ id: '81017', key: 'PAG-42', fields: { summary: null, description: null } })).transport })
+    .readTicketContent(ref);
+  assert.deepEqual(empty.kind === 'observed' && [empty.summary, empty.description], [null, null]);
+  for (const body of [{ id: '81017', key: 'PAG-42', fields: { description: 'plain string, not ADF' } }, { id: '99', key: 'PAG-42', fields: {} }]) {
+    const read = await createJiraTracker({ scopes: [scope], transport: () => recording(() => ok(body)).transport }).readTicketContent(ref);
+    assert.deepEqual(read.kind === 'unavailable' && read.code, 'JIRA_OBSERVATION_INVALID');
+  }
+});

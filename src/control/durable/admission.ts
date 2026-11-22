@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
-import type { TicketRef } from '../../issue-tracker/index.js';
+import type { GitHubTicketRef, JiraTicketRef, TicketRef } from '../../issue-tracker/index.js';
 import type { EnvironmentDeclarationObservation } from '../../contracts/index.js';
 import { environmentImpedimentCodes, environmentNotEvaluated, environmentOutcome } from '../rules/environment.js';
-import type { ControlInput, ControlReceipt, DependencyEvaluation, ForgottenWork, Impediment, WorkView } from '../types.js';
+import type { ControlInput, ControlReceipt, DependencyEvaluation, ForgottenWork, Impediment, JiraAuthorizationEvidence, WorkView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
 import { dependencyImpedimentCodes, dependencyImpediments, ownCycleFor, type OwnCycle, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -74,8 +74,16 @@ export type WorkRecord = Omit<WorkView, 'dispatch' | 'limits'>;
 export const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 'factory.work', version: 1, scope: 'session', family: true,
   initial: () => ({ work: null }), checkpointWhen: () => true });
 
-export type AdmissionEvidence = {
-  ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
+export type AdmissionEvidence = GitHubAdmissionEvidence | JiraAdmissionEvidence;
+/**
+ * Jira ticket 04 (spec §3.5): a Jira Card re-read by ID and decided eligible with the current configuration immediately before the commit.
+ * `dependencies` is that same read's visible-blockers evaluation (current round): no `DEPENDENCIES_NOT_EVALUATED` is added for Jira.
+ * `repository.repositoryId` is the destination's GitHub identity (observed by the GitHub polling of that repository), never a Jira fact.
+ */
+export type JiraAdmissionEvidence = { ticket: JiraTicketRef; repository: { repository: string; repositoryId: number; base: string }; observedAt: string;
+  authorization: JiraAuthorizationEvidence; dependencies: DependencyEvaluation; environment?: EnvironmentDeclarationObservation };
+export type GitHubAdmissionEvidence = {
+  ticket: GitHubTicketRef; repository: { repository: string; repositoryId: number; base: string };
   observedAt: string; label: { id: number; name: string }; publication: { observedAt: string; limitations: string[] };
   /** Ticket 44: the read of `.factory/environment.yaml` at the base tip made by the polling round that admits the Work (always present there).
    * Absent only for callers predating ticket 44 (tests); such a Work has no `environment` and is never gated by it. */
@@ -105,8 +113,12 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence,
     if (document.work) throw new Error('WORK_IDENTITY_COLLISION');
     const sequence = index.admissionSequence + 1;
     const admittedAt = new Date().toISOString();
-    // Replaced by the first native dependency evaluation of the same polling round; a crash in between keeps the Work held.
-    const impediments: Impediment[] = [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: admittedAt,
+    const jira = evidence.ticket.tracker === 'jira' ? evidence as JiraAdmissionEvidence : null;
+    const github = jira ? null : evidence as GitHubAdmissionEvidence;
+    const origin = jira ? 'jira-polling' as const : 'github-polling' as const;
+    // GitHub: replaced by the first native dependency evaluation of the same polling round; a crash in between keeps the Work held.
+    // Jira: the visible blockers were evaluated by the re-read that decided this admission (recorded as the Work's current evaluation).
+    const impediments: Impediment[] = jira ? [] : [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: admittedAt,
       nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' }];
     // Ticket 44: the environment declaration read at the base tip in the same round, pinned with the Work (or the impediment saying why not).
     const initial = evidence.environment ? environmentNotEvaluated(admittedAt) : null;
@@ -115,16 +127,20 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence,
     if (outcome?.impediment) impediments.push(outcome.impediment);
     document.work = {
       work_id, cycle: 1, predecessor: null, ticket: evidence.ticket, repository: evidence.repository, result: 'open',
-      authorization: { state: 'authorized', source: 'github-rest', observedAt: evidence.observedAt,
-        basis: { repositoryConfigured: true, issueState: 'open', label: evidence.label },
-        publication: { observedAt: evidence.publication.observedAt, completeness: 'complete', associatedPullRequests: 0, limitations: evidence.publication.limitations },
+      authorization: jira ? { state: 'authorized', observedAt: jira.observedAt, ...structuredClone(jira.authorization),
+        tracking: 'Authorization recorded at admission from the Card re-read by ID; later reads of the entry label track it. Absence from a listing is never treated as withdrawal.' }
+        : { state: 'authorized', source: 'github-rest', observedAt: github!.observedAt,
+        basis: { repositoryConfigured: true, issueState: 'open', label: github!.label },
+        publication: { observedAt: github!.publication.observedAt, completeness: 'complete', associatedPullRequests: 0, limitations: github!.publication.limitations },
         tracking: 'Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.' },
-      queue: { category: 'normal', sequence, pending: true }, impediments, dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null,
+      queue: { category: 'normal', sequence, pending: true }, impediments,
+      dependencies: jira ? { latest: jira.dependencies, lastComplete: { evaluationId: jira.dependencies.evaluationId, observedAt: jira.dependencies.observedAt, conclusion: jira.dependencies.conclusion } }
+        : { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null,
       previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt,
       budget: initialBudget(limits, evidence.repository.repository, admittedAt),
       correction: null, pendingRecovery: null,
-      history: [{ at: admittedAt, event: 'admitted', origin: 'github-polling', sequence },
-        ...(outcome?.event ? [{ at: admittedAt, event: 'environment-evaluated' as const, origin: 'github-polling' as const, detail: outcome.event }] : [])],
+      history: [{ at: admittedAt, event: 'admitted', origin, sequence },
+        ...(outcome?.event ? [{ at: admittedAt, event: 'environment-evaluated' as const, origin, detail: outcome.event }] : [])],
       ...(outcome ? { environment: outcome.environment } : {}),
     };
     index.admissionSequence = sequence;
@@ -207,7 +223,7 @@ export async function recordDependencies(session: Session, work_id: string, eval
     work.impediments = [...work.impediments.filter(item => !(dependencyImpedimentCodes as readonly string[]).includes(item.code)), ...derived];
     work.dependencies = { latest: evaluation, lastComplete: evaluation.completeness === 'complete' && evaluation.conclusion !== 'inconclusive'
       ? { evaluationId: evaluation.evaluationId, observedAt: evaluation.observedAt, conclusion: evaluation.conclusion } : previous.lastComplete };
-    if (before !== evaluation.conclusion) work.history.push({ at: evaluation.evaluatedAt, event: 'dependencies-changed', origin: 'github-polling',
+    if (before !== evaluation.conclusion) work.history.push({ at: evaluation.evaluatedAt, event: 'dependencies-changed', origin: evaluation.source === 'jira-rest' ? 'jira-polling' : 'github-polling',
       before, after: evaluation.conclusion, evaluationId: evaluation.evaluationId });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
@@ -232,6 +248,28 @@ export async function recordEnvironment(session: Session, work_id: string, obser
     if (outcome.event) work.history.push({ at, event: 'environment-evaluated', origin: 'github-polling', detail: outcome.event });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Jira ticket 04: a fresh observation by ID of a Jira Work's Card carries another visible key (PAG-42 -> FIN-18): update the presentation
+ * (`ticket.key`/`url`) of the current Work with a history entry, in one commit. Identity, destination and index key never change.
+ */
+export async function recordTicketPresentation(session: Session, work_id: string, fresh: JiraTicketRef,
+  origin: 'jira-polling' | 'controller-dispatch' = 'jira-polling'): Promise<'recorded' | 'unchanged'> {
+  return session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work;
+    if (!work || work.ticket.tracker !== 'jira' || work.ticket.siteId !== fresh.siteId || work.ticket.issueId !== fresh.issueId) return 'unchanged' as const;
+    if (work.ticket.key === fresh.key && work.ticket.url === fresh.url) return 'unchanged' as const;
+    const before = work.ticket.key;
+    work.ticket = { ...work.ticket, key: fresh.key, url: fresh.url };
+    work.history.push({ at: new Date().toISOString(), event: 'ticket-presentation-changed', origin, detail: `${before} -> ${fresh.key}`.slice(0, 600) });
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
+/** Jira ticket 04: open Works with pending queue work admitted from one Jira source (site + project), FIFO. */
+export async function pendingJiraWorks(session: Session, source: { siteId: string; projectId: string }): Promise<WorkRecord[]> {
+  return (await readWorks(session)).filter(work => work.ticket.tracker === 'jira' && work.ticket.siteId === source.siteId && work.authorization.source === 'jira-rest' &&
+    work.authorization.basis.projectId === source.projectId && work.result === 'open' && work.queue.pending);
 }
 
 export async function indexedWork(session: Session, ticket: TicketRef): Promise<string | undefined> {

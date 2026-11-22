@@ -182,6 +182,19 @@ test('AC1/AC5: the publication request names the exact commit, branch, base, lea
     && !updated.prompt.includes('gh pr create'));
 });
 
+test('Jira ticket 04: a Jira Work publishes with a readable Card reference and never a GitHub closing keyword or issue number', () => {
+  const card = { tracker: 'jira' as const, siteId: 'site-A', issueId: '81017', key: 'PAG-42', url: 'https://equipe.atlassian.net/browse/PAG-42' };
+  const built = publicationPrompt({ reason: 'PUBLISH_ONLY_SESSION', pullRequest: null, executionId: 'e2', previousExecutionId: 'e1', skillDirectory: '/s', repository: 'acme/project',
+    base: 'main', branch: 'factory/jira-81017-abcdef12', head, marker, ticket: card, workId, checkout: '/workspace/checkout', expectedRemote: { state: 'absent' },
+    verified: { reviewedRound: 1, gates: [], requiredChecks: [] } });
+  assert.equal(built.kind, 'prompt');
+  if (built.kind !== 'prompt') return;
+  assert.ok(built.prompt.includes('Jira Card PAG-42 https://equipe.atlassian.net/browse/PAG-42'));
+  assert.ok(built.prompt.includes('it must contain the readable Card reference "Jira Card PAG-42: https://equipe.atlassian.net/browse/PAG-42"'));
+  assert.ok(built.prompt.includes('no GitHub closing keyword'));
+  assert.doesNotMatch(built.prompt, /Closes #|Ticket #/);
+});
+
 test('AC4/AC6: the next publication step follows the Work: evaluate a new verified basis, discover after cessation, nothing while active or settled', () => {
   const work = (execution: ExecutionView | null, publication: Partial<PublicationView> | null = null, previous: ExecutionView[] = []) =>
     ({ result: 'open' as const, execution, previousExecutions: previous, publication: publication as PublicationView | null });

@@ -130,7 +130,8 @@ export function evaluateDependencies(input: { graph: GraphFacts; own: Record<num
 
 export const dependencyImpedimentCodes = ['DEPENDENCIES_NOT_EVALUATED', 'DEPENDENCY_PENDING', 'DEPENDENCY_EVALUATION_INCONCLUSIVE'] as const;
 const satisfactionCodes = new Set(['EXTERNAL_BLOCKER_OPEN', 'EXTERNAL_BLOCKER_NOT_COMPLETED', 'OWN_CYCLE_NOT_DELIVERED', 'OWN_CYCLE_CANCELLED',
-  'OWN_PULL_REQUEST_CLOSED_UNMERGED', 'OWN_DELIVERY_NOT_CONFIRMED', 'OWN_CYCLE_MEMORY_MISSING']);
+  'OWN_PULL_REQUEST_CLOSED_UNMERGED', 'OWN_DELIVERY_NOT_CONFIRMED', 'OWN_CYCLE_MEMORY_MISSING',
+  /** Jira ticket 04: a visible "is blocked by" neighbour of a Jira Work's Card not in the Done category. */ 'JIRA_BLOCKER_NOT_DONE']);
 
 /** Work-scoped impediments derived from one evaluation; pending blockers and an inconclusive read coexist, neither hides the other. */
 export function dependencyImpediments(result: DependencyConclusion, since: string): { code: typeof dependencyImpedimentCodes[number]; scope: 'work'; since: string; nextStep: string }[] {
@@ -138,7 +139,7 @@ export function dependencyImpediments(result: DependencyConclusion, since: strin
   const structural = result.reasons.filter(reason => !satisfactionCodes.has(reason.code));
   return [
     ...(pending.length ? [{ code: 'DEPENDENCY_PENDING' as const, scope: 'work' as const, since,
-      nextStep: `Waiting for native blockers: ${pending.map(reason => `${reason.url} (${reason.code})`).join(', ')}. Polling re-evaluates; no second approval is needed.` }] : []),
+      nextStep: `Waiting for native blockers: ${pending.map(reason => `${reason.url ?? 'blocker'} (${reason.code})`).join(', ')}. Polling re-evaluates; no second approval is needed.` }] : []),
     ...(structural.length ? [{ code: 'DEPENDENCY_EVALUATION_INCONCLUSIVE' as const, scope: 'work' as const, since,
       nextStep: `Dependency evaluation inconclusive (${[...new Set(structural.map(reason => reason.code))].join(', ')}); an earlier evaluation never releases. ` +
         structural.map(reason => reason.nextStep).join(' ') }] : []),

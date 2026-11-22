@@ -10,7 +10,8 @@ import { authorizationChange, authorizationFacts, cancelDecision, cycleImpedimen
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
 import { noProgressCode } from '../rules/boot-rotation.js';
 import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
-import { readWork, requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { readWork, recordTicketPresentation, requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { observeJiraAuthorization } from './jira-evaluation.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
@@ -310,7 +311,7 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
         lastObservedAt: observedAt, withdrawal: null,
         ...(forgotten && freshLabel ? { source: 'github-rest' as const, basis: { repositoryConfigured: true as const, issueState: 'open' as const, label: { ...freshLabel } },
           publication: { observedAt, completeness: 'complete' as const, associatedPullRequests: 0 as const,
-            limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`] } } : {}) },
+            limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`] } } : {}) } as WorkRecord['authorization'],
       queue: { category: 'normal', sequence, pending: true },
       impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' },
         // Ticket 44: a new cycle is a new Work: it pins the declaration at the base tip read by the next polling round, never the predecessor's.
@@ -432,7 +433,15 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
 
   /** One read; returns the decision that was recorded (null when nothing could be concluded). */
   async function observeAuthorization(work: WorkRecord) {
-    // Authorization of a Work is observed at its Ticket's ORIGIN: a non-GitHub Work concludes nothing from the GitHub label here.
+    // Authorization of a Work is observed at its Ticket's ORIGIN: a Jira Work by its Card's entry label (Jira ticket 04), never the GitHub one.
+    if (work.ticket.tracker === 'jira') {
+      const startedAt = new Date().toISOString();
+      const { observation, facts } = await observeJiraAuthorization(deps.access, work);
+      if (observation.kind === 'observed') await recordTicketPresentation(deps.session, work.work_id, observation.ticket).catch(() => 'unchanged');
+      if (facts.kind === 'unknown') return null;
+      await recordAuthorization(deps.session, work.work_id, facts, startedAt);
+      return facts;
+    }
     if (work.ticket.tracker !== 'github') return null;
     const ticket = work.ticket;
     const scope = configured(work.repository.repository);

@@ -159,6 +159,15 @@ export interface JiraRemoteLinks {
  * Jira-only reads behind the visible-blockers fact (Jira ticket 03): the site's link type catalogue and the status category of a neighbour.
  * The Control decides which links block (catalogue + direction rule) and reads only those neighbours.
  */
+/**
+ * Jira ticket 04: the Card's text for the Builder's context (the agent has no Jira client or token). Summary and description (ADF as plain
+ * text, bounded with an explicit `truncated`); presentation data of the Ticket, never instructions to the Factory.
+ */
+export type JiraTicketContent = { kind: 'observed'; source: 'jira-rest'; observedAt: string; ticket: JiraTicketRef; summary: string | null;
+  description: string | null; truncated: boolean } | JiraUnavailable;
+export interface JiraContentReads {
+  readTicketContent(ticket: JiraTicketRef): Promise<JiraTicketContent>;
+}
 export interface JiraBlockerReads {
   readLinkTypes(siteId: string): Promise<JiraLinkTypesObservation>;
   readIssueStatus(siteId: string, issueId: string): Promise<JiraIssueStatusObservation>;
@@ -469,6 +478,8 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
   };
 }
 
+export { adfPlainText } from './jira-adf-text.js';
+import { adfPlainText } from './jira-adf-text.js';
 export { createJiraHttpTransport, type JiraHostSite, type JiraHttpExchange, type JiraHttpResult, type JiraRequest, type JiraResponse, type JiraTransport } from './jira-http.js';
 
 const jiraId = z.string().regex(/^[1-9][0-9]{0,17}$/);
@@ -491,6 +502,9 @@ const jiraIssueSchema = z.object({
 });
 const jiraComponentsSchema = z.array(z.object({ id: jiraId, name: z.string().max(255) }));
 const jiraStatusSchema = z.object({ id: jiraId, key: jiraKey, fields: z.object({ status: z.object({ statusCategory: z.object({ key: z.string().min(1).max(64) }) }) }) });
+const jiraContentSchema = z.object({ id: jiraId, key: jiraKey, fields: z.object({ summary: z.string().max(4096).nullable().optional(), description: z.unknown().optional() }) });
+/** Bound of the description handed to the Builder (characters of plain text); beyond it the text says it was cut. */
+const maxDescriptionChars = 8000;
 const jiraLinkTypesSchema = z.object({ issueLinkTypes: z.array(jiraLinkTypeSchema).max(500) });
 const jiraSearchPageSchema = z.object({ issues: z.array(z.object({ id: jiraId, key: jiraKey, fields: z.object({ project: z.object({ id: jiraId }) }) })).max(5000),
   nextPageToken: z.string().min(1).max(4096).optional(), isLast: z.boolean() });
@@ -508,7 +522,7 @@ const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\
  * is refused without any call (tickets 08/09). Nothing here admits Work or authorizes commands.
  */
 export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transport: (scope: JiraTrackerScope) => JiraTransport }):
-  IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads {
+  IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads {
   const transports = new Map<string, JiraTransport>();
   const site = (siteId: string) => options.scopes.find(scope => scope.siteId === siteId);
   const transportOf = (scope: JiraTrackerScope) => {
@@ -581,6 +595,19 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
           return { linkId: link.id, type: { id: link.type.id, name: link.type.name, inward: link.type.inward, outward: link.type.outward },
             end: link.inwardIssue ? 'inward' as const : 'outward' as const, issue: { issueId: neighbour.id, key: neighbour.key } };
         }) : null };
+    },
+    async readTicketContent(ticket) {
+      const answer = await read(ticket.siteId, { method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}`, query: { fields: 'summary,description' } });
+      if (!answer.ok) return answer.fact;
+      const parsed = jiraContentSchema.safeParse(answer.body);
+      if (!parsed.success || parsed.data.id !== ticket.issueId) return invalid(ticket.siteId, answer.observedAt);
+      const { description } = parsed.data.fields;
+      const text = description === null || description === undefined ? null : adfPlainText(description, maxDescriptionChars);
+      // A description that is present but not an ADF document is not guessed at.
+      if (description !== null && description !== undefined && text === null) return invalid(ticket.siteId, answer.observedAt);
+      return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt,
+        ticket: { tracker: 'jira', siteId: ticket.siteId, issueId: ticket.issueId, key: parsed.data.key, url: `${site(ticket.siteId)!.url}/browse/${parsed.data.key}` },
+        summary: parsed.data.fields.summary ?? null, description: text?.text ?? null, truncated: text?.truncated ?? false };
     },
     async readLinkTypes(siteId) {
       const answer = await read(siteId, { method: 'GET', path: '/rest/api/3/issueLinkType' });

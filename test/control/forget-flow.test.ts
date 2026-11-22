@@ -194,7 +194,7 @@ test('AC1/AC3/AC4/AC5/AC7: a delivered Work is forgotten after plan + confirmati
   assert.ok(created.kind === 'durable' && created.outcome === 'accepted' && created.created, JSON.stringify(created));
   const successor = (await readWork(h.session, created.created!))!;
   assert.deepEqual([successor.cycle, successor.predecessor, successor.result, successor.authorization.basis.label.name], [2, h.work_id, 'open', 'ready-for-agent']);
-  assert.match(successor.authorization.publication.limitations[0]!, /was forgotten/);
+  assert.match((successor.authorization.source === 'github-rest' ? successor.authorization.publication.limitations : [])[0]!, /was forgotten/);
   evaluation = await evaluate();
   assert.deepEqual([evaluation.conclusion, evaluation.blockers[0]?.work_id, evaluation.blockers[0]?.satisfied, evaluation.reasons[0]?.code],
     ['pending', created.created, false, 'OWN_CYCLE_NOT_DELIVERED']);

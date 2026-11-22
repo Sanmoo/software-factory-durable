@@ -465,7 +465,9 @@ export const publicationPromptBudgetBytes = 15000;
  * content is never published: Control discovers the remote and accepts only the verified head. Loading /pr publishes nothing.
  */
 export function publicationPrompt(input: { reason: string; executionId: string; previousExecutionId: string; skillDirectory: string;
-  repository: string; base: string; branch: string; head: string; marker: string; ticket: { number: number; url: string }; workId: string; checkout: string;
+  repository: string; base: string; branch: string; head: string; marker: string;
+  /** GitHub: `Closes #N`. Jira ticket 04: a readable Card reference (key + URL), never a GitHub closing keyword. */
+  ticket: { tracker?: 'github'; number: number; url: string } | { tracker: 'jira'; key: string; url: string }; workId: string; checkout: string;
   expectedRemote: BranchObservation; pullRequest: number | null; verified: { reviewedRound: number | null; gates: { id: string; outcome: string }[]; requiredChecks: string[] };
   /** Ticket 21/18: the exact remote token of the push/ls-remote (`origin` or the configured https URL); the Builder push policy gets the SAME value. */
   remote?: string;
@@ -483,7 +485,12 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
     : input.expectedRemote.state === 'present'
       ? [`2. Update your branch to exactly the verified commit with this explicit lease (the remote must still be at ${input.expectedRemote.sha}), once:`, pushCommand]
       : ['2. Push exactly the verified commit with this explicit lease (the remote branch must not exist yet), once:', pushCommand];
-  const facts = [`Factory facts (authoritative): Work ${input.workId}; Ticket #${input.ticket.number} ${input.ticket.url}; repository ${input.repository}; base ${input.base}; ` +
+  const ticket = input.ticket;
+  const reference = ticket.tracker === 'jira' ? `Jira Card ${ticket.key} ${ticket.url}` : `Ticket #${ticket.number} ${ticket.url}`;
+  const link = ticket.tracker === 'jira'
+    ? `it must contain the readable Card reference "Jira Card ${ticket.key}: ${ticket.url}" and no GitHub closing keyword (Closes/Fixes/Resolves)`
+    : `it must contain "Closes #${ticket.number}"`;
+  const facts = [`Factory facts (authoritative): Work ${input.workId}; ${reference}; repository ${input.repository}; base ${input.base}; ` +
     `your branch ${input.branch}; verified commit ${input.head} (content verified at the end of Execution ${input.previousExecutionId}); ` +
     `remote branch before this activation: ${input.expectedRemote.state === 'absent' ? 'absent' : input.expectedRemote.sha}` +
     `${input.pullRequest === null ? '' : `; your own draft pull request #${input.pullRequest} already exists`}.`,
@@ -496,7 +503,7 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
   const steps = [
     `1. Read ${input.skillDirectory}/skills/pr/SKILL.md with the read tool and draft the body into /artifacts/publication/pr-body.md exactly as it says. Its FIRST line must be:`,
     fenced(input.marker),
-    `   and it must contain "Closes #${input.ticket.number}". This activation is PUBLISH-ONLY: do not change, commit, amend, rebase or reset anything in ${input.checkout} ` +
+    `   and ${link}. This activation is PUBLISH-ONLY: do not change, commit, amend, rebase or reset anything in ${input.checkout} ` +
       `(HEAD must stay ${input.head}); a changed content is never accepted by the Factory.`,
     ...push, ...pr,
     `${input.pullRequest === null ? 5 : 4}. If a command fails or its outcome is unclear, never repeat it blindly: inspect (git ls-remote ${remote}, gh pr list --repo ${input.repository}) and report what you observed.`,

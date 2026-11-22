@@ -10,7 +10,7 @@ import { acceptReadinessAuthorization, createReadinessDesk } from './readiness.j
 import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
-import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readForgotten, readForgottenWork, readInstallation, readRequest, readWork, readWorks,
+import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingJiraWorks, pendingWorks, recordTicketPresentation, readForgotten, readForgottenWork, readInstallation, readRequest, readWork, readWorks,
   recordDependencies, recordEnvironment, type WorkRecord } from './admission.js';
 import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { ticketKey } from '../rules/admission.js';
@@ -150,6 +150,11 @@ export async function openControl(options: { storagePath: string;
     indexed: ticket => indexedWork(state, ticket),
     admit: evidence => admitTicket(state, evidence, configuredRepository(evidence.repository.repository) ?? {}),
     pending: repositoryId => pendingWorks(state, repositoryId),
+    pendingJira: source => pendingJiraWorks(state, source),
+    presentation: async (work_id, fresh) => {
+      const current = await readWork(state, work_id);
+      if (current?.ticket.tracker === 'jira' && (current.ticket.key !== fresh.key || current.ticket.url !== fresh.url)) await recordTicketPresentation(state, work_id, fresh);
+    },
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     recordEnvironment: (work_id, observation) => recordEnvironment(state, work_id, observation),
@@ -176,7 +181,7 @@ export async function openControl(options: { storagePath: string;
   const repair = options.access && options.polling && options.execution ? createRepairDesk({ session: state, readWorks: () => readWorks(state),
     busy: work_id => dispatcher?.active(work_id) ?? false, limits: configuredRepository }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
-    currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
+    currentAttempt: work => poller.currentAttempt(work), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     paused: async () => (await readInstallation(state)).paused,
     heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers,
@@ -214,7 +219,7 @@ export async function openControl(options: { storagePath: string;
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
-    currentAttempt: poller?.currentAttempt(work.repository.repository) ?? null }), ...runBlockers(work)];
+    currentAttempt: poller?.currentAttempt(work) ?? null }), ...runBlockers(work)];
   const present = (work: WorkRecord, paused: boolean): WorkView => {
     const capability = capabilityGate(work);
     const impediments: Impediment[] = [...work.impediments, ...(capability ? [capability] : []),
@@ -422,7 +427,8 @@ export async function openControl(options: { storagePath: string;
         questions: { open: allQuestions.filter(item => item.state === 'open').length, answered: allQuestions.filter(item => item.state === 'answered').length,
           unpublished: allQuestions.filter(item => item.state === 'open' && item.publication.state !== 'published').length },
         selection: { next: selection(works).next },
-        polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
+        polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
+          ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}) },
         persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works) } satisfies ControlStatus;
     },
     async run(signal) {

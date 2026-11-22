@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { IssueTracker, JiraBlockerReads, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
+import type { IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -27,7 +27,7 @@ export type AccessDependencies = { tracker: IssueTracker; repository: CodeReposi
   /** Jira ticket 01: adapters of the other origins, selected by the Ticket's persisted `tracker` (`tracker` above stays the GitHub one). */
   trackers?: { jira?: JiraOriginTracker } };
 /** Jira ticket 03: the Jira adapter as the Control uses it (common contract, remote links and the reads behind visible blockers). */
-export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads;
+export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads;
 /**
  * Jira ticket 01: one Ticket source. `discover` gates NEW admissions only: Works already admitted keep their origin, destination and
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
@@ -313,6 +313,8 @@ export type ExecutionView = {
   dispatch: { intent: 'prepare-start-activate'; phase: 'reserved' | 'prepared' | 'booted' | 'activation-requested' | 'started' | 'completed' | 'stopped';
     environment: string | null; boot: string | null; updatedAt: string };
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
+    /** Jira ticket 04: the Card's text read by the controller at dispatch (the Builder has no Jira access); data for the Builder, never instructions. */
+    ticketContent?: TicketContent;
     skillPack: { name: string; manifestSha256: string } | null;
     /** Ticket 44: identity of the environment base this Execution's environment was created from (declaration hash + resolved manifest). */
     environment?: EnvironmentBaseIdentity | null;
@@ -700,8 +702,16 @@ export type RepositoryPollView = {
   code?: string; waitSeconds?: number; nextStep?: string; consecutiveFailures: number; nextPollInSeconds: number | null;
   candidates: CandidateView[] | null;
 };
+/** Jira ticket 04: in-memory observation of the latest round of one Jira source (one project of one site); not authority. */
+export type JiraSourcePollView = { tracker: 'jira'; siteId: string; projectId: string; label: string; discover: boolean;
+  state: 'pending' | 'observed' | 'unavailable'; observedAt: string | null; completeness: 'complete' | 'incomplete' | null; absenceProven: false;
+  code?: string; waitSeconds?: number; nextStep?: string; consecutiveFailures: number; nextPollInSeconds: number | null;
+  /** `null` when the round did not list (discovery off, or the listing failed). */
+  candidates: CandidateView[] | null };
 export type PollingView = { state: 'disabled' | 'starting' | 'polling' | 'sleeping' | 'stopped'; intervalSeconds: number | null; cycles: number;
-  lastCycleAt: string | null; source: 'in-memory-observation'; repositories: RepositoryPollView[] };
+  lastCycleAt: string | null; source: 'in-memory-observation'; repositories: RepositoryPollView[];
+  /** Jira ticket 04: the configured Jira sources (absent when there is none). */
+  sources?: JiraSourcePollView[] };
 
 /**
  * Ticket 44: the Work's environment declaration (`.factory/environment.yaml` at the base commit). Only `pinned` lets the Work start; it is
@@ -718,11 +728,14 @@ export type Impediment = { code: string; scope: 'work' | 'installation'; since?:
  * produced it: only an evaluation of the current round may release a start/resume/repair.
  */
 export type DependencyEvaluation = {
-  evaluationId: string; attemptId: string; source: 'github-rest'; observedAt: string; evaluatedAt: string;
+  /** `jira-rest` (Jira ticket 04): visible "is blocked by" neighbours of a Jira Work's Card (principals/blockers/cycles empty; reasons carry the Jira codes). */
+  evaluationId: string; attemptId: string; source: 'github-rest' | 'jira-rest'; observedAt: string; evaluatedAt: string;
   principals: { installationId: number; repository: string; repositoryId: number | null; role: 'executable' | 'dependency-only'; purpose: 'dependency-read';
     permissions: Readonly<Record<string, 'read'>> }[];
   completeness: 'complete' | 'incomplete'; conclusion: 'satisfied' | 'pending' | 'inconclusive';
   blockers: BlockerView[]; cycles: number[][]; shared: number[]; reasons: DependencyReason[]; limitations: string[];
+  /** Jira ticket 04: the visible blockers observed (local diagnosis: a neighbour may belong to a restricted project). */
+  jira?: { blockers: JiraBlocker[] };
 };
 export type DependencyState = { latest: DependencyEvaluation | null;
   lastComplete: { evaluationId: string; observedAt: string; conclusion: DependencyEvaluation['conclusion'] } | null };
@@ -891,6 +904,16 @@ export type ReadinessView = {
   stages: { internal: 'ready' | 'not-ready' | 'unknown'; flag: 'draft' | 'ready' | 'unknown'; humanReview: 'human-stage'; delivery: 'not-delivered' };
   nextStep: string;
 };
+/** Jira ticket 04: a Jira Card's summary and description (ADF as plain text, bounded: `truncated` says so) as read at dispatch. */
+export type TicketContent = { source: 'jira-rest'; key: string; url: string; observedAt: string; summary: string | null; description: string | null; truncated: boolean; sha256: string };
+/**
+ * Jira ticket 04: evidence of a Jira Work's admission (spec §3.5): the Card re-read by ID immediately before the commit, with the source
+ * configuration in force — entry label, the single destination its components route to, and the visible blockers all in Done.
+ */
+export type JiraAuthorizationEvidence = { source: 'jira-rest';
+  basis: { sourceConfigured: true; siteId: string; projectId: string; label: { name: string };
+    route: { componentIds: string[]; repository: string };
+    blockers: { observedAt: string; coverage: 'visible'; blockers: JiraBlocker[]; limitations: string[] } } };
 export type WorkView = {
   work_id: string; cycle: number; predecessor: string | null;
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
@@ -898,9 +921,10 @@ export type WorkView = {
    * Ticket 25: `cancelled` (operator cancel; a later confirmed merge still delivers), `closed-unmerged` (own PR closed without merge: the cycle
    * stays current and undelivered with its counters; continuing needs `reopen` + `resume`, abandoning needs `cancel` + `new`). */
   result: 'open' | 'cancelled' | 'closed-unmerged' | 'delivered';
-  authorization: { state: 'authorized' | 'withdrawn'; source: 'github-rest'; observedAt: string;
+  authorization: ({ source: 'github-rest';
     basis: { repositoryConfigured: true; issueState: 'open'; label: { id: number; name: string } };
-    publication: { observedAt: string; completeness: 'complete'; associatedPullRequests: 0; limitations: string[] };
+    publication: { observedAt: string; completeness: 'complete'; associatedPullRequests: 0; limitations: string[] } } | JiraAuthorizationEvidence) & {
+    state: 'authorized' | 'withdrawn'; observedAt: string;
     tracking: string;
     /** Ticket 25: the latest complete authorization read of the Ticket and an observed withdrawal (label removed / issue closed). */
     lastObservedAt?: string | null;
@@ -982,8 +1006,8 @@ export type WorkView = {
   /** Ticket 31: ids of this Work's requests whose input carries operator text (answers, scope updates, readiness authorizations), any outcome. */
   contentRequests?: string[];
   admittedAt: string;
-  history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
-    { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
+  history: ({ at: string; event: 'admitted'; origin: 'github-polling' | 'jira-polling'; sequence: number } |
+    { at: string; event: 'dependencies-changed'; origin: 'github-polling' | 'jira-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
@@ -1012,7 +1036,9 @@ export type WorkView = {
     /** Ticket 61: the operator asked to re-evaluate a blocked publication (`<request id>`). */
     { at: string; event: 'publication-reevaluation-requested'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
-    /* ticket 44 */ { at: string; event: 'environment-evaluated'; origin: 'github-polling' | 'controller-dispatch'; detail: string } |
+    /* ticket 44 */ { at: string; event: 'environment-evaluated'; origin: 'github-polling' | 'jira-polling' | 'controller-dispatch'; detail: string } |
+    /** Jira ticket 04: the Card's visible key changed (`PAG-42 -> FIN-18`); same identity (siteId, issueId), same Work and destination. */
+    { at: string; event: 'ticket-presentation-changed'; origin: 'jira-polling' | 'controller-dispatch'; detail: string } |
     { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';
       origin: 'controller-readiness'; detail: string } |
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
@@ -1106,7 +1132,7 @@ export type ControlStatus = {
   dependencies: { satisfied: number; pending: number; inconclusive: number; notEvaluated: number };
   questions: { open: number; answered: number; unpublished: number };
   selection: { next: string | null };
-  polling: Omit<PollingView, 'repositories'> & { repositories: Omit<RepositoryPollView, 'candidates'>[] };
+  polling: Omit<PollingView, 'repositories' | 'sources'> & { repositories: Omit<RepositoryPollView, 'candidates'>[]; sources?: Omit<JiraSourcePollView, 'candidates'>[] };
   persistence: { sqliteVersion: string; sqliteSourceId: string; journalMode: 'wal'; synchronous: 'FULL' };
   /** Ticket 26: boot reconciliation of THIS run (null before it ran or when nothing was composed to reconcile). */
   recovery: RecoveryView | null;

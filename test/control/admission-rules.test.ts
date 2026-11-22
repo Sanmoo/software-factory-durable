@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { evaluateEntry, evaluatePublication, githubOnly, pollDelaySeconds, ticketKey, ticketLabel } from '../../src/control/rules/admission.js';
+import { evaluateEntry, evaluatePublication, githubOnly, pollDelaySeconds, ticketKey, ticketLabel, workBranchName } from '../../src/control/rules/admission.js';
 
 const listed = { repository: 'acme/project', repositoryId: 3, issueId: 7001, nodeId: 'I_node1', number: 1 };
 const observed = (overrides: object = {}) => ({ kind: 'observed' as const, ticket: listed, state: 'open' as const, labels: [{ id: 55, name: 'Ready-For-Agent' }], pullRequest: false, ...overrides });
@@ -69,4 +69,11 @@ test('poll delay: interval on success, service wait prevails, bounded exponentia
   assert.deepEqual([1, 2, 3, 4, 5, 30].map(n => pollDelaySeconds({ intervalSeconds: 60, outcome: 'unavailable', consecutiveFailures: n })), [60, 120, 240, 480, 900, 900]);
   assert.equal(pollDelaySeconds({ intervalSeconds: 60, outcome: 'unavailable', waitSeconds: 3600, consecutiveFailures: 1 }), 3600);
   assert.equal(pollDelaySeconds({ intervalSeconds: 1200, outcome: 'unavailable', consecutiveFailures: 9 }), 1200, 'cap never shortens the configured interval');
+});
+
+test('Jira ticket 04: the Work branch is named by the immutable Ticket identity (GitHub number unchanged; Jira issue ID, never the key)', () => {
+  const workId = '0b9c6a52-3d3e-4c8f-9a51-000000000001';
+  assert.equal(workBranchName({ tracker: 'github', number: 3 }, workId), 'factory/3-0b9c6a52');
+  assert.equal(workBranchName({ tracker: 'jira', issueId: '81017' }, workId), 'factory/jira-81017-0b9c6a52');
+  assert.throws(() => workBranchName({ tracker: 'jira', issueId: '../x' }, workId), /TICKET_ID_INVALID/);
 });

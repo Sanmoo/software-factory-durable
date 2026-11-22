@@ -78,6 +78,18 @@ test('AC6: an absent own branch is proven only by a complete read; a failed ref 
   assert.ok(admission.kind === 'observed' && Object.keys(admission.branches).length === 0, 'admission reads no refs');
 });
 
+test('Jira ticket 04: a branch-only correlation (no issue number) reads the own refs and never an issue timeline; an empty correlation is refused', async t => {
+  const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: { 'factory/jira-81017-0b9c6a52': head } });
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  const repository = createCodeRepository({ github });
+  const read = await repository.findPublication({ repo: worldScope, issueNumbers: [], knownBranches: ['factory/jira-81017-0b9c6a52', 'main'] });
+  assert.ok(read.kind === 'observed');
+  if (read.kind !== 'observed') return;
+  assert.deepEqual([read.issues, read.branches['factory/jira-81017-0b9c6a52']], [{}, { state: 'present', sha: head }]);
+  assert.deepEqual((await world.trace()).filter(entry => /\/issues\//.test(entry.endpoint)), [], 'no issue (timeline) read');
+  await assert.rejects(repository.findPublication({ repo: worldScope, issueNumbers: [], knownBranches: [] }), /INVALID_PUBLICATION_CORRELATION/);
+});
+
 test('review MED 3: the Factory App bot identity is pinned from GET /app (slug) and the bot user read with an installation token', async t => {
   const world = await githubWorld(t, { issues: [issue(3)], pulls: [] });
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });

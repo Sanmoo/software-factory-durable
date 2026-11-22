@@ -11,7 +11,9 @@ import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelecti
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
  * Several Tickets of one repository share ONE pull request listing per call (bounded polling cost). */
-export type PublicationCorrelation = { repo: GitHubScope; issueNumbers: number[]; knownBranches: string[];
+export type PublicationCorrelation = { repo: GitHubScope;
+  /** Empty = branch-only correlation (Jira ticket 04: a Work whose Ticket has no GitHub issue number); then `knownBranches` must not be empty. */
+  issueNumbers: number[]; knownBranches: string[];
   /** Ticket 14: also report every branch/tag tip of the repository (complete listings) and whether `base` requires pull requests with no
    * bypass for the reading App (rulesets / classic protection). Refs and rules are facts; Control decides. */
   refs?: boolean; base?: string;
@@ -266,7 +268,8 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     async findPublication(correlation) {
       const { repo } = correlation;
       const numbers = [...new Set(correlation.issueNumbers)];
-      if (!numbers.length || numbers.some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('INVALID_PUBLICATION_CORRELATION');
+      // Jira ticket 04: a branch-only correlation (no issue number: a Jira Work's refs) reads the listing and the known branches, never a timeline.
+      if ((!numbers.length && !correlation.knownBranches.length) || numbers.some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('INVALID_PUBLICATION_CORRELATION');
       const pulls = await options.github.read(repo, 'repository-read', async session => {
         const parsed = z.array(pullSchema).safeParse(await session.list(`/repos/${repo.repository}/pulls?state=all`));
         if (!parsed.success) throw new InvalidGitHubObservation();
