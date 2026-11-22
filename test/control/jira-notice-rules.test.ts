@@ -9,40 +9,51 @@ const divergent = (repositories: string[]): JiraEvaluation => ({ decision: 'bloc
 const blockerA: JiraEvaluation = { decision: 'blocked', reasons: [{ code: 'JIRA_BLOCKER_NOT_DONE', blocker: { issueId: '70301', key: 'SEC-10' }, nextStep: 'A visible blocker is not Done.' }] };
 
 test('a blocked Card with confirmed intent and audience is told once per impediment; a new reason is told again', () => {
-  const first = impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/b']), audience: 'card', notified: null });
+  const first = impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/b']), cardReread: true, notified: null });
   assert.equal(first.kind, 'notify');
-  const again = impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/b']), audience: 'card', notified: first.reasonKey });
+  const again = impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/b']), cardReread: true, notified: first.reasonKey });
   assert.equal(again.kind, 'already-notified');
-  const changed = impedimentNotice({ evaluation: none, audience: 'card', notified: first.reasonKey });
+  const changed = impedimentNotice({ evaluation: none, cardReread: true, notified: first.reasonKey });
   assert.equal(changed.kind, 'notify');
   assert.notEqual(changed.reasonKey, first.reasonKey);
   // Another divergent repository set is another impediment.
-  assert.equal(impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/c']), audience: 'card', notified: first.reasonKey }).kind, 'notify');
+  assert.equal(impedimentNotice({ evaluation: divergent(['equipe/a', 'equipe/c']), cardReread: true, notified: first.reasonKey }).kind, 'notify');
 });
 
 test('another restricted blocker is the same Card-visible impediment, and the reason key never carries the neighbour', () => {
-  const first = impedimentNotice({ evaluation: blockerA, audience: 'card', notified: null });
+  const first = impedimentNotice({ evaluation: blockerA, cardReread: true, notified: null });
   const other: JiraEvaluation = { decision: 'blocked', reasons: [{ ...blockerA.reasons[0]!, blocker: { issueId: '70999', key: 'HR-3' } }] };
-  assert.equal(impedimentNotice({ evaluation: other, audience: 'card', notified: first.reasonKey }).kind, 'already-notified');
+  assert.equal(impedimentNotice({ evaluation: other, cardReread: true, notified: first.reasonKey }).kind, 'already-notified');
   assert.doesNotMatch(first.reasonKey ?? '', /SEC-10|70301/);
 });
 
 test('label removed, unverifiable facts, eligibility or an uncertain audience never post: local diagnosis only', () => {
-  assert.deepEqual(impedimentNotice({ evaluation: { decision: 'not-candidate', reasons: [] }, audience: 'card', notified: null }),
+  assert.deepEqual(impedimentNotice({ evaluation: { decision: 'not-candidate', reasons: [] }, cardReread: true, notified: null }),
     { kind: 'local', code: 'JIRA_NOTICE_NOT_CANDIDATE', reasonKey: null });
   const unverifiable: JiraEvaluation = { decision: 'unverifiable', reasons: [{ code: 'JIRA_COMPONENTS_UNVERIFIABLE', nextStep: 'Read again.' }] };
-  assert.equal(impedimentNotice({ evaluation: unverifiable, audience: 'card', notified: null }).kind, 'local');
-  assert.equal(impedimentNotice({ evaluation: { decision: 'eligible', repository: 'equipe/a', reasons: [] }, audience: 'card', notified: null }).kind, 'local');
-  const uncertain = impedimentNotice({ evaluation: none, audience: 'unknown', notified: null });
+  assert.equal(impedimentNotice({ evaluation: unverifiable, cardReread: true, notified: null }).kind, 'local');
+  assert.equal(impedimentNotice({ evaluation: { decision: 'eligible', repository: 'equipe/a', reasons: [] }, cardReread: true, notified: null }).kind, 'local');
+  const uncertain = impedimentNotice({ evaluation: none, cardReread: false, notified: null });
   assert.equal(uncertain.kind, 'local');
   assert.equal(uncertain.kind === 'local' && uncertain.code, 'JIRA_NOTICE_AUDIENCE_UNCERTAIN');
 });
 
+test('the audience is confirmed only from observed facts: the Card just re-read by ID and a text that carries no other issue\'s data', () => {
+  assert.equal(impedimentNotice({ evaluation: blockerA, cardReread: true, notified: null }).kind, 'notify');
+  for (const nextStep of ['Finish SEC-10 first.', 'Neighbour 70301 is open.']) {
+    const leaking: JiraEvaluation = { decision: 'blocked', reasons: [{ ...blockerA.reasons[0]!, nextStep }] };
+    const decision = impedimentNotice({ evaluation: leaking, cardReread: true, notified: null });
+    assert.deepEqual(decision.kind === 'local' && decision.code, 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', nextStep);
+  }
+  assert.deepEqual(impedimentNotice({ evaluation: blockerA, cardReread: false, notified: null }),
+    { kind: 'local', code: 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', reasonKey: 'JIRA_BLOCKER_NOT_DONE' }, 'not re-read by ID: never posted');
+});
+
 test('a blocked Card with an unverifiable side tells only the known impediments', () => {
   const mixed: JiraEvaluation = { decision: 'blocked', reasons: [none.reasons[0]!, { code: 'JIRA_BLOCKERS_UNVERIFIABLE', observedCode: 'JIRA_FORBIDDEN', nextStep: 'Could not verify.' }] };
-  const decision = impedimentNotice({ evaluation: mixed, audience: 'card', notified: null });
+  const decision = impedimentNotice({ evaluation: mixed, cardReread: true, notified: null });
   assert.equal(decision.kind, 'notify');
-  assert.equal(decision.kind === 'notify' && decision.reasonKey, impedimentNotice({ evaluation: none, audience: 'card', notified: null }).reasonKey);
+  assert.equal(decision.kind === 'notify' && decision.reasonKey, impedimentNotice({ evaluation: none, cardReread: true, notified: null }).reasonKey);
   assert.deepEqual(decision.kind === 'notify' && decision.steps, ['No component routes; set one.']);
 });
 

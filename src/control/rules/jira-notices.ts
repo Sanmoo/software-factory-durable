@@ -19,20 +19,33 @@ function reasonKey(reasons: readonly JiraReason[]): string {
 }
 
 /**
- * Whether a freshly evaluated Card is told why its Work did not start (spec §3 step 4). Only a `blocked` Card whose label was just re-read
- * (intent confirmed) and whose audience is the Card's own (an unrestricted comment carrying Card-safe text only) is told; the same
- * impediment is never told twice in a row, a different one is. Label gone, eligible, unverifiable or an uncertain audience: local only.
+ * Whether the notice's audience is confirmed, from observed facts only: the comment is posted without a visibility restriction, so it
+ * reaches whoever can see the Card; that audience is acceptable when the Card itself was just re-read by ID with the configured account
+ * (`cardReread`) and the text carries no data of another issue (no neighbour key or ID in any step). It never claims more: who can see the
+ * Card is not provable by one account (`doctor` keeps `commentAudience` unverified).
  */
-export function impedimentNotice(input: { evaluation: JiraEvaluation; audience: 'card' | 'unknown'; notified: string | null }): NoticeDecision {
+function audienceConfirmed(cardReread: boolean, reasons: readonly JiraReason[], steps: readonly string[]): boolean {
+  if (!cardReread) return false;
+  const neighbours = reasons.flatMap(reason => reason.blocker ? [reason.blocker.key, reason.blocker.issueId] : []).filter(Boolean);
+  return !steps.some(step => neighbours.some(neighbour => new RegExp(`(?<![A-Za-z0-9-])${neighbour.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9])`).test(step)));
+}
+
+/**
+ * Whether a freshly evaluated Card is told why its Work did not start (spec §3 step 4). Only a `blocked` Card whose label was just re-read
+ * (intent confirmed) and whose audience is confirmed ({@link audienceConfirmed}) is told; the same impediment is never told twice in a row,
+ * a different one is. Label gone, eligible, unverifiable or an audience that cannot be confirmed: local only.
+ */
+export function impedimentNotice(input: { evaluation: JiraEvaluation; cardReread: boolean; notified: string | null }): NoticeDecision {
   const { evaluation } = input;
   if (evaluation.decision === 'not-candidate') return { kind: 'local', code: 'JIRA_NOTICE_NOT_CANDIDATE', reasonKey: null };
   if (evaluation.decision === 'eligible') return { kind: 'local', code: 'JIRA_NOTICE_ELIGIBLE', reasonKey: null };
   const told = evaluation.reasons.filter(reason => communicable.has(reason.code));
   if (evaluation.decision === 'unverifiable' || !told.length) return { kind: 'local', code: 'JIRA_NOTICE_UNVERIFIABLE', reasonKey: null };
   const key = reasonKey(told);
-  if (input.audience !== 'card') return { kind: 'local', code: 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', reasonKey: key };
+  const steps = [...new Set(told.map(reason => reason.nextStep))];
+  if (!audienceConfirmed(input.cardReread, evaluation.reasons, steps)) return { kind: 'local', code: 'JIRA_NOTICE_AUDIENCE_UNCERTAIN', reasonKey: key };
   if (input.notified === key) return { kind: 'already-notified', reasonKey: key };
-  return { kind: 'notify', reasonKey: key, steps: [...new Set(told.map(reason => reason.nextStep))] };
+  return { kind: 'notify', reasonKey: key, steps };
 }
 
 /** Text of an automatic comment: the reserved header first (spec §4: it marks text that is never an instruction), then plain lines. */

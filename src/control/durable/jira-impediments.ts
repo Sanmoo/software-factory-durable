@@ -29,17 +29,17 @@ const keep = <T>(items: T[]) => items.slice(-20);
 
 
 /**
- * Records ONE fresh evaluation of a Jira Card and, in the same commit, the intent of its notice when the rule says to tell it. The audience
- * is the Card's own only when the evaluation re-read the Card from this source's site (the comment carries no visibility restriction and only
- * Card-safe text); otherwise it is uncertain and nothing is told.
+ * Records ONE fresh evaluation of a Jira Card and, in the same commit, the intent of its notice when the rule says to tell it. The rule
+ * confirms the audience only from observed facts: here, that the evaluation re-read this Card by ID from this source's site and project
+ * (a route was computed, so the read succeeded and the label was present); the text check is the rule's. Otherwise nothing is told.
  */
 export async function recordJiraImpediment(session: Session, source: JiraSource, candidate: JiraCandidateEvaluation): Promise<NoticeDecision> {
   const key = ticketKey(candidate.ticket);
-  const audience = candidate.ticket.siteId === source.siteId && candidate.ticket.url.startsWith(`${source.url}/browse/`) ? 'card' as const : 'unknown' as const;
+  const cardReread = candidate.route !== null && candidate.ticket.siteId === source.siteId;
   return session.commit(async tx => {
     const document = await tx.doc(jiraImpediments);
     const previous = document.tickets[key];
-    const decision = impedimentNotice({ evaluation: candidate.evaluation, audience, notified: previous?.notified ?? null });
+    const decision = impedimentNotice({ evaluation: candidate.evaluation, cardReread, notified: previous?.notified ?? null });
     const at = new Date().toISOString();
     const record: JiraImpedimentRecord = previous ?? { ticketKey: key, ticket: candidate.ticket, latest: undefined!, notified: null, effects: [], history: [] };
     record.ticket = candidate.ticket;
