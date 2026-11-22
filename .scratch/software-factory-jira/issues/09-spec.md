@@ -1,6 +1,7 @@
 # Consolidar e revisar a spec técnica do suporte ao Jira
 
-Status: open
+Status: claimed
+Assignee: Samuel Santos
 Type: grilling
 Label: wayfinder:grilling
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
