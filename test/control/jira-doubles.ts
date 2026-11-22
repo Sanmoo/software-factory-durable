@@ -23,6 +23,8 @@ export type JiraRemote = {
   commentsFailure?: string;
   /** Inputs ignore the cursor (a re-delivery of every comment, as after a lost cursor). */
   redeliver?: boolean;
+  /** Jira ticket 08: outcomes of the next remote link upserts (default applied). `lost`: Jira applies it but the answer is lost (unknown). */
+  linkOutcomes?: ('applied' | 'lost' | 'down')[];
 };
 export const jiraSource = (overrides: Partial<Extract<TicketSource, { tracker: 'jira' }>> = {}): Extract<TicketSource, { tracker: 'jira' }> => ({
   tracker: 'jira', siteId: site.siteId, url: site.url, projectId: '10010', label: 'factory-ready', discover: true,
@@ -41,6 +43,9 @@ export function jiraDoubles(remote: JiraRemote) {
   // Ticket 05's impediment notices: comments the Factory account posts on a Card (the only write the doubles model).
   const comments: Record<string, JiraVisibleComment[]> = {};
   let commentSequence = 10040;
+  // Jira ticket 08: the remote links of each Card by globalId, as Jira keeps them (an upsert by globalId never makes a second one).
+  const links: Record<string, Record<string, { url: string; title: string; id: string }>> = {};
+  let linkSequence = 20000;
   const find = (issueId: string) => remote.cards.find(item => item.issueId === issueId);
   const modelled: Partial<JiraOriginTracker> = {
     listCandidates: async scope => {
@@ -89,6 +94,15 @@ export function jiraDoubles(remote: JiraRemote) {
       return jiraInputsOf(ticket, listing, remote.redeliver ? null : cursor);
     },
     readAccount: async siteId => { calls.push({ method: 'readAccount' }); return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, accountId: 'acc-factory' }; },
+    upsertRemoteLink: async (ticket, link) => {
+      calls.push({ method: 'upsertRemoteLink', args: { issueId: ticket.issueId, ...link } });
+      const outcome = remote.linkOutcomes?.shift() ?? 'applied';
+      if (outcome === 'down') return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_UNAVAILABLE', nextStep: 'synthetic' };
+      const card = (links[ticket.issueId] ??= {});
+      const id = card[link.globalId]?.id ?? String(linkSequence += 1);
+      card[link.globalId] = { url: link.url, title: link.title, id };
+      return outcome === 'lost' ? { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_TIMEOUT', nextStep: 'synthetic' } : { kind: 'applied', observedAt: observedAt(), linkId: id };
+    },
     readLinkTypes: async siteId => {
       calls.push({ method: 'readLinkTypes', args: siteId });
       return { kind: 'observed', source: 'jira-rest', observedAt: observedAt(), siteId, types: structuredClone(remote.catalogue ?? [blocksType]) };
@@ -115,5 +129,5 @@ export function jiraDoubles(remote: JiraRemote) {
       updatedAt: options.edited ? new Date(Date.now() + 2000).toISOString() : created, restricted: Boolean(options.restricted) });
     return commentId;
   };
-  return { tracker, calls, comments, write, methods: () => calls.map(call => call.method) };
+  return { tracker, calls, comments, write, links, methods: () => calls.map(call => call.method) };
 }

@@ -62,7 +62,9 @@ export function publishableContent(execution: ExecutionView, options: { live?: b
 /** The pull request facts Control needs (a structural subset of the CodeRepository candidate). */
 export type CandidateFacts = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean; draft: boolean;
   headRef: string; headSha: string; baseRef: string; headRepositoryId: number | null; author: { id: number; login: string; type: string }; body: string | null };
-type Expect = { workId: string; ticketNumber: number; branch: string; base: string; repositoryId: number; head: string; app: FactoryAppIdentity | null };
+/** The Ticket the description refers to: a GitHub issue number (`Closes #N`) or, Jira ticket 08, the Card's readable reference (key + URL). */
+export type DescriptionTicket = { ticketNumber: number; card?: never } | { card: { key: string; url: string }; ticketNumber?: never };
+type Expect = { workId: string; branch: string; base: string; repositoryId: number; head: string; app: FactoryAppIdentity | null } & DescriptionTicket;
 /** Work ids named by marker lines of a body (a marker of another Work never correlates). */
 const markersOf = (body: string | null) => (body ?? '').split(/\r?\n/).flatMap(line => { const match = markerLine.exec(line.trim()); return match ? [match[1]!] : []; });
 
@@ -388,7 +390,7 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
     } else if (tip.state === 'present' && tip.sha !== pull.headSha) reasons.push('REMOTE_BRANCH_CHANGED');
     else if (tip.state === 'absent' && pull.state === 'open') reasons.push('REMOTE_BRANCH_MISSING');
     if (!pull.draft && pull.state === 'open') reasons.push('PULL_REQUEST_NOT_DRAFT');
-    const description = descriptionCheck(pull.body, { workId: expect.workId, ticketNumber: expect.ticketNumber });
+    const description = descriptionCheck(pull.body, expect.card ? { workId: expect.workId, card: expect.card } : { workId: expect.workId, ticketNumber: expect.ticketNumber! });
     if (!description.conformant) reasons.push(`DESCRIPTION_NONCONFORMANT:${description.reasons.join('+')}`);
     if (reasons.length) return blocked(reasons, pull);
     if (known) {
@@ -431,12 +433,13 @@ function pushedByApp(activity: Extract<DiscoveryObservation, { kind: 'observed' 
   return Boolean(actor && actor.id === app.id && actor.login.toLowerCase() === app.login.toLowerCase());
 }
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const descriptionLimits = Object.freeze({ chars: 6000, fencedLines: 30 });
 /**
  * Spec §9.1: short Summary (change/reason/link), Validation (synthesis/limitations/waivers) and Risk; the marker first; no transcripts and no
  * local path presented as a useful remote link. A shape check for evidence, never an interpretation of the content.
  */
-export function descriptionCheck(body: string | null, input: { workId: string; ticketNumber: number }): { conformant: boolean; reasons: string[] } {
+export function descriptionCheck(body: string | null, input: { workId: string } & DescriptionTicket): { conformant: boolean; reasons: string[] } {
   if (!body?.trim()) return { conformant: false, reasons: ['DESCRIPTION_MISSING'] };
   const reasons: string[] = [];
   const lines = body.split(/\r?\n/);
@@ -445,7 +448,13 @@ export function descriptionCheck(body: string | null, input: { workId: string; t
   if (!heading('Summary|Resumo')) reasons.push('SUMMARY_SECTION_MISSING');
   if (!heading('Validation|Valida[çc][ãa]o')) reasons.push('VALIDATION_SECTION_MISSING');
   if (!heading('Risk|Risco')) reasons.push('RISK_SECTION_MISSING');
-  if (!new RegExp(`(?:^|[^\\w/])#${input.ticketNumber}(?!\\d)|/issues/${input.ticketNumber}(?!\\d)`).test(body)) reasons.push('TICKET_LINK_MISSING');
+  if (input.card) {
+    // Jira ticket 08: a readable reference to the Card on its own site (any well-formed key: the key is presentation and may change after
+    // opening; the marker is the identity) and never a GitHub closing keyword (it would close an unrelated GitHub issue).
+    const origin = /^https:\/\/[^/]+/.exec(input.card.url)?.[0] ?? null;
+    if (!origin || !new RegExp(`Jira Card ([A-Z][A-Z0-9_]*-\\d+): ${escapeRegExp(origin)}/browse/\\1(?![\\w-])`).test(body)) reasons.push('TICKET_LINK_MISSING');
+    if (/(?:^|[^A-Za-z0-9_])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+|(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+https:\/\/github\.com\/[^\s]+\/issues\/\d+/i.test(body)) reasons.push('GITHUB_CLOSING_KEYWORD');
+  } else if (!new RegExp(`(?:^|[^\\w/])#${input.ticketNumber}(?!\\d)|/issues/${input.ticketNumber}(?!\\d)`).test(body)) reasons.push('TICKET_LINK_MISSING');
   if (/\]\(\s*(?!https:\/\/|#)[^)]*\)|\bfile:\/\/|href\s*=\s*["']\s*\//i.test(body)) reasons.push('LOCAL_PATH_AS_LINK');
   let fence = 0, inFence = false, longest = 0;
   for (const line of lines) {

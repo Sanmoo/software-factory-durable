@@ -20,6 +20,7 @@ import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
 import { jiraConversationOwners, prepareJiraQuestions } from './jira-questions.js';
 import { createJiraInputDesk } from './jira-inputs.js';
+import { createJiraLinkDesk, jiraLinkStatus } from './jira-links.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { acceptPublicationReevaluation } from './publication.js';
@@ -145,6 +146,7 @@ export async function openControl(options: { storagePath: string;
     ...(capabilityGate(work) ? [sandboxCapabilityImpediment] : [])];
   const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
+  const jiraLinks = options.access?.trackers?.jira && options.polling ? createJiraLinkDesk({ session: state, tracker: options.access.trackers.jira, stopped: () => stopped }) : undefined;
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
     readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   // Jira ticket 06: answers (and guidance) read from the origin Card of each Jira Work; publication goes through the Jira source round below.
@@ -175,6 +177,8 @@ export async function openControl(options: { storagePath: string;
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
     afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); await jiraInputs?.pass();
+      // Jira ticket 08: the Works' links on their Cards (latest desired state, upsert by globalId), whatever the Work's result or cleanup.
+      await jiraLinks?.pass().catch(() => {});
       // Ticket 23: human feedback of the own PRs is recorded before the tick (whatever the Work is doing; recording is never delivery).
       await feedback?.pass().catch(() => {});
       if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
@@ -339,6 +343,7 @@ export async function openControl(options: { storagePath: string;
     async inspect(query) {
       // Jira ticket 05: the Jira notice documents are read first (absent ones are loaded from storage), awaited with the rest of the status.
       const jiraNotices = query.kind === 'status' ? jiraNoticeStatus(state).then(value => ({ value }), (error: unknown) => ({ error })) : null;
+      const linkStatus = query.kind === 'status' ? jiraLinkStatus(state).then(value => ({ value }), (error: unknown) => ({ error })) : null;
       if (query.kind === 'access') {
         if (!options.access) throw new Error('AUTHENTICATED_DIAGNOSTICS_UNAVAILABLE');
         const results = [];
@@ -423,6 +428,7 @@ export async function openControl(options: { storagePath: string;
       const polling = pollingView();
       const allQuestions = (await Promise.all(works.map(work => readQuestions(state, work)))).flat();
       const notices = async () => { const read = await jiraNotices!; if ('error' in read) throw read.error; return read.value; };
+      const links = async () => { const read = await linkStatus!; if ('error' in read) throw read.error; return read.value; };
       return { controller_run_id, paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
         slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, historyLength: current.history.length,
         works: { total: works.length, open: works.filter(work => work.result === 'open').length, cancelled: works.filter(work => work.result === 'cancelled').length,
@@ -451,7 +457,7 @@ export async function openControl(options: { storagePath: string;
         selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
           ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}) },
-        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works), ...await notices() } satisfies ControlStatus;
+        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works), ...await notices(), ...await links() } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');

@@ -151,7 +151,9 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
 
 /** Jira-only capability (spec §5): keep the Work's link on the Card, upserted by a stable `globalId` (e.g. `software-factory:work:<uuid>`). */
 export type RemoteLink = { globalId: string; url: string; title: string };
-export type RemoteLinkResult = { kind: 'applied'; observedAt: string } |
+/** `applied`: Jira created or updated the link with this globalId; `failed`: certainly not applied; `unknown`: may have been applied. An
+ * upsert by globalId may be repeated in every case (it never makes a second link), unlike a comment POST. */
+export type RemoteLinkResult = { kind: 'applied'; observedAt: string; linkId: string } |
   { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
   { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
 export interface JiraRemoteLinks {
@@ -738,7 +740,24 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
     async findQuestion(ticket) { return notAvailable(ticket.siteId); },
     async findReply(ticket) { return notAvailable(ticket.siteId); },
     async postComment() { return notSent(); },
-    async upsertRemoteLink() { return notSent(); },
+    async upsertRemoteLink(ticket, link) {
+      const at = new Date().toISOString();
+      if (!/^software-factory:work:[0-9a-f-]{1,64}$/.test(link.globalId) || !/^https:\/\/[^\s]{1,2000}$/.test(link.url) || !link.title.trim() || link.title.length > 255) {
+        return { kind: 'failed', observedAt: at, code: 'JIRA_REMOTE_LINK_INVALID', nextStep: 'The link was refused locally (globalId, https URL or title); nothing was sent.' };
+      }
+      const scope = site(ticket.siteId);
+      if (!scope) return { kind: 'failed', observedAt: at, code: 'JIRA_SITE_NOT_CONFIGURED', nextStep: 'Only explicitly configured Jira sites are written; nothing was sent.' };
+      const response = await transportOf(scope).request({ method: 'POST', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}/remotelink`,
+        body: { globalId: link.globalId, object: { url: link.url, title: link.title } } });
+      if (!response.ok) {
+        return commentNotCreated.has(response.code)
+          ? { kind: 'failed', observedAt: response.observedAt, code: response.code, ...(response.waitSeconds !== undefined ? { waitSeconds: response.waitSeconds } : {}), nextStep: response.nextStep }
+          : { kind: 'unknown', observedAt: response.observedAt, code: response.code, nextStep: 'The link may have been applied; the same upsert by globalId is sent again later.' };
+      }
+      const applied = z.object({ id: z.union([z.number().int().nonnegative(), z.string().regex(/^\d{1,20}$/)]) }).safeParse(response.body);
+      if (!applied.success) return { kind: 'unknown', observedAt: response.observedAt, code: 'JIRA_REMOTE_LINK_RESPONSE_INVALID', nextStep: 'Jira answered with an unreadable body; the same upsert is sent again later.' };
+      return { kind: 'applied', observedAt: response.observedAt, linkId: String(applied.data.id) };
+    },
   };
   return tracker;
 }

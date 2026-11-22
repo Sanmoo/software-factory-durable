@@ -6,6 +6,7 @@ import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, explicitCan
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 import { rememberResult } from './cycles.js';
+import { desireJiraLink } from './jira-links.js';
 
 // Durable commits of ticket 17 (spec §3.4/§12.3). Remote reads and cleanup effects happen OUTSIDE these commits; each commit re-checks the
 // Work, its result and the resource it records. Intent is committed before every effect and its result after it.
@@ -73,6 +74,8 @@ export async function recordMergeObservation(session: Session, work_id: string, 
       if (!work.impediments.some(item => item.code === 'PULL_REQUEST_CLOSED_UNMERGED')) work.impediments.push({ code: 'PULL_REQUEST_CLOSED_UNMERGED', scope: 'work', since: at, nextStep: work.closure.nextStep });
       work.history.push({ at, event: 'pull-request-closed-unmerged', origin: 'controller-cycles', detail: `#${input.own.number}${activeExecutionId(work) ? `:active:${activeExecutionId(work)}` : ''}` });
       rememberResult(index, work);
+      // Jira ticket 08 (spec §5): the same link of the Work only changes its title; closure is never delivery.
+      await desireJiraLink(tx, { work, url: input.own.url, desired: 'closed-unmerged' });
     }
     delivery.lastReadAt = at;
     delivery.nextStep = deliveryNextStep(delivery.state, decision.outcome);

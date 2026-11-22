@@ -173,6 +173,9 @@ export function githubDoubles(remote: Remote) {
       issues: Object.fromEntries(correlation.issueNumbers.map(n => [String(n), remote.incompleteAssociation?.[n]
         ? { completeness: 'incomplete' as const, code: remote.incompleteAssociation[n].code, nextStep: 'synthetic' }
         : { completeness: 'complete' as const, candidates: [...(remote.pulls[n] ?? [])] }])),
+      // Jira ticket 08: a branch-only correlation reports every pull request of each known branch in this repository (any issue key).
+      ...(correlation.issueNumbers.length ? {} : { branchCandidates: Object.fromEntries(correlation.knownBranches.map(branch => [branch,
+        [...new Map(Object.values(remote.pulls).flat().filter(pull => pull.headRef === branch && pull.headRepositoryId === 3).map(pull => [pull.pullRequestId, structuredClone(pull)])).values()]])) }),
       branches: Object.fromEntries(correlation.knownBranches.map(branch => [branch, remote.refs?.[branch] === 'unknown'
         ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' }
         : remote.refs?.[branch] ? { state: 'present' as const, sha: remote.refs[branch]! } : { state: 'absent' as const }])),

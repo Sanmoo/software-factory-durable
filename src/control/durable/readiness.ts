@@ -6,6 +6,7 @@ import { evaluateChecks, type ChecksObservation } from '../rules/checks.js';
 import { evaluateReadiness, humanFlag, internalReadiness, readinessAction, readinessFingerprint, readinessNextStep, sameBasis } from '../rules/readiness.js';
 import { checksTarget, recordChecks, type ChecksTarget } from './checks.js';
 import { evaluateWorkDependencies } from './polling.js';
+import { evaluateJiraWorkOf } from './jira-evaluation.js';
 import type { OwnCycleFacts } from '../rules/dependencies.js';
 import type { DependencyEvaluation } from '../types.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
@@ -267,7 +268,9 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
         const dependencyAttempt = randomUUID();
         let dependenciesRead = false;
         try {
-          const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, githubOnly(work.ticket), dependencyAttempt);
+          // Jira ticket 08: a Jira Work's dependencies are its Card's visible blockers at its origin (never the GitHub graph).
+          const { evaluation } = work.ticket.tracker === 'jira' ? await evaluateJiraWorkOf(deps.access, work.ticket, dependencyAttempt)
+            : await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, githubOnly(work.ticket), dependencyAttempt);
           await deps.dependencies.record(work.work_id, evaluation);
           dependenciesRead = true;
         } catch { dependenciesRead = false; }

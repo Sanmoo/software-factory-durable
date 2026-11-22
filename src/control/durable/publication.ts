@@ -3,11 +3,12 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, DivergenceView, ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { authorizationInForce, divergenceQuestion, reconciliationAnswer } from '../rules/divergence.js';
-import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, liveBasisRecoverable, reevaluationEligibility,
+import { descriptionCheck, type DescriptionTicket, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, liveBasisRecoverable, reevaluationEligibility,
   reevaluationGuidance, undecidedRead, unpublishedBeforeStop, unpublishedBeforeStopStep, verifiedHeadOnOrigin, type DiscoveryDecision } from '../rules/publication.js';
 import { answerAuthorLabel, validateQuestionRequest } from '../rules/questions.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions, questionSha256 } from './questions.js';
+import { desireJiraLink } from './jira-links.js';
 import type { Session } from './store.js';
 
 // Durable commits of ticket 14's publication dimension (spec §3.3/§9.1). Every remote observation happens OUTSIDE these commits; each
@@ -198,8 +199,8 @@ const own = (pull: NonNullable<Extract<DiscoveryDecision, { outcome: 'linked' }>
  * automatically; `incomplete`: recorded, nothing decided.
  */
 export async function recordDiscovery(session: Session, work_id: string, input: { basisExecutionId: string; executionId: string | null; trigger: PublicationDiscovery['trigger'];
-  observedAt: string | null; branch: PublicationDiscovery['branch']; decision: DiscoveryDecision; ticketNumber: number;
-  /** v2 ticket 06: the discovery of a LIVE basis (same-boot publication): the Execution is running, nothing is queued. */ live?: boolean }): Promise<PublicationView | 'stale'> {
+  observedAt: string | null; branch: PublicationDiscovery['branch']; decision: DiscoveryDecision;
+  /** v2 ticket 06: the discovery of a LIVE basis (same-boot publication): the Execution is running, nothing is queued. */ live?: boolean } & DescriptionTicket): Promise<PublicationView | 'stale'> {
   return onWork(session, work_id, async (work, tx) => {
     const publication = work.publication;
     if (input.live) {
@@ -250,13 +251,15 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       publication.nextStep = `Base restored to ${publication.base}: nothing decided on this read; the next complete discovery re-evaluates before any write.`;
       return copy(publication);
     }
-    const link = (pull: Parameters<typeof own>[0]) => {
+    const link = async (pull: Parameters<typeof own>[0]) => {
       publication.pullRequest = own(pull, at);
-      publication.description = descriptionCheck(pull.body, { workId: work.work_id, ticketNumber: input.ticketNumber });
+      publication.description = descriptionCheck(pull.body, input.card ? { workId: work.work_id, card: input.card } : { workId: work.work_id, ticketNumber: input.ticketNumber! });
       work.pullRequest = { number: pull.number, url: pull.url };
+      // Jira ticket 08 (spec §5): fixing the own PR (draft included) records, in THIS commit, the intent of the Work's link on its Card.
+      await desireJiraLink(tx, { work, url: pull.url, desired: 'open' });
     };
     if (decision.outcome === 'linked') {
-      link(decision.pullRequest);
+      await link(decision.pullRequest);
       publication.state = 'published';
       publication.linkedHeads = [...new Set([...(publication.linkedHeads ?? []), decision.pullRequest.headSha])].slice(-20);
       publication.nextStep = 'Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.';
@@ -283,7 +286,7 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       if (!input.live) work.queue = { ...work.queue, pending: true };
       history(work, 'publication-requested', input.executionId, `${decision.recovery ? `${decision.recovery}:` : ''}${decision.expectedRemote.state === 'absent' ? 'remote:absent' : `remote:${decision.expectedRemote.sha}`}`);
     } else if (decision.outcome === 'blocked') {
-      if (decision.pullRequest) link(decision.pullRequest);
+      if (decision.pullRequest) await link(decision.pullRequest);
       publication.state = 'blocked';
       publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).` +
         // Ticket 61 / A14: where a new read may decide differently (another Work's own publication, a corrected marker) the command is named.

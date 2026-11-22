@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { InputCursor, IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
+import type { InputCursor, IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, JiraTicketRef, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -1123,6 +1123,8 @@ export type QuestionQueryView = { kind: 'question'; question: QuestionView } | {
 export type ControlStatus = {
   /** Jira ticket 05 (absent while no Jira Card was evaluated): pre-admission impediments (local diagnosis) and Jira comments not yet published. */
   jiraNotices?: JiraNoticeStatus;
+  /** Jira ticket 08 (absent while no Jira link was intended): the Works' links on their Cards not yet confirmed, with their diagnostic. */
+  jiraLinks?: JiraLinkStatus;
   controller_run_id: string;
   paused: boolean;
   dispatch: 'closed' | 'open';
@@ -1478,3 +1480,17 @@ export type JiraCommentView = { effectId: string; logicalRef: string; destinatio
   state: 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned'; comment: { commentId: string; url: string } | null;
   diagnostic: { code: string; nextStep: string; at: string } | null; purpose: { kind: string } };
 export type JiraNoticeStatus = { impediments: JiraImpedimentView[]; published: number; unpublished: JiraCommentView[] };
+
+/** Jira ticket 08: what the Work's link on its Card says: its own PR is open (draft included), closed without merge, or delivered (ticket 09). */
+export type JiraLinkDesired = 'open' | 'closed-unmerged' | 'delivered';
+/** Jira ticket 08: the durable intent of the Work's ONE remote link on its Card (latest desired state + its confirmation). */
+export type JiraLinkIntent = { workId: string; globalId: string; destination: JiraTicketRef; workRef: string; url: string; desired: JiraLinkDesired; title: string;
+  /** Monotone: every new desired state (or URL) is a new revision; only the latest one is sent and confirmed. */
+  revision: number; state: 'pending' | 'confirmed'; recordedAt: string; updatedAt: string;
+  attempts: { at: string; revision: number; outcome: 'applied' | 'failed' | 'unknown'; code?: string }[];
+  confirmed: { revision: number; at: string; linkId: string; title: string } | null;
+  /** Earliest instant of the next upsert after Jira asked to wait (429/5xx Retry-After). */
+  notBefore?: string;
+  diagnostic: { code: string; nextStep: string; at: string } | null };
+/** Status view: links not yet confirmed (their diagnostic is the operator's view) and how many are confirmed. */
+export type JiraLinkStatus = { pending: JiraLinkIntent[]; confirmed: number };

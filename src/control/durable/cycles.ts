@@ -13,6 +13,7 @@ import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolu
 import { readWork, recordTicketPresentation, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { observeJiraAuthorization } from './jira-evaluation.js';
 import { questions } from './questions.js';
+import { desireJiraLink } from './jira-links.js';
 import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
 
@@ -407,6 +408,8 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
       work.closure!.nextStep = 'Reopened and confirmed by observation; the Work stays suspended until `factory resume`.';
       history(work, 'reopen-confirmed', 'controller-cycles', effectId, at);
       rememberResult(index, work);
+      // Jira ticket 08: the own PR is open again: the Work's link on the Card says so (same globalId and URL).
+      if (work.pullRequest) await desireJiraLink(tx, { work, url: work.pullRequest.url, desired: 'open' });
     } else if (input.observed === 'closed-unmerged' && reopen.attempt?.outcome === 'applied') {
       // Review MED (as ticket 16 MED 2): GitHub's applied response is the primary evidence; a contrary read may lag. Uncertain: re-read later.
       reopen.observation = { at, outcome: 'closed-unmerged-contradicting-applied' };

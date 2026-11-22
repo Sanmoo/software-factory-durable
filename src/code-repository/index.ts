@@ -49,6 +49,9 @@ export type IssuePublication = { completeness: 'complete'; candidates: PullReque
 /** An unavailable query never proves the absence of an associated or own pull request. */
 export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number;
   issues: Record<string, IssuePublication>; limitations: string[];
+  /** Jira ticket 08: only for a branch-only correlation (no issue number), every pull request of the same complete listing whose head is a
+   * known branch of THIS repository (forks excluded), per branch. Ownership is still Control's decision (marker, App author, base). */
+  branchCandidates?: Record<string, PullRequestCandidate[]>;
   /** One entry per known branch (empty when none was given, e.g. admission). */
   branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection; comparison?: BranchComparison;
   activity?: BranchActivity; ancestry?: Record<string, BranchComparison> } |
@@ -106,6 +109,12 @@ const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 const timelineSchema = z.array(z.object({ event: z.string(), source: z.object({ issue: z.object({
   number: z.number().int().positive().safe(), html_url: z.string().url(), pull_request: z.unknown().optional() }).optional() }).optional() }));
 type Pull = z.infer<typeof pullSchema>;
+const candidateOf = (pull: Pull, association: PullRequestCandidate['association']): PullRequestCandidate => ({ pullRequestId: pull.id, nodeId: pull.node_id,
+  number: pull.number, url: pull.html_url, state: pull.state, merged: Boolean(pull.merged_at),
+  headRef: pull.head.ref, headRepositoryId: pull.head.repo?.id ?? null, author: { id: pull.user.id, login: pull.user.login, type: pull.user.type },
+  association, headSha: pull.head.sha, baseRef: pull.base.ref, draft: pull.draft,
+  // Bounded copy of the body: Control only looks for its correlation marker and checks the description's shape.
+  body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null });
 
 export function createCodeRepository(options: { github: GitHubAccess }): CodeRepository {
   async function associate(repo: GitHubScope, issueNumber: number, pulls: Pull[], repositoryId: number, knownBranches: string[]): Promise<IssuePublication> {
@@ -143,11 +152,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       const pull = pulls.find(item => item.number === number);
       if (!pull) return { completeness: 'incomplete', code: 'ASSOCIATED_PULL_REQUEST_NOT_LISTED',
         nextStep: `Pull request #${number} is associated by the timeline but absent from the complete listing; association cannot be evaluated.` };
-      candidates.push({ pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url, state: pull.state, merged: Boolean(pull.merged_at),
-        headRef: pull.head.ref, headRepositoryId: pull.head.repo?.id ?? null, author: { id: pull.user.id, login: pull.user.login, type: pull.user.type },
-        association: order.filter(kind => kinds.has(kind)), headSha: pull.head.sha, baseRef: pull.base.ref, draft: pull.draft,
-        // Bounded copy of the body: Control only looks for its correlation marker and checks the description's shape.
-        body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null });
+      candidates.push(candidateOf(pull, order.filter(kind => kinds.has(kind))));
     }
     return { completeness: 'complete', candidates };
   }
@@ -286,6 +291,9 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       for (const issueNumber of numbers) issues[String(issueNumber)] = await associate(repo, issueNumber, pulls.value, pulls.repositoryId, correlation.knownBranches);
       const branches: Record<string, BranchRef> = {};
       for (const branch of [...new Set(correlation.knownBranches)]) branches[branch] = await branchRef(repo, branch, pulls.repositoryId);
+      const branchCandidates = numbers.length ? undefined : Object.fromEntries([...new Set(correlation.knownBranches)].map(branch => [branch,
+        pulls.value.filter(pull => pull.head.ref === branch && pull.head.repo?.id === pulls.repositoryId).sort((a, b) => a.number - b.number)
+          .map(pull => candidateOf(pull, ['known-branch']))]));
       const refs = correlation.refs ? await refsListing(repo) : undefined;
       const first = correlation.knownBranches[0] !== undefined ? branches[correlation.knownBranches[0]] : undefined;
       const comparison = correlation.compareFrom && /^[0-9a-f]{40}$/.test(correlation.compareFrom) && first?.state === 'present' && first.sha !== correlation.compareFrom
@@ -304,6 +312,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       }
       const baseProtection = correlation.base !== undefined ? await protection(repo, correlation.base) : undefined;
       return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches,
+        ...(branchCandidates ? { branchCandidates } : {}),
         ...(refs ? { refs } : {}), ...(baseProtection ? { baseProtection } : {}), ...(comparison ? { comparison } : {}), ...(activity ? { activity } : {}), ...(ancestry ? { ancestry } : {}), limitations: [
         ...(correlation.knownBranches.length ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.'] : []),
         'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',

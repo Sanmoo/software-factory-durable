@@ -90,6 +90,26 @@ test('Jira ticket 04: a branch-only correlation (no issue number) reads the own 
   await assert.rejects(repository.findPublication({ repo: worldScope, issueNumbers: [], knownBranches: [] }), /INVALID_PUBLICATION_CORRELATION/);
 });
 
+test('Jira ticket 08: a branch-only read reports, from the same complete listing, every pull request of the known branch in this repository', async t => {
+  const own = 'factory/jira-81017-0b9c6a52';
+  const app = { id: 41898282, login: 'factory-app[bot]', type: 'Bot' };
+  const world = await githubWorld(t, { issues: [issue(3)], refs: { [own]: head }, pulls: [
+    pull(4, { head: { ref: own, sha: head, repo: { id: 3 } }, draft: true, body: `${marker}\nJira Card PAG-42: https://equipe.atlassian.net/browse/PAG-42`, user: app }),
+    // A human pull request naming the Card on another branch is not on the own branch: never reported as a candidate.
+    pull(5, { head: { ref: 'feature/pag-42', sha: 'e'.repeat(40), repo: { id: 3 } }, body: 'Fixes PAG-42', user: { id: 7, login: 'ana', type: 'User' } }),
+    // A fork with the same branch name is another repository.
+    pull(6, { head: { ref: own, sha: 'f'.repeat(40), repo: { id: 99 } }, body: marker, user: app })] });
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  const read = await createCodeRepository({ github }).findPublication({ repo: worldScope, issueNumbers: [], knownBranches: [own] });
+  assert.ok(read.kind === 'observed');
+  if (read.kind !== 'observed') return;
+  assert.deepEqual(Object.keys(read.branchCandidates ?? {}), [own]);
+  assert.deepEqual(read.branchCandidates![own]!.map(item => [item.number, item.headSha, item.association, item.author.login]), [[4, head, ['known-branch'], 'factory-app[bot]']]);
+  assert.deepEqual((await world.trace()).filter(entry => /\/issues\//.test(entry.endpoint)), [], 'no issue (timeline) read');
+  const github3 = await createCodeRepository({ github }).findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [own] });
+  assert.ok(github3.kind === 'observed' && github3.branchCandidates === undefined, 'the GitHub correlation is unchanged');
+});
+
 test('review MED 3: the Factory App bot identity is pinned from GET /app (slug) and the bot user read with an installation token', async t => {
   const world = await githubWorld(t, { issues: [issue(3)], pulls: [] });
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });

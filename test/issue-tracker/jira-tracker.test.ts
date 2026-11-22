@@ -114,7 +114,7 @@ test('the link type catalogue and a neighbour status category are read by ID fro
   assert.equal(unknown.kind === 'unavailable' && unknown.code, 'JIRA_OBSERVATION_INVALID', 'a status name without its category concludes nothing');
 });
 
-test('capabilities not built yet answer unavailable without any call; remote links are a Jira-only capability', async () => {
+test('capabilities not built yet answer unavailable without any call', async () => {
   const { calls, transport } = recording(() => ok(issue));
   const tracker = createJiraTracker({ scopes: [scope], transport: () => transport });
   for (const observation of [await tracker.readDependencyGraph(ref),
@@ -124,8 +124,6 @@ test('capabilities not built yet answer unavailable without any call; remote lin
   const posted = await tracker.postComment(ref, { kind: 'question', questionId: '7d9f8a52-6a1f-4f0e-9a43-2f3a7f1f0c11', body: 'x' },
     { effectId: 'e', questionId: '7d9f8a52-6a1f-4f0e-9a43-2f3a7f1f0c11' });
   assert.equal(posted.kind, 'failed', 'nothing was sent, so nothing can exist');
-  const linked = await tracker.upsertRemoteLink(ref, { globalId: 'software-factory:work:1', url: 'https://github.com/equipe/payments-api/pull/1', title: 'T' });
-  assert.equal(linked.kind, 'failed');
   assert.equal(calls.length, 0);
 });
 

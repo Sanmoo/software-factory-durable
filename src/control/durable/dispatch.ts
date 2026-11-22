@@ -5,6 +5,7 @@ import type { BuilderGrant, ChannelReport } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { PreservationObservation, ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
+import type { TicketRef } from '../../issue-tracker/index.js';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, inheritedRounds, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
@@ -17,7 +18,8 @@ import { evaluateWorkDependencies } from './polling.js';
 import { readWork, recordTicketPresentation, type WorkRecord } from './admission.js';
 
 /** Jira ticket 04 -> 08 seam: own-PR correlation of a Jira Work (by publication marker and branch) arrives with ticket 08. */
-const publicationCorrelationUnavailable = 'PUBLICATION_CORRELATION_NOT_AVAILABLE';
+/** What a Work's PR description must refer to: `Closes #N` for a GitHub issue, the readable Card reference for a Jira Card (ticket 08). */
+const descriptionTicket = (ticket: TicketRef): DescriptionTicket => ticket.tracker === 'jira' ? { card: { key: ticket.key, url: ticket.url } } : { ticketNumber: ticket.number };
 import { admitExecution, interruptionBasis, beginRenewal, blockBeforeStart, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
   recordRevocationIntent, recordTimeout, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, resumeBasis, stopRenewal, withdrawCredentials } from './execution.js';
 import { systemClock } from './polling.js';
@@ -27,7 +29,7 @@ import { pendingScope } from './scope.js';
 import { answerAuthorLabel, recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
-import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
+import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DescriptionTicket, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { recordBootEndCheck, recordGateCheck, recordGateCorrection } from './preservation.js';
 import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice, recordSwapStartWait } from './boot-swap.js';
@@ -862,11 +864,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (!configured) observation = { kind: 'incomplete', code: 'REPOSITORY_NOT_CONFIGURED' };
     else {
       try {
-        const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [githubOnly(work.ticket).number], knownBranches: [publication.branch],
+        // Jira ticket 08 (spec §5): a Jira Work's own PR is correlated by its own branch only (branch-only read: the complete listing's
+        // pull requests of that branch in this repository), never by an issue number, a mirror issue's timeline or a closing keyword.
+        const jira = work.ticket.tracker === 'jira';
+        const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: jira ? [] : [githubOnly(work.ticket).number], knownBranches: [publication.branch],
           refs: true, base: publication.base, ...(compareFrom ? { compareFrom } : {}),
           preserve: preservationTips(known) });
         observedAt = read.observedAt;
-        const issue = read.kind === 'observed' ? read.issues[String(githubOnly(work.ticket).number)] : undefined;
+        const branchCandidates = read.kind === 'observed' && jira ? read.branchCandidates?.[publication.branch] : undefined;
+        const issue = read.kind !== 'observed' ? undefined : jira ? (branchCandidates ? { completeness: 'complete' as const, candidates: branchCandidates } : undefined)
+          : read.issues[String(githubOnly(work.ticket).number)];
         const tip = read.kind === 'observed' ? read.branches[publication.branch] : undefined;
         observation = read.kind !== 'observed' ? { kind: 'incomplete', code: read.code }
           : !issue ? { kind: 'incomplete', code: 'PUBLICATION_NOT_REPORTED' }
@@ -879,7 +886,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             ...(read.ancestry ? { ancestry: read.ancestry } : {}) };
       } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
     }
-    const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: githubOnly(work.ticket).number, branch: publication.branch, base: publication.base,
+    const decision = decideDiscovery({ expect: { workId: work.work_id, ...descriptionTicket(work.ticket), branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: attempted, previousHeads: [...(publication.linkedHeads ?? []), ...preserved],
       prOnlyRecovery: prOnlyRecovery(publication), known, preservedHeads: preserved, wipPushes: ports.sandbox.capabilities?.persistentDisk === false,
       refsBefore: publication.refsBefore ?? null, observation,
@@ -908,13 +915,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const work = await readWork(session, listed.work_id);
     const publication = work?.publication;
     if (!work || !publication?.verified || running.has(work.work_id)) return false;
-    // Jira ticket 04 -> 08 seam: the own PR of a Jira Work is correlated by publication marker + branch (ticket 08), never by an issue number
-    // or a mirror issue's timeline. Until then nothing is read, linked, adopted or opened again: the publication stays awaiting discovery.
-    if (work.ticket.tracker !== 'github') { observe(work.work_id, 'publication-discovery-incomplete', [publicationCorrelationUnavailable]); return false; }
     const verifiedPublication = { ...publication, verified: publication.verified };
     const { observation, observedAt, decision } = await discover(work, verifiedPublication, step.attempted, listing);
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
-      trigger: step.trigger, observedAt, ticketNumber: githubOnly(work.ticket).number, decision,
+      trigger: step.trigger, observedAt, ...descriptionTicket(work.ticket), decision,
       branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
     observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
     return true;
@@ -1091,10 +1095,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery' || !evaluated.verified) { observe(work.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); return; }
       const fresh = await readWork(session, work.work_id);
       if (!fresh?.publication?.verified || !environment || !boot) return;
-      // Jira ticket 04 -> 08 seam: own-PR correlation of a Jira Work (publication marker, no issue number) is not available yet: explicit block.
-      if (fresh.ticket.tracker !== 'github') { await blockLivePublication(session, work.work_id, executionId, [publicationCorrelationUnavailable]); observe(work.work_id, 'publication-blocked', [publicationCorrelationUnavailable]); return; }
       const { observation, observedAt, decision } = await discover(fresh, { ...fresh.publication, verified: fresh.publication.verified }, false, await deps.readWorks());
-      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: executionId, executionId, trigger: 'verified', observedAt, ticketNumber: githubOnly(work.ticket).number, decision, live: true,
+      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: executionId, executionId, trigger: 'verified', observedAt, ...descriptionTicket(fresh.ticket), decision, live: true,
         branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
       observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
       if (recorded === 'stale') return;

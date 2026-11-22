@@ -160,6 +160,38 @@ test('AC3: the description is short summary/validation/risk with the marker and 
   assert.deepEqual(reasons(`${body}\n${'x'.repeat(7000)}`), ['DESCRIPTION_TOO_LONG']);
 });
 
+// Jira ticket 08 (spec §5): a Jira Work's PR is found on its own branch only; ownership is the same rule (marker, App author, branch, base,
+// repository) and only one own candidate in a complete read is linked. The description carries a readable Card reference, never a closing keyword.
+const card = { key: 'PAG-42', url: 'https://equipe.atlassian.net/browse/PAG-42' };
+const jiraBranch = 'factory/jira-81017-0b9c6a52';
+const jiraExpect = { workId, card, branch: jiraBranch, base: 'main', repositoryId: 3, head, app };
+const jiraBody = [marker, '## Summary', 'Adds the factory note.', `Jira Card PAG-42: ${card.url}`, '## Validation', 'npm test: passed (Factory gate t1).', '## Risk', 'Low: docs only.'].join('\n');
+const jiraOwn = (overrides: Partial<CandidateFacts> = {}) => own({ headRef: jiraBranch, body: jiraBody, ...overrides });
+
+test('Jira ticket 08: the one own candidate of the own branch is linked; a human PR on that branch, two own PRs or an incomplete read never are', () => {
+  const linked = decideDiscovery({ expect: jiraExpect, attempted: true, observation: observed([jiraOwn()]) });
+  assert.equal(linked.outcome, 'linked');
+  const human = jiraOwn({ number: 5, pullRequestId: 9005, author: { id: 7, login: 'ana', type: 'User' }, body: 'Fixes PAG-42' });
+  const adopted = decideDiscovery({ expect: jiraExpect, attempted: true, observation: observed([human]) });
+  assert.deepEqual([adopted.outcome, adopted.reasons], ['blocked', ['UNKNOWN_PULL_REQUEST:5']], 'a human PR mentioning the Card is never adopted, and nothing is opened again');
+  assert.equal(decideDiscovery({ expect: jiraExpect, attempted: false, observation: observed([human]) }).outcome, 'held');
+  const two = decideDiscovery({ expect: jiraExpect, attempted: true, observation: observed([jiraOwn(), jiraOwn({ number: 6, pullRequestId: 9006 })]) });
+  assert.deepEqual([two.outcome, two.reasons], ['blocked', ['MULTIPLE_OWN_PULL_REQUESTS:4,6']]);
+  assert.equal(decideDiscovery({ expect: jiraExpect, attempted: true, observation: { kind: 'incomplete', code: 'GITHUB_QUERY_FAILED' } }).outcome, 'incomplete');
+});
+
+test('Jira ticket 08: a Jira description needs the readable Card reference and no GitHub closing keyword; GitHub still needs Closes #N', () => {
+  const reasons = (text: string) => descriptionCheck(text, { workId, card }).reasons;
+  assert.deepEqual(reasons(jiraBody), []);
+  assert.deepEqual(reasons(jiraBody.replace('PAG-42: https://equipe.atlassian.net/browse/PAG-42', 'PAG-42')), ['TICKET_LINK_MISSING']);
+  assert.deepEqual(reasons(jiraBody.replace('Adds the factory note.', 'Adds the factory note. Closes #3')), ['GITHUB_CLOSING_KEYWORD']);
+  assert.deepEqual(reasons(jiraBody.replace('Adds the factory note.', 'Fixes acme/project#3')), ['GITHUB_CLOSING_KEYWORD']);
+  assert.deepEqual(reasons(jiraBody.replace(card.url, 'https://elsewhere.example/browse/PAG-42')), ['TICKET_LINK_MISSING'], 'the reference names the Card on its own site');
+  // The Card key is presentation: after PAG-42 -> FIN-18 the reference written at opening still conforms (identity is the marker).
+  assert.deepEqual(descriptionCheck(jiraBody, { workId, card: { key: 'FIN-18', url: 'https://equipe.atlassian.net/browse/FIN-18' } }).reasons, []);
+  assert.deepEqual(descriptionCheck(jiraBody, { workId, ticketNumber: 3 }).reasons, ['TICKET_LINK_MISSING'], 'GitHub keeps its rule');
+});
+
 test('AC1/AC5: the publication request names the exact commit, branch, base, lease expectation and marker; it never asks to merge or approve', () => {
   const input = { reason: 'PUBLISH_ONLY_SESSION', pullRequest: null, executionId: 'e2', previousExecutionId: 'e1', skillDirectory: '/artifacts/factory/skill-pack/factory-skills-v6',
     repository: 'acme/project', base: 'main', branch, head, marker, ticket: { number: 3, url: 'https://github.com/acme/project/issues/3' }, workId, checkout: '/workspace/checkout',
