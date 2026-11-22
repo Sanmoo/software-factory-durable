@@ -613,3 +613,21 @@ Ao fim de S1–S6, E2E continua bloqueado e Mutation pendente: o engineering har
 - **Regressão**: `test:ci` verde (2168 testes, 324 s de 900 s).
 - **Adotados**: Lint, Avoided terms, Dependency vulnerabilities; Types, Context boundaries, Dependency rule e Guide pointers provados de novo nesta árvore — [GATE-PROOFS.md](GATE-PROOFS.md).
 - **Continuam pendentes**: Unit tests, Integration tests (S3); Format (S4); Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
+
+### Emenda aprovada (2026-11-22): supressões do ESLint como achados tolerados do Lint
+
+Toda diretiva `eslint-disable` esconde um achado do Lint, então cada uma é um achado tolerado, casado um a um (arquivo, regra, o código que ela alcança) com `scripts/test-runner/lint-tolerated.json`, nos dois Entry Points; uma diretiva sem entrada falha, uma entrada sem diretiva é obsoleta e falha, e o ESLint (`reportUnusedDisableDirectives`) falha uma diretiva que já não suprime nada. Entradas, cada uma com a decisão explícita do mantenedor registrada ao lado: as 8 supressões `no-restricted-syntax` anteriores à adoção, em `src/sandbox/gondolin-sdk-runtime.ts` (1), `test/sandbox/adapter-diagnostics-fixture.ts` (5), `test/sandbox/adapter-fixture-network-guard.test.ts` (1) e `test/sandbox/gondolin-sdk-runtime.test.ts` (1). O registro de S2 falou em 3: a busca daquele momento estava truncada; são 8. Regra de aperto: uma supressão nova é corrigida, não acrescentada; a entrada sai na mesma mudança que remove a sua supressão.
+
+### S3 — concluída em 2026-11-22
+
+- **Mudou**: `test/levels.json` declara o nível unit (42 arquivos, recalculados nesta árvore: os 34 de #24 que existem aqui, 7 testes de regra pura novos, `test/sandbox/lambda-guest-image.test.ts` e o teste do checker de supressões); todo outro arquivo de teste é integration. O cruise de fronteiras falha um teste unit declarado que alcança I/O de runtime, sob o quality gate Unit tests, nos dois Entry Points. A política divide a suíte em `unit-tests` (fast) e `integration-tests` (full); cada arquivo vermelho é reportado sob o gate do seu nível; `test/levels.json` é configuração compartilhada. O fast Entry Point roda só o nível unit (54 s, antes ~171 s; um filtro ainda alcança qualquer teste). O Guide de testes define os níveis. Mais a emenda acima.
+- **Investigação da regressão (dentro do orçamento)**:
+  - `test/entrypoints/finite-qualification.test.ts` dependia da ordem: os testes compartilham dublês de módulo e afirmavam valores absolutos que só valiam na ordem do arquivo. Cada teste agora começa de dublês reiniciados, e a asserção de import inerte lê um retrato tirado logo depois do import (`forbidden` nunca é reiniciado). Asserções inalteradas. Sementes 0–11 passam (antes 1, 2 e 3 falhavam).
+  - `test/entrypoints/journey-composed.test.ts` travava sob carga (1 vez num `test:ci`, ~1 em 32 execuções concorrentes): a fixture do GitHub (`test/entrypoints/github-world-fixture.ts`) fazia ler-mudar-gravar de `world.json` sem lock, no `gh` substituto e no `update()` do teste, e a resposta do operador se perdia. Agora tudo passa por um `flock` e toda gravação é um rename atômico; as requisições da App (só leitura, via `spawnSync` em processo) não pegam o lock, sem deadlock. 48 de 48 execuções concorrentes passaram com carga 22–28. Código da aplicação e asserções inalterados.
+  - Observação: `test/entrypoints/github-delivery-fixture.ts` tem o mesmo padrão sem lock; nenhuma falha observada, não foi alterado.
+- **Achados tolerados**: nenhum nos níveis de teste; Lint: as 8 supressões da emenda.
+- **Regressão**: `test:ci` verde (2177 testes, 389 s de 900 s), e de novo após o rebase sobre `main` (2188 testes, 333 s); as provas foram repetidas na árvore rebaseada.
+- **Adotados**: Unit tests, Integration tests; todos os quality gates já adotados provados de novo nesta árvore, mais a prova de supressão do Lint — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
+- **Passo do operador agora possível**: instalar o hook (`git config core.hooksPath .githooks`), como decidido em S1.
+- **Continuam pendentes**: Format (S4); Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests. Os checks periódicos dependem de o timer noturno estar instalado.
+
