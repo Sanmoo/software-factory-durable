@@ -27,5 +27,5 @@ Contratos discriminados por provedor, YAML v1/v2 e composição por origem, com 
 - Caminhos só GitHub (poller, despacho, perguntas, ciclos, refs) estreitam pela origem e falham fechados para outra origem; fonte GitHub com
   `discover: false` não admite novos Tickets (`SOURCE_DISCOVERY_DISABLED`), mas continua acompanhando os Trabalhos existentes.
 
-Commits: d9b886bc (contratos e configuração), e726927f (composição e descoberta por fonte).
+Commits: d9b886bc (contratos e configuração), e726927f (composição e descoberta por fonte), eb3058b8 (receitas de qualificação). `npm run test:ci`: PASS (2150 pass, 0 fail).
 
