@@ -173,6 +173,29 @@ export interface JiraBlockerReads {
   readIssueStatus(siteId: string, issueId: string): Promise<JiraIssueStatusObservation>;
 }
 
+/** Jira ticket 05: an automatic comment as plain lines (the first is the reserved header); the adapter writes one ADF paragraph per line. */
+export type JiraFactoryComment = { lines: string[] };
+/** Outcome of one comment POST: created (with the author Jira recorded), known refusal (nothing created) or unknown (it may exist). */
+export type JiraCommentPost = { kind: 'published'; observedAt: string; commentId: string; url: string; createdAt: string; authorAccountId: string | null } |
+  { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
+  { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
+/** One visible comment: author account, plain text projected from its current ADF, and whether a visibility restriction applies. */
+export type JiraVisibleComment = { commentId: string; authorAccountId: string; text: string; createdAt: string; updatedAt: string; restricted: boolean };
+/** Every visible comment of a Card, all pages (never a shorter list); what this account sees, not an atomic snapshot. */
+export type JiraCommentListing = { kind: 'observed'; source: 'jira-rest'; observedAt: string; siteId: string; issueId: string; completeness: 'complete';
+  comments: JiraVisibleComment[]; limitations: string[] } | JiraUnavailable;
+export type JiraAccountObservation = { kind: 'observed'; source: 'jira-rest'; observedAt: string; siteId: string; accountId: string } | JiraUnavailable;
+/**
+ * Jira-only automatic comments (Jira ticket 05, reused by Questions and delivery notices): POST a Platform comment with NO visibility
+ * restriction, list every visible comment for reconciliation after an uncertain POST, and read the configured account on demand (no
+ * pre-registered accountId). Jira documents no idempotency key: reconciliation is the Control's rule.
+ */
+export interface JiraComments {
+  publishComment(ticket: JiraTicketRef, comment: JiraFactoryComment): Promise<JiraCommentPost>;
+  listComments(ticket: JiraTicketRef): Promise<JiraCommentListing>;
+  readAccount(siteId: string): Promise<JiraAccountObservation>;
+}
+
 const issueSchema = z.object({
   id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(),
   html_url: z.string().url(), repository_url: z.string().url(), state: z.enum(['open', 'closed']), state_reason: z.string().nullable().optional(),
@@ -511,6 +534,27 @@ const jiraSearchPageSchema = z.object({ issues: z.array(z.object({ id: jiraId, k
 /** Bound of one listing: beyond it the listing is unavailable, never truncated. */
 const maxSearchPages = 50;
 const visibleOnly = 'Only what the configured account can see; the last page ends this query, it is neither global completeness nor an atomic snapshot.';
+/** ADF node as read back (Jira may add attributes/marks); only text, hard breaks and nesting matter to the projection. */
+type AdfNode = { type: string; text?: string | undefined; content?: AdfNode[] | undefined };
+const adfNodeSchema: z.ZodType<AdfNode> = z.lazy(() => z.object({ type: z.string().max(64), text: z.string().max(65536).optional(),
+  content: z.array(adfNodeSchema).max(2000).optional() }));
+const adfDocSchema = z.object({ type: z.literal('doc'), content: z.array(adfNodeSchema).max(2000) });
+/** Plain text of an ADF document: one line per top-level block, text nodes concatenated, hard breaks as new lines. */
+const adfText = (doc: z.infer<typeof adfDocSchema>) => {
+  const inline = (node: AdfNode): string => node.type === 'text' ? node.text ?? '' : node.type === 'hardBreak' ? '\n' : (node.content ?? []).map(inline).join('');
+  return doc.content.map(inline).join('\n');
+};
+const adfOf = (lines: readonly string[]) => ({ type: 'doc', version: 1,
+  content: lines.map(text => text ? { type: 'paragraph', content: [{ type: 'text', text }] } : { type: 'paragraph' }) });
+const jiraCommentCreatedSchema = z.object({ id: jiraId, created: z.string().min(1).max(64), author: z.object({ accountId: z.string().min(1).max(128) }).optional() });
+const jiraCommentSchema = z.object({ id: jiraId, author: z.object({ accountId: z.string().max(128).optional() }).optional(), body: z.unknown(),
+  created: z.string().min(1).max(64), updated: z.string().min(1).max(64), visibility: z.object({ type: z.string(), value: z.string().optional() }).nullable().optional() });
+const jiraCommentPageSchema = z.object({ startAt: z.number().int().min(0), total: z.number().int().min(0), comments: z.array(jiraCommentSchema).max(5000) });
+/** Refusals that prove the comment was NOT created (Jira answered 4xx, or nothing was sent); anything else after a send may have created it. */
+const commentNotCreated = new Set(['JIRA_UNAUTHENTICATED', 'JIRA_FORBIDDEN', 'JIRA_NOT_FOUND', 'JIRA_RATE_LIMITED', 'JIRA_REQUEST_REJECTED', 'JIRA_REQUEST_REFUSED',
+  'JIRA_CREDENTIAL_UNAVAILABLE', 'JIRA_SITE_URL_INVALID']);
+const maxJiraCommentPages = 50;
+
 /** JQL string literal: quotes and backslashes escaped (labels are validated without spaces). */
 const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\\${character}`)}"`;
 
@@ -522,7 +566,7 @@ const jqlString = (value: string) => `"${value.replace(/[\\"]/g, character => `\
  * is refused without any call (tickets 08/09). Nothing here admits Work or authorizes commands.
  */
 export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transport: (scope: JiraTrackerScope) => JiraTransport }):
-  IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads {
+  IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads & JiraComments {
   const transports = new Map<string, JiraTransport>();
   const site = (siteId: string) => options.scopes.find(scope => scope.siteId === siteId);
   const transportOf = (scope: JiraTrackerScope) => {
@@ -623,6 +667,52 @@ export function createJiraTracker(options: { scopes: JiraTrackerScope[]; transpo
       const parsed = jiraStatusSchema.safeParse(answer.body);
       if (!parsed.success || parsed.data.id !== issueId) return invalid(siteId, answer.observedAt);
       return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, siteId, issueId, key: parsed.data.key, statusCategory: parsed.data.fields.status.statusCategory.key };
+    },
+    async publishComment(ticket, comment) {
+      const scope = site(ticket.siteId);
+      if (!scope) return { kind: 'failed', observedAt: new Date().toISOString(), code: 'JIRA_SITE_NOT_CONFIGURED', nextStep: 'Only explicitly configured Jira sites are written; nothing was sent.' };
+      const response = await transportOf(scope).request({ method: 'POST', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}/comment`,
+        body: { body: adfOf(comment.lines) } });
+      if (!response.ok) {
+        return commentNotCreated.has(response.code)
+          ? { kind: 'failed', observedAt: response.observedAt, code: response.code, ...(response.waitSeconds !== undefined ? { waitSeconds: response.waitSeconds } : {}), nextStep: response.nextStep }
+          : { kind: 'unknown', observedAt: response.observedAt, code: response.code, nextStep: 'The comment may have been created; it is reconciled before any new POST.' };
+      }
+      const created = jiraCommentCreatedSchema.safeParse(response.body);
+      if (!created.success) return { kind: 'unknown', observedAt: response.observedAt, code: 'JIRA_COMMENT_RESPONSE_INVALID', nextStep: 'Jira accepted the POST with an unreadable answer; it is reconciled before any new POST.' };
+      return { kind: 'published', observedAt: response.observedAt, commentId: created.data.id, createdAt: created.data.created,
+        authorAccountId: created.data.author?.accountId ?? null, url: `${scope.url}/browse/${ticket.key}?focusedCommentId=${created.data.id}` };
+    },
+    async listComments(ticket) {
+      const comments = new Map<string, JiraVisibleComment>();
+      let startAt = 0;
+      let observedAt = '';
+      for (let pages = 0; ; pages += 1) {
+        if (pages >= maxJiraCommentPages) return unavailable(ticket.siteId, 'JIRA_COMMENTS_TOO_MANY', `More than ${maxJiraCommentPages} comment pages; nothing is concluded.`, observedAt || undefined);
+        const answer = await read(ticket.siteId, { method: 'GET', path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}/comment`,
+          query: { startAt: String(startAt), maxResults: '100', orderBy: 'created' } });
+        if (!answer.ok) return answer.fact;
+        observedAt ||= answer.observedAt;
+        const page = jiraCommentPageSchema.safeParse(answer.body);
+        if (!page.success || page.data.startAt !== startAt) return invalid(ticket.siteId, answer.observedAt);
+        for (const item of page.data.comments) {
+          const body = adfDocSchema.safeParse(item.body);
+          comments.set(item.id, { commentId: item.id, authorAccountId: item.author?.accountId ?? '', text: body.success ? adfText(body.data) : '',
+            createdAt: item.created, updatedAt: item.updated, restricted: Boolean(item.visibility) });
+        }
+        startAt += page.data.comments.length;
+        if (startAt >= page.data.total) break;
+        if (!page.data.comments.length) return unavailable(ticket.siteId, 'JIRA_COMMENTS_INCOMPLETE', 'A comment page ended before the announced total; nothing is concluded, the next poll reads again.', answer.observedAt);
+      }
+      return { kind: 'observed', source: 'jira-rest', observedAt, siteId: ticket.siteId, issueId: ticket.issueId, completeness: 'complete',
+        comments: [...comments.values()], limitations: [visibleOnly] };
+    },
+    async readAccount(siteId) {
+      const answer = await read(siteId, { method: 'GET', path: '/rest/api/3/myself' });
+      if (!answer.ok) return answer.fact;
+      const parsed = z.object({ accountId: z.string().min(1).max(128) }).safeParse(answer.body);
+      if (!parsed.success) return invalid(siteId, answer.observedAt);
+      return { kind: 'observed', source: 'jira-rest', observedAt: answer.observedAt, siteId, accountId: parsed.data.accountId };
     },
     async readDependencyGraph(ticket) { return notAvailable(ticket.siteId); },
     async readInputs(ticket) { return notAvailable(ticket.siteId); },

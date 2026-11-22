@@ -15,4 +15,10 @@ export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluatio
 export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
 export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
 export type { JiraOriginTracker } from './types.js';
+// Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
+export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
+export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';
+export { createJiraCommentDesk, intendJiraComment, readJiraComments } from './durable/jira-comments.js';
+export type { CommentWanted, JiraCommentEffect, JiraCommentOwner, JiraCommentPurpose } from './durable/jira-comments.js';
+export type { JiraNoticeStatus } from './types.js';
 export type { ChecksEvaluation, ModalityView, UsageView } from './types.js';

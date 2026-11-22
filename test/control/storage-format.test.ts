@@ -21,7 +21,13 @@ const storage = (inspection: StorageInspection) => { assert.equal(inspection.kin
 async function status(storagePath: string, run = true) {
   const control = await openControl({ storagePath, runtimeInventory: 'unknown' });
   const stop = new AbortController();
-  if (!run) stop.abort();
+  if (!run) {
+    // A run stopped before it starts closes the storage at once: the read-only view is taken BEFORE it (an inspect racing that close
+    // could read a closing Session).
+    const view = await control.inspect({ kind: 'status' }) as ControlStatus;
+    stop.abort();
+    return { view, end: await control.run(stop.signal), control };
+  }
   const running = control.run(stop.signal);
   const view = await control.inspect({ kind: 'status' }) as ControlStatus;
   // Wait for this run's start commit (a run aborted before it starts records nothing, by design).

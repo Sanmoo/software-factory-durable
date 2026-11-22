@@ -224,7 +224,9 @@ export type FactorySkillPackId = typeof factorySkillPackIds[number];
 // `documents` is the document kind → version matrix of that format (Control's format table uses it as is; later Jira tickets add their kinds here).
 export const controlStorageCompatibility = Object.freeze({ format: 3, migratesFrom: Object.freeze([1, 2]),
   migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3']),
-  documents: Object.freeze({ 'factory.installation': 3, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 }) });
+  documents: Object.freeze({ 'factory.installation': 3, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1,
+    // Jira ticket 05: pre-admission impediments by Jira Ticket and the recoverable Jira comment effects.
+    'factory.jira-impediment': 1, 'factory.jira-comment': 1 }) });
 
 // Ticket 44: the per-repository environment declaration (`.factory/environment.yaml`), its observation, pin and prepared identity.
 export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits, environmentDeclarationMaxBytes, environmentDeclarationPath, imageReferencePattern,

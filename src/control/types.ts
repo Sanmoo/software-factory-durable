@@ -2,7 +2,7 @@ import type { AccessDiagnostic, BootUsage, BootUsageReport, PreservationObservat
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
-import type { IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
+import type { IssueTracker, JiraBlocker, JiraBlockerReads, JiraContentReads, JiraComments, JiraRemoteLinks, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
@@ -27,7 +27,7 @@ export type AccessDependencies = { tracker: IssueTracker; repository: CodeReposi
   /** Jira ticket 01: adapters of the other origins, selected by the Ticket's persisted `tracker` (`tracker` above stays the GitHub one). */
   trackers?: { jira?: JiraOriginTracker } };
 /** Jira ticket 03: the Jira adapter as the Control uses it (common contract, remote links and the reads behind visible blockers). */
-export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads;
+export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlockerReads & JiraContentReads & JiraComments;
 /**
  * Jira ticket 01: one Ticket source. `discover` gates NEW admissions only: Works already admitted keep their origin, destination and
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
@@ -1112,6 +1112,8 @@ export type QuestionQueryView = { kind: 'question'; question: QuestionView } | {
   /** Ticket 31: the Question belonged to a Work whose history `forget` deleted (its text and answer are gone, never "not found"). */
   { kind: 'question-forgotten'; question_id: string; work_id: string; nextStep: string };
 export type ControlStatus = {
+  /** Jira ticket 05 (absent while no Jira Card was evaluated): pre-admission impediments (local diagnosis) and Jira comments not yet published. */
+  jiraNotices?: JiraNoticeStatus;
   controller_run_id: string;
   paused: boolean;
   dispatch: 'closed' | 'open';
@@ -1457,3 +1459,13 @@ export type ForgetPlan = { planId: string; request_id: string; work_id: string; 
 export type RetentionStatus = { sweeps: number; lastSweepAt: string | null; days: number | null;
   works: { undelivered: number; retained: number; protected: number; eligible: number; expired: number };
   details: { logs: number; sessions: number; bytes: number }; removed: { logs: number; sessions: number; bytes: number }; unsettled: number };
+
+/** Jira ticket 05: one Jira Card evaluated before admission, as the status shows it (reason codes only, never a neighbour's identity). */
+export type JiraImpedimentView = { ticket: { tracker: 'jira'; siteId: string; issueId: string; key: string; url: string }; notified: string | null; at: string;
+  decision: 'eligible' | 'blocked' | 'unverifiable' | 'not-candidate'; reasonKey: string | null; notice: 'notify' | 'already-notified' | 'local';
+  localCode: string | null; reasons: string[] };
+/** Jira ticket 05: one recoverable Jira comment effect (any purpose) as the status shows it. */
+export type JiraCommentView = { effectId: string; logicalRef: string; destination: { tracker: 'jira'; siteId: string; issueId: string; key: string; url: string };
+  state: 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned'; comment: { commentId: string; url: string } | null;
+  diagnostic: { code: string; nextStep: string; at: string } | null; purpose: { kind: string } };
+export type JiraNoticeStatus = { impediments: JiraImpedimentView[]; published: number; unpublished: JiraCommentView[] };

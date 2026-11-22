@@ -17,6 +17,7 @@ import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
+import { jiraNoticeStatus } from './jira-impediments.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { acceptPublicationReevaluation } from './publication.js';
@@ -323,6 +324,8 @@ export async function openControl(options: { storagePath: string;
       return acceptPauseCommand(state, parsed.data);
     },
     async inspect(query) {
+      // Jira ticket 05: the Jira notice documents are read first (absent ones are loaded from storage), awaited with the rest of the status.
+      const jiraNotices = query.kind === 'status' ? jiraNoticeStatus(state).then(value => ({ value }), (error: unknown) => ({ error })) : null;
       if (query.kind === 'access') {
         if (!options.access) throw new Error('AUTHENTICATED_DIAGNOSTICS_UNAVAILABLE');
         const results = [];
@@ -406,6 +409,7 @@ export async function openControl(options: { storagePath: string;
       }
       const polling = pollingView();
       const allQuestions = (await Promise.all(works.map(work => readQuestions(state, work)))).flat();
+      const notices = async () => { const read = await jiraNotices!; if ('error' in read) throw read.error; return read.value; };
       return { controller_run_id, paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
         slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, historyLength: current.history.length,
         works: { total: works.length, open: works.filter(work => work.result === 'open').length, cancelled: works.filter(work => work.result === 'cancelled').length,
@@ -434,7 +438,7 @@ export async function openControl(options: { storagePath: string;
         selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
           ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}) },
-        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works) } satisfies ControlStatus;
+        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works), ...await notices() } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');
