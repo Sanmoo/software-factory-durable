@@ -1486,7 +1486,7 @@ export type JiraImpedimentView = { ticket: { tracker: 'jira'; siteId: string; is
   localCode: string | null; reasons: string[] };
 /** Jira ticket 05: one recoverable Jira comment effect (any purpose) as the status shows it. */
 export type JiraCommentView = { effectId: string; logicalRef: string; destination: { tracker: 'jira'; siteId: string; issueId: string; key: string; url: string };
-  state: 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned'; comment: { commentId: string; url: string } | null;
+  state: 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn'; comment: { commentId: string; url: string } | null;
   diagnostic: { code: string; nextStep: string; at: string } | null; purpose: { kind: string } };
 export type JiraNoticeStatus = { impediments: JiraImpedimentView[]; published: number; unpublished: JiraCommentView[] };
 

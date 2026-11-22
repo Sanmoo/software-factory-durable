@@ -121,8 +121,10 @@ Se o arquivo do token sumir, ficar ilegível ou com modo inseguro, nada é envia
 - O merge continua sendo registrado como **Entregue** a partir do GitHub, sem esperar o Jira.
 - Restaure o arquivo (`0600`, mesmo caminho). Na leitura seguinte os efeitos são enviados uma vez, no
   mesmo Card, sem comando do operador. Enquanto o token falta, um efeito nunca é abandonado.
-- Outras recusas do Jira (401, 403, 404, 429) também ficam visíveis em `status`; um comentário que o
-  Jira recusa cinco vezes é abandonado com o motivo. Um 429 respeita o `Retry-After`.
+- Outras recusas do Jira (401, 403, 404, 429) também ficam visíveis em `status`. Nenhum comentário é
+  abandonado: recusado ou com POST incerto, ele continua pendente com o motivo e é reenviado (sempre
+  com a mesma referência) com espera crescente e limitada, de 1 a 15 minutos; um 429 respeita o
+  `Retry-After`.
 - Quando uma resposta do Jira se perde depois de um POST, a Factory relê os comentários antes de
   reenviar; duas cópias próprias ficam como pendência `JIRA_COMMENT_MULTIPLE` para você apagar a sobra.
 

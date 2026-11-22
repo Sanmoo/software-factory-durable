@@ -195,3 +195,48 @@ test('a crash between the attempt and the answer is reconciled at the next start
     assert.equal(site.posts.length, 4, 'label back with the same reason: told, since the withdrawn notice never reached the Card');
   } finally { await store.close(); }
 });
+
+test('known refusals and uncertain POSTs never abandon a comment: it stays pending and visible, retried with bounded backoff, never blindly', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-21T10:00:00.000Z') });
+  const site = jiraSite();
+  const { open } = await storage(t);
+  const store = await open();
+  try {
+    const notice = () => noticeJiraImpediments({ session: store.session, tracker: site.tracker, source, evaluation: round(candidate(pag42, routeNone)) });
+    const effect = async () => (await readJiraNotices(store.session)).comments[0]!;
+    site.outcomes.push(...Array<Post>(7).fill('refused'));
+    await notice();
+    await notice();
+    assert.equal(site.posts.length, 2, 'the first refusal is retried on the next pass');
+    await notice();
+    assert.equal(site.posts.length, 2, 'then the retry waits (backoff), never a tight loop');
+    for (let refusal = 3; refusal <= 7; refusal++) {
+      t.mock.timers.tick(15 * 60_000);
+      await notice();
+      assert.equal(site.posts.length, refusal, 'the backoff is bounded: a later pass retries');
+    }
+    const refused = await effect();
+    assert.equal(refused.state, 'failed', 'still pending after more refusals than the old limit, never abandoned');
+    assert.equal(refused.diagnostic?.code, 'JIRA_FORBIDDEN');
+    assert.match(refused.diagnostic?.nextStep ?? '', /pending/);
+    t.mock.timers.tick(15 * 60_000);
+    await notice();
+    assert.equal((await effect()).state, 'published', 'sent once Jira accepts it');
+
+    // Uncertain POSTs, each found absent in a complete read: the same reference is sent again with backoff, forever pending, never abandoned.
+    const other = card('81018', 'PAG-43');
+    const noticeOther = () => noticeJiraImpediments({ session: store.session, tracker: site.tracker, source, evaluation: round(candidate(other, routeNone)) });
+    const posted = site.posts.length;
+    site.outcomes.push(...Array<Post>(5).fill('lost-not-created'));
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      t.mock.timers.tick(15 * 60_000);
+      await noticeOther();
+      assert.equal(site.posts.length, posted + attempt);
+    }
+    t.mock.timers.tick(15 * 60_000);
+    await noticeOther();
+    const uncertain = (await readJiraNotices(store.session)).comments.find(item => item.destination.issueId === '81018')!;
+    assert.equal(uncertain.state, 'published', 'after five uncertain POSTs the sixth is still sent, never abandoned');
+    assert.equal(new Set(site.posts.slice(posted).map(item => item.lines[0])).size, 1, 'always the same logical reference');
+  } finally { await store.close(); }
+});

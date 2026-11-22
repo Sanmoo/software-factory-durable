@@ -3,6 +3,7 @@ import { defineDoc } from '@earendil-works/pi-durable';
 import type { JiraTicketRef, RemoteLinkResult, TicketRef } from '../../issue-tracker/index.js';
 import type { JiraLinkDesired, JiraLinkIntent, JiraLinkStatus, JiraOriginTracker } from '../types.js';
 import { jiraLinkBackoffPasses, jiraLinkGlobalId, jiraLinkTitle, workShortRef } from '../rules/jira-links.js';
+import { retryNotBefore } from './jira-retry.js';
 import type { Session } from './store.js';
 
 // Jira ticket 08 (spec §5): the Work's ONE remote link on its Card. Its intent (desired state, URL, title) is committed in the same commit
@@ -93,7 +94,7 @@ export function createJiraLinkDesk(deps: { session: Session; tracker: JiraOrigin
           const count = (failures.get(intent.workId) ?? 0) + 1;
           failures.set(intent.workId, count);
           skip.set(intent.workId, jiraLinkBackoffPasses(count));
-          if (result.kind === 'failed' && result.waitSeconds !== undefined) current.notBefore = new Date(Date.parse(at) + result.waitSeconds * 1000).toISOString();
+          if (result.kind === 'failed' && result.waitSeconds !== undefined) current.notBefore = retryNotBefore(at, result.waitSeconds);
           current.diagnostic = { code: result.code, at, nextStep: result.kind === 'failed'
             ? `Jira refused the link of ${current.workRef} (${result.code}); it stays pending and the same upsert is retried with backoff. ${result.nextStep}`
             : `The link of ${current.workRef} may or may not be applied (${result.code}); the same upsert by globalId is sent again later (never a second link).` };

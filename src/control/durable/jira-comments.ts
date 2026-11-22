@@ -4,6 +4,7 @@ import { defineDoc } from '@earendil-works/pi-durable';
 import type { JiraTicketRef } from '../../issue-tracker/index.js';
 import type { JiraOriginTracker } from '../types.js';
 import { commentReconciliation, type FactoryCommentContent } from '../rules/jira-notices.js';
+import { jiraCommentBackoffSeconds, retryNotBefore } from './jira-retry.js';
 import type { Session } from './store.js';
 
 // Jira ticket 05 (spec §4 last paragraph): recoverable automatic Jira comments, reused by every Jira notice (impediments now, Questions in
@@ -20,7 +21,8 @@ export type JiraCommentPurpose = { kind: 'impediment'; ticketKey: string; reason
   { kind: 'reply'; workId: string; request_id: string } |
   /** Jira ticket 09: the delivery notice of a Work whose own PR was merged (told once; delivery never depends on it). */
   { kind: 'delivery'; workId: string };
-export type JiraCommentState = 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn' | 'abandoned';
+/** An unsettled effect is never abandoned (spec §4/§5): it stays pending and visible, retried with bounded backoff, never blindly. */
+export type JiraCommentState = 'intended' | 'attempting' | 'unknown' | 'pending' | 'failed' | 'published' | 'withdrawn';
 export type JiraCommentEffect = { effectId: string; logicalRef: string; destination: JiraTicketRef; purpose: JiraCommentPurpose;
   /** Plain lines (header first); the ADF sent is one paragraph per line, so the stored lines ARE the content. */
   content: FactoryCommentContent; state: JiraCommentState; recordedAt: string; updatedAt: string;
@@ -41,14 +43,23 @@ type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 const unsettledStates: ReadonlySet<JiraCommentState> = new Set(['intended', 'attempting', 'unknown', 'pending', 'failed']);
 export const commentUnsettled = (effect: Pick<JiraCommentEffect, 'state'>) => unsettledStates.has(effect.state);
 const maxSettled = 200;
-const maxKnownFailures = 5;
 /**
  * Jira ticket 10 (spec §1): the host could not read the Jira token, so nothing was sent and Jira refused nothing. Such an attempt never
- * counts toward `maxKnownFailures`: the effect stays pending (retried every pass) until the token file is restored, never abandoned.
+ * counts toward the backoff: the effect stays pending (retried every pass) until the token file is restored.
  */
 const credentialMissing = 'JIRA_CREDENTIAL_UNAVAILABLE';
-/** POSTs whose outcome stayed unknown and were then found absent: beyond this the effect is abandoned (never an endless repost loop). */
-const maxUncertainPosts = 3;
+/** Attempts that did not publish (known refusals, uncertain or interrupted POSTs), the token's absence aside: they set the backoff. */
+const unsuccessful = (effect: JiraCommentEffect) => effect.attempts.filter(item => item.outcome !== 'published' && item.code !== credentialMissing).length;
+/**
+ * The next POST waits for the later of Jira's Retry-After and the bounded backoff of the attempts so far, counted from the last attempt
+ * (a reconciliation later than the POST does not push the retry further away).
+ */
+function backOff(effect: JiraCommentEffect, at: string, waitSeconds?: number) {
+  const since = effect.attempts.at(-1)?.at ?? at;
+  const candidates = [retryNotBefore(since, jiraCommentBackoffSeconds(unsuccessful(effect))), ...(waitSeconds !== undefined ? [retryNotBefore(at, waitSeconds)] : [])];
+  const notBefore = candidates.sort().at(-1)!;
+  if (notBefore > at) effect.notBefore = notBefore; else delete effect.notBefore;
+}
 const keep = <T>(items: T[]) => items.slice(-20);
 
 /**
@@ -148,13 +159,12 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
         current.diagnostic = { code: outcome.code, at, nextStep: outcome.code === 'JIRA_COMMENT_MULTIPLE' || outcome.code === 'JIRA_COMMENT_SIMILAR'
           ? `More than one own comment, or an edited one, carries ${current.logicalRef}: nothing is reposted or deleted; the operator may remove the extra copy.`
           : `The Card's comments could not be read completely (${outcome.code}); nothing is reposted blindly, the next poll reads again.` };
-      } else if (current.attempts.filter(item => item.outcome === 'unknown' || item.outcome === 'interrupted').length >= maxUncertainPosts) {
-        current.state = 'abandoned';
-        current.diagnostic = { code: 'JIRA_COMMENT_REPOST_LIMIT', at, nextStep: `${current.logicalRef} was never observed after ${maxUncertainPosts} uncertain POSTs; it is not sent again.` };
       } else {
-        // Absent in a complete read: the same reference may be sent again (spec §4), if its owner still wants it.
+        // Absent in a complete read: the same reference may be sent again (spec §4), if its owner still wants it, after the backoff.
         current.state = 'intended';
-        current.diagnostic = null;
+        backOff(current, at);
+        current.diagnostic = unsuccessful(current) > 1 ? { code: 'JIRA_COMMENT_ABSENT_AFTER_UNCERTAIN_POST', at,
+          nextStep: `${current.logicalRef} was not found after ${unsuccessful(current)} uncertain POSTs; it stays pending and is sent again with the same reference${current.notBefore ? ` after ${current.notBefore}` : ''}.` } : null;
       }
       return current.state;
     });
@@ -189,12 +199,13 @@ export function createJiraCommentDesk(deps: { session: Session; tracker: JiraOri
       const code = result?.code ?? 'JIRA_UNEXPECTED_FAILURE';
       current.attempts = keep([...current.attempts, { at, outcome: result?.kind === 'failed' ? 'failed' : 'unknown', code }]);
       if (result?.kind === 'failed') {
-        const failures = current.attempts.filter(item => item.outcome === 'failed' && item.code !== credentialMissing).length;
-        current.state = failures >= maxKnownFailures ? 'abandoned' : 'failed';
-        if (result.waitSeconds !== undefined) current.notBefore = new Date(Date.parse(at) + result.waitSeconds * 1000).toISOString();
-        current.diagnostic = { code, at, nextStep: failures >= maxKnownFailures ? `Jira refused ${current.logicalRef} ${failures} times; it is not sent again. ${result.nextStep}`
-          : code === credentialMissing ? `${result.nextStep} ${current.logicalRef} stays pending on this Card and is sent on the next poll after the token file is restored; it is never sent elsewhere.`
-            : result.nextStep };
+        current.state = 'failed';
+        // A missing token sent nothing: retried every pass (Retry-After aside), whatever was refused before.
+        if (code === credentialMissing) { if (result.waitSeconds !== undefined) current.notBefore = retryNotBefore(at, result.waitSeconds); else delete current.notBefore; }
+        else backOff(current, at, result.waitSeconds);
+        current.diagnostic = { code, at, nextStep: code === credentialMissing
+          ? `${result.nextStep} ${current.logicalRef} stays pending on this Card and is sent on the next poll after the token file is restored; it is never sent elsewhere.`
+          : `${result.nextStep} ${current.logicalRef} stays pending on this Card and is retried with backoff${current.notBefore ? ` (next after ${current.notBefore})` : ''}; it is never abandoned.` };
       } else {
         current.state = 'unknown';
         current.diagnostic = { code, at, nextStep: 'The comment may exist: the next pass reconciles it against the Card\'s visible comments before any new POST.' };
