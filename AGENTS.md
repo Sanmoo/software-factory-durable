@@ -32,6 +32,11 @@ Ao interpretar registros migrados, ler `docs/migrations/software-factory-from-pk
 `npm run test:ci` uma vez antes de entregar e de novo após rebase; `npm run test:fast` no ciclo de TDD.
 As regras para quem escreve teste estão em [docs/guides/testing-strategy.md](docs/guides/testing-strategy.md).
 
+Se um Entry Point falhar com `Disk quota exceeded` (o `/tmp` desta máquina tem limite de uso por usuário, e os testes de
+release extraem mais de 1 GB lá), a falha é do ambiente, não da mudança: repetir com outro diretório temporário de caminho
+curto, `TMPDIR=/var/tmp`. Um diretório dentro de `/home` não serve: o caminho fica longo e os testes do Sandbox recusam
+com `SANDBOX_RUNTIME_PATH_TOO_LONG`.
+
 ## Integração e push
 
 Depois de integrar o trabalho em `main` por fast-forward, conforme o fluxo global de conclusão, fazer
