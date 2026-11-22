@@ -1,6 +1,6 @@
 # Operar a Software Factory com tickets do Jira
 
-Status: open
+Status: resolved
 Label: wayfinder:map
 
 ## Destination
@@ -34,9 +34,11 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 
 - [Definir a estratégia de testes e os oráculos de aceite](issues/08-testes.md): cada cenário verifica o resultado e o efeito proibido, inclusive na retomada de um Trabalho GitHub antigo; aprovar a spec não homologa uma instalação.
 
+- [Consolidar e revisar a spec técnica do suporte ao Jira](issues/09-spec.md): a spec foi aprovada para implementação, sem homologar uma instalação.
+
 ## Not yet specified
 
-Nenhuma lacuna identificada antes da revisão da spec.
+Nenhuma decisão em aberto após a revisão da spec.
 
 ## Out of scope
 
