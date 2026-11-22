@@ -49,6 +49,10 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md#answer) →
   [prova do guest Alpine](issues/10-alpine-guest-on-lambda-proof.md#answer).
   Todos os filhos estão resolvidos ou fechados; o destino é a [spec da v2](spec.md).
+- Implementação e aceite: a spec foi implementada pelos tickets de `.scratch/software-factory-v2-lambda/issues/` e o
+  [aceite no perfil Lambda](../software-factory-v2-lambda/issues/16-v2-acceptance-on-lambda-profile.md#answer) foi resolvido em
+  2026-11-22: 31 critérios, 21 aprovados, 10 inconclusivos, nenhum reprovado, os dois obrigatórios aprovados
+  ([resultados](research/lambda-acceptance-results.md)). Os achados em aberto seguem nos tickets 17 a 26 da mesma pasta.
 
 ## Decisions so far
 
