@@ -164,6 +164,26 @@ test('owner readiness, context, duplicate, capacity and send failures revoke onl
   }
 });
 
+// v2 (real account, 2026-11-22): the Builder's boot-swap yield is a lifecycle result the launcher accepts; the secret receiver shares the
+// wire and must let it pass, or the planned swap ends the activation as WORKER_SECRET_SYNC_SCHEMA.
+test('the owner secret receiver lets every lifecycle result the launcher accepts pass, including the boot-swap yield', () => {
+  const receipt = { workId: context.workId, id: '00000000-0000-4000-8000-000000000000' };
+  for (const result of [
+    { kind: 'worker-result', status: 'completed', receipt, sessionFile: 'sessions/a.jsonl', sessionTools: ['bash', 'read'] },
+    { kind: 'worker-result', status: 'interrupted', receipt },
+    { kind: 'worker-result', status: 'boot-swap', receipt, sessionFile: 'sessions/a.jsonl', sessionTools: ['bash', 'read'] },
+    { kind: 'worker-result', status: 'failure', code: 'WORKER_FAILED' },
+  ]) {
+    const wire = new Wire(), abort = new AbortController();
+    const reasons: SecretChannelFailure[] = [];
+    const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => {}, reason => { reasons.push(reason); }, 4);
+    wire.emit('message', { kind: 'worker-started', receipt });
+    wire.emit('message', result);
+    assert.deepEqual(reasons, [], result.status);
+    receiver.close();
+  }
+});
+
 test('source context and values snapshot survive caller mutation and async send; malformed lifecycle is denied', async () => {
   const wire = new Wire(), abort = new AbortController();
   const source = { ...context }, secrets = [...values];

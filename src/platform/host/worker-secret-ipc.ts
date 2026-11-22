@@ -29,7 +29,9 @@ const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-started'), receipt, invocation: z.strictObject({ executionId: identifier, invocationId: identifier }).optional() }),
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   // Ticket 11: a Builder result names its exact session tool set (the owner observes the preserved session itself).
-  z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional(),
+  // v2 ticket 09: `boot-swap` is the Builder's yield before a planned swap. Without it here the receiver, which shares the wire with the
+  // launcher, read that result as a malformed message and ended the activation as WORKER_SECRET_SYNC_SCHEMA (real account, 2026-11-22).
+  z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted', 'boot-swap']), receipt, sessionFile: z.string().nullable().optional(),
     sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(),
     // Ticket 48: an interrupted Builder whose own request/tool budget count closed the session. Ticket 57: one whose model request failed
     // without a Host abort.
