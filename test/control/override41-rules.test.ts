@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { blockedReferencePattern, blockedRequestReference } from '../../src/contracts/index.js';
-import { blockedRequestImpediment, blockedRequestToken, overrideBlockedRecoveryDecision, positiveResolution, type OverrideFacts } from '../../src/control/rules/recovery.js';
+import { blockedFailureImpediment, blockedRequestImpediment, blockedRequestToken, blocksReturnedFailure, overrideBlockedRecoveryDecision, positiveResolution, type OverrideFacts } from '../../src/control/rules/recovery.js';
 
 // Rules level, ticket 41: the explicit operator exit of a recovery blocked by a lost Builder request (ticket 27). Every fact is supplied by the test.
 const invocation = 'builder-5d1e0c1a-8a0b-4b5e-9c3f-0123456789ab';
@@ -75,4 +75,44 @@ test('LOW: the reference always has a usable token (invocation, else the Records
   assert.equal(blockedRequestToken({ invocationId: 'bad id/with:colons', records: [], executionId: '0b9c6a52-3d3e-4c8f-9a51-000000000041' }), '0b9c6a52-3d3e-4c8f-9a51-000000000041');
   for (const token of [invocation, '7777aaaa-2222-4333-8444-555555555555', 'e-1']) assert.ok(blockedReferencePattern.test(blockedRequestReference(token, 'QUESTION_RECORD_MULTIPLE')), token);
   for (const bad of ['request:x y:CODE', 'request::CODE', 'request:a:code', 'other:a:CODE']) assert.equal(blockedReferencePattern.test(bad), false, bad);
+});
+
+// Acceptance finding A9: an Execution that RETURNED a blocking failure (not a loss) used to leave the Work open with nothing to do.
+test('A9: a returned blocking failure blocks the Work visibly, with the failure code and the override command as its next step', () => {
+  const blocked = blockedRequestReference(invocation, 'WORKER_SECRET_SYNC_SCHEMA');
+  const impediment = blockedFailureImpediment('w-1', blocked, 'WORKER_SECRET_SYNC_SCHEMA', '2026-11-22T10:00:00.000Z');
+  assert.equal(impediment.code, 'RECOVERY_BLOCKED');
+  assert.ok(blockedReferencePattern.test(blocked));
+  assert.ok(impediment.nextStep.includes('WORKER_SECRET_SYNC_SCHEMA') && impediment.nextStep.includes(`factory resume w-1 --override-blocked-recovery ${blocked} --request-id <id>`) &&
+    impediment.nextStep.includes('factory cancel w-1'), impediment.nextStep);
+  assert.ok(impediment.nextStep.includes('nothing is retried automatically'));
+});
+
+test('A9: only a failure nothing else answers is blocked: not a transient one, a cancelled or closed Work, one with its own decision or one already blocked', () => {
+  const base = { result: 'open', cancelling: false, pendingRecovery: false, impediments: [] as { code: string }[], end: { outcome: 'failure', code: 'WORKER_SECRET_SYNC_SCHEMA' as string | null }, decided: false };
+  assert.equal(blocksReturnedFailure(base), 'WORKER_SECRET_SYNC_SCHEMA');
+  assert.equal(blocksReturnedFailure({ ...base, end: { outcome: 'failure', code: 'ACTIVATE_WORKER_SKILL_PACK_DRIFT' } }), 'ACTIVATE_WORKER_SKILL_PACK_DRIFT');
+  // The automatic policy is untouched: a transient failure (or a loss) keeps its operational recovery.
+  for (const code of ['WORKER_EXECUTION_UNCERTAIN', 'SANDBOX_ENVIRONMENT_ENDED', 'WORKER_BUDGET_EXHAUSTED', 'STARTED_WORKER_CHANNEL_CLOSED', null]) {
+    assert.equal(blocksReturnedFailure({ ...base, end: { outcome: 'failure', code } }), null, String(code));
+  }
+  for (const outcome of ['completed', 'question', 'timeout', 'stopped']) assert.equal(blocksReturnedFailure({ ...base, end: { outcome, code: 'WORKER_SECRET_SYNC_SCHEMA' } }), null, outcome);
+  assert.equal(blocksReturnedFailure({ ...base, result: 'delivered' }), null);
+  assert.equal(blocksReturnedFailure({ ...base, result: 'cancelled' }), null);
+  assert.equal(blocksReturnedFailure({ ...base, cancelling: true }), null);
+  assert.equal(blocksReturnedFailure({ ...base, pendingRecovery: true }), null);
+  // A failure with its own impediment and operator decision (two boots without progress, the reviewer retry limit, a lost request) keeps it.
+  assert.equal(blocksReturnedFailure({ ...base, end: { outcome: 'failure', code: 'NO_PROGRESS_BETWEEN_BOOTS' }, impediments: [{ code: 'NO_PROGRESS_BETWEEN_BOOTS' }] }), null);
+  assert.equal(blocksReturnedFailure({ ...base, end: { outcome: 'failure', code: 'REVIEWER_RETRY_LIMIT' } }), null);
+  assert.equal(blocksReturnedFailure({ ...base, impediments: [{ code: 'RECOVERY_BLOCKED' }] }), null);
+  assert.equal(blocksReturnedFailure({ ...base, decided: true }), null);
+});
+
+test('A9: the override of a returned failure needs no lost request to stay unresolved and follows the same refusals', () => {
+  const returned = facts({}, { end: { outcome: 'failure', code: 'WORKER_SECRET_SYNC_SCHEMA', cessation: 'confirmed' },
+    blockedRequest: { reference: blockedRequestReference(invocation, 'WORKER_SECRET_SYNC_SCHEMA'), code: 'WORKER_SECRET_SYNC_SCHEMA', override: null } });
+  const named = { ...returned, reference: blockedRequestReference(invocation, 'WORKER_SECRET_SYNC_SCHEMA') };
+  assert.deepEqual(overrideBlockedRecoveryDecision(named), { kind: 'accept', code: 'WORKER_SECRET_SYNC_SCHEMA' });
+  assert.deepEqual(overrideBlockedRecoveryDecision(returned), { kind: 'refuse', code: 'BLOCKED_REFERENCE_MISMATCH' });
+  assert.deepEqual(overrideBlockedRecoveryDecision({ ...named, running: true }), { kind: 'refuse', code: 'EXECUTION_ACTIVE' });
 });

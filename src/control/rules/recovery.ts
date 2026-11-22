@@ -190,6 +190,30 @@ export function blockedRequestImpediment(workId: string, reference: string, code
     `\`factory resume ${workId} --override-blocked-recovery ${reference} --request-id <id>\` (one operational recovery unit), or \`factory cancel ${workId}\`.` };
 }
 
+/**
+ * Acceptance finding A9: `RECOVERY_BLOCKED` by a failure the Execution itself RETURNED and that is not transient (authorization,
+ * configuration, drift, a Host protocol refusal). Nothing is retried automatically; the exit is the same explicit override as ticket 41.
+ */
+export function blockedFailureImpediment(workId: string, reference: string, code: string, since: string): Impediment {
+  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution ended with ${code}, which is not a transient operational failure: ` +
+    'nothing is retried automatically. Inspect the Execution evidence (`factory show`, `factory logs`) and fix the cause; then, to continue in a substitute ' +
+    `Execution, \`factory resume ${workId} --override-blocked-recovery ${reference} --request-id <id>\` (one operational recovery unit), or \`factory cancel ${workId}\`.` };
+}
+
+/**
+ * Acceptance finding A9: the code of an ended Execution whose confirmed cessation would leave the Work open with nothing to do and nothing
+ * to decide — a returned failure that is not transient (so no operational recovery; that policy is `classifyInterruption`, unchanged here),
+ * on an open Work that is not being cancelled, has no recovery pending and has no decision of its own: its own impediment (two boots
+ * without progress), the reviewer retry limit (ticket 51), a lost request (ticket 27) or an override already given (ticket 41). Else null.
+ */
+export function blocksReturnedFailure(input: { result: string; cancelling: boolean; pendingRecovery: boolean; impediments: readonly { code: string }[];
+  end: { outcome: string; code: string | null }; /** The Execution already carries a blocked request or its override. */ decided: boolean }): string | null {
+  if (input.end.outcome !== 'failure' || input.result !== 'open' || input.cancelling || input.pendingRecovery || input.decided) return null;
+  const classified = classifyInterruption(input.end.code);
+  if (classified.kind !== 'blocking' || classified.code === reviewerRetryLimitCode) return null;
+  return input.impediments.some(item => item.code === 'RECOVERY_BLOCKED' || item.code === classified.code) ? null : classified.code;
+}
+
 export type OverrideFacts = {
   work: { result: string; current: boolean; impediments: readonly { code: string }[] } | null;
   execution: { state: string; slotHeld: boolean; end: { outcome: string; code: string | null; cessation: string } | null;

@@ -83,14 +83,40 @@ test('AC6: a live transient failure returns as ONE recovery under its own counte
   assert.deepEqual([work.budget!.recoveries.consumed, h.current().doubles.calls('activate').length], [3, 4]);
 });
 
-test('AC6: a blocking failure (drift/authorization/configuration) is never retried automatically', async t => {
+test('AC6: a returned blocking failure (drift/authorization/configuration) is never retried automatically; it blocks visibly and the operator override starts a substitute', async t => {
   const h = await harness(t);
-  await h.start([{ kind: 'fail', code: 'WORKER_SKILL_PACK_DRIFT' }]);
+  await h.start([{ kind: 'fail', code: 'WORKER_SKILL_PACK_DRIFT' }, { kind: 'complete' }]);
   await idle(h, 1);
   h.current().doubles.jumpCalendar(600000);
   await h.rounds(3);
-  const work = await h.work();
-  assert.deepEqual([work.pendingRecovery, work.queue.pending, h.current().doubles.calls('activate').length], [null, false, 1]);
+  let work = await h.work();
+  assert.deepEqual([work.pendingRecovery, work.queue.pending, h.current().doubles.calls('activate').length], [null, false, 1], 'never retried automatically');
+  // Never a limbo: the ending is a visible impediment that carries the failure code and the exact command of the next step.
+  const reference = `request:${work.execution!.invocationId}:WORKER_SKILL_PACK_DRIFT`;
+  const blocked = work.impediments.filter(item => item.code === 'RECOVERY_BLOCKED');
+  assert.equal(blocked.length, 1);
+  assert.ok(blocked[0]!.nextStep.includes('WORKER_SKILL_PACK_DRIFT') && blocked[0]!.nextStep.includes(`factory resume ${work.work_id} --override-blocked-recovery ${reference} --request-id <id>`) &&
+    blocked[0]!.nextStep.includes(`factory cancel ${work.work_id}`), blocked[0]!.nextStep);
+  assert.deepEqual([work.execution!.blockedRequest!.reference, work.execution!.blockedRequest!.code, work.execution!.blockedRequest!.cause, work.execution!.blockedRequest!.override],
+    [reference, 'WORKER_SKILL_PACK_DRIFT', 'returned-failure', null]);
+  assert.ok(work.history.some(item => item.event === 'recovery-blocked' && 'detail' in item && item.detail === 'WORKER_SKILL_PACK_DRIFT'));
+  const status = await h.current().control.inspect({ kind: 'status' }) as ControlStatus;
+  assert.deepEqual(status.impediments, { works: 1, codes: { RECOVERY_BLOCKED: 1 } });
+  // A plain resume lifts nothing; the existing explicit override opens ONE operational recovery, whose substitute Execution then runs.
+  const accept = h.current().control.accept;
+  const plain = await accept({ request_id: 'a9-plain', operation: 'resume', work_id: work.work_id, origin: 'local-cli' });
+  assert.equal('reason' in plain && plain.reason, 'NOTHING_TO_RESUME');
+  const receipt = await accept({ request_id: 'a9-override', operation: 'resume', work_id: work.work_id, override_blocked_recovery: reference, origin: 'local-cli' });
+  assert.deepEqual(['outcome' in receipt && receipt.outcome, 'reason' in receipt && receipt.reason], ['accepted', null]);
+  work = await h.work();
+  assert.deepEqual([work.impediments.some(item => item.code === 'RECOVERY_BLOCKED'), work.pendingRecovery!.reason, work.pendingRecovery!.waitSeconds, work.queue.pending],
+    [false, `operator-override:${reference}`, 5, true]);
+  h.current().doubles.jumpCalendar(60000);
+  await idle(h, 2);
+  work = await h.work();
+  assert.deepEqual([work.execution!.interruption!.reason, work.execution!.interruption!.code, work.execution!.charge!.kind, work.budget!.recoveries.consumed, work.execution!.end!.outcome],
+    ['OPERATIONAL_RECOVERY', 'WORKER_SKILL_PACK_DRIFT', 'recovery', 1, 'completed']);
+  assert.equal(work.impediments.some(item => item.code === 'RECOVERY_BLOCKED'), false);
 });
 
 test('AC7: an administrative stop is clean only after confirmed cessation and persistence; it continues in a new Execution without a recovery charge', async t => {

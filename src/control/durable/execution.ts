@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc } from '@earendil-works/pi-durable';
-import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/index.js';
+import { blockedRequestReference, type BuilderGrantMetadata, type RevocationResult } from '../../contracts/index.js';
 import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, ExecutionView, OriginObservation } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { observationDriven } from '../rules/repair.js';
@@ -16,7 +16,7 @@ import { markPublicationAttempt, markReconciliationExecution } from './publicati
 import { attemptsOf, publicationResumes } from '../rules/publication.js';
 import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
-import { classifyInterruption } from '../rules/recovery.js';
+import { blockedFailureImpediment, blockedRequestToken, blocksReturnedFailure, classifyInterruption } from '../rules/recovery.js';
 import { applyContinuationRequest, applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
 import { budgetEndProgress, budgetExhaustedCode, originProgress } from '../rules/budget-continuation.js';
 import type { CheckoutFingerprint } from '../../contracts/index.js';
@@ -653,7 +653,8 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
 /**
  * Inside a commit, after CONFIRMED cessation of an ended Execution (shared by the live release and the boot reconciliation, ticket 26): the
  * Slot is released and the outcome decides the queue — question/timeout/stopped keep the same position; completed consumes the scope updates
- * it delivered and requeues for pending ones (ticket 11); a transient failure becomes ONE operational recovery.
+ * it delivered and requeues for pending ones (ticket 11); a transient failure becomes ONE operational recovery; any other returned failure
+ * blocks visibly (acceptance finding A9).
  */
 export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionView, occupancy: { held: Record<string, string> }) {
   const executionId = execution.executionId;
@@ -683,9 +684,25 @@ export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionVi
       detail: `${end.code}:progress:${progress.commits ? 'commits' : ''}${progress.commits && progress.checkout ? '+' : ''}${progress.checkout ? 'checkout' : ''}` });
   } else if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable' && !work.cancellation) {
     applyRecoveryRequest(work, { executionId, code: end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
-  }
+  } else blockReturnedFailure(work, execution, execution.slot.releasedAt!);
   history(work, 'slot-released', executionId);
   settleCancelled(work, execution.slot.releasedAt!);
+}
+
+/**
+ * Acceptance finding A9: a returned failure that is not transient never leaves the Work open with nothing to do. It becomes the visible
+ * `RECOVERY_BLOCKED` of a blocked recovery, with the failure code, a stable reference and ticket 41's explicit override as its exit
+ * (`resume --override-blocked-recovery <reference>`: ONE operational recovery). Nothing is retried automatically.
+ */
+function blockReturnedFailure(work: WorkRecord, execution: ExecutionView, at: string) {
+  const code = blocksReturnedFailure({ result: work.result, cancelling: Boolean(work.cancellation), pendingRecovery: Boolean(work.pendingRecovery), impediments: work.impediments,
+    end: execution.end!, decided: Boolean(execution.blockedRequest) });
+  if (!code) return;
+  const reference = blockedRequestReference(blockedRequestToken({ invocationId: execution.invocationId, records: [], executionId: execution.executionId }), code);
+  // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
+  execution.blockedRequest = { reference, code, questionId: null, records: [], at, cause: 'returned-failure', override: null };
+  work.impediments.push(blockedFailureImpediment(work.work_id, reference, code, at));
+  history(work, 'recovery-blocked', execution.executionId, code);
 }
 
 /**

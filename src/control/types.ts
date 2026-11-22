@@ -357,7 +357,8 @@ export type ExecutionView = {
   /** Ticket 27: ask_user requests the Control REFUSED live (validation, Work not current, stale Execution, conflict): honored at boot (never re-recorded from Records). */
   questionRefusals?: { questionId: string; code: string; at: string }[];
   /** Ticket 41: the Builder request preserved in Records that boot reconciliation found but could not read intact (ticket 27: partial,
-   * multiple, unreadable, conflicting) and that blocked this Execution's recovery; `override` is the operator's explicit, audited decision. */
+   * multiple, unreadable, conflicting) and that blocked this Execution's recovery; `override` is the operator's explicit, audited decision.
+   * Acceptance finding A9: also the blocking failure this Execution returned (`cause: 'returned-failure'`). */
   blockedRequest?: BlockedRequestView;
   /** Ticket 51: the operator's explicit, audited decision on this Execution's REVIEWER_RETRY_LIMIT (a new review round, or cancel). */
   reviewRetryLimit?: ReviewRetryLimitDecisionView;
@@ -972,7 +973,7 @@ export type WorkView = {
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried' |
       /* v2 ticket 07 */ 'preservation-accepted' | 'preservation-refused' |
-      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded' | /* final review */ 'channel-report-unread' |
+      /* v2 ticket 09 */ 'boot-swap-due' | 'boot-swap-notice' | 'boot-swapped' | 'boot-swap-ended' | 'boot-ended' | 'boot-loop-blocked' | /* v2 ticket 12 */ 'loss-recorded' | /* finding A9 */ 'recovery-blocked' | /* final review */ 'channel-report-unread' |
       /* v2 ticket 13 */ 'origin-rewrite-followed' | 'origin-branch-absent-asked' | 'origin-branch-absent-resolved';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
@@ -1020,6 +1021,9 @@ export type BlockedStartView = { code: string; detail: string | null; at: string
     recoveryRequest: 'requested' | 'already-open' } | null };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
+  /** Acceptance finding A9: absent = a lost Builder request (ticket 27). `returned-failure` = the Execution itself returned a failure that is
+   * not transient (no request was lost, `records` is empty): the same block, reference and explicit operator override. */
+  cause?: 'returned-failure';
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
 /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT. There is no decision that accepts the unverified round. */
 export type ReviewRetryLimitDecisionView = { decision: 'new-review-round' | 'cancel'; request_id: string; operator: { kind: 'local-administrator' }; at: string };

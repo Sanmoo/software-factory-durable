@@ -141,7 +141,8 @@ async function acceptBlockedRecoveryOverride(session: Session, input: Extract<Cy
       work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
       execution: execution ? { state: execution.state, slotHeld: execution.slot.held, end: execution.end ?? null, blockedRequest: blocked } : null,
       reference: input.override_blocked_recovery, running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation), pendingRecovery: Boolean(work?.pendingRecovery),
-      resolved: Boolean(blocked && execution && positiveResolution({ blocked, executionId: execution.executionId, invocationId: execution.invocationId, questions: bound,
+      // A returned failure (finding A9) lost no request: there is nothing a later read of Records could resolve.
+      resolved: Boolean(blocked && blocked.cause !== 'returned-failure' && execution && positiveResolution({ blocked, executionId: execution.executionId, invocationId: execution.invocationId, questions: bound,
         recovery: execution.recovery ?? [] })) });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
