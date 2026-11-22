@@ -173,6 +173,69 @@ export async function initialize(session: Session) {
   }, BACKGROUND_CONTEXT);
 }
 
+/** GitHub: replaced by the first native dependency evaluation of the same polling round; Jira: evaluated by the admitting re-read. */
+function admissionImpediments(jira: JiraAdmissionEvidence | null, admittedAt: string): Impediment[] {
+  return jira
+    ? []
+    : [
+        {
+          code: 'DEPENDENCIES_NOT_EVALUATED',
+          scope: 'work',
+          since: admittedAt,
+          nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.',
+        },
+      ];
+}
+
+/** Ticket 44: the outcome of the environment declaration read in the admitting round (null when the caller read none). */
+function admissionEnvironment(evidence: AdmissionEvidence, work_id: string, admittedAt: string) {
+  const initial = evidence.environment ? environmentNotEvaluated(admittedAt) : null;
+  return initial && evidence.environment
+    ? environmentOutcome(initial.environment, evidence.environment, {
+        workId: work_id,
+        repository: evidence.repository.repository,
+        base: evidence.repository.base,
+        at: admittedAt,
+      })
+    : null;
+}
+
+/** The authorization recorded at admission, from the Card re-read by ID (Jira) or from the GitHub polling read. */
+function admissionAuthorization(jira: JiraAdmissionEvidence | null, github: GitHubAdmissionEvidence | null): WorkRecord['authorization'] {
+  return jira
+    ? {
+        state: 'authorized',
+        observedAt: jira.observedAt,
+        ...structuredClone(jira.authorization),
+        tracking:
+          'Authorization recorded at admission from the Card re-read by ID; later reads of the entry label track it. Absence from a listing is never treated as withdrawal.',
+      }
+    : {
+        state: 'authorized',
+        source: 'github-rest',
+        observedAt: github!.observedAt,
+        basis: { repositoryConfigured: true, issueState: 'open', label: github!.label },
+        publication: {
+          observedAt: github!.publication.observedAt,
+          completeness: 'complete',
+          associatedPullRequests: 0,
+          limitations: github!.publication.limitations,
+        },
+        tracking:
+          'Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.',
+      };
+}
+
+/** Jira: the visible-blockers evaluation of the admitting re-read is the Work's current one; GitHub: none yet. */
+function admissionDependencies(jira: JiraAdmissionEvidence | null): WorkRecord['dependencies'] {
+  return jira
+    ? {
+        latest: jira.dependencies,
+        lastComplete: { evaluationId: jira.dependencies.evaluationId, observedAt: jira.dependencies.observedAt, conclusion: jira.dependencies.conclusion },
+      }
+    : { latest: null, lastComplete: null };
+}
+
 /**
  * Admit-Work transaction (spec §3.4): absence of a current cycle in the index, the global pause, the Work record, the index entry and the
  * admission sequence are read and written in ONE real Session commit. Concurrent or repeated callers serialise on Pi Durable's commit line.
@@ -199,27 +262,9 @@ export async function admitTicket(
     const origin = jira ? ('jira-polling' as const) : ('github-polling' as const);
     // GitHub: replaced by the first native dependency evaluation of the same polling round; a crash in between keeps the Work held.
     // Jira: the visible blockers were evaluated by the re-read that decided this admission (recorded as the Work's current evaluation).
-    const impediments: Impediment[] = jira
-      ? []
-      : [
-          {
-            code: 'DEPENDENCIES_NOT_EVALUATED',
-            scope: 'work',
-            since: admittedAt,
-            nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.',
-          },
-        ];
+    const impediments = admissionImpediments(jira, admittedAt);
     // Ticket 44: the environment declaration read at the base tip in the same round, pinned with the Work (or the impediment saying why not).
-    const initial = evidence.environment ? environmentNotEvaluated(admittedAt) : null;
-    const outcome =
-      initial && evidence.environment
-        ? environmentOutcome(initial.environment, evidence.environment, {
-            workId: work_id,
-            repository: evidence.repository.repository,
-            base: evidence.repository.base,
-            at: admittedAt,
-          })
-        : null;
+    const outcome = admissionEnvironment(evidence, work_id, admittedAt);
     if (outcome?.impediment) impediments.push(outcome.impediment);
     document.work = {
       work_id,
@@ -228,36 +273,10 @@ export async function admitTicket(
       ticket: evidence.ticket,
       repository: evidence.repository,
       result: 'open',
-      authorization: jira
-        ? {
-            state: 'authorized',
-            observedAt: jira.observedAt,
-            ...structuredClone(jira.authorization),
-            tracking:
-              'Authorization recorded at admission from the Card re-read by ID; later reads of the entry label track it. Absence from a listing is never treated as withdrawal.',
-          }
-        : {
-            state: 'authorized',
-            source: 'github-rest',
-            observedAt: github!.observedAt,
-            basis: { repositoryConfigured: true, issueState: 'open', label: github!.label },
-            publication: {
-              observedAt: github!.publication.observedAt,
-              completeness: 'complete',
-              associatedPullRequests: 0,
-              limitations: github!.publication.limitations,
-            },
-            tracking:
-              'Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.',
-          },
+      authorization: admissionAuthorization(jira, github),
       queue: { category: 'normal', sequence, pending: true },
       impediments,
-      dependencies: jira
-        ? {
-            latest: jira.dependencies,
-            lastComplete: { evaluationId: jira.dependencies.evaluationId, observedAt: jira.dependencies.observedAt, conclusion: jira.dependencies.conclusion },
-          }
-        : { latest: null, lastComplete: null },
+      dependencies: admissionDependencies(jira),
       execution: null,
       branch: null,
       pullRequest: null,
@@ -361,6 +380,13 @@ export async function ownCycles(session: Session, issueIds: number[]): Promise<R
   return result;
 }
 
+/** The last complete evaluation after `evaluation`: itself when complete and conclusive, otherwise the previous one. */
+function lastCompleteOf(evaluation: DependencyEvaluation, previous: NonNullable<WorkRecord['dependencies']>['lastComplete']) {
+  return evaluation.completeness === 'complete' && evaluation.conclusion !== 'inconclusive'
+    ? { evaluationId: evaluation.evaluationId, observedAt: evaluation.observedAt, conclusion: evaluation.conclusion }
+    : previous;
+}
+
 /**
  * Record one evaluation on the CURRENT cycle of its Ticket, in one commit: latest evaluation, last complete one, dependency impediments
  * (others untouched) and a history entry only when the conclusion changes. A Work no longer open/pending/current is left unchanged.
@@ -391,10 +417,7 @@ export async function recordDependencies(
     work.impediments = [...work.impediments.filter(item => !(dependencyImpedimentCodes as readonly string[]).includes(item.code)), ...derived];
     work.dependencies = {
       latest: evaluation,
-      lastComplete:
-        evaluation.completeness === 'complete' && evaluation.conclusion !== 'inconclusive'
-          ? { evaluationId: evaluation.evaluationId, observedAt: evaluation.observedAt, conclusion: evaluation.conclusion }
-          : previous.lastComplete,
+      lastComplete: lastCompleteOf(evaluation, previous.lastComplete),
     };
     if (before !== evaluation.conclusion)
       work.history.push({

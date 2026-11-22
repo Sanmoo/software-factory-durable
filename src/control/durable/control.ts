@@ -3,6 +3,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
 import type {
   AccessDependencies,
+  AccessView,
   Control,
   ControlStatus,
   DetailInventory,
@@ -14,6 +15,7 @@ import type {
   ListView,
   PollingOptions,
   PollingView,
+  QuestionQueryView,
   RecoveryView,
   RuntimeInventory,
   WorkView,
@@ -233,6 +235,23 @@ export async function withdrawActivityCredentials(
   return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
 }
 
+/** The Jira adapter when this owner polls: the Jira desks need both (no adapter composed, or no polling: no Jira desk). */
+const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
+  options.polling ? options.access?.trackers?.jira : undefined;
+
+/** Jira ticket 10: each configured Jira source, through its own adapter (a read of the account's project permissions; never on YAML v1). */
+async function jiraAccessResults(access: AccessDependencies) {
+  const jiraResults = [];
+  const jira = access.trackers?.jira;
+  for (const source of access.sources ?? [])
+    if (source.tracker === 'jira' && jira)
+      jiraResults.push(await jira.checkAccess({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }));
+  return jiraResults;
+}
+/** The retention desk reads the injected calendar when one is composed (its own clock otherwise). */
+const retentionClock = (options: { execution?: ExecutionPorts | undefined }) =>
+  options.execution?.calendar ? { now: () => options.execution!.calendar!.now() } : {};
+
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
 export async function openControl(options: {
   storagePath: string;
@@ -275,10 +294,8 @@ export async function openControl(options: {
   ];
   const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
-  const jiraLinks =
-    options.access?.trackers?.jira && options.polling
-      ? createJiraLinkDesk({ session: state, tracker: options.access.trackers.jira, stopped: () => stopped })
-      : undefined;
+  const jiraTracker = pollingJira(options);
+  const jiraLinks = jiraTracker ? createJiraLinkDesk({ session: state, tracker: jiraTracker, stopped: () => stopped }) : undefined;
   const desk =
     options.access && options.polling
       ? createQuestionDesk({
@@ -291,18 +308,17 @@ export async function openControl(options: {
       : undefined;
   // Jira ticket 06: answers (and guidance) read from the origin Card of each Jira Work; publication goes through the Jira source round below.
   // Jira ticket 07: an accepted `/factory cancel` is interrupted like the local `cancel` (credentials first, then stop), after its commit.
-  const jiraInputs =
-    options.access?.trackers?.jira && options.polling
-      ? createJiraInputDesk({
-          session: state,
-          tracker: options.access.trackers.jira,
-          readWorks: () => readWorks(state),
-          stopped: () => stopped,
-          cancelled: work_id => {
-            void dispatcher?.cancel(work_id).catch(() => {});
-          },
-        })
-      : undefined;
+  const jiraInputs = jiraTracker
+    ? createJiraInputDesk({
+        session: state,
+        tracker: jiraTracker,
+        readWorks: () => readWorks(state),
+        stopped: () => stopped,
+        cancelled: work_id => {
+          void dispatcher?.cancel(work_id).catch(() => {});
+        },
+      })
+    : undefined;
   const poller =
     options.access && options.polling
       ? createPoller({
@@ -351,10 +367,7 @@ export async function openControl(options: {
             // Ticket 23: human feedback of the own PRs is recorded before the tick (whatever the Work is doing; recording is never delivery).
             await feedback?.pass().catch(() => {});
             if (dispatchReason === null) await dispatcher?.tick();
-            await checks?.pass(tracking.signal).catch(() => {});
-            await readiness?.pass(tracking.signal).catch(() => {});
-            // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
-            await repair?.pass(tracking.signal).catch(() => {});
+            await afterTick();
           },
         })
       : undefined;
@@ -406,6 +419,13 @@ export async function openControl(options: {
           limits: configuredRepository,
         })
       : undefined;
+  // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
+  const afterTick = async () => {
+    await checks?.pass(tracking.signal).catch(() => {});
+    await readiness?.pass(tracking.signal).catch(() => {});
+    // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
+    await repair?.pass(tracking.signal).catch(() => {});
+  };
   if (options.execution && options.access && poller)
     dispatcher = createDispatcher({
       session: state,
@@ -459,7 +479,7 @@ export async function openControl(options: {
           running: work_id => dispatcher?.running(work_id) ?? false,
           settled: () => dispatchReason !== 'RECONCILIATION_REQUIRED',
           stopped: () => stopped,
-          ...(options.execution?.calendar ? { now: () => options.execution!.calendar!.now() } : {}),
+          ...retentionClock(options),
         })
       : undefined;
   /** Facts of an explicit cleanup plan/confirmation, read just before its commit (inventory included). */
@@ -633,6 +653,38 @@ export async function openControl(options: {
       },
     };
   };
+  /** `access` diagnostics, in memory only: no token or issuer result enters a durable task/commit. */
+  const accessDiagnostics = async (): Promise<AccessView> => {
+    if (!options.access) throw new Error('AUTHENTICATED_DIAGNOSTICS_UNAVAILABLE');
+    const results = [];
+    // In-memory observations only: no token or issuer result enters a durable task/commit.
+    for (const repo of options.access.repositories)
+      results.push({
+        tracker: await options.access.tracker.checkAccess(repo),
+        repository: await options.access.repository.checkAccess(repo, repo.base),
+      });
+    const dependencyResults = [];
+    for (const repo of options.access.dependencyRepositories ?? [])
+      dependencyResults.push(await options.access.tracker.checkAccess({ ...repo, role: 'dependency-only' }));
+    const jiraResults = await jiraAccessResults(options.access);
+    return { kind: 'access', scope: 'authenticated', results, dependencyResults, ...(jiraResults.length ? { jiraResults } : {}) };
+  };
+  /** One Question by identity; a Question of a forgotten Work is reported as forgotten, never as unknown. */
+  const questionView = async (question_id: string): Promise<QuestionQueryView> => {
+    if (!workIdSchema.safeParse(question_id).success) throw new Error('INVALID_QUESTION_ID');
+    const question = await readQuestion(state, question_id);
+    if (question) return { kind: 'question', question };
+    // Ticket 31 (review LOW): a Question of a forgotten Work is gone with its history; it is never reported as unknown.
+    const owner = question ? undefined : (await readForgotten(state)).find(item => item.questions?.includes(question_id));
+    if (owner)
+      return {
+        kind: 'question-forgotten',
+        question_id,
+        work_id: owner.work_id,
+        nextStep: `This Question belonged to Work ${owner.work_id}, whose history \`forget\` deleted at ${owner.forgottenAt}: its text and answer are not recoverable.`,
+      };
+    return { kind: 'question-not-found', question_id, nextStep: 'No Question with this identity; use `factory show <work>`.' };
+  };
   let running = false;
   // Ticket 33: how the previous run of this storage ended, read when THIS run records its start (null before that or when never recorded).
   let previousRun: ControlStatus['storage']['previousRun'] = null;
@@ -700,47 +752,12 @@ export async function openControl(options: {
               (error: unknown) => ({ error }),
             )
           : null;
-      if (query.kind === 'access') {
-        if (!options.access) throw new Error('AUTHENTICATED_DIAGNOSTICS_UNAVAILABLE');
-        const results = [];
-        // In-memory observations only: no token or issuer result enters a durable task/commit.
-        for (const repo of options.access.repositories)
-          results.push({
-            tracker: await options.access.tracker.checkAccess(repo),
-            repository: await options.access.repository.checkAccess(repo, repo.base),
-          });
-        const dependencyResults = [];
-        for (const repo of options.access.dependencyRepositories ?? [])
-          dependencyResults.push(await options.access.tracker.checkAccess({ ...repo, role: 'dependency-only' }));
-        // Jira ticket 10: each configured Jira source, through its own adapter (a read of the account's project permissions; never on YAML v1).
-        const jiraResults = [];
-        const jira = options.access.trackers?.jira;
-        for (const source of options.access.sources ?? [])
-          if (source.tracker === 'jira' && jira)
-            jiraResults.push(
-              await jira.checkAccess({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label }),
-            );
-        return { kind: 'access', scope: 'authenticated', results, dependencyResults, ...(jiraResults.length ? { jiraResults } : {}) };
-      }
+      if (query.kind === 'access') return accessDiagnostics();
       if (query.kind === 'request') {
         if (!requestId.safeParse(query.request_id).success) throw new Error('INVALID_REQUEST_ID');
         return { kind: 'request', receipt: await readRequest(state, query.request_id) };
       }
-      if (query.kind === 'question') {
-        if (!workIdSchema.safeParse(query.question_id).success) throw new Error('INVALID_QUESTION_ID');
-        const question = await readQuestion(state, query.question_id);
-        if (question) return { kind: 'question', question };
-        // Ticket 31 (review LOW): a Question of a forgotten Work is gone with its history; it is never reported as unknown.
-        const owner = question ? undefined : (await readForgotten(state)).find(item => item.questions?.includes(query.question_id));
-        if (owner)
-          return {
-            kind: 'question-forgotten',
-            question_id: query.question_id,
-            work_id: owner.work_id,
-            nextStep: `This Question belonged to Work ${owner.work_id}, whose history \`forget\` deleted at ${owner.forgottenAt}: its text and answer are not recoverable.`,
-          };
-        return { kind: 'question-not-found', question_id: query.question_id, nextStep: 'No Question with this identity; use `factory show <work>`.' };
-      }
+      if (query.kind === 'question') return questionView(query.question_id);
       // Ticket 29: history, logs, one log page and consumption (read-only; logs/usage through the injected Records/Workers observation ports).
       if (query.kind === 'history' || query.kind === 'logs' || query.kind === 'log' || (query.kind === 'usage' && query.work_id !== undefined)) {
         const id = query.work_id!;

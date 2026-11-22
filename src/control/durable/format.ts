@@ -69,25 +69,27 @@ export const migrationPathId = (path: readonly { id: string }[]) => path.map(ste
  * exactly its version (a kind another format defines but this one does not, or another version, is STORAGE_FORMAT_MIXED).
  */
 export function decideFormat(installationVersion: number | null, versions: Record<string, Record<string, number>>, table: FormatTable = formats) {
-  const problems: StorageProblem[] = [];
   const found =
     installationVersion === null ? undefined : Object.entries(table).find(([, kinds]) => kinds['factory.installation'] === installationVersion)?.[0];
   const format = found === undefined ? null : Number(found);
-  if (format !== null)
-    for (const [kind, entry] of Object.entries(versions)) {
-      if (!Object.values(table).some(kinds => kind in kinds)) continue; // Unknown kinds are reported as STORAGE_DOCUMENT_UNKNOWN.
-      for (const version of Object.keys(entry))
-        if (table[format]![kind] !== Number(version)) {
-          problems.push({
-            code: 'STORAGE_FORMAT_MIXED',
-            detail:
-              table[format]![kind] === undefined
-                ? `${kind} is not part of format ${format}.`
-                : `${kind} version ${version} does not belong to format ${format}.`,
-          });
-        }
-    }
+  const problems: StorageProblem[] = format === null ? [] : mixedFormatProblems(format, versions, table);
   return { format, problems };
+}
+/** The documents whose kind belongs to some format but whose version does not belong to `format`. */
+function mixedFormatProblems(format: number, versions: Record<string, Record<string, number>>, table: FormatTable) {
+  const problems: StorageProblem[] = [];
+  for (const [kind, entry] of Object.entries(versions)) {
+    if (!Object.values(table).some(kinds => kind in kinds)) continue; // Unknown kinds are reported as STORAGE_DOCUMENT_UNKNOWN.
+    for (const version of Object.keys(entry))
+      if (table[format]![kind] !== Number(version)) {
+        problems.push({
+          code: 'STORAGE_FORMAT_MIXED',
+          detail:
+            table[format]![kind] === undefined ? `${kind} is not part of format ${format}.` : `${kind} version ${version} does not belong to format ${format}.`,
+        });
+      }
+  }
+  return problems;
 }
 export const durableSchemaVersion = CURRENT_SQLITE_SCHEMA_VERSION;
 

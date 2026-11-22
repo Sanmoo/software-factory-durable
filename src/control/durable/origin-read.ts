@@ -32,13 +32,17 @@ export async function readOriginOf(
     return {
       kind: 'observed',
       base: base.sha,
-      branch: tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' },
+      branch: presentOrAbsent(tip),
       comparison: read.comparison ?? null,
     };
   } catch {
     return { kind: 'unavailable', code: 'ORIGIN_NOT_READ' };
   }
 }
+
+/** A concluded read of the branch tip, reduced to what Control records. */
+const presentOrAbsent = (tip: { state: 'present'; sha: string } | { state: 'absent' }): BranchObservation =>
+  tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' };
 
 /** The Work branch tip alone; a read that did not conclude is `unknown` under its code, never "absent". */
 export const readOriginTip = (
