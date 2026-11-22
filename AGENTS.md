@@ -39,7 +39,18 @@ com `SANDBOX_RUNTIME_PATH_TOO_LONG`.
 
 ## Integração e push
 
-Depois de integrar o trabalho em `main` por fast-forward, conforme o fluxo global de conclusão, fazer
-`git push origin main` em seguida, sem pedir confirmação. Isso substitui, neste repositório, a regra
-global de só fazer push com autorização explícita. Continuam exigindo autorização: push de outras
-branches, qualquer push forçado e publicação de branches de protótipo.
+Toda mudança entra em `main` somente por pull request, com review e merge humanos
+([ADR 0003](docs/adr/0003-integration-by-pull-request.md)). Isso substitui, neste repositório, o fluxo
+global de conclusão que integra por fast-forward.
+
+- Trabalhar numa branch própria, nunca em `main`. Com `npm run test:ci` verde, fazer push da branch e
+  abrir o PR sem pedir confirmação. O corpo do PR traz a síntese, o resultado de `npm run test:ci` e
+  `Closes #n`.
+- Agente nunca faz merge; o merge é sempre rebase-merge feito por humano.
+- Sem conflito com `main`, não atualizar a branch. Quando houver conflito, fazer rebase, rodar
+  `npm run test:ci` de novo e `git push --force-with-lease` na branch de trabalho.
+- Correções de review entram como commits na mesma branch.
+- Provas e evidências não citam SHA de commit deste repositório como argumento de que algo foi
+  executado; a referência é a issue ou o PR (`#n`).
+- Continuam exigindo autorização: push forçado fora da branch de trabalho e publicação de branches de
+  protótipo.

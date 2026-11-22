@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#23](https://github.com/Sanmoo/software-factory-durable/issues/23) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Ticket #28 do repositório de apoio (Trabalho `8019ed17`), em Pergunta com o PR #29 aberto: branch apagada às 09:12:31 UTC → `pull-request-closed-unmerged`; `factory reopen` → `reopen-attempted known-failure:GITHUB_GRAPHQL_UNPROCESSABLE`, `reopen-not-applied`; o Bloqueio continuou indicando `reopen`. A resposta à Pergunta não foi lida em 10 minutos (`QUESTION_PENDING` permaneceu).

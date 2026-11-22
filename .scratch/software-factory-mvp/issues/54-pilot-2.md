@@ -8,8 +8,7 @@ seguindo os guardrails de ensaios.
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#19](https://github.com/Sanmoo/software-factory-durable/issues/19) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Pedido de autorização do piloto 2 aprovado pelo operador antes de qualquer boot.

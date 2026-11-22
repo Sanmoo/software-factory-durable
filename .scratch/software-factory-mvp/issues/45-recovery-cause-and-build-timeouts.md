@@ -25,8 +25,7 @@ Dois pontos:
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#16](https://github.com/Sanmoo/software-factory-durable/issues/16) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] Uma Execução encerrada por timeout de comando gera recovery cujo prompt nomeia o comando, o timeout pedido, a duração e o fato de os

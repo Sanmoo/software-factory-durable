@@ -8,8 +8,7 @@ Origem: [Aceite da v2 no perfil Lambda](16-v2-acceptance-on-lambda-profile.md), 
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#29](https://github.com/Sanmoo/software-factory-durable/issues/29) em 2026-11-22; a issue é a versão canônica.
 ## Observed
 
 - Ticket #33 do repositório de apoio (Trabalho `67f6c34e`): `budget-consumed recoveries` às 09:41:43 UTC e `mode: initial` no `show`.

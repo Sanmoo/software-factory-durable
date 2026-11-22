@@ -9,8 +9,7 @@ a mais com esta instrução".
 
 **Type:** task
 
-**Status:** needs-triage
-
+**Status:** migrado para [#20](https://github.com/Sanmoo/software-factory-durable/issues/20) em 2026-11-22; a issue é a versão canônica.
 ## Acceptance criteria
 
 - [ ] `not-publishable` aparece como impedimento do Trabalho, com os motivos e o próximo passo.
