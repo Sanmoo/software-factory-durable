@@ -594,4 +594,12 @@ Ao fim de S1–S6, E2E continua bloqueado e Mutation pendente: o engineering har
 
 ## Registros das etapas
 
-(preenchidos ao fim de cada etapa)
+### S1 — concluída em 2026-11-22
+
+- **Mudou**: os dois modos do runner e a política de seleção versionada (`scripts/test-runner/policy.json`, `selection.ts`, `changes.ts`, `architecture.ts`; `ci` é a validação por mudança com teto de 900 s, `full` é a validação integral, que roda todo check e registra o resultado); dependency-cruiser e o checker documental no fast Entry Point; o checker passa a cobrir `GLOSSARY.md`, `docs/guides/`, `docs/adr/`, caminhos entre crases e a regra de comandos; `.dependency-cruiser.cjs` com as exclusões ancoradas na raiz (alvos de terceiros visíveis, não percorridos) e `sdk:*-owner` limitado a `src/`; dependency-cruiser depois do compile; nightly e unidade systemd validando `main`; hook `pre-commit` versionado; `mise.toml` fixando gitleaks; rehearsal (`scripts/test-runner/rehearse-modes.ts`) e arquivo de provas (`scripts/test-runner/gate-proofs.ts`, atribuição testada). Guides: `AGENTS.md` emendado, `CLAUDE.md`, `GLOSSARY.md`, `docs/guides/{architecture,coding-standards,testing-strategy}.md` (o último movido de `docs/agents/testing.md`, com o pré-requisito de `TMPDIR`), ADRs 0001–0002. Portado de #24 (`d15f04a9`, mais a correção do cruise de `35ec2b86`).
+- **Re-medição**: com o filtro ancorado, o cruise vê 762 módulos e 0 violações; nenhum achado novo e nada tolerado.
+- **Regressão**: `test:ci` no branch: a primeira execução ficou vermelha só por `test/entrypoints/journey-composed.test.ts`, que esperou 714 s por `merge-blocked` com a pergunta pendente até esgotar o prazo; sozinho passa em 9,4 s, e a repetição completa passou (2163 testes, 308 s de 900 s). É um travamento intermitente sob carga, não causado por S1 (que não toca `src/` nem esse teste); fica para a investigação de S3, sem quarentena nem retry.
+- **Adotados**: Types, Context boundaries, Dependency rule, Guide pointers — provas (repetidas após o rebase sobre `main`, com `test:ci` verde: 2163 testes, 288 s) em [GATE-PROOFS.md](GATE-PROOFS.md).
+- **Rehearsal dos modos**: 4/4 cenários passaram (dependente pego sem ampliar; config compartilhada amplia; acima do orçamento é inconclusivo e não inicia nada; integral roda os checks periódicos que a validação por mudança só reporta).
+- **Passos do operador pendentes**: instalar as unidades systemd e o hook (`git config core.hooksPath .githooks`). Até lá a validação integral não roda, e nenhum check periódico pode ser adotado.
+- **Continuam pendentes**: Lint, Avoided terms, Dependency vulnerabilities (S2); Unit tests, Integration tests (S3); Format (S4); Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests.
