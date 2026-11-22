@@ -32,9 +32,11 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 
 - [Definir contratos, persistência e compatibilidade com GitHub Issues](issues/07-contratos.md): cada Trabalho conserva origem e destino separados; desligar a descoberta não interrompe a retomada, e o retorno de versão depende da compatibilidade dos dados e da configuração.
 
+- [Definir a estratégia de testes e os oráculos de aceite](issues/08-testes.md): cada cenário verifica o resultado e o efeito proibido, inclusive na retomada de um Trabalho GitHub antigo; aprovar a spec não homologa uma instalação.
+
 ## Not yet specified
 
-- A matriz de testes mostrará quais propriedades não são demonstráveis offline e se alguma exige um ensaio separado antes da aprovação da spec.
+Nenhuma lacuna identificada antes da revisão da spec.
 
 ## Out of scope
 
