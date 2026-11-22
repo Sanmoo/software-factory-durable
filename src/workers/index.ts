@@ -108,7 +108,7 @@ type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecr
   builderPrompt?: (session: { phaseId: string; tools: string[] }) => string;
   /** v2 ticket 06: where the owner of a boot listens (the Sandbox's own discovery). Absent: the supervised per-boot owner of the MVP. */
   ownerEndpoint?: (context: WorkerLaunch['context']) => Promise<string> };
-export { builderToolNames } from './session-ref.js';
+export { builderToolNames, compareSessionProfile } from './session-ref.js';
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObject({ executionId: z.string(), invocationId: z.string() }) });
 const completionSchema = z.discriminatedUnion('status', [

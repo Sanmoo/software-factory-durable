@@ -64,7 +64,15 @@ test('the answered Question resumes in a NEW boot cloned from the branch tip on 
   assert.deepEqual(h.starts(), [{ repository: 'acme/project', installationId: scope.installationId, commit: main, branch: h.branch }, { repository: 'acme/project', installationId: scope.installationId, commit: wip, branch: h.branch }]);
   assert.notEqual(execution.dispatch.boot, h.asked.execution!.dispatch.boot);
   assert.deepEqual(h.kinds(), ['prepare', 'start', 'activate', 'gate', 'activate', 'gate', 'stop', 'prepare', 'start', 'activate', 'activate', 'gate', 'stop']);
-  const [, , continued, publication] = h.activations() as [Activation, Activation, Activation, Activation];
+  const [, correction, continued, publication] = h.activations() as [Activation, Activation, Activation, Activation];
+  // Real run of 2026-11-21 (V2-10): the gate correction continued the working session WITHOUT the handoff policy, so the Workers recorded
+  // its ref with a tool set that lacks `handoff`. The session recorded at the end of the Execution is that latest file (id, hash, size)
+  // under the WORKING activation's profile, or the resume, planned with the handoff policy, replaces the session (`tools` differ).
+  assert.deepEqual([correction.phaseId, correction.handoff], ['builder-preservation', null]);
+  assert.deepEqual(sessionRef(2, { skillPack: 'factory-skills-v6', copyOutput: true, editSourceMaxBytes: 8192, handoff: false }).profile.tools, ['ask_user', 'bash', 'edit', 'read', 'write']);
+  assert.deepEqual(h.asked.execution!.end?.session, sessionRef(2));
+  assert.ok(h.asked.execution!.end!.session!.profile.tools.includes('handoff'));
+  assert.deepEqual([execution.request.session?.mode, execution.request.session?.reason], ['continue', 'SESSION_COMPATIBLE']);
   // The same session continues.
   assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session, execution.request.session?.mode, execution.request.session?.reason], ['builder-continuation', sessionRef(2), 'continue', 'SESSION_COMPATIBLE']);
   assert.ok(continued.prompt.startsWith('Factory notice (new boot): this environment was RECREATED'), continued.prompt.slice(0, 200));

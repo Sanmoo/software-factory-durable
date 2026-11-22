@@ -4,15 +4,23 @@ import type { ExecutionPorts } from '../../src/control/types.js';
 import type { GateEvidence, ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { PullRequestCandidate } from '../../src/code-repository/index.js';
 import { createHash } from 'node:crypto';
-import type { BuilderDirective, HandoffEvent, Invocation, WorkerQuestion, WorkerSessionRef } from '../../src/workers/index.js';
+import { builderToolNames, compareSessionProfile, type BuilderDirective, type HandoffEvent, type Invocation, type WorkerQuestion, type WorkerSessionRef } from '../../src/workers/index.js';
 import type { PreservationObservation } from '../../src/contracts/index.js';
 import type { Remote } from './doubles.js';
 
 export const app = { login: 'factory-app[bot]', id: 41898282 };
-export const sessionRef = (n: number): WorkerSessionRef => ({ ref: `r/boot${n}/w-abc/profile/sessions/s${n}.jsonl`, sessionId: `5e55a0b0-0000-4000-8000-${String(n).padStart(12, '0')}`,
+/** The Builder policies of the doubles' `ports.builder` that decide a session's tool set. */
+const builderPolicies = { skillPack: 'factory-skills-v6', copyOutput: true, editSourceMaxBytes: 8192 };
+const sessionProfile = { sdkProfile: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', providerId: 'openai', modelId: 'gpt-6-luna' };
+/**
+ * The session ref the Workers double returns for its n-th Builder activation. As the real Workers do (`observePreservedSession`), the
+ * profile's tool set is DERIVED from the activation's policies with the real `builderToolNames`: `handoff` is there only for an activation
+ * launched with the handoff policy (the working one, under review). The default is that working activation.
+ */
+export const sessionRef = (n: number, policies: Parameters<typeof builderToolNames>[0] = { ...builderPolicies, handoff: true }): WorkerSessionRef => ({
+  ref: `r/boot${n}/w-abc/profile/sessions/s${n}.jsonl`, sessionId: `5e55a0b0-0000-4000-8000-${String(n).padStart(12, '0')}`,
   sha256: String(n).repeat(64).slice(0, 64), bytes: 100 + n, format: 'pi-session-jsonl-v3',
-  profile: { sdkProfile: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', providerId: 'openai', modelId: 'gpt-6-luna', skillPack: 'factory-skills-v6',
-    tools: ['ask_user', 'bash', 'edit', 'handoff', 'read', 'write'] } });
+  profile: { ...sessionProfile, skillPack: policies.skillPack ?? null, tools: builderToolNames(policies) } });
 export const summary = (round: number, head: string, branch: string, committed: boolean): ProposalHandoff => ({ version: 1, round, index: `/artifacts/review/r${round}/index.json`,
   indexSha256: `${round}${head}`.slice(0, 64).padEnd(64, '0'), head, branch, base: 'a'.repeat(40), mergeBase: 'a'.repeat(40),
   counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
@@ -148,7 +156,9 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           continuation: invocation.continuation ?? null, handoff: invocation.handoff ?? null, editSourceMaxBytes: invocation.editSourceMaxBytes, token: delivery?.credential?.token ?? '',
           pushPolicy: invocation.pushPolicy ?? null };
         calls.push({ kind: 'activate', detail: activation });
-        const session = sessionRef(++sessions);
+        // The recorded profile is the one of THIS activation's policies, as the real Workers record it (a correction or a swap notice has no handoff).
+        const session = sessionRef(++sessions, { skillPack: invocation.skillPack, copyOutput: invocation.copyOutput, editSourceMaxBytes: invocation.editSourceMaxBytes,
+          handoff: invocation.handoff !== undefined });
         if (script.kind === 'hang') {
           guest.head = script.head;
           const completed = new Promise<never>((_resolve, reject) => { invocation.signal.addEventListener('abort', () => reject(new Error('WORKER_EXECUTION_UNCERTAIN')), { once: true }); });
@@ -228,7 +238,13 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         if (directive.kind === 'boot-swap') return yielding?.directive() === false ? { status: 'failure' as const, code: 'DELIVERY_UNCONFIRMED' } : { status: 'delivered' as const };
         return { status: directive.kind === 'credential' ? 'delivered' as const : 'withdrawn' as const };
       },
-      async observe(input) { calls.push({ kind: 'observe' }); return { session: { state: 'compatible' as const, session: input.session }, limitations: [] }; },
+      // The real compatibility rule of `Workers.observe` (`compareSessionProfile` against the tool set the planned policies give); the
+      // session file itself (presence, hash) is not modelled.
+      async observe(input) {
+        calls.push({ kind: 'observe' });
+        const differences = compareSessionProfile(input.session.profile, { ...sessionProfile, skillPack: input.next.skillPack ?? null, tools: builderToolNames(input.next) });
+        return { session: differences.length ? { state: 'incompatible' as const, code: 'SESSION_PROFILE_CHANGED', differences } : { state: 'compatible' as const, session: input.session }, limitations: [] };
+      },
     },
   };
   return { ports, calls, guest };

@@ -76,6 +76,14 @@ const reconciliationInterrupted = (work: WorkRecord, previous: ExecutionView) =>
 };
 /** The Workers' refusal of a session it was asked to continue (missing, damaged or incompatible copy): the caller may fall back to a fresh one. */
 const sessionRefusal = (code: string) => /^(WORKER_)?SESSION_/.test(code);
+/**
+ * The session ref after a Host-initiated activation CONTINUED the working session (a gate correction, a swap notice): identity, hash and
+ * size are the latest activation's (the file grew), the profile stays the WORKING activation's. Those activations run without the handoff
+ * policy, so the Workers record their ref with a tool set that lacks `handoff`; recorded as the Execution's session it made the next
+ * resume, planned with the handoff policy, see a different tool set and REPLACE the session (V2-10; observed in a real account on
+ * 2026-11-21: `replace`/`SESSION_INCOMPATIBLE`, differences `tools`, after a correction the gate then accepted).
+ */
+const continuedBy = (working: SessionRef, latest: SessionRef): SessionRef => ({ ...latest, profile: working.profile });
 const codeOf = (error: unknown, fallback: string) => error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : fallback;
 // Executions whose grants are held in THIS process's memory: boot reconciliation of another run/Control in-process never relabels them.
 const liveExecutions = new Set<string>();
@@ -1166,7 +1174,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const result = await wait(lifecycle!.renewWhile(corrector.completed));
           await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status === 'boot-swap' ? 'failure' : result.status, code: result.status === 'failure' ? result.code : null });
           // The correction is part of that session from here on (only when it was the one continued).
-          if (continuing && result.status !== 'failure' && result.session) returned.session = result.session;
+          if (continuing && result.status !== 'failure' && result.session) returned.session = continuedBy(continuing, result.session);
           // A session the Host could not continue is not tried again: the next refusal goes to a fresh one.
           else if (continuing && result.status === 'failure' && sessionRefusal(result.code)) returned.session = null;
         } finally { corrector.close(); }
@@ -1584,7 +1592,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
                 await recordSwapNotice(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status === 'question' ? 'question' : 'failure',
                   code: result.status === 'failure' ? result.code : result.status === 'boot-swap' ? 'SWAP_NOTICE_YIELDED' : null });
                 // The notice is part of the session from here on; a notice that failed leaves the session as the work left it.
-                if (result.status !== 'failure' && result.session) continued = result.session;
+                if (result.status !== 'failure' && result.session) continued = continuedBy(continued, result.session);
               } finally { notifier.close(); }
             }
           }
