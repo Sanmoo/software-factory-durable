@@ -192,51 +192,14 @@ async function accountChecks({
   checks.splice(
     checks.findIndex(check => check.id === 'lambda-build-role'),
     0,
-    regionProblems.length > 0
-      ? {
-          id: 'lambda-region',
-          status: 'blocked',
-          message: `Wrong region ${profile.region}: ${regionProblems.join('; ')}.`,
-          nextStep: 'Set sandbox.region to the region where the account template was applied and the service is offered; nothing is moved or created.',
-        }
-      : regionKnown
-        ? { id: 'lambda-region', status: 'ok', message: `The Lambda MicroVMs service answers in ${profile.region}.`, nextStep: 'None.' }
-        : {
-            id: 'lambda-region',
-            status: 'unverified',
-            message: `The Lambda MicroVMs service could not be read in ${profile.region}.`,
-            nextStep: 'Resolve the permission diagnostics and run doctor again.',
-          },
+    regionCheck(profile, regionProblems, regionKnown),
   );
 
   // V2-30: Builder concurrency x boot size against the quota READ from the account; reported, never adjusted.
-  let capacity: Diagnostic;
   const size = lambdaBootSize(profile);
   const quota = await service.allocatedMemoryQuota(profile.architecture);
-  if (!quota.ok || concurrency === undefined) {
-    if (!quota.ok && quota.failure.kind === 'access-denied') refused(quota.failure, 'servicequotas:ListServiceQuotas');
-    capacity = {
-      id: 'lambda-quota',
-      status: 'unverified',
-      message: !quota.ok
-        ? `The account memory quota for ${profile.architecture} MicroVMs could not be read${describe(quota.failure)}; concurrency was not compared with it.`
-        : 'Builder concurrency is unknown (invalid configuration); it was not compared with the account quota.',
-      nextStep:
-        'Read the quota in the Service Quotas console and keep concurrency x peak memory under it; a quota refusal at start is a visible capacity wait, retried by itself.',
-    };
-  } else {
-    const needed = concurrency * size.peakMemoryMiB;
-    const sentence = `Builder concurrency ${concurrency} x ${size.peakMemoryMiB} MiB peak per MicroVM = ${needed} MiB; account quota ${quota.value.mebibytes} MiB of allocated memory (${profile.architecture}, ${profile.region}).`;
-    capacity =
-      needed > quota.value.mebibytes
-        ? {
-            id: 'lambda-quota',
-            status: 'blocked',
-            message: `${sentence} The quota is exceeded.`,
-            nextStep: 'Lower `concurrency`, lower sandbox.baselineMemoryMiB or request a quota increase from AWS. Nothing is adjusted automatically.',
-          }
-        : { id: 'lambda-quota', status: 'ok', message: sentence, nextStep: 'None. The quota is shared with anything else running in the account.' };
-  }
+  if (!quota.ok && quota.failure.kind === 'access-denied') refused(quota.failure, 'servicequotas:ListServiceQuotas');
+  const capacity = capacityCheck(profile, concurrency, size, quota);
 
   // Permissions: the operation role's policy simulated statement by statement (each action named), plus what the reads above were refused.
   let simulated = operates;
@@ -296,6 +259,54 @@ async function accountChecks({
     });
   checks.push(capacity);
   return [...checks, ...profileProof(profile)];
+}
+
+/** The region diagnostic: a wrong region names each of its problems; a region the service could not be read in is unverified. */
+function regionCheck(profile: LambdaProfile, regionProblems: readonly string[], regionKnown: boolean): Diagnostic {
+  if (regionProblems.length > 0)
+    return {
+      id: 'lambda-region',
+      status: 'blocked',
+      message: `Wrong region ${profile.region}: ${regionProblems.join('; ')}.`,
+      nextStep: 'Set sandbox.region to the region where the account template was applied and the service is offered; nothing is moved or created.',
+    };
+  return regionKnown
+    ? { id: 'lambda-region', status: 'ok', message: `The Lambda MicroVMs service answers in ${profile.region}.`, nextStep: 'None.' }
+    : {
+        id: 'lambda-region',
+        status: 'unverified',
+        message: `The Lambda MicroVMs service could not be read in ${profile.region}.`,
+        nextStep: 'Resolve the permission diagnostics and run doctor again.',
+      };
+}
+
+/** V2-30: Builder concurrency x boot size against the quota READ from the account; reported, never adjusted. */
+function capacityCheck(
+  profile: LambdaProfile,
+  concurrency: number | undefined,
+  size: ReturnType<typeof lambdaBootSize>,
+  quota: Awaited<ReturnType<LambdaService['allocatedMemoryQuota']>>,
+): Diagnostic {
+  if (!quota.ok || concurrency === undefined)
+    return {
+      id: 'lambda-quota',
+      status: 'unverified',
+      message: !quota.ok
+        ? `The account memory quota for ${profile.architecture} MicroVMs could not be read${describe(quota.failure)}; concurrency was not compared with it.`
+        : 'Builder concurrency is unknown (invalid configuration); it was not compared with the account quota.',
+      nextStep:
+        'Read the quota in the Service Quotas console and keep concurrency x peak memory under it; a quota refusal at start is a visible capacity wait, retried by itself.',
+    };
+  const needed = concurrency * size.peakMemoryMiB;
+  const sentence = `Builder concurrency ${concurrency} x ${size.peakMemoryMiB} MiB peak per MicroVM = ${needed} MiB; account quota ${quota.value.mebibytes} MiB of allocated memory (${profile.architecture}, ${profile.region}).`;
+  return needed > quota.value.mebibytes
+    ? {
+        id: 'lambda-quota',
+        status: 'blocked',
+        message: `${sentence} The quota is exceeded.`,
+        nextStep: 'Lower `concurrency`, lower sandbox.baselineMemoryMiB or request a quota increase from AWS. Nothing is adjusted automatically.',
+      }
+    : { id: 'lambda-quota', status: 'ok', message: sentence, nextStep: 'None. The quota is shared with anything else running in the account.' };
 }
 
 /** V2-12, V2-29: what of the configured profile lies outside what the proofs exercised. Accepted, and said. */

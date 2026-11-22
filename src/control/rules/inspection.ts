@@ -280,7 +280,7 @@ export function chainOf(
       source: 'publication',
       observedAt: discovery?.observedAt ?? null,
       ageSeconds: ageOf(discovery?.observedAt ?? null),
-      completeness: !discovery ? 'not-observed' : discovery.outcome === 'incomplete' || discovery.branch.state === 'unknown' ? 'incomplete' : 'complete',
+      completeness: discoveryCompleteness(discovery),
     });
   }
   if (work.checks)
@@ -305,7 +305,7 @@ export function chainOf(
       source: 'delivery',
       observedAt: read?.observedAt ?? null,
       ageSeconds: ageOf(read?.observedAt ?? null),
-      completeness: !read ? 'not-observed' : read.outcome === 'unavailable' || read.outcome === 'merge-unconfirmed' ? 'incomplete' : 'complete',
+      completeness: deliveryCompleteness(read),
     });
   }
   if (work.feedback)
@@ -362,6 +362,18 @@ export function chainOf(
   };
 }
 
+/** Completeness of the latest publication discovery: an incomplete read or an unknown own branch is `incomplete`. */
+function discoveryCompleteness(discovery: NonNullable<Work['publication']>['discoveries'][number] | undefined): string {
+  if (!discovery) return 'not-observed';
+  return discovery.outcome === 'incomplete' || discovery.branch.state === 'unknown' ? 'incomplete' : 'complete';
+}
+
+/** Completeness of the latest delivery read: an unavailable read or an unconfirmed merge is `incomplete`. */
+function deliveryCompleteness(read: NonNullable<Work['delivery']>['observations'][number] | undefined): string {
+  if (!read) return 'not-observed';
+  return read.outcome === 'unavailable' || read.outcome === 'merge-unconfirmed' ? 'incomplete' : 'complete';
+}
+
 // ---- Consumption ----
 
 const zero = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
@@ -401,16 +413,7 @@ export function usageActivity(
   counted: Set<string>,
   removedByCleanup: boolean | 'expired' | 'removed' = false,
 ): UsageActivityView {
-  // A session file the Work's own cleanup removed is `removed`; one whose Records copy a retention sweep removed is `expired` (ticket 30). Never absent or zero.
-  if (!subject.missing && observation?.state === 'lost' && removedByCleanup) {
-    subject = {
-      ...subject,
-      missing:
-        removedByCleanup === 'expired'
-          ? { state: 'expired', code: 'SESSION_EXPIRED_BY_RETENTION' }
-          : { state: 'removed', code: removedByCleanup === 'removed' ? 'SESSION_REMOVED_BY_EXPLICIT_CLEANUP' : 'SESSION_REMOVED_BY_CLEANUP' },
-    };
-  }
+  subject = withCleanupRemoval(subject, observation, removedByCleanup);
   const base = {
     executionId: subject.executionId,
     role: subject.role,
@@ -478,6 +481,18 @@ export function usageActivity(
   };
 }
 
+/** A session file the Work's own cleanup removed is `removed`; one whose Records copy a retention sweep removed is `expired` (ticket 30). Never absent or zero. */
+function withCleanupRemoval(subject: UsageSubject, observation: UsageObservation | null, removedByCleanup: boolean | 'expired' | 'removed'): UsageSubject {
+  if (subject.missing || observation?.state !== 'lost' || !removedByCleanup) return subject;
+  return {
+    ...subject,
+    missing:
+      removedByCleanup === 'expired'
+        ? { state: 'expired', code: 'SESSION_EXPIRED_BY_RETENTION' }
+        : { state: 'removed', code: removedByCleanup === 'removed' ? 'SESSION_REMOVED_BY_EXPLICIT_CLEANUP' : 'SESSION_REMOVED_BY_CLEANUP' },
+  };
+}
+
 const round = (value: number) => Math.round(value * 1e9) / 1e9;
 
 /** Aggregate of activities: totals sum ONLY measured parts; `complete` only when every activity is complete (zero only when observed). */
@@ -534,7 +549,7 @@ export function usageSubjects(work: Work): UsageSubject[] {
     const session = execution.end?.session ?? null;
     const started = execution.start !== null;
     // Finding A7: a started Execution that ended by a recorded loss returned no session; the one it left in the lost boot is looked up.
-    const loss = started && !session && execution.end ? (work.losses ?? []).findLast(item => item.executionId === execution.executionId) : undefined;
+    const loss = lossOf(work, execution, started && !session);
     subjects.push({
       executionId: execution.executionId,
       role: 'builder',
@@ -542,12 +557,8 @@ export function usageSubjects(work: Work): UsageSubject[] {
       attempt: null,
       invocationId: execution.invocationId,
       outcome: execution.end?.outcome ?? execution.state,
-      session: session
-        ? { sessionId: session.sessionId, mode: execution.request.session?.mode ?? 'new' }
-        : loss
-          ? { sessionId: null, mode: execution.request.session?.mode ?? 'new' }
-          : null,
-      missing: !started ? { state: 'absent', code: 'NOT_STARTED' } : !session && !loss ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' } : null,
+      session: builderSession(execution, session, loss),
+      missing: builderMissing(started, session, loss),
       ...(loss ? { lost: { boot: loss.boot } } : {}),
     });
     for (const reviewRound of execution.review?.rounds ?? [])
@@ -563,16 +574,35 @@ export function usageSubjects(work: Work): UsageSubject[] {
           invocationId: reviewer.invocationId,
           outcome: reviewer.opinion?.conclusion ?? reviewer.failure?.code ?? reviewer.state,
           session: reviewer.opinion ? { sessionId: null, mode: reviewer.opinion.session.mode ?? 'new' } : null,
-          missing:
-            reviewer.receiptId === null && reviewer.state !== 'ended'
-              ? { state: 'absent', code: 'NOT_STARTED' }
-              : !file
-                ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' }
-                : null,
+          missing: reviewerMissing(reviewer, file),
         });
       }
   }
   return subjects;
+}
+
+type Loss = NonNullable<Work['losses']>[number];
+type RecordedSession = NonNullable<ExecutionView['end']>['session'] | null;
+type ReviewerView = NonNullable<NonNullable<NonNullable<ExecutionView['review']>['rounds'][number]['reviewers']>['standards']>;
+
+/** Finding A7: the recorded loss of a started Execution that returned no session (`sessionless`), whose session is in the lost boot. */
+function lossOf(work: Work, execution: ExecutionView, sessionless: boolean): Loss | undefined {
+  return sessionless && execution.end ? (work.losses ?? []).findLast(item => item.executionId === execution.executionId) : undefined;
+}
+
+function builderSession(execution: ExecutionView, session: RecordedSession, loss: Loss | undefined): UsageSubject['session'] {
+  if (session) return { sessionId: session.sessionId, mode: execution.request.session?.mode ?? 'new' };
+  return loss ? { sessionId: null, mode: execution.request.session?.mode ?? 'new' } : null;
+}
+
+function builderMissing(started: boolean, session: RecordedSession, loss: Loss | undefined): UsageSubject['missing'] {
+  if (!started) return { state: 'absent', code: 'NOT_STARTED' };
+  return !session && !loss ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' } : null;
+}
+
+function reviewerMissing(reviewer: ReviewerView, file: string | null): UsageSubject['missing'] {
+  if (reviewer.receiptId === null && reviewer.state !== 'ended') return { state: 'absent', code: 'NOT_STARTED' };
+  return !file ? { state: 'unknown', code: 'SESSION_NOT_RECORDED' } : null;
 }
 
 /** Session `file` of a subject (reviewers) or the Builder ref, for the usage port; null when nothing can be read. */
@@ -583,17 +613,21 @@ export function sessionLocator(
   if (subject.missing) return null;
   const execution = executionsOf(work).find(item => item.executionId === subject.executionId);
   if (!execution) return null;
-  if (subject.role === 'builder')
-    return execution.end?.session
-      ? { ref: execution.end.session.ref, sha256: execution.end.session.sha256 }
-      : subject.lost
-        ? { invocation: { executionId: execution.executionId, invocationId: execution.invocationId } }
-        : null;
+  if (subject.role === 'builder') return builderLocator(execution, subject);
   for (const reviewRound of execution.review?.rounds ?? []) {
     const reviewer = reviewRound.round === subject.round ? reviewRound.reviewers?.[subject.role as 'standards' | 'spec'] : undefined;
     if (reviewer?.invocationId === subject.invocationId && reviewer.opinion?.session.file) return { file: reviewer.opinion.session.file };
   }
   return null;
+}
+
+/** The Builder's recorded session ref; for a lost boot (finding A7), its invocation to look the session up by. */
+function builderLocator(
+  execution: ExecutionView,
+  subject: UsageSubject,
+): { ref: string; sha256: string } | { invocation: { executionId: string; invocationId: string } } | null {
+  if (execution.end?.session) return { ref: execution.end.session.ref, sha256: execution.end.session.sha256 };
+  return subject.lost ? { invocation: { executionId: execution.executionId, invocationId: execution.invocationId } } : null;
 }
 
 /**
