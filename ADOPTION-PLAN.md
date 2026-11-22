@@ -628,6 +628,6 @@ Toda diretiva `eslint-disable` esconde um achado do Lint, então cada uma é um 
 - **Achados tolerados**: nenhum nos níveis de teste; Lint: as 8 supressões da emenda.
 - **Regressão**: `test:ci` verde (2177 testes, 389 s de 900 s), e de novo após o rebase sobre `main` (2188 testes, 333 s); as provas foram repetidas na árvore rebaseada.
 - **Adotados**: Unit tests, Integration tests; todos os quality gates já adotados provados de novo nesta árvore, mais a prova de supressão do Lint — [GATE-PROOFS.md](GATE-PROOFS.md). Rehearsal dos modos: 4/4.
-- **Passo do operador agora possível**: instalar o hook (`git config core.hooksPath .githooks`), como decidido em S1.
+- **Passo do operador agora possível**: instalar o hook, como decidido em S1. Emendado pelo mantenedor em 2026-11-22: por worktree, não para o repositório (`extensions.worktreeConfig` ativo; `git config --worktree core.hooksPath .githooks` em cada worktree que o queira). O `core.hooksPath` do repositório alcançaria o checkout principal, que não tem `node_modules` e onde as sessões de planejamento commitam (o runner recusaria e bloquearia esses commits), e os worktrees de outras sessões, onde cada commit pagaria ~54 s. Os worktrees de etapa desta adoção o instalam.
 - **Continuam pendentes**: Format (S4); Secrets (S5); Static metrics (S6); Mutation. **Bloqueado**: E2E tests. Os checks periódicos dependem de o timer noturno estar instalado.
 

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Fast Entry Point before every commit. Versioned only; installing it is an operator step:
-#   git config core.hooksPath .githooks
+# Fast Entry Point before every commit. Versioned only; installing it is an operator step, per worktree (never repository-wide:
+# the main checkout and other sessions' worktrees would inherit it). Inside the worktree, which needs its node_modules:
+#   git config --worktree core.hooksPath .githooks
 set -eu
 exec npm run --silent test:fast
