@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { z } from 'zod';
 import { createSandbox, type HostToolProbe, type LambdaServiceFactory } from '../sandbox/index.js';
-import { builderBudgetMaximumFactor, builderBudgetV1 } from '../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, workerThinkingLevels } from '../contracts/index.js';
 
 const text = z
   .string()
@@ -19,7 +19,13 @@ const text = z
 const positive = z.number().int().positive().safe();
 const login = text.regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/);
 const credentialFile = text.regex(/^credentials\/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/);
-const model = z.strictObject({ provider: text, model: text, credentialFile: credentialFile.optional() });
+// #48: `thinkingLevel` is the role's reasoning level; absent, the role runs at the release default (the maximum). There is no `off`.
+const model = z.strictObject({
+  provider: text,
+  model: text,
+  credentialFile: credentialFile.optional(),
+  thinkingLevel: z.enum(workerThinkingLevels).optional(),
+});
 const repository = z.strictObject({
   repository: text.regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/),
   base: text.refine(

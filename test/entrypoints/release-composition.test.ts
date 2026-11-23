@@ -102,6 +102,7 @@ test('production composition: the release profile for all three roles, the deriv
         providerId: 'openai',
         modelId: 'gpt-6-luna',
         api: 'openai-responses',
+        thinkingLevel: 'max',
         systemPromptSha256: undefined,
       },
     );
@@ -114,6 +115,17 @@ test('production composition: the release profile for all three roles, the deriv
   assert.equal('timeoutSeconds' in ports.builder, false);
   assert.match(productionProfile.limits.deadline, /^not set by production composition; only the optional configured per-repository timeoutSeconds applies$/);
   assert.doesNotMatch(JSON.stringify(productionProfile.limits), /deadlineMinutes|deadlineMs/);
+});
+
+test('#48: a role runs at its configured reasoning level; the roles without one keep the maximum', async () => {
+  const models = { ...effective.models, standards: { ...effective.models.standards, thinkingLevel: 'high' as const } };
+  const composed = await composeProductionExecution({ root: '/installation', effective: { ...effective, models }, guestAssets, github });
+  assert.equal(composed.status, 'composed');
+  if (composed.status !== 'composed') return;
+  assert.deepEqual(
+    (['builder', 'standards', 'spec'] as const).map(role => composed.summary.profiles[role].thinkingLevel),
+    ['max', 'high', 'max'],
+  );
 });
 
 test('production composition refuses any role whose configured provider/model is not the release profile; no fallback, no partial ports', async () => {

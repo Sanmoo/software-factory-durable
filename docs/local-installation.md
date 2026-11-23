@@ -38,7 +38,7 @@ models:
     provider: provedor-explicito
     model: modelo-builder
     credentialFile: credentials/model.json # opcional; somente referência
-  standards: {provider: provedor-explicito, model: modelo-standards}
+  standards: {provider: provedor-explicito, model: modelo-standards, thinkingLevel: high} # opcional; ver abaixo
   spec: {provider: provedor-explicito, model: modelo-spec}
 githubApp:
   appId: 123
@@ -52,6 +52,12 @@ repositories:
     installationId: 456
     workflows: false # escolha obrigatória: true ou false, nunca presumida
 ```
+
+`models.<papel>.thinkingLevel` (opcional) é o nível de raciocínio do modelo naquele papel:
+`low`, `medium`, `high`, `xhigh` ou `max`. Ausente, o papel roda em `max`. Não existe `off`:
+todo papel exige raciocínio, e um valor fora da lista invalida a configuração inteira. Uma sessão
+cujo modelo não aceite o nível pedido é recusada com `WORKER_THINKING_LEVEL_UNSUPPORTED`, sem
+redução silenciosa.
 
 `gondolin-qemu-alpine-dev-v1` é identidade fixa **de desenvolvimento**, sem assets
 ou release homologados. A factory pública `createSandbox({root}).validate(configuration)`

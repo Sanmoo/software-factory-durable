@@ -103,10 +103,13 @@ export const builderBudgetMaximumFactor = 2;
  * worker limits, the release record and the owner's secret-sync bound. */
 export const reviewerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
 /**
- * #48 (operator decision 2026-11-22): every agent session (Builder, Standards, Spec) requires model reasoning, at the maximum level of the
- * release's single model (gpt-6-luna). Fixed in the release: no configuration, role or session selects another level.
+ * #48 (operator decisions 2026-11-22): every agent session (Builder, Standards, Spec) requires model reasoning. The levels a role may be
+ * configured with (`models.<role>.thinkingLevel`) are the reasoning levels of the release's single model (gpt-6-luna); there is no `off`.
+ * Absent from the configuration, a role runs at the maximum level.
  */
-export const workerThinkingLevel = 'max';
+export const workerThinkingLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type WorkerThinkingLevel = (typeof workerThinkingLevels)[number];
+export const defaultWorkerThinkingLevel: WorkerThinkingLevel = 'max';
 /** The model requests of a session launched without a Host budget policy (the bounded OAuth qualification). */
 export const qualificationRequestsV1 = 2;
 /** Ticket 48: per-repository Builder budget adjustment as configured (each field optional; absent = the release value). */

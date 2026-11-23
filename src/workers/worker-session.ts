@@ -29,7 +29,7 @@ import type { WorkerQuestionRequest } from '../platform/host/index.js';
 import { builderHandoff, captureHandoff, readGateSource, probeContent, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
 import { createToolLedger } from './gates.js';
 import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
-import { workerThinkingLevel, type ReviewOpinion } from '../contracts/index.js';
+import { defaultWorkerThinkingLevel, type ReviewOpinion, type WorkerThinkingLevel } from '../contracts/index.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 
 type Options = {
@@ -76,18 +76,22 @@ async function reopenSession(sessionsDirectory: string, expected: { file: string
   return manager;
 }
 
+/** #48: the reasoning level of this profile's sessions: the role's configured level, or the release default (maximum) when absent. */
+const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
+  ('thinkingLevel' in profile ? profile.thinkingLevel : undefined) ?? defaultWorkerThinkingLevel;
+
 /**
  * Why a freshly created SDK session must not run: it is not the profile's model, or (#48) the production model does not run at exactly the
- * release reasoning level. The SDK clamps silently when a model lacks a level, so a clamp refuses the session instead of running it with
- * less reasoning. A legacy fixture model keeps the highest level it declares.
+ * profile's reasoning level. The SDK clamps silently when a model lacks a level, so a clamp refuses the session instead of running it with
+ * another level. A legacy fixture model keeps the nearest level it declares.
  */
 function sessionRefusal(
   session: { model?: { provider: string; id: string } | undefined; thinkingLevel: string },
-  profile: { providerId: string; modelId: string },
+  profile: ReviewerProfile,
   oauth: boolean,
 ): 'WORKER_MODEL_MISMATCH' | 'WORKER_THINKING_LEVEL_UNSUPPORTED' | undefined {
   if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) return 'WORKER_MODEL_MISMATCH';
-  if (oauth && session.thinkingLevel !== workerThinkingLevel) return 'WORKER_THINKING_LEVEL_UNSUPPORTED';
+  if (oauth && session.thinkingLevel !== thinkingLevelOf(profile)) return 'WORKER_THINKING_LEVEL_UNSUPPORTED';
   return undefined;
 }
 
@@ -183,7 +187,9 @@ export async function executeSession(options: Options, invocation: Invocation, r
         runtime.registerProvider(profile.providerId, profile.provider);
         await runtime.setRuntimeApiKey(profile.providerId, profile.apiKey, { signal });
       }
-      const qualification = oauth ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort(), limits) : undefined;
+      const qualification = oauth
+        ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort(), limits, thinkingLevelOf(profile))
+        : undefined;
       // After a question: no further model request of this activation, whatever the profile (outermost wrapper, before any auth/network).
       const stream = runtime.streamSimple.bind(runtime);
       runtime.streamSimple = (...args: Parameters<typeof stream>) => {
@@ -376,7 +382,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         agentDir: profile.directory,
         modelRuntime: runtime,
         model,
-        thinkingLevel: workerThinkingLevel,
+        thinkingLevel: thinkingLevelOf(profile),
         tools,
         customTools: qualification ? sessionTools.map(tool => qualification.tool(tool)) : sessionTools,
         resourceLoader,
