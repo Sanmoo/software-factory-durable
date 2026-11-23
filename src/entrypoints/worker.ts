@@ -18,7 +18,12 @@ async function send(message: Record<string, unknown>) {
 // its completion handler is installed. A fatal worker fault must never become a
 // raw Node diagnostic or permit a dependent model turn. Do not resume execution.
 let fatal = false;
-let inbound: ((value: unknown) => void) | undefined;
+
+// Bootstrap is consumed exactly once; only this invocation's abort remains.
+// One listener from the start (#53): Node emits every message of one channel read in the same tick batch,
+// so a listener added once the bootstrap resolved would miss an abort read together with it.
+let acceptBootstrap: ((value: unknown) => void) | undefined;
+const routeMessage = (value: unknown) => (acceptBootstrap ? acceptBootstrap(value) : directive(value));
 const terminate = () => {
   if (fatal) return;
   fatal = true;
@@ -32,11 +37,7 @@ process.on('unhandledRejection', terminate);
 
 try {
   if (!process.send || process.argv.length !== 2) throw new Error('WORKER_BOOTSTRAP_INVALID');
-  // Bootstrap is consumed exactly once; only this invocation's abort remains. One listener from the start (#53): Node emits every
-  // message of one channel read in the same tick batch, so a listener added once the bootstrap resolved would miss an abort read with it.
-  let bootstrap: ((value: unknown) => void) | undefined;
-  inbound = value => (bootstrap ? bootstrap(value) : directive(value));
-  process.on('message', inbound);
+  process.on('message', routeMessage);
   const input = await new Promise<unknown>((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
@@ -48,10 +49,10 @@ try {
     };
     function cleanup() {
       clearTimeout(timeout);
-      bootstrap = undefined;
+      acceptBootstrap = undefined;
       process.removeListener('disconnect', disconnected);
     }
-    bootstrap = value => {
+    acceptBootstrap = value => {
       cleanup();
       resolve(value);
     };
@@ -92,6 +93,6 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  if (inbound) process.removeListener('message', inbound);
+  process.removeListener('message', routeMessage);
   if (process.connected && !fatal) process.disconnect();
 }
