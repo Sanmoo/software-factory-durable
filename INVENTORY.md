@@ -47,7 +47,7 @@ Nada na aplicação, nos testes ou no tooling foi alterado.
 - [O] `npm run test:ci`: dist limpo + tsc + ESLint + depcruise + todos os arquivos não-`full`; teto 10 min; flock de máquina. Sem seleção por mudança: roda tudo.
 - [O] `npm run test:full`: ci + sandbox em disco real + passada em ordem aleatória.
 - [O] CI hospedado (`.github/workflows/agent-checks.yml`) roda só `scripts/agent-checks/check.mjs` (documental, ~15 s, verde nas 10 últimas execuções). O "CI" real é o supervisor local rodando `test:ci` (`docs/agents/testing.md`).
-- [O] Noturno: unidades systemd versionadas (`scripts/test-runner/systemd/`, 03:30, branch padrão `integration/software-factory-mvp`) **não instaladas nesta máquina** (sem timer, sem `~/.local/state/software-factory/nightly-tests`). Cadência integral hoje não roda.
+- [O] Noturno: unidades systemd versionadas (`scripts/test-runner/systemd/`, 03:30, valida `origin/main` após fetch, #44) **não instaladas nesta máquina** (sem timer, sem `~/.local/state/software-factory/nightly-tests`). Cadência integral hoje não roda.
 - [O] Sem pre-commit hook (`core.hooksPath` vazio).
 
 ## Testes que falham / ausentes

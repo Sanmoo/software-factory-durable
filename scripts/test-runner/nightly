@@ -1,28 +1,66 @@
 #!/bin/sh
-# Nightly integral validation (`full` tier) over a LOCAL branch, in a dedicated detached worktree. No fetch, no network, no install.
+# Nightly integral validation (`full` tier) of the integrated line, origin/main, in a dedicated detached worktree (#44).
+# Every change lands on main by a pull request merged on GitHub, so the local main branch is not the integrated line: this script
+# fetches it, and the report names the commit validated. A failure to fetch, place the worktree or install is a red report naming
+# the environment failure; it never falls back to an older tree.
 # Run by the user systemd timer in scripts/test-runner/systemd/ (installed explicitly by the operator).
 # A red report becomes a ticket; it never blocks integration.
 #   SF_NIGHTLY_REPO    main checkout (required)
-#   SF_NIGHTLY_BRANCH  branch to test (default main: integral validation of the integrated line)
+#   SF_NIGHTLY_BRANCH  integrated branch on origin (default main)
 set -eu
 repo=${SF_NIGHTLY_REPO:?set SF_NIGHTLY_REPO to the main checkout}
 branch=${SF_NIGHTLY_BRANCH:-main}
+tracking="origin/$branch"
 worktree="$repo/.worktrees/nightly-full"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/software-factory/nightly-tests"
 mkdir -p "$state"
 report="$state/full-$(date -u +%Y%m%dT%H%M%SZ).txt"
 log="${report%.txt}.log"
 
-if [ ! -d "$worktree" ]; then
-  git -C "$repo" worktree add --detach "$worktree" "$branch"
-elif [ -n "$(git -C "$worktree" status --porcelain)" ]; then
-  echo "NIGHTLY_WORKTREE_DIRTY: $worktree has local changes; refusing to move it" | tee "$report" >&2
+# An environment failure: a red report that names it, and no validation of any tree.
+refuse() {
+  { echo "$1"; echo 'RESULT: FAIL'; } | tee "$report" >&2
   exit 1
+}
+
+git -C "$repo" fetch --quiet origin "+refs/heads/$branch:refs/remotes/$tracking" >"$log" 2>&1 ||
+  refuse "NIGHTLY_FETCH_FAILED: git fetch origin $branch failed; see $log"
+commit=$(git -C "$repo" rev-parse --verify -q "refs/remotes/$tracking^{commit}") ||
+  refuse "NIGHTLY_FETCH_FAILED: $tracking does not resolve after the fetch"
+
+if [ ! -d "$worktree" ]; then
+  # A worktree directory removed by hand stays registered until pruned.
+  { git -C "$repo" worktree prune && git -C "$repo" worktree add --quiet --detach "$worktree" "$commit"; } >>"$log" 2>&1 ||
+    refuse "NIGHTLY_WORKTREE_FAILED: cannot create $worktree at $commit; see $log"
 else
-  git -C "$worktree" checkout --quiet --detach "$branch"
+  changes=$(git -C "$worktree" status --porcelain 2>>"$log") || refuse "NIGHTLY_WORKTREE_FAILED: cannot read the state of $worktree; see $log"
+  [ -z "$changes" ] || refuse "NIGHTLY_WORKTREE_DIRTY: $worktree has local changes; refusing to move it"
+  git -C "$worktree" checkout --quiet --detach "$commit" >>"$log" 2>&1 || refuse "NIGHTLY_WORKTREE_FAILED: cannot move $worktree to $commit; see $log"
 fi
-# node_modules in the nightly worktree is maintained by the operator (`npm ci` there); the runner's
-# dependency check turns a drifted tree into a red report instead of installing anything.
+
+header="validated commit: $commit ($tracking)"
+if behind=$(git -C "$repo" rev-list --count "refs/heads/$branch..$commit" 2>/dev/null) && [ "$behind" -gt 0 ]; then
+  header="$header
+local $branch is $behind commit(s) behind $tracking (not used: the nightly validates $tracking)"
+fi
+
 cd "$worktree"
-echo "nightly full: $branch at $(git rev-parse HEAD), report $report"
-exec scripts/test-runner/run full --report "$report" >"$log" 2>&1
+# Dependencies follow the integrated lockfile: `npm ci` whenever it changed since the last install in this worktree. The record
+# lives inside node_modules, so a removed or half-installed tree is reinstalled too.
+installed=node_modules/.nightly-lockfile
+lockfile=$(git hash-object package-lock.json 2>>"$log") || refuse "NIGHTLY_INSTALL_FAILED: no readable package-lock.json at $commit"
+if [ "$(cat "$installed" 2>/dev/null || true)" != "$lockfile" ]; then
+  rm -f "$installed"
+  npm ci >>"$log" 2>&1 || refuse "NIGHTLY_INSTALL_FAILED: npm ci failed in $worktree at $commit; see $log"
+  echo "$lockfile" >"$installed"
+fi
+echo "nightly full: $tracking at $commit, report $report"
+status=0
+scripts/test-runner/run full --report "$report.run" >>"$log" 2>&1 || status=$?
+if [ ! -f "$report.run" ]; then
+  echo 'RESULT: FAIL (the runner wrote no report; see the log)' >"$report.run"
+  [ "$status" -ne 0 ] || status=1
+fi
+{ echo "$header"; cat "$report.run"; } >"$report"
+rm -f "$report.run"
+exit "$status"

@@ -1,6 +1,6 @@
 # Versioned only. Installation is an explicit operator step (docs/development.md, "Camadas de teste").
 [Unit]
-Description=Software Factory nightly full test tier (local branch, no network)
+Description=Software Factory nightly full test tier (fetches and validates origin/main)
 
 [Service]
 Type=oneshot

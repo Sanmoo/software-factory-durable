@@ -1,6 +1,6 @@
 // The change validation by change measures: files changed relative to the shared base (`VALIDATION_BASE`, else the
-// policy's base), plus the working tree and untracked files. On the base branch itself (or detached at its tip, as the
-// nightly checkout is), the change is what landed with the tip commit; any other branch compares against its merge base. Any part that cannot be established is reported as a widening reason, never read as "no change".
+// policy's base), plus the working tree and untracked files. On the base branch itself (or detached at its tip), the
+// change is what landed with the tip commit; any other branch compares against its merge base. Any part that cannot be established is reported as a widening reason, never read as "no change".
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
