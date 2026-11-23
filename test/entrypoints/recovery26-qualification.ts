@@ -41,7 +41,7 @@ const pollingSeconds = 30;
 const stepDeadlineMs = 10 * 60 * 1000;
 /** Per child: initial grant + at most one more; whole run: one grant per activation (4 max). */
 const maxIssuancesPerStep = 2;
-const node = '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node';
+const node = process.execPath;
 
 export function plan() {
   return {

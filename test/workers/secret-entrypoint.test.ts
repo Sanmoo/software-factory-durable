@@ -60,7 +60,7 @@ test(
         output = '',
         started = 0;
       const child = fork(new URL('../../src/entrypoints/worker.js', import.meta.url), [], {
-        execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node',
+        execPath: process.execPath,
         execArgv: [],
         env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(root, 't'), XDG_CACHE_HOME: join(root, 'c') },
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],

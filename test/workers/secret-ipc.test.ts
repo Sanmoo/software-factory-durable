@@ -431,7 +431,7 @@ test('actual fixed standalone child denies dependent use on real IPC EOF, forged
     const owner = await createRecords({ root });
     if (mode === 'capacity') for (let i = 0; i < 128; i++) owner.registerSecret(`full-registry-${i}`);
     const child = fork(new URL('./secret-ipc.fixture.js', import.meta.url), [], {
-      execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node',
+      execPath: process.execPath,
       execArgv: [],
       env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -505,7 +505,7 @@ test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry 
   const raw = await owner.openOutput({ ...outputContext, callId: 'raw-proof' }, { format: 'raw', maxBytes: 100 });
   await raw.write(Buffer.from('safe bytes'));
   const child = fork(new URL('./secret-ipc.fixture.js', import.meta.url), [], {
-    execPath: '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node',
+    execPath: process.execPath,
     execArgv: [],
     env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
