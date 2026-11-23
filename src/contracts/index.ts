@@ -102,6 +102,11 @@ export const builderBudgetMaximumFactor = 2;
 /** Ticket 51 (operator decision 2026-11-19, pilot 35): the fixed reviewer budget of ONE opinion (`reviewer-v1`). Ticket 59: one source for the
  * worker limits, the release record and the owner's secret-sync bound. */
 export const reviewerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
+/**
+ * #48 (operator decision 2026-11-22): every agent session (Builder, Standards, Spec) requires model reasoning, at the maximum level of the
+ * release's single model (gpt-6-luna). Fixed in the release: no configuration, role or session selects another level.
+ */
+export const workerThinkingLevel = 'max';
 /** The model requests of a session launched without a Host budget policy (the bounded OAuth qualification). */
 export const qualificationRequestsV1 = 2;
 /** Ticket 48: per-repository Builder budget adjustment as configured (each field optional; absent = the release value). */
