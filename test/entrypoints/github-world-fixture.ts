@@ -417,8 +417,9 @@ process.exit(result.status ?? 1);
   const fault = world.postFault;
   const created = !fault || fault.created;
   const comments = world.comments ?? [];
+  const at = new Date().toISOString(); // one instant: a new comment is never edited (#61)
   const comment = { id: 60000 + comments.length + 1, issue: number, repository: repo.name, node_id: 'IC_' + (comments.length + 1), body: request.body,
-    user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 }, created_at: at, updated_at: at };
   if (created) { world.comments = [...comments, comment]; saveWorld(world); }
   trace.body = request.body;
   if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }

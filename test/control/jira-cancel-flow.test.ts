@@ -133,12 +133,13 @@ test('/factory cancel on a Card cancels only its Work, before any Execution, wit
   try {
     const snapshot = async () => JSON.stringify(await readWork(opened.session, pag42));
     const before = await snapshot();
+    const at = new Date().toISOString(); // one instant: a comment never edited (#61)
     const again = await ingestJiraComment(opened.session, pag42, {
       ref: { tracker: 'jira', siteId: site.siteId, issueId: '81017', commentId: cancel },
       author: { tracker: 'jira', accountId: 'acc-factory' },
       body: '/factory cancel',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: at,
+      updatedAt: at,
       restricted: false,
       url: `${site.url}/browse/PAG-42`,
     } satisfies JiraComment);

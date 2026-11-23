@@ -455,6 +455,9 @@ test('ticket 18 AC2-AC5/AC7 composed: one owner run of the production compositio
   );
   assert.equal(published.questionId, qid);
   // The operator answers on the Ticket (a configured operator's strict /factory comment), never the agent.
+  // ONE instant for both timestamps, as GitHub reports a comment never edited: two clock reads can straddle a millisecond under load,
+  // and the Control then rightly ignores the answer as COMMENT_EDITED, leaving the Work stopped at QUESTION_PENDING (#61).
+  const answeredAt = new Date().toISOString();
   await world.update(state => {
     state.comments = [
       ...(state.comments ?? []),
@@ -463,11 +466,24 @@ test('ticket 18 AC2-AC5/AC7 composed: one owner run of the production compositio
         issue: 3,
         body: `/factory answer ${qid} Not required: keep the Rollback section out.`,
         user: { id: 9, login: 'operator-one', type: 'User' },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: answeredAt,
+        updated_at: answeredAt,
       },
     ];
   });
+  // The answer is accepted, never ignored: an ignored answer fails here with its code instead of exhausting the budget downstream.
+  await until(
+    'answer accepted',
+    async () => {
+      const shown = (await control.inspect({ kind: 'show', work_id: asked.work_id })) as Extract<ShowView, { kind: 'work' }>;
+      const question = shown.questions[0]!;
+      assert.deepEqual(question.ignored, [], 'the operator answer was ignored');
+      if (question.state === 'answered') return question;
+      if (time.isSleeping()) time.advance();
+      return undefined;
+    },
+    10,
+  );
 
   // AC2/AC3: recovery through the queue; reviews; S1 not adopted under the answer; verified content; direct draft publication; checks.
   // AC7 / ticket 39: with `update` active the journey STOPS at an explained, confirmed impediment: never ready, nothing converted, no bypass.
