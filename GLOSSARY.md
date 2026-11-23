@@ -48,6 +48,9 @@ Agente que avalia sozinho um Ticket ainda não especificado e decide seu estado 
 **Triage** (Triagem):
 Avaliação de um Ticket pelo Triager, anterior a qualquer Work e distinta de uma Execution.
 
+**Verdict** (Parecer):
+Conclusão que o Triager registra para uma Triage, com o desfecho recomendado e sua justificativa.
+
 ## issue-tracker
 
 Dono da leitura de tickets e de suas dependências nativas no GitHub.
