@@ -78,10 +78,14 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   };
 
   for (const name of ['t', 'c']) await mkdir(join(f.root, name), { mode: 0o700 });
-  async function child(input: object, abortAfterStart = false) {
+  async function child(input: object, abortWithBootstrap = false) {
     const processChild = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
       execPath: process.execPath,
-      execArgv: ['--import', fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url))],
+      execArgv: [
+        '--import',
+        fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url)),
+        ...(abortWithBootstrap ? ['--import', fileURLToPath(new URL('./fixtures/late-listen-preload.js', import.meta.url))] : []),
+      ],
       env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       detached: true,
@@ -98,7 +102,6 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     const checks: Promise<void>[] = [];
     processChild.on('message', message => {
       messages.push(message as Record<string, unknown>);
-      if (abortAfterStart && (message as { kind: string }).kind === 'worker-started') processChild.send({ kind: 'abort' });
       if ((message as { kind: string }).kind === 'provider-request')
         checks.push(
           (async () => {
@@ -114,6 +117,9 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     // No fixed 30 s timeout over the 19 worker spawns (it expired once at ci load 19): each child's own end, bounded by the runner budget.
     const exited = ended(processChild, () => `worker child; messages so far: ${messages.map(message => String(message.kind)).join(',')}`);
     processChild.send(input);
+    // #53: sent right behind the bootstrap, and read with it in one batch (late-listen preload). Deterministic, unlike an abort sent on
+    // receipt of worker-started, which raced the instant offline provider; and the batch is where a Host abort was lost.
+    if (abortWithBootstrap) processChild.send({ kind: 'abort' });
     const { code, signal } = await exited;
     await Promise.all(checks);
     assert.equal(signal, null);
@@ -157,10 +163,10 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     assert.deepEqual(rejected.messages, [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }]);
   }
 
-  // The fixed entrypoint accepts only invocation-local abort after bootstrap.
+  // The fixed entrypoint accepts only invocation-local abort after bootstrap, even one read in the same batch as the bootstrap.
   // The independent existing owner and its other bindings remain intact.
   // The successful child's EOF now closes its listener. Use a distinct live
-  // binding so this still tests pending abort during SDK setup, not connect failure.
+  // binding so this still tests pending abort during setup, not connect failure.
   const abortContext = { ...context, invocationId: 'abort-05' };
   const abortOwner = await nativeOwner(abortContext, {
     exec() {
