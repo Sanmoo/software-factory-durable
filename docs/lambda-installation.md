@@ -18,6 +18,11 @@ base exige pull request (senão bloqueia com `BASE_PROTECTION_NOT_VERIFIED`) e c
 branch no `origin` antes de vincular o PR. (Decisão 10 do Operador, 2026-11-21.) O `doctor` não
 confere a proteção da base.
 
+**Release sem guest assets.** O adapter `lambda` não usa os guest assets do Gondolin. Construa a release sem
+`--guest-assets`/`--guest-manifest-sha256` ([release autocontida](local-installation.md#release-autocontida-incremento-32)):
+ela não distribui `assets/guest/` e roda com `adapter: lambda`; com `gondolin`, `doctor` e controlador a recusam com
+`RELEASE_GUEST_ASSETS_ABSENT`. Uma release com assets continua servindo a uma instalação Lambda.
+
 ## 1. Preparar a conta (uma vez por instalação)
 
 Pré-requisito no host: AWS CLI com os comandos `aws lambda-microvms`.

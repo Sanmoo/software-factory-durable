@@ -3,6 +3,7 @@
   "files": {
     "test/entrypoints/normal-oauth.test.ts": { "slow": true, "reason": "18 modes, each forking a whole adapter→owner→Node24 worker chain (the deadline mode now waits 8 s, held-ack 50 ms; ticket 37). ~25 s alone." },
     "test/entrypoints/normal-edit.test.ts": { "slow": true, "reason": "14 modes, each forking a whole adapter→owner→Node24 worker chain. ~27 s alone." },
+    "test/entrypoints/release-assetless-install.test.ts": { "slow": true, "reason": "#62: builds the run's release without guest assets (real release builder, once per runner run), extracts it and runs its launcher with the private Node." },
     "test/entrypoints/release-install.test.ts": { "slow": true, "reason": "Extracts the run's shared release build (release-fixture, built once per runner run) and runs its launcher with the private Node. Builds it itself when it is the first of the three release files." },
     "test/entrypoints/release-artifact.test.ts": { "slow": true, "reason": "Extracts and tampers copies of the run's shared release build (built once per runner run by the first release file)." },
     "test/entrypoints/release-upgrade.test.ts": { "slow": true, "reason": "Extracts the run's shared release build next to a previous release and runs the explicit migration and switch." },

@@ -13,21 +13,24 @@ import { remainingMs } from '../runner/budget.js';
 // canonical root. The extracted release's own private Node runs setup/doctor/run. No VM, network, GitHub, model or credential.
 export const manifestSha256 = '9bf9e4c0a3af47bc92a350509f4ddfe7de3d319b5b63ca42a2939ad73b6ef80f';
 export const id = 'r32-test';
+/** #62: the id of the run's release built WITHOUT guest assets (a Lambda-only installation). */
+export const assetlessId = 'r62-test';
 export const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 export type Check = { id: string; status: string; message: string };
 export const check = (checks: Check[], name: string) => checks.find(item => item.id === name);
 
 type Built = { assets: string; output: string; report: Awaited<ReturnType<typeof buildRelease>> };
 
-async function build(directory: string): Promise<Built> {
+async function build(directory: string, release: string): Promise<Built> {
+  const output = join(directory, 'build');
+  if (release === assetlessId) return { assets: '', output, report: await buildRelease({ release, output }) };
   const assets = join(directory, 'synthetic-assets');
   await mkdir(assets);
   await writeFile(join(assets, 'manifest.json'), await readFile('test/sandbox/asset-manifest.fixture.json'));
   await writeFile(join(assets, 'vmlinuz-virt'), 'kernel fixture\n');
   await writeFile(join(assets, 'initramfs.cpio.lz4'), 'initramfs fixture\n');
   await writeFile(join(assets, 'rootfs.ext4'), 'rootfs fixture\n');
-  const output = join(directory, 'build');
-  return { assets, output, report: await buildRelease({ release: id, output, guestAssets: { directory: assets, manifestSha256 } }) };
+  return { assets, output, report: await buildRelease({ release, output, guestAssets: { directory: assets, manifestSha256 } }) };
 }
 
 /** Resolves once `path` exists: an fs.watch event on its directory, checked again after the watch is armed (no polling). */
@@ -64,11 +67,11 @@ function appeared(path: string, directory: string, stage: string): Promise<void>
  * nothing writes to the shared build). The first file to claim the run's shared directory builds; the others wait for its
  * outcome (event, not polling). Outside the runner (manual run) the build is private to the file, as before.
  */
-async function sharedBuild(work: string): Promise<Built> {
+async function sharedBuild(work: string, release: string): Promise<Built> {
   const shared = process.env.FACTORY_TEST_RUN_DIRECTORY;
-  if (!shared) return build(work);
-  const directory = join(shared, `release-${id}`),
-    outcome = join(shared, `release-${id}.json`);
+  if (!shared) return build(work, release);
+  const directory = join(shared, `release-${release}`),
+    outcome = join(shared, `release-${release}.json`);
   let owner = true;
   try {
     await mkdir(directory);
@@ -79,7 +82,7 @@ async function sharedBuild(work: string): Promise<Built> {
   if (owner) {
     let result: { ok: true; built: Built } | { ok: false; error: string };
     try {
-      result = { ok: true, built: await build(directory) };
+      result = { ok: true, built: await build(directory, release) };
     } catch (error) {
       result = { ok: false, error: String((error as Error).stack ?? error) };
     }
@@ -93,19 +96,19 @@ async function sharedBuild(work: string): Promise<Built> {
 }
 
 /** The run's release build (read-only) and a private work directory of the calling file. */
-export async function releaseBuild() {
+export async function releaseBuild(release = id) {
   const work = await mkdtemp(join(tmpdir(), 'factory-r32-'));
   // A failed build must not leak the work directory (the caller only learns `work` on success).
   try {
-    return { work, ...(await sharedBuild(work)) };
+    return { work, ...(await sharedBuild(work, release)) };
   } catch (error) {
     await rm(work, { recursive: true, force: true });
     throw error;
   }
 }
 
-export async function builtRelease() {
-  const { work, assets, output, report } = await releaseBuild();
+export async function builtRelease(release = id) {
+  const { work, assets, output, report } = await releaseBuild(release);
   const root = join(work, 'installation');
   await mkdir(root, { mode: 0o700 });
   const extracted = spawnSync('tar', ['-xpkf', join(output, report.archive), '-C', root], { encoding: 'utf8' });

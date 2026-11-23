@@ -159,3 +159,15 @@ test('v2 ticket 06: the Lambda adapter is composed with its declared capabilitie
   });
   assert.deepEqual(refused, { status: 'refused', code: 'SANDBOX_CONFIGURATION_INVALID', roles: [] });
 });
+
+test('#62: a release without guest assets composes the Lambda adapter; the Gondolin adapter is refused with RELEASE_GUEST_ASSETS_ABSENT', async () => {
+  const lambda = { adapter: 'lambda', schemaVersion: 1, awsProfile: 'factory', installation: 'acme' };
+  const composed = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox: lambda }, github });
+  assert.equal(composed.status, 'composed');
+  if (composed.status === 'composed') assert.equal(composed.summary.guestAssets, null);
+  // Gondolin boots the release's guest assets: without them nothing is composed (no fallback, no partial ports).
+  for (const sandbox of [effective.sandbox, { ...effective.sandbox, adapter: 'gondolin' }]) {
+    const refused = await composeProductionExecution({ root: '/installation', effective: { ...effective, sandbox }, github });
+    assert.deepEqual(refused, { status: 'refused', code: 'RELEASE_GUEST_ASSETS_ABSENT', roles: [] });
+  }
+});

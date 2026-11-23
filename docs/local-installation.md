@@ -147,6 +147,13 @@ node dist/src/entrypoints/release-build.js --release <id> --output <diretório-e
   --guest-assets <diretório-assets-fixado> --guest-manifest-sha256 <sha do manifesto>
 ```
 
+`--guest-assets` e `--guest-manifest-sha256` vão juntos ou não vão (um sem o outro é `INVALID_ARGUMENTS`). Sem eles (#62),
+a release não distribui `assets/guest/` e o manifesto não tem o bloco `guestAssets`: só o adapter `lambda`, que nunca inicia
+a VM do Gondolin, pode rodá-la. Com o adapter `gondolin` (explícito ou default), o `doctor` bloqueia com
+`release:assets-required` (`RELEASE_GUEST_ASSETS_ABSENT`) e o controlador recusa compor com `CONFIGURATION_UNSUPPORTED`
+(motivo `RELEASE_GUEST_ASSETS_ABSENT`), sem abrir o storage. Um `upgrade` para uma release sem assets é bloqueado em
+`upgrade:environments` enquanto existir ambiente persistente.
+
 O diretório de saída não pode existir (`RELEASE_OUTPUT_EXISTS`); a construção o cria exclusivamente. Toda
 entrada distribuída sob `node_modules` precisa pertencer à closure calculada do lockfile (inclusive as
 dependências aninhadas da cópia privada do SDK); dependências ausentes são recusadas, e só opcionais cujo
@@ -176,7 +183,8 @@ preserva os modos; extração sem preservá-los é recusada) e executar:
 `doctor` verifica a integridade da árvore contra o manifesto (`release:integrity`, falha nomeando o
 caminho divergente), a localização (`releases/<id>` desta raiz), a seleção explícita pelo `factory`
 desta raiz (sha do launcher), o Node privado efetivamente em execução, os bytes de todos os assets
-(re-hasheados, inclusive kernel/initramfs/rootfs) e os pins `guest-assets:*`; `release:qualification`
+(re-hasheados, inclusive kernel/initramfs/rootfs; numa release sem assets, `release:assets` diz que ela não os distribui)
+e os pins `guest-assets:*`; `release:qualification`
 permanece `unverified`. Release bloqueada é o código de topo `RELEASE_INVALID` (exit 3); uma release sem
 manifesto legível é `RELEASE_MANIFEST_MISSING` e nunca é tratada como checkout de desenvolvimento (só o
 marcador versionado `development-checkout.json`, fora de `releases/<id>`, identifica um checkout). O
