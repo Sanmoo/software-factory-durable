@@ -77,11 +77,14 @@ das fronteiras alteradas. O relatório do runner traz os tempos (estática, lane
 a admissão de storage recusa tmpfs; caminho curto por causa dos sockets) e uma segunda passada em
 ordem aleatória. A execução noturna é versionada, **não instalada**:
 
-- `scripts/test-runner/nightly`: atualiza o worktree destacado `<checkout>/.worktrees/nightly-full`
-  para a ponta local de `main` (validação integral da linha integrada), sem fetch nem instalação, e
-  roda `full --report` em `${XDG_STATE_HOME:-~/.local/state}/software-factory/nightly-tests/`.
-  O `node_modules` desse worktree é mantido pelo operador (`npm ci` nele); divergência vira relatório
-  vermelho pelo próprio runner.
+- `scripts/test-runner/nightly`: faz `git fetch origin main` e põe o worktree destacado
+  `<checkout>/.worktrees/nightly-full` em `origin/main`, a linha integrada pelos PRs (#44); o `main`
+  local não é usado e ninguém precisa mantê-lo em dia. Roda `npm ci` nesse worktree quando o
+  `package-lock.json` mudou desde a última instalação, e então `full --report` em
+  `${XDG_STATE_HOME:-~/.local/state}/software-factory/nightly-tests/`. O relatório nomeia o commit
+  validado e avisa quando o `main` local está atrás. Falha de fetch, do worktree ou de `npm ci` vira
+  relatório vermelho que nomeia a falha do ambiente (`NIGHTLY_FETCH_FAILED`, `NIGHTLY_WORKTREE_FAILED`,
+  `NIGHTLY_WORKTREE_DIRTY`, `NIGHTLY_INSTALL_FAILED`), sem validar a árvore anterior. A execução usa rede no horário do timer.
 - `scripts/test-runner/systemd/software-factory-nightly-tests.{service,timer}`: unit do usuário (03:30).
 
 Instalação, quando o operador decidir:

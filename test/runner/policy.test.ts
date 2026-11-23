@@ -50,7 +50,7 @@ test("every periodic check's recorded cadence is the schedule the versioned time
   assert.match(
     readFileSync('scripts/test-runner/systemd/software-factory-nightly-tests.service', 'utf8'),
     /^Environment=SF_NIGHTLY_BRANCH=main$/m,
-    'integral validation covers the integrated line',
+    'integral validation covers the integrated line (origin/main)',
   );
-  assert.match(readFileSync('scripts/test-runner/nightly', 'utf8'), /exec scripts\/test-runner\/run full /, 'the timer calls integral validation');
+  assert.match(readFileSync('scripts/test-runner/nightly', 'utf8'), /^scripts\/test-runner\/run full /m, 'the timer calls integral validation');
 });
