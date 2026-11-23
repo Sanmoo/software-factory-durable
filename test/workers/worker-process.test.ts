@@ -78,16 +78,20 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   };
 
   for (const name of ['t', 'c']) await mkdir(join(f.root, name), { mode: 0o700 });
-  async function child(input: object, abortWithBootstrap = false) {
+  // #53: deterministic abort points, never an abort racing the instant offline provider. 'with-bootstrap' is read in one batch with the
+  // bootstrap (late-listen preload, released once both sends flushed); 'during-session' is sent on the first provider request, whose
+  // response is held until the abort arrived (hold-provider preload).
+  async function child(input: object, abort?: 'with-bootstrap' | 'during-session') {
+    const preload = (name: string) => ['--import', fileURLToPath(new URL(`./fixtures/${name}.js`, import.meta.url))];
     const processChild = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
       execPath: process.execPath,
       execArgv: [
-        '--import',
-        fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url)),
-        ...(abortWithBootstrap ? ['--import', fileURLToPath(new URL('./fixtures/late-listen-preload.js', import.meta.url))] : []),
+        ...preload('provider-preload'),
+        ...(abort === 'with-bootstrap' ? preload('late-listen-preload') : []),
+        ...(abort === 'during-session' ? preload('hold-provider-preload') : []),
       ],
       env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1', TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      stdio: [abort === 'with-bootstrap' ? 'pipe' : 'ignore', 'pipe', 'pipe', 'ipc'],
       detached: true,
     });
     const messages: Array<Record<string, unknown>> = [];
@@ -102,6 +106,7 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     const checks: Promise<void>[] = [];
     processChild.on('message', message => {
       messages.push(message as Record<string, unknown>);
+      if (abort === 'during-session' && (message as { kind: string }).kind === 'provider-request') processChild.send({ kind: 'abort' });
       if ((message as { kind: string }).kind === 'provider-request')
         checks.push(
           (async () => {
@@ -116,10 +121,12 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     });
     // No fixed 30 s timeout over the 19 worker spawns (it expired once at ci load 19): each child's own end, bounded by the runner budget.
     const exited = ended(processChild, () => `worker child; messages so far: ${messages.map(message => String(message.kind)).join(',')}`);
-    processChild.send(input);
-    // #53: sent right behind the bootstrap, and read with it in one batch (late-listen preload). Deterministic, unlike an abort sent on
-    // receipt of worker-started, which raced the instant offline provider; and the batch is where a Host abort was lost.
-    if (abortWithBootstrap) processChild.send({ kind: 'abort' });
+    const sent = (message: object) => new Promise<void>((resolve, reject) => processChild.send(message, error => (error ? reject(error) : resolve())));
+    if (abort === 'with-bootstrap') {
+      await sent(input);
+      await sent({ kind: 'abort' });
+      processChild.stdin!.end();
+    } else processChild.send(input);
     const { code, signal } = await exited;
     await Promise.all(checks);
     assert.equal(signal, null);
@@ -163,31 +170,39 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     assert.deepEqual(rejected.messages, [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }]);
   }
 
-  // The fixed entrypoint accepts only invocation-local abort after bootstrap, even one read in the same batch as the bootstrap.
-  // The independent existing owner and its other bindings remain intact.
+  // The fixed entrypoint accepts only invocation-local abort after bootstrap, even one read in the same batch as the bootstrap: it is
+  // pending before the start, so nothing starts. The independent existing owner and its other bindings remain intact.
   // The successful child's EOF now closes its listener. Use a distinct live
-  // binding so this still tests pending abort during setup, not connect failure.
+  // binding so this tests the pending abort, not connect failure.
   const abortContext = { ...context, invocationId: 'abort-05' };
   const abortOwner = await nativeOwner(abortContext, {
     exec() {
-      assert.fail('aborted setup reached guest');
+      assert.fail('aborted worker reached guest');
     },
   });
   t.after(() => abortOwner.close());
-  const aborted = await child({ ...bootstrap, context: abortContext, endpoint: abortOwner.owner.endpoint }, true);
+  const aborted = await child({ ...bootstrap, context: abortContext, endpoint: abortOwner.owner.endpoint }, 'with-bootstrap');
   assert.equal(aborted.code, 1);
   assert.equal(aborted.messages.filter(message => message.kind === 'provider-request').length, 0);
   assert.equal(guestCalls, 1);
   assert.equal(aborted.messages.find(message => message.kind === 'worker-error')?.code, 'STALE_TOOL_CONTEXT');
 
+  // A late abort, while the native session runs, ends it honestly as interrupted: never completed, and no tool runs after it.
+  const late = await child({ ...bootstrap, context: abortContext, endpoint: abortOwner.owner.endpoint }, 'during-session');
+  assert.equal(late.code, 0);
+  assert.equal(late.messages.filter(message => message.kind === 'provider-request').length, 1);
+  assert.equal(late.messages.find(message => message.kind === 'worker-result')?.status, 'interrupted');
+  assert.equal(guestCalls, 1);
+
   // A structural metadata collision makes the critical Records publication fail.
   // It is real Records failure, not a callback replacing the SDK/start body.
   f.records.registerSecret(context.invocationId);
+  const sessionsBeforeFailure = (await readdir(join(directory, 'sessions'))).length;
   const failed = await child({ ...bootstrap, knownSecrets: [...bootstrap.knownSecrets, context.invocationId] });
   assert.equal(failed.code, 1);
   assert.deepEqual(failed.messages, [{ kind: 'worker-error', code: 'PROTECTED_CAPTURE_UNAVAILABLE' }]);
   assert.equal(guestCalls, 1, 'failed receipt must not execute guest tools');
-  assert.equal((await readdir(join(directory, 'sessions'))).length, 1, 'failed receipt must not create another SDK session');
+  assert.equal((await readdir(join(directory, 'sessions'))).length, sessionsBeforeFailure, 'failed receipt must not create another SDK session');
 
   for (const [escape, secret] of [
     ['newline', 'line\nsecret'],
