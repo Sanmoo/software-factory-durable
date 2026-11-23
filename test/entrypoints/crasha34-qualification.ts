@@ -156,7 +156,7 @@ const prompts = {
     'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final message is ' +
     'ONLY the JSON verdict object you are asked for, with no prose before or after.',
 };
-const node = '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node';
+const node = process.execPath;
 /** Preserved files hashed at the sources cut; none of them may change afterwards (versions are never overwritten). */
 export const preservedFiles = ['spec/v1/ticket.json', 'spec/v1/sources.json', 'instructions/v1/AGENTS.md', 'instructions/v1/sources.json'] as const;
 

@@ -87,7 +87,7 @@ const prompts = {
     'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final message is ' +
     'ONLY the JSON verdict object you are asked for, with no prose before or after.',
 };
-const node = '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node';
+const node = process.execPath;
 
 export function plan() {
   return {

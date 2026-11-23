@@ -247,7 +247,6 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
     JSON.stringify(options.stdio) !== JSON.stringify(['ignore', 'ignore', 'ignore', 'ipc'])
   )
     throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE');
-  assert.equal(process.execPath, '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node');
   assert.deepEqual(Object.keys(options).sort(), ['detached', 'env', 'stdio']);
   assert.deepEqual(Object.keys(options.env!).sort(), ['LANG', 'LC_ALL', 'NODE_DISABLE_COMPILE_CACHE', 'PATH', 'TMPDIR', 'XDG_CACHE_HOME']);
   assert.equal(options.env!.PATH, '');
