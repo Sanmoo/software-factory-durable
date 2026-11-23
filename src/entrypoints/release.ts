@@ -10,6 +10,7 @@ import {
   continuationsPerWork,
   reviewerBudgetV1,
   reviewerRetriesPerRound,
+  workerThinkingLevel,
   type Diagnostic,
 } from '../contracts/index.js';
 
@@ -62,6 +63,8 @@ export const productionProfile = Object.freeze({
     providerId: 'openai',
     modelId: 'gpt-6-luna',
     api: 'openai-responses',
+    // #48: reasoning is required for every role, at the model's maximum level (fixed; not configurable).
+    thinkingLevel: workerThinkingLevel,
     credential: 'credentials/chatgpt.json (factory login; never copied, read only by the worker native store)',
   }),
   // The Builder skill pack is derived at composition (latest registered pack with the continuation capability) and recorded in the manifest.

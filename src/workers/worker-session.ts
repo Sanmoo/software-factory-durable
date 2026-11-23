@@ -29,7 +29,7 @@ import type { WorkerQuestionRequest } from '../platform/host/index.js';
 import { builderHandoff, captureHandoff, readGateSource, probeContent, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
 import { createToolLedger } from './gates.js';
 import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
-import type { ReviewOpinion } from '../contracts/index.js';
+import { workerThinkingLevel, type ReviewOpinion } from '../contracts/index.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 
 type Options = {
@@ -74,6 +74,21 @@ async function reopenSession(sessionsDirectory: string, expected: { file: string
   if (manager.getSessionId() !== expected.sessionId || manager.getSessionFile() !== expected.file || manager.getHeader()?.version !== 3)
     throw new Error('WORKER_SESSION_INVALID');
   return manager;
+}
+
+/**
+ * Why a freshly created SDK session must not run: it is not the profile's model, or (#48) the production model does not run at exactly the
+ * release reasoning level. The SDK clamps silently when a model lacks a level, so a clamp refuses the session instead of running it with
+ * less reasoning. A legacy fixture model keeps the highest level it declares.
+ */
+function sessionRefusal(
+  session: { model?: { provider: string; id: string } | undefined; thinkingLevel: string },
+  profile: { providerId: string; modelId: string },
+  oauth: boolean,
+): 'WORKER_MODEL_MISMATCH' | 'WORKER_THINKING_LEVEL_UNSUPPORTED' | undefined {
+  if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) return 'WORKER_MODEL_MISMATCH';
+  if (oauth && session.thinkingLevel !== workerThinkingLevel) return 'WORKER_THINKING_LEVEL_UNSUPPORTED';
+  return undefined;
 }
 
 /** Private SDK component seam; not host activation or process proof. */
@@ -361,7 +376,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         agentDir: profile.directory,
         modelRuntime: runtime,
         model,
-        thinkingLevel: 'off',
+        thinkingLevel: workerThinkingLevel,
         tools,
         customTools: qualification ? sessionTools.map(tool => qualification.tool(tool)) : sessionTools,
         resourceLoader,
@@ -372,9 +387,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
           cacheWarming: 'off',
         }),
       });
-      if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) {
+      const refusal = sessionRefusal(session, profile, oauth);
+      if (refusal) {
         session.dispose();
-        throw new Error('WORKER_MODEL_MISMATCH');
+        throw new Error(refusal);
       }
       abortSession = () => {
         void session.abort().catch(() => {});
