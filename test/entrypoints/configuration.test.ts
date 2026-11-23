@@ -226,6 +226,18 @@ test('ticket 48: a repository adjusts the Builder budget up to 2x of 150 request
   }
 });
 
+test('#48: a role may configure its reasoning level; absent keeps the release default, and off or an unknown level is refused', async () => {
+  const configured = await diagnose(configuration.replace('model: standards-model}', 'model: standards-model, thinkingLevel: high}'));
+  assert.equal(configured.report.configuration.valid, true);
+  assert.equal(configured.report.configuration.effective.models.standards.thinkingLevel, 'high');
+  assert.equal('thinkingLevel' in configured.report.configuration.effective.models.builder, false, 'absent: the release default applies');
+  for (const level of ['off', 'minimal', 'extreme']) {
+    const { report } = await diagnose(configuration.replace('model: standards-model}', `model: standards-model, thinkingLevel: ${level}}`));
+    assert.equal(report.configuration.valid, false, level);
+    assert.equal('effective' in report.configuration, false, level);
+  }
+});
+
 test('v2 ticket 01: sandbox.adapter selects the installation adapter; Gondolin named explicitly is the existing profile, a Lambda selection without its profile is invalid', async () => {
   const explicit = await diagnose(configuration.replace('sandbox: {', 'sandbox: {adapter: gondolin, '));
   assert.equal(explicit.report.configuration.valid, true);

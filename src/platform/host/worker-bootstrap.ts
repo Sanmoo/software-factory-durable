@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { builderBudgetMaximumFactor, builderBudgetV1, factorySkillPackIds } from '../../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, factorySkillPackIds, workerThinkingLevels } from '../../contracts/index.js';
 import { sessionRefSchema } from './worker-session-file.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -13,6 +13,8 @@ const oauthProfile = z.strictObject({
   providerId: z.literal('openai'),
   modelId: z.literal('gpt-6-luna'),
   api: z.literal('openai-responses'),
+  // #48: the role's configured reasoning level (absent: the release default, the maximum).
+  thinkingLevel: z.enum(workerThinkingLevels).exactOptional(),
 });
 const legacyProfile = z.strictObject({
   ...publicProfile,

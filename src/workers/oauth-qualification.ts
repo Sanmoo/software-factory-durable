@@ -1,5 +1,12 @@
 import type { ModelRuntime, ToolDefinition } from '#factory-pi';
-import { builderBudgetMaximumFactor, builderBudgetV1, qualificationRequestsV1, reviewerBudgetV1, workerThinkingLevel } from '../contracts/index.js';
+import {
+  builderBudgetMaximumFactor,
+  builderBudgetV1,
+  qualificationRequestsV1,
+  reviewerBudgetV1,
+  defaultWorkerThinkingLevel,
+  type WorkerThinkingLevel,
+} from '../contracts/index.js';
 
 /** Invocation-local qualification limits, NOT an admission/billing scheduler.
  * Observed parsed bytes/deadline do not bound remote output, billing, RSS or
@@ -85,6 +92,7 @@ export function qualifyOAuth(
   publicInputIsSafe: () => boolean,
   abort: () => void,
   limits: QualificationLimits = oauthQualification,
+  thinkingLevel: WorkerThinkingLevel = defaultWorkerThinkingLevel,
 ) {
   let requests = 0,
     tools = 0,
@@ -142,8 +150,8 @@ export function qualifyOAuth(
       maxRetries: 0,
       timeoutMs: limits.deadlineMs,
       cacheRetention: 'none',
-      // #48: the release reasoning level is a Host fact of every request, never whatever the session happened to pass.
-      reasoning: workerThinkingLevel,
+      // #48: the role's reasoning level is a Host fact of every request, never whatever the session happened to pass.
+      reasoning: thinkingLevel,
       async onProviderStreamEvent(data) {
         providerBytes += size(data); // awaited by native Responses BEFORE normalization
         check();

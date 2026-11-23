@@ -8,6 +8,7 @@ import { loadSkillPack, skillPacks, type SkillPackId } from './skill-pack.js';
 import type { ReviewInput } from './review.js';
 import type { WorkerSessionRef } from './session-ref.js';
 import type { BuilderBudgetOverride } from './oauth-qualification.js';
+import type { WorkerThinkingLevel } from '../contracts/index.js';
 
 type ReviewerModel = {
   id: string;
@@ -37,6 +38,8 @@ export type ReviewerProfile =
       providerId: 'openai';
       modelId: 'gpt-6-luna';
       api: 'openai-responses';
+      /** #48: the role's configured reasoning level; absent means the release default (maximum). */
+      thinkingLevel?: WorkerThinkingLevel;
     };
 /** Optional tool policies are trusted Host inputs, never model/context claims. */
 export type Invocation = {

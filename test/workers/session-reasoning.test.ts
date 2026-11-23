@@ -8,21 +8,24 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { qualifyOAuth, reviewerBudget } from '../../src/workers/oauth-qualification.js';
-import { workerThinkingLevel } from '../../src/contracts/index.js';
+import { defaultWorkerThinkingLevel } from '../../src/contracts/index.js';
 import { remainingMs } from '../runner/budget.js';
 
 // #48: every agent session ran with the model's reasoning off (a literal in the session, and the OAuth request boundary rebuilt the request
-// options without the level). Operator decision 2026-11-22: every role requires reasoning; gpt-6-luna runs at the maximum level.
+// options without the level). Operator decisions 2026-11-22: every role requires reasoning; the maximum level is the default and a role may
+// be configured with another one (`models.<role>.thinkingLevel`), never off.
 
-test('#48: the OAuth request boundary sends the release reasoning level on every model request, whatever the session passes', () => {
+test('#48: the OAuth request boundary sends the role reasoning level (default: maximum) on every model request, whatever the session passes', () => {
   const model = { provider: 'openai', id: 'gpt-6-luna', api: 'openai-responses' };
   const seen: unknown[] = [];
-  const runtime = {
-    streamSimple: (_model: unknown, _context: unknown, options: { reasoning?: unknown }) => {
-      seen.push(options.reasoning);
-      return { push() {}, end() {} };
-    },
-  } as unknown as ModelRuntime;
+  const fresh = () =>
+    ({
+      streamSimple: (_model: unknown, _context: unknown, options: { reasoning?: unknown }) => {
+        seen.push(options.reasoning);
+        return { push() {}, end() {} };
+      },
+    }) as unknown as ModelRuntime;
+  const runtime = fresh();
   qualifyOAuth(
     runtime,
     new AbortController().signal,
@@ -32,8 +35,19 @@ test('#48: the OAuth request boundary sends the release reasoning level on every
   );
   runtime.streamSimple(model as never, { messages: [] } as never, {});
   runtime.streamSimple(model as never, { messages: [] } as never, { reasoning: 'off' } as never);
-  assert.equal(workerThinkingLevel, 'max');
-  assert.deepEqual(seen, [workerThinkingLevel, workerThinkingLevel]);
+  assert.equal(defaultWorkerThinkingLevel, 'max');
+  assert.deepEqual(seen, [defaultWorkerThinkingLevel, defaultWorkerThinkingLevel]);
+  const configured = fresh();
+  qualifyOAuth(
+    configured,
+    new AbortController().signal,
+    () => true,
+    () => {},
+    reviewerBudget,
+    'high',
+  );
+  configured.streamSimple(model as never, { messages: [] } as never, { reasoning: 'max' } as never);
+  assert.equal(seen[2], 'high', 'a configured level replaces the default');
 });
 
 // I-local: native Pi SDK loop, real Records and owner transport; doubled ONLY the provider HTTP boundary. Not evidence of a real model.

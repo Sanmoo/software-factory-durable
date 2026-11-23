@@ -41,7 +41,7 @@ import {
 import { readConfinedFile, readSessionFile, sessionRefOfInvocation, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
-import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
+import { factorySkillPackIds, type GitHubScope, type WorkerThinkingLevel } from '../../contracts/index.js';
 import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
 
 export { latestContinuationPack };
@@ -73,7 +73,7 @@ export type ProductionInput = {
   root: string;
   /** Validated effective configuration (subset used here); sandbox stays opaque, interpreted by the Sandbox only. */
   effective: {
-    models: Record<Role, { provider: string; model: string }>;
+    models: Record<Role, { provider: string; model: string; thinkingLevel?: WorkerThinkingLevel | undefined }>;
     repositories: readonly GitHubScope[];
     concurrency: number;
     sandbox: unknown;
@@ -297,7 +297,10 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       summary: {
         guestAssets: GuestAssetPin;
         artifactSeeds: string[];
-        profiles: Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }>;
+        profiles: Record<
+          Role,
+          { id: string; auth: string; providerId: string; modelId: string; api: string; thinkingLevel: WorkerThinkingLevel; systemPromptSha256: string }
+        >;
       };
     }
   | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }
@@ -324,6 +327,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     providerId: productionProfile.model.providerId,
     modelId: productionProfile.model.modelId,
     api: productionProfile.model.api,
+    // #48: the role's configured reasoning level; absent, the release default (the maximum).
+    thinkingLevel: input.effective.models[role].thinkingLevel ?? productionProfile.model.thinkingLevel.default,
   });
   const profiles = { builder: profile('builder'), standards: profile('standards'), spec: profile('spec') };
   const skillPack = await productionSkillPack();
@@ -442,7 +447,10 @@ export async function composeProductionExecution(input: ProductionInput): Promis
           const { systemPrompt, ...rest } = profiles[role];
           return [role, { ...rest, systemPromptSha256: sha(systemPrompt) }];
         }),
-      ) as Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }>,
+      ) as Record<
+        Role,
+        { id: string; auth: string; providerId: string; modelId: string; api: string; thinkingLevel: WorkerThinkingLevel; systemPromptSha256: string }
+      >,
     },
   };
 }
