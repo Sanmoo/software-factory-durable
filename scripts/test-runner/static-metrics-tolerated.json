@@ -1337,7 +1337,7 @@
   {
    "file": "src/entrypoints/controller/composition.ts",
    "function": "composeProductionExecution",
-   "complexity": 21,
+   "complexity": 20,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
   },
   {
@@ -1349,7 +1349,7 @@
   {
    "file": "src/entrypoints/controller/owner.ts",
    "function": "own",
-   "complexity": 26,
+   "complexity": 25,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
   },
   {
@@ -1361,7 +1361,7 @@
   {
    "file": "src/entrypoints/controller/upgrade.ts",
    "function": "compatibility",
-   "complexity": 70,
+   "complexity": 63,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 71."
   },
   {
@@ -1403,7 +1403,7 @@
   {
    "file": "src/entrypoints/release-build.ts",
    "function": "buildRelease",
-   "complexity": 50,
+   "complexity": 33,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 50."
   },
   {
@@ -1411,12 +1411,6 @@
    "function": "copyTree",
    "complexity": 16,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 16."
-  },
-  {
-   "file": "src/entrypoints/release-build.ts",
-   "function": "main",
-   "complexity": 13,
-   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 13."
   },
   {
    "file": "src/entrypoints/release-build.ts",
@@ -1433,7 +1427,7 @@
   {
    "file": "src/entrypoints/release.ts",
    "function": "inspectRelease",
-   "complexity": 24,
+   "complexity": 20,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 24."
   },
   {

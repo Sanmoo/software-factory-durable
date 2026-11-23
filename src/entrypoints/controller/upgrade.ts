@@ -41,7 +41,8 @@ export type UpgradeTarget = {
   manifest: ReleaseManifest;
   manifestSha256: string;
   checks: Diagnostic[];
-  guestAssets: { directory: string; manifestSha256: string };
+  /** #62: absent when the target release distributes no guest assets. */
+  guestAssets?: { directory: string; manifestSha256: string };
 };
 export type UpgradeContext = {
   root: string;
@@ -218,6 +219,44 @@ function summary(inspection: StorageInspection): StorageSummary {
     lifecycle: inspection.installation?.lifecycle ?? null,
     migrations: inspection.installation?.migrations ?? [],
   };
+}
+
+/**
+ * Environments: disks/bases are never migrated; a disk prepared with other guest assets or another profile cannot be booted by the target.
+ * #62: a target without guest assets boots no persistent environment, so every one that exists is incompatible with it.
+ */
+/** The guest asset pin of a verified release of this root, as an upgrade target field (#62: none when it distributes no guest assets). */
+function releaseAssetsPin(root: string, manifest: ReleaseManifest): Pick<UpgradeTarget, 'guestAssets'> {
+  const declared = manifest.guestAssets;
+  return declared ? { guestAssets: { directory: join(root, declared.path), manifestSha256: declared.manifestSha256 } } : {};
+}
+
+async function environmentCompatible(
+  item: Awaited<ReturnType<typeof environmentDependencies>>[number],
+  targetAssets: UpgradeTarget['guestAssets'],
+  targetPin: string | null,
+) {
+  if (!targetAssets || !item.guestAssets) return false;
+  const pinned = await realpath(item.guestAssets.directory).catch(() => item.guestAssets!.directory);
+  return pinned === targetPin && item.guestAssets.manifestSha256 === targetAssets.manifestSha256 && item.profile === productionProfile.sandboxProfile;
+}
+
+async function environmentsCheck(root: string, targetAssets: UpgradeTarget['guestAssets']): Promise<Diagnostic> {
+  const environments = await environmentDependencies(root);
+  const targetPin = targetAssets ? await realpath(targetAssets.directory).catch(() => targetAssets.directory) : null;
+  const incompatible = [];
+  for (const item of environments) if (!(await environmentCompatible(item, targetAssets, targetPin))) incompatible.push(item.environment);
+  const unchanged = targetAssets
+    ? `${environments.length} persistent environment(s) depend on guest assets ${targetAssets.manifestSha256}, which the target uses unchanged.`
+    : 'The target distributes no guest assets and no persistent environment depends on them.';
+  return check(
+    'upgrade:environments',
+    incompatible.length === 0,
+    incompatible.length === 0
+      ? unchanged
+      : `Environment(s) ${incompatible.join(', ')} depend on other guest assets/profile or are unreadable; disks are never migrated.`,
+    'Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them.',
+  );
 }
 
 /** Every compatibility verification of spec §11.4 step 3, read-only, BEFORE anything is changed. */
@@ -397,29 +436,7 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
     ),
   );
   // Environments: disks/bases are never migrated; a disk prepared with other guest assets or another profile cannot be booted by the target.
-  const environments = await environmentDependencies(root);
-  const targetPin = await realpath(target.guestAssets.directory).catch(() => target.guestAssets.directory);
-  const incompatible = [];
-  for (const item of environments) {
-    const pinned = item.guestAssets ? await realpath(item.guestAssets.directory).catch(() => item.guestAssets!.directory) : null;
-    if (
-      !item.guestAssets ||
-      pinned !== targetPin ||
-      item.guestAssets.manifestSha256 !== target.guestAssets.manifestSha256 ||
-      item.profile !== productionProfile.sandboxProfile
-    )
-      incompatible.push(item.environment);
-  }
-  checks.push(
-    check(
-      'upgrade:environments',
-      incompatible.length === 0,
-      incompatible.length === 0
-        ? `${environments.length} persistent environment(s) depend on guest assets ${target.guestAssets.manifestSha256}, which the target uses unchanged.`
-        : `Environment(s) ${incompatible.join(', ')} depend on other guest assets/profile or are unreadable; disks are never migrated.`,
-      'Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them.',
-    ),
-  );
+  checks.push(await environmentsCheck(root, target.guestAssets));
   return { checks, inspection, storage: storageSummary, required, previous, support };
 }
 
@@ -525,7 +542,7 @@ async function finish(context: UpgradeContext, journal: UpgradeJournal, command:
 async function rollbackConfiguration(
   root: string,
   previous: ReleaseManifest,
-  guestAssets: { directory: string; manifestSha256: string },
+  guestAssets: UpgradeTarget['guestAssets'],
   journal: UpgradeJournal,
   forward: string,
 ) {
@@ -648,12 +665,12 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     // Data AND configuration are pre-checked against the previous release before anything is reselected; both verdicts are reported.
     const inspection = await inspectStorage(context.storagePath);
     const format = inspection.kind === 'storage' ? inspection.format : null;
-    const towardsAssets = { directory: join(root, intact.manifest.guestAssets.path), manifestSha256: intact.manifest.guestAssets.manifestSha256 };
+    const towardsAssets = releaseAssetsPin(root, intact.manifest);
     const forward =
       `Keep ${journal.to.release} selected and correct forward with it; there is no reverse migration, and an earlier copy of the storage ` +
       'would not undo or safely replay what GitHub or Jira already received.';
     const dataRefusal = rollbackStorageRefusal(format, journal, forward);
-    const configurationRefusal = await rollbackConfiguration(root, intact.manifest, towardsAssets, journal, forward);
+    const configurationRefusal = await rollbackConfiguration(root, intact.manifest, towardsAssets.guestAssets, journal, forward);
     const rollbackChecks = rollbackPrechecks(dataRefusal, configurationRefusal, format, journal);
     const refusal = dataRefusal ?? configurationRefusal;
     if (refusal) {
@@ -667,7 +684,13 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     }
     const towards: UpgradeContext = {
       ...context,
-      target: { directory: previousDirectory, manifest: intact.manifest, manifestSha256: intact.manifestSha256, checks: [], guestAssets: towardsAssets },
+      target: {
+        directory: previousDirectory,
+        manifest: intact.manifest,
+        manifestSha256: intact.manifestSha256,
+        checks: [],
+        ...towardsAssets,
+      },
     };
     const prechecks = await compatibility(towards, 'after-migration');
     const refused = prechecks.checks.filter(item => item.status === 'blocked' && item.id !== 'upgrade:previous' && item.id !== 'upgrade:target');
@@ -793,7 +816,7 @@ async function main(args: string[]): Promise<number> {
   const paths = await controllerPaths(rootArgument);
   await verifyControllerLock(paths.lockPath);
   const release = await inspectRelease(paths.root);
-  if (!release.manifest || !release.guestAssets) {
+  if (!release.manifest) {
     console.error(
       JSON.stringify({
         code: 'UPGRADE_TARGET_INVALID',
@@ -812,7 +835,7 @@ async function main(args: string[]): Promise<number> {
         manifest: release.manifest,
         manifestSha256: release.release!.manifestSha256,
         checks: release.checks,
-        guestAssets: release.guestAssets,
+        ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}),
       },
     },
     command as UpgradeCommand,

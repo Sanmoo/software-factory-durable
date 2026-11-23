@@ -187,20 +187,27 @@ const manifestSchema = z
       license: z.literal('node/LICENSE'),
     }),
     launcher: z.strictObject({ path: z.literal('factory'), sha256 }),
-    guestAssets: z.strictObject({
-      path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/),
-      manifestSha256: sha256,
-      files: z.array(entrySchema).min(1).max(64).refine(uniquePaths, 'Duplicate or case-colliding asset paths'),
-    }),
+    /** #62: absent in a release built without guest assets; only the Lambda adapter, which never boots them, can run it. */
+    guestAssets: z
+      .strictObject({
+        path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/),
+        manifestSha256: sha256,
+        files: z.array(entrySchema).min(1).max(64).refine(uniquePaths, 'Duplicate or case-colliding asset paths'),
+      })
+      .optional(),
     production: z.strictObject({ id: z.literal(productionProfile.id) }).passthrough(),
     qualification: z.strictObject({ status: z.literal('unqualified'), statement: z.string().min(1).max(4096) }),
     /** Informational pins (source, build tooling, runtime packages/licenses, SDK profiles, assets provenance, build host). */
     metadata: z.record(z.string(), z.unknown()),
     files: z.array(entrySchema).min(1).max(200000).refine(uniquePaths, 'Duplicate or case-colliding paths'),
   })
-  .refine(value => value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`)
+  .refine(value => !value.guestAssets || value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`)
   // The pinned guest manifest is itself a distributed file whose recomputed hash must BE the pin (it anchors kernel/initramfs/rootfs).
-  .refine(value => value.guestAssets.files.some(entry => entry[0] === 'manifest.json' && entry[1] === 'f' && entry[4] === value.guestAssets.manifestSha256));
+  .refine(
+    value =>
+      !value.guestAssets ||
+      value.guestAssets.files.some(entry => entry[0] === 'manifest.json' && entry[1] === 'f' && entry[4] === value.guestAssets!.manifestSha256),
+  );
 export type ReleaseManifest = z.infer<typeof manifestSchema>;
 
 /**
@@ -425,7 +432,8 @@ export type ReleaseView = {
   manifestSha256: string;
   node: string;
   production: string;
-  guestAssets: { path: string; manifestSha256: string };
+  /** #62: null when the release distributes no guest assets. */
+  guestAssets: { path: string; manifestSha256: string } | null;
   qualification: ReleaseManifest['qualification'];
   metadata: ReleaseManifest['metadata'];
 };
@@ -531,28 +539,8 @@ export async function inspectRelease(installationRoot: string): Promise<{
       nextStep: 'Administrator must inspect the named installation directory; no recursive chmod or automatic repair.',
     });
   }
-  const directory = join(root, manifest.guestAssets.path);
-  let status: Diagnostic['status'] = 'blocked',
-    message = 'Guest assets of this release are missing or differ from the release manifest.';
-  try {
-    // Every asset file is re-hashed from its bytes; the manifest hash is never copied as evidence.
-    const actual = await inventoryTree(directory, [], manifest.guestAssets.files);
-    message =
-      JSON.stringify(actual) === JSON.stringify(manifest.guestAssets.files)
-        ? `Guest assets ${manifest.guestAssets.manifestSha256} preserved exactly as distributed (no boot performed).`
-        : `RELEASE_INTEGRITY_MISMATCH at ${manifest.guestAssets.path}/${firstDifference(actual, manifest.guestAssets.files)}`;
-    status = message.startsWith('Guest assets') ? 'ok' : 'blocked';
-  } catch (error) {
-    // Name the divergent path/code; the manifest hash is never used as evidence of content.
-    const failure = error as { code?: unknown; path?: unknown };
-    if (typeof failure.code === 'string') message = `${failure.code}${typeof failure.path === 'string' ? ` at ${failure.path}` : ''}`;
-  }
-  checks.push({
-    id: 'release:assets',
-    status,
-    message,
-    nextStep: 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.',
-  });
+  const assets = await releaseAssets(root, manifest);
+  checks.push(assets.check);
   checks.push({
     id: 'release:qualification',
     status: 'unverified',
@@ -565,14 +553,78 @@ export async function inspectRelease(installationRoot: string): Promise<{
       manifestSha256,
       node: manifest.node.version,
       production: manifest.production.id,
-      guestAssets: { path: manifest.guestAssets.path, manifestSha256: manifest.guestAssets.manifestSha256 },
+      guestAssets: assets.view,
       qualification: manifest.qualification,
       metadata: manifest.metadata,
     },
-    guestAssets: { directory, manifestSha256: manifest.guestAssets.manifestSha256 },
+    ...(assets.pin ? { guestAssets: assets.pin } : {}),
     checks,
     manifest,
   };
+}
+
+const assetsNextStep = 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.';
+
+/**
+ * The guest assets a release distributes, re-hashed from their bytes (the manifest hash is never copied as evidence). #62: a release built
+ * without them pins none, and only the Lambda adapter can run it (`guestAssetsRequirement`).
+ */
+async function releaseAssets(
+  root: string,
+  manifest: ReleaseManifest,
+): Promise<{ check: Diagnostic; view: ReleaseView['guestAssets']; pin?: { directory: string; manifestSha256: string } }> {
+  const declared = manifest.guestAssets;
+  if (!declared)
+    return {
+      check: {
+        id: 'release:assets',
+        status: 'ok',
+        message: 'This release distributes no guest assets: only the lambda sandbox adapter can run it.',
+        nextStep: 'A Gondolin installation needs a release built with its pinned guest assets.',
+      },
+      view: null,
+    };
+  const directory = join(root, declared.path);
+  return {
+    check: { id: 'release:assets', ...(await assetsIntegrity(directory, declared)), nextStep: assetsNextStep },
+    view: { path: declared.path, manifestSha256: declared.manifestSha256 },
+    pin: { directory, manifestSha256: declared.manifestSha256 },
+  };
+}
+
+async function assetsIntegrity(directory: string, declared: NonNullable<ReleaseManifest['guestAssets']>): Promise<Pick<Diagnostic, 'status' | 'message'>> {
+  try {
+    const actual = await inventoryTree(directory, [], declared.files);
+    return JSON.stringify(actual) === JSON.stringify(declared.files)
+      ? { status: 'ok', message: `Guest assets ${declared.manifestSha256} preserved exactly as distributed (no boot performed).` }
+      : { status: 'blocked', message: `RELEASE_INTEGRITY_MISMATCH at ${declared.path}/${firstDifference(actual, declared.files)}` };
+  } catch (error) {
+    // Name the divergent path/code; the manifest hash is never used as evidence of content.
+    const failure = error as { code?: unknown; path?: unknown };
+    return {
+      status: 'blocked',
+      message:
+        typeof failure.code === 'string'
+          ? `${failure.code}${typeof failure.path === 'string' ? ` at ${failure.path}` : ''}`
+          : 'Guest assets of this release are missing or differ from the release manifest.',
+    };
+  }
+}
+
+/**
+ * #62: the Gondolin adapter boots the release's guest assets, so a release without them cannot run it. A development checkout (no release)
+ * and any other adapter require nothing here.
+ */
+export function guestAssetsRequirement(release: { release: ReleaseView | null }, gondolin: boolean): Diagnostic[] {
+  if (!release.release || release.release.guestAssets || !gondolin) return [];
+  return [
+    {
+      id: 'release:assets-required',
+      status: 'blocked',
+      message: `RELEASE_GUEST_ASSETS_ABSENT: release ${release.release.release} distributes no guest assets, and the gondolin sandbox adapter boots them.`,
+      nextStep: 'Select the lambda adapter, or install a release built with the pinned guest assets; nothing is downloaded or rebuilt.',
+    },
+  ];
 }
 
 /** Exact configured provider/model of every role against the release's single production worker profile (no fallback). */

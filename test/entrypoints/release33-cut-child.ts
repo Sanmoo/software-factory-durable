@@ -25,7 +25,7 @@ const result = await upgrade(
       manifest: parsed.manifest,
       manifestSha256: parsed.manifestSha256,
       checks: [],
-      guestAssets: { directory: join(root, parsed.manifest.guestAssets.path), manifestSha256: parsed.manifest.guestAssets.manifestSha256 },
+      guestAssets: { directory: join(root, parsed.manifest.guestAssets!.path), manifestSha256: parsed.manifest.guestAssets!.manifestSha256 },
     },
     observe: step => {
       if (step === cut) process.kill(process.pid, 'SIGKILL');

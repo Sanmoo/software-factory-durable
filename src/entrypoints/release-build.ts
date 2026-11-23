@@ -291,7 +291,88 @@ const launcher = releaseLauncher;
 
 const privateSdk = '.scratch/factory-development-sdk-v3',
   privateSdkSdk = `${privateSdk}/sdk`;
-export type BuildInput = { release: string; output: string; guestAssets: { directory: string; manifestSha256: string }; nodeHome?: string };
+/** #62: `guestAssets` absent builds a release that distributes none (only the Lambda adapter can run it). */
+export type BuildInput = { release: string; output: string; guestAssets?: GuestAssetPin; nodeHome?: string };
+type GuestAssetPin = { directory: string; manifestSha256: string };
+
+/** The explicit guest asset pin, verified BEFORE any output (#62: none to verify when the release distributes no guest assets). */
+async function verifiedGuestAssets(project: string, pin: GuestAssetPin | undefined): Promise<GuestAssetPin | undefined> {
+  if (!pin) return undefined;
+  const source = { directory: await realpath(pin.directory), manifestSha256: pin.manifestSha256 };
+  if (!(await guestAssetsValid(project, source))) fail('RELEASE_GUEST_ASSETS_INVALID');
+  return source;
+}
+
+async function guestAssetsValid(project: string, pin: GuestAssetPin) {
+  const checks = (await createSandbox({ root: project, guestAssets: pin }).validate(undefined)).checks.filter(check => check.id.startsWith('guest-assets'));
+  return checks.length === 4 && checks.every(check => check.status === 'ok');
+}
+
+type GuestAssetManifest = {
+  buildId?: string;
+  buildTime?: string;
+  config?: {
+    arch?: string;
+    distro?: string;
+    alpine?: unknown;
+    sandboxdPath?: string;
+    sandboxfsPath?: string;
+    sandboxsshPath?: string;
+    sandboxingressPath?: string;
+  };
+  assets?: Record<string, string>;
+  checksums?: Record<string, string>;
+};
+
+/**
+ * Guest assets: every regular file of the pinned directory, copied to `assets/guest/<pin>` and re-verified at the copy. Returns the release
+ * manifest's `guestAssets` field, its provenance metadata and the pin. #62: without a pin, nothing is distributed and none of them exist.
+ */
+async function distributeGuestAssets(project: string, payload: string, source: GuestAssetPin | undefined) {
+  if (!source) return { manifest: {}, metadata: null, pin: null };
+  const directory = join(payload, 'assets', 'guest', source.manifestSha256);
+  await mkdir(join(payload, 'assets', 'guest'), { mode: 0o700 });
+  await mkdir(directory, { mode: 0o700 });
+  for (const name of (await readdir(source.directory)).sort(compare)) {
+    const info = await lstat(join(source.directory, name));
+    if (!info.isFile() || info.nlink !== 1) fail('RELEASE_GUEST_ASSET_ENTRY_UNSUPPORTED');
+    await copyTree(join(source.directory, name), join(directory, name));
+  }
+  if (!(await guestAssetsValid(project, { directory, manifestSha256: source.manifestSha256 }))) fail('RELEASE_GUEST_ASSETS_COPY_INVALID');
+  const assetManifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8')) as GuestAssetManifest;
+  return {
+    manifest: { guestAssets: { path: `assets/guest/${source.manifestSha256}`, manifestSha256: source.manifestSha256, files: await inventoryTree(directory) } },
+    metadata: guestAssetsMetadata(assetManifest),
+    pin: source.manifestSha256,
+  };
+}
+
+/** The guest helper binaries the asset build recorded, by file name only. */
+function guestHelpers(config: GuestAssetManifest['config']) {
+  const recorded = config as Record<string, unknown> | undefined;
+  return Object.fromEntries(
+    ['sandboxdPath', 'sandboxfsPath', 'sandboxsshPath', 'sandboxingressPath'].map(key => [
+      key,
+      recorded?.[key] === undefined ? null : basename(String(recorded[key])),
+    ]),
+  );
+}
+
+function guestAssetsMetadata(assetManifest: GuestAssetManifest) {
+  const config = assetManifest.config ?? {};
+  return {
+    buildId: assetManifest.buildId ?? null,
+    buildTime: assetManifest.buildTime ?? null,
+    arch: config.arch ?? null,
+    distro: config.distro ?? null,
+    alpine: config.alpine ?? null,
+    assets: assetManifest.assets ?? null,
+    checksums: assetManifest.checksums ?? null,
+    helpers: guestHelpers(config),
+    hostRequirements:
+      'QEMU/KVM, qemu-img, e2fsck/resize2fs and systemd user supervision are host prerequisites diagnosed by doctor; the release ships none of them.',
+  };
+}
 
 export async function buildRelease(input: BuildInput) {
   const id = releaseIdSchema.parse(input.release);
@@ -327,11 +408,7 @@ export async function buildRelease(input: BuildInput) {
   if (sdkEvidence.id !== productionProfile.sdkProfileId) fail('RELEASE_SDK_PROFILE_MISMATCH');
   const gondolinDevelopment = await verifyGondolinSdk(project);
   if (gondolinDevelopment.id !== productionProfile.gondolinSdkProfileId) fail('RELEASE_GONDOLIN_PROFILE_MISMATCH');
-  const assetsSource = await realpath(input.guestAssets.directory);
-  const assetChecks = (
-    await createSandbox({ root: project, guestAssets: { directory: assetsSource, manifestSha256: input.guestAssets.manifestSha256 } }).validate(undefined)
-  ).checks.filter(check => check.id.startsWith('guest-assets'));
-  if (assetChecks.length !== 4 || assetChecks.some(check => check.status !== 'ok')) fail('RELEASE_GUEST_ASSETS_INVALID');
+  const assetsSource = await verifiedGuestAssets(project, input.guestAssets);
   const git = async (...args: string[]) =>
     (await run('git', args, { cwd: project, env: environment, timeout: 10000, maxBuffer: 4 * 1024 * 1024 })).stdout.trim();
   const source = {
@@ -350,9 +427,7 @@ export async function buildRelease(input: BuildInput) {
   if ((await realpath(output)) !== output) fail('RELEASE_OUTPUT_NOT_CANONICAL');
   const payload = join(output, 'payload');
   const releaseDirectory = join(payload, 'releases', id);
-  const assetsDirectory = join(payload, 'assets', 'guest', input.guestAssets.manifestSha256);
-  for (const directory of [payload, join(payload, 'releases'), join(payload, 'assets'), join(payload, 'assets', 'guest')])
-    await mkdir(directory, { mode: 0o700 });
+  for (const directory of [payload, join(payload, 'releases'), join(payload, 'assets')]) await mkdir(directory, { mode: 0o700 });
   await mkdir(releaseDirectory, { mode: 0o700 });
   await mkdir(join(releaseDirectory, 'dist'), { mode: 0o755 });
   // Emitted JavaScript only: no TypeScript sources, declarations, maps or compiled tests.
@@ -439,32 +514,7 @@ export async function buildRelease(input: BuildInput) {
   const sdkProfileBytes = await readFile(join(releaseDirectory, privateSdk, 'profile.json'));
   if (JSON.stringify(JSON.parse(sdkProfileBytes.toString())) !== JSON.stringify(sdkEvidence)) fail('RELEASE_SDK_PROFILE_DRIFT');
 
-  // Guest assets: every regular file of the pinned directory, re-verified at the copy.
-  await mkdir(assetsDirectory, { mode: 0o700 });
-  for (const name of (await readdir(assetsSource)).sort(compare)) {
-    const info = await lstat(join(assetsSource, name));
-    if (!info.isFile() || info.nlink !== 1) fail('RELEASE_GUEST_ASSET_ENTRY_UNSUPPORTED');
-    await copyTree(join(assetsSource, name), join(assetsDirectory, name));
-  }
-  const copiedChecks = (
-    await createSandbox({ root: project, guestAssets: { directory: assetsDirectory, manifestSha256: input.guestAssets.manifestSha256 } }).validate(undefined)
-  ).checks.filter(check => check.id.startsWith('guest-assets'));
-  if (copiedChecks.length !== 4 || copiedChecks.some(check => check.status !== 'ok')) fail('RELEASE_GUEST_ASSETS_COPY_INVALID');
-  const assetManifest = JSON.parse(await readFile(join(assetsDirectory, 'manifest.json'), 'utf8')) as {
-    buildId?: string;
-    buildTime?: string;
-    config?: {
-      arch?: string;
-      distro?: string;
-      alpine?: unknown;
-      sandboxdPath?: string;
-      sandboxfsPath?: string;
-      sandboxsshPath?: string;
-      sandboxingressPath?: string;
-    };
-    assets?: Record<string, string>;
-    checksums?: Record<string, string>;
-  };
+  const guest = await distributeGuestAssets(project, payload, assetsSource);
   const launcherBytes = launcher(id);
   await writeFile(join(payload, 'factory'), launcherBytes, { mode: 0o755, flag: 'wx' });
 
@@ -504,11 +554,7 @@ export async function buildRelease(input: BuildInput) {
     builtAt: new Date().toISOString(),
     node: { version: process.versions.node, path: 'node/bin/node', sha256: await hashFile(join(releaseDirectory, 'node/bin/node')), license: 'node/LICENSE' },
     launcher: { path: 'factory', sha256: sha(launcherBytes) },
-    guestAssets: {
-      path: `assets/guest/${input.guestAssets.manifestSha256}`,
-      manifestSha256: input.guestAssets.manifestSha256,
-      files: await inventoryTree(assetsDirectory),
-    },
+    ...guest.manifest,
     production: {
       ...productionProfile,
       builder: { ...productionProfile.builder, skillPack: builderSkillPack },
@@ -557,25 +603,7 @@ export async function buildRelease(input: BuildInput) {
         chord: await versionOf('node_modules/@earendil-works/chord'),
       },
       gondolin: { ...(await versionOf('node_modules/@earendil-works/gondolin')), profile: gondolinRelease, profileId: gondolinSdkProfile.id },
-      guestAssets: {
-        buildId: assetManifest.buildId ?? null,
-        buildTime: assetManifest.buildTime ?? null,
-        arch: assetManifest.config?.arch ?? null,
-        distro: assetManifest.config?.distro ?? null,
-        alpine: assetManifest.config?.alpine ?? null,
-        assets: assetManifest.assets ?? null,
-        checksums: assetManifest.checksums ?? null,
-        helpers: Object.fromEntries(
-          ['sandboxdPath', 'sandboxfsPath', 'sandboxsshPath', 'sandboxingressPath'].map(key => [
-            key,
-            (assetManifest.config as Record<string, unknown> | undefined)?.[key] === undefined
-              ? null
-              : basename(String((assetManifest.config as Record<string, unknown>)[key])),
-          ]),
-        ),
-        hostRequirements:
-          'QEMU/KVM, qemu-img, e2fsck/resize2fs and systemd user supervision are host prerequisites diagnosed by doctor; the release ships none of them.',
-      },
+      guestAssets: guest.metadata,
       guestProfile: { files: guestProfile, apkPackages, location: 'provenance/guest-profile' },
       skillPacks: await Promise.all(
         factorySkillPackIds.map(async name => {
@@ -665,7 +693,7 @@ export async function buildRelease(input: BuildInput) {
     archiveSha256,
     manifestSha256: verified.manifestSha256,
     entries: files.length,
-    guestAssets: input.guestAssets.manifestSha256,
+    guestAssets: guest.pin,
     source,
     extract: `tar -xpkf ${archiveName} -C <new canonical installation root>`,
   };
@@ -675,6 +703,13 @@ export async function buildRelease(input: BuildInput) {
 }
 
 export type { TreeEntry };
+/** #62: the guest asset pin is given whole (absolute directory and manifest SHA-256) or not at all. */
+function guestAssetsArguments(directory: string | undefined, manifestSha256: string | undefined): { guestAssets?: GuestAssetPin } {
+  if (directory === undefined && manifestSha256 === undefined) return {};
+  if (!directory || !manifestSha256 || !isAbsolute(directory)) fail('INVALID_ARGUMENTS');
+  return { guestAssets: { directory, manifestSha256 } };
+}
+
 async function main(args: string[]) {
   const options = new Map<string, string>();
   for (let index = 0; index < args.length; index += 2) {
@@ -688,9 +723,9 @@ async function main(args: string[]) {
     output = options.get('--output'),
     directory = options.get('--guest-assets'),
     manifestSha256 = options.get('--guest-manifest-sha256');
-  if (!release || !output || !directory || !manifestSha256 || !isAbsolute(output) || !isAbsolute(directory)) fail('INVALID_ARGUMENTS');
+  if (!release || !output || !isAbsolute(output)) fail('INVALID_ARGUMENTS');
   const nodeHome = options.get('--node-home');
-  return buildRelease({ release, output, guestAssets: { directory, manifestSha256 }, ...(nodeHome ? { nodeHome } : {}) });
+  return buildRelease({ release, output, ...guestAssetsArguments(directory, manifestSha256), ...(nodeHome ? { nodeHome } : {}) });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {

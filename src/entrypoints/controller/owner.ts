@@ -8,6 +8,14 @@ import { inspectRelease } from '../release.js';
 import { composeProductionAccess, composeProductionExecution, composeRuntimeInventory } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
 
+const refusalMessages: Record<'WORKER_PROFILE_UNSUPPORTED' | 'SANDBOX_CONFIGURATION_INVALID' | 'RELEASE_GUEST_ASSETS_ABSENT', string> = {
+  WORKER_PROFILE_UNSUPPORTED: 'Every role must name the release worker profile explicitly; storage was not opened.',
+  SANDBOX_CONFIGURATION_INVALID:
+    'The configured sandbox adapter cannot be composed by this release; there is no fallback to another sandbox. Storage was not opened.',
+  RELEASE_GUEST_ASSETS_ABSENT:
+    'This release distributes no guest assets and the gondolin sandbox adapter boots them; select the lambda adapter or install a release built with them. Storage was not opened.',
+};
+
 async function own(root: string): Promise<number> {
   process.umask(0o077);
   const paths = await controllerPaths(root);
@@ -67,22 +75,17 @@ async function own(root: string): Promise<number> {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
   }
   const github = createGitHubAccess({ root: paths.root, ...validated.configuration.effective.githubApp });
-  const composed =
-    release.release && release.guestAssets
-      ? await composeProductionExecution({ root: paths.root, effective: validated.configuration.effective, guestAssets: release.guestAssets, github })
-      : undefined;
+  // #62: a release without guest assets is composed too; the composition refuses the adapter that needs them.
+  const composed = release.release
+    ? await composeProductionExecution({
+        root: paths.root,
+        effective: validated.configuration.effective,
+        ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}),
+        github,
+      })
+    : undefined;
   if (composed?.status === 'refused') {
-    console.error(
-      JSON.stringify({
-        code: 'CONFIGURATION_UNSUPPORTED',
-        reason: composed.code,
-        roles: composed.roles,
-        message:
-          composed.code === 'WORKER_PROFILE_UNSUPPORTED'
-            ? 'Every role must name the release worker profile explicitly; storage was not opened.'
-            : 'The configured sandbox adapter cannot be composed by this release; there is no fallback to another sandbox. Storage was not opened.',
-      }),
-    );
+    console.error(JSON.stringify({ code: 'CONFIGURATION_UNSUPPORTED', reason: composed.code, roles: composed.roles, message: refusalMessages[composed.code] }));
     return 2;
   }
   const stop = new AbortController();

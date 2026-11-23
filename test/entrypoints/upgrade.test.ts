@@ -163,6 +163,41 @@ test('incompatibility is refused before any change: not paused, unclean stop, un
   await assert.rejects(stat(join(bad.root, 'data', 'upgrade')), { code: 'ENOENT' });
 });
 
+test('#62: a target release without guest assets is accepted while no persistent environment depends on assets; a dependent one blocks it', async t => {
+  const { root, context } = await rootWithFormatOne(t);
+  const { guestAssets: _pinned, ...withoutAssets } = context.target;
+  const target = { ...context, target: withoutAssets };
+  const free = await upgrade(target, 'check');
+  assert.deepEqual(blocked(free), []);
+  assert.match(free.checks.find(item => item.id === 'upgrade:environments')!.message, /no guest assets/);
+  const workId = 'w-assets';
+  const environment = `env-${sha(workId)}`;
+  await mkdir(join(root, 'environments', environment), { mode: 0o700 });
+  await writeFile(
+    join(root, 'environments', environment, 'owner.json'),
+    JSON.stringify({
+      version: 1,
+      workId,
+      environment,
+      configuration: {
+        schemaVersion: 1,
+        profile: 'gondolin-qemu-alpine-dev-v1',
+        memoryMiB: 2048,
+        vcpus: 2,
+        diskGiB: 40,
+        shutdownGraceSeconds: 30,
+        minFreeSpaceGiB: 4,
+      },
+      guestAssets: _pinned,
+    }),
+    { mode: 0o600 },
+  );
+  await writeFile(join(root, 'environments', environment, 'ready.json'), JSON.stringify({ environment }), { mode: 0o600 });
+  const dependent = await upgrade(target, 'check');
+  assert.deepEqual(blocked(dependent), ['upgrade:environments']);
+  assert.match(dependent.checks.find(item => item.id === 'upgrade:environments')!.message, new RegExp(environment));
+});
+
 /**
  * Ticket 37 P5 (approved): the upgrade stopped right after `cut` without a second process. Its observe hook never returns at that step,
  * so the call stays frozen there (as a killed process, it does nothing more) and what is durable is exactly what that step left.

@@ -2,7 +2,7 @@ import { constants, lstat, realpath, access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Diagnostic } from '../contracts/index.js';
 import { readConfiguration } from './configuration.js';
-import { inspectRelease, productionModelChecks, productionProfile } from './release.js';
+import { guestAssetsRequirement, inspectRelease, productionModelChecks, productionProfile } from './release.js';
 import {
   capacityDiagnostic,
   environmentIdentityDiagnostic,
@@ -26,6 +26,8 @@ export async function doctor(root: string, options: { lambdaService?: LambdaServ
   // diagnosed by its own validate above.
   const selected = configuration.valid ? selectSandboxAdapter(configuration.effective.sandbox) : undefined;
   const gondolin = selected?.status === 'selected' && selected.adapter === 'gondolin' ? selected.configuration : undefined;
+  // #62: a release without guest assets cannot run the Gondolin adapter (the requirement follows the configured adapter).
+  checks.push(...guestAssetsRequirement(release, gondolin !== undefined));
   if (configuration.valid && gondolin)
     checks.push(
       capacityDiagnostic({ concurrency: configuration.effective.concurrency, configuration: gondolin, host: await observeHostCapacity(canonicalRoot) }),

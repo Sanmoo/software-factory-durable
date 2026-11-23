@@ -80,8 +80,8 @@ export type ProductionInput = {
     /** Ticket 30: configuration `retentionDays` (default 30). */
     retentionDays?: number;
   };
-  /** Guest asset pin of the VERIFIED running release (trusted composition data, never YAML). */
-  guestAssets: GuestAssetPin;
+  /** Guest asset pin of the VERIFIED running release (trusted composition data, never YAML). #62: absent when it distributes none. */
+  guestAssets?: GuestAssetPin;
   github: GitHubAccess;
   /**
    * v2 ticket 06: what stands UNDER the Lambda adapter (the AWS account, the transport to the guest, the clocks of its waits and the worker
@@ -283,6 +283,30 @@ export function productionSkillPack(): Promise<SkillPackId> {
   return latestContinuationPack(factorySkillPackIds, skillPackContinues);
 }
 
+type CompositionRefusal =
+  | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }
+  /** v2 ticket 01 (V2-01/V2-04): the sandbox section selects no adapter this release can compose (never replaced by another one). */
+  | { status: 'refused'; code: 'SANDBOX_CONFIGURATION_INVALID'; roles: [] }
+  /** #62: the Gondolin adapter boots the release's guest assets, and this release distributes none. */
+  | { status: 'refused'; code: 'RELEASE_GUEST_ASSETS_ABSENT'; roles: [] };
+
+/** What refuses the whole composition before anything is composed, or the installation's selected adapter. */
+function compositionRefusal(
+  input: ProductionInput,
+): CompositionRefusal | { status: 'selected'; adapter: Extract<ReturnType<typeof selectSandboxAdapter>, { status: 'selected' }> } {
+  const unsupported = (['builder', 'standards', 'spec'] as const).filter(
+    role =>
+      input.effective.models[role].provider !== productionProfile.model.providerId || input.effective.models[role].model !== productionProfile.model.modelId,
+  );
+  if (unsupported.length > 0) return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: unsupported };
+  // v2 ticket 01 (V2-01/V2-03): the installation's ONE adapter, selected statically from the configuration, and the capabilities it declares.
+  // Control receives the capabilities only; the lifecycle below is that adapter's.
+  const adapter = selectSandboxAdapter(input.effective.sandbox);
+  if (adapter.status !== 'selected') return { status: 'refused', code: adapter.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID', roles: [] };
+  if (adapter.adapter === 'gondolin' && !input.guestAssets) return { status: 'refused', code: 'RELEASE_GUEST_ASSETS_ABSENT', roles: [] };
+  return { status: 'selected', adapter };
+}
+
 /**
  * Production composition of the execution ports (ticket 32; deferred to the release by tickets 09/10/12/20): the same public Sandbox,
  * Workers and Builder credential implementations the qualification recipes composed, with the release's single worker profile, the
@@ -295,7 +319,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       status: 'composed';
       ports: ExecutionPorts;
       summary: {
-        guestAssets: GuestAssetPin;
+        guestAssets: GuestAssetPin | null;
         artifactSeeds: string[];
         profiles: Record<
           Role,
@@ -303,20 +327,12 @@ export async function composeProductionExecution(input: ProductionInput): Promis
         >;
       };
     }
-  | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] }
-  /** v2 ticket 01 (V2-01/V2-04): the sandbox section selects no adapter this release can compose (never replaced by another one). */
-  | { status: 'refused'; code: 'SANDBOX_CONFIGURATION_INVALID'; roles: [] }
+  | CompositionRefusal
 > {
   const roles = ['builder', 'standards', 'spec'] as const;
-  const unsupported = roles.filter(
-    role =>
-      input.effective.models[role].provider !== productionProfile.model.providerId || input.effective.models[role].model !== productionProfile.model.modelId,
-  );
-  if (unsupported.length > 0) return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: unsupported };
-  // v2 ticket 01 (V2-01/V2-03): the installation's ONE adapter, selected statically from the configuration, and the capabilities it declares.
-  // Control receives the capabilities only; the lifecycle below is that adapter's.
-  const adapter = selectSandboxAdapter(input.effective.sandbox);
-  if (adapter.status !== 'selected') return { status: 'refused', code: adapter.errors[0]?.code ?? 'SANDBOX_CONFIGURATION_INVALID', roles: [] };
+  const selection = compositionRefusal(input);
+  if (selection.status === 'refused') return selection;
+  const { adapter } = selection;
   // v2 ticket 06: the Lambda adapter is composed with its own lifecycle. Its profile stays inside the composition: Control receives the
   // declared capabilities and an opaque `configuration` that is null for it (the profile is given to the Sandbox here, never through Control).
   const lambda = adapter.adapter === 'lambda';
@@ -335,7 +351,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   const pack = skillPacks[skillPack];
   const sandbox = createSandbox({
     root: input.root,
-    guestAssets: input.guestAssets,
+    ...(input.guestAssets ? { guestAssets: input.guestAssets } : {}),
     repositoryFetch: createRepositoryFetchCredentials({ github: input.github, repositories: input.effective.repositories }),
     artifactSeeds: [{ name: pack.seedName, directory: pack.directory }],
     // Ticket 44: environment bases are prepared in their own supervised preparation VM (transient unit), never in the controller process.
@@ -440,7 +456,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     status: 'composed',
     ports,
     summary: {
-      guestAssets: input.guestAssets,
+      guestAssets: input.guestAssets ?? null,
       artifactSeeds: [pack.seedName],
       profiles: Object.fromEntries(
         roles.map(role => {
