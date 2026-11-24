@@ -51,6 +51,16 @@ Avaliação de um Ticket pelo Triager, anterior a qualquer Work e distinta de um
 **Verdict** (Parecer):
 Conclusão que o Triager registra para uma Triage, com o desfecho recomendado e sua justificativa.
 
+## sandbox
+
+Dono dos ambientes isolados em que os agentes trabalham.
+
+**Sandbox**:
+Ambiente isolado em que um Builder executa código e testes de um Work.
+
+**Investigation Environment** (Ambiente de Investigação):
+Ambiente isolado e descartável em que o Triager lê código durante uma Triage; não é um Sandbox e não pertence a um Work.
+
 ## issue-tracker
 
 Dono da leitura de tickets e de suas dependências nativas no GitHub.
