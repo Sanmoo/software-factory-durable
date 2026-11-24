@@ -19,6 +19,12 @@ Uma ativação de Builder para implementar, retomar ou reparar um Work.
 Capacidade para uma Execution ativa de Builder; não inclui esperas externas.
 _Avoid_: seat
 
+**Triage request** (Pedido de Triagem):
+Registro durável de um pedido de Triage de um Ticket, distinto da Triage, que é a avaliação.
+
+**Triage capacity** (Capacidade de Triagem):
+Máximo de Triagers investigando ao mesmo tempo na instalação; não é um Slot.
+
 **Repair** (Reparo):
 Execution motivada por conflito, check obrigatório, review humano ou comando autorizado de correção.
 _Avoid_: hotfix
@@ -47,6 +53,9 @@ Agente que avalia sozinho um Ticket ainda não especificado e decide seu estado 
 
 **Triage** (Triagem):
 Avaliação de um Ticket pelo Triager, anterior a qualquer Work e distinta de uma Execution.
+
+**MCP Profile** (Perfil MCP):
+Seleção nomeada de ferramentas de um servidor MCP que o Triager pode usar numa Triage.
 
 **Verdict** (Parecer):
 Conclusão que o Triager registra para uma Triage, com o desfecho recomendado e sua justificativa.
