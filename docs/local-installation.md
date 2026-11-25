@@ -111,6 +111,45 @@ mínimas), suspensão com `discover: false` e recuperação de acesso: ver
 [Jira Cloud como origem de Tickets](jira-installation.md). O schemaVersion 1 continua válido e não
 abre credencial Jira.
 
+## YAML schemaVersion 3 (Triagem)
+
+O schemaVersion 3 acrescenta a configuração da Triagem. Os schemaVersion 1 e 2 continuam válidos, com
+a Triagem desligada, e recusam estas seções; o upgrade nunca edita o `config.yaml`. Adotar o
+schemaVersion 3 fecha o rollback para uma release que não o valida.
+
+```yaml
+schemaVersion: 3
+models:
+  # builder, standards e spec como antes
+  triager: {provider: provedor-explicito, model: modelo-triager} # obrigatório; thinkingLevel padrão max, sem off
+ticketSources:
+  - tracker: github
+    repository: organizacao/projeto
+    discover: true
+    triage: {} # opt-in por fonte; nomes padrão de docs/agents/triage-labels.md
+mcpServers:
+  - {id: observabilidade, url: https://mcp.example.org/observabilidade, tokenFile: credentials/observabilidade-token}
+mcpProfiles:
+  - {id: investigar-erros, server: observabilidade, tools: [buscar_erros, consultar_trace]} # ou tools: all
+triager:
+  capacity: 1
+  investigationMinutes: 15
+  attempts: 2
+  environment: {memoryGiB: 2, processes: 512, commandSeconds: 120}
+  mcpProfiles: [investigar-erros]
+```
+
+- `triage` na fonte aceita `needsTriage`, `needsInfo`, `readyForHuman` e `wontfix`. O papel
+  `ready-for-agent` não é configurado ali: é sempre a label de admissão do destino (`repositories[].label`
+  no GitHub, `label` da fonte no Jira). Dois papéis da mesma fonte com a mesma label são recusados.
+- `triager` vale para a instalação inteira; os valores acima são os padrões.
+- `mcpServers` aceita só URL http(s) de servidor já em execução (Streamable HTTP); `stdio`, comando
+  para iniciar servidor e SSE legado são erro de configuração. Cadastrar servidor ou perfil não ativa
+  nada: só os perfis nomeados em `triager.mcpProfiles` ficam ativos.
+- A Triagem só liga em Host Linux com `bwrap`, namespaces sem privilégio, systemd de usuário, `git` e
+  `rg`. Faltando qualquer um, a configuração continua válida, os Works seguem como sem o bloco, e
+  `doctor` traz o check `triage:prerequisites` bloqueado com o nome do que falta.
+
 ## O que doctor prova (e o que não prova)
 
 Read-only, sem banco operacional: informa Node e versões QEMU/qemu-img/systemctl,

@@ -28,9 +28,15 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
     'the heuristic sees the known host git',
   );
   for (const file of spawns) assert.doesNotMatch(file.text, /['"`]push['"`]|--force-with-lease|\bgit push\b/, `${file.path}: host git never pushes`);
-  // The only Host git files: the Work checkout preparation/inspection, and the release build reading the Factory's OWN source metadata.
+  // The only Host git files: the Work checkout preparation/inspection, the release build reading the Factory's OWN source metadata, and
+  // the Triage prerequisite probe (spec #68 §2), which only asks `git --version`.
   for (const file of spawns.filter(item => /['"`](?:\/usr\/bin\/)?git['"`]\s*,/.test(item.text))) {
-    assert.ok(['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts', 'src/entrypoints/release-build.ts'].includes(file.path), file.path);
+    assert.ok(
+      ['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts', 'src/entrypoints/release-build.ts', 'src/entrypoints/triage-prerequisites.ts'].includes(
+        file.path,
+      ),
+      file.path,
+    );
   }
   // The controller's GitHub client has exactly one write (the Question comment); no pulls/refs/contents writes.
   // Line breaks, indentation and trailing commas are the formatter's, not what this gate asserts (sourceShape).

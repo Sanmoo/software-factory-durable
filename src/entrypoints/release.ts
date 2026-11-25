@@ -627,10 +627,16 @@ export function guestAssetsRequirement(release: { release: ReleaseView | null },
   ];
 }
 
-/** Exact configured provider/model of every role against the release's single production worker profile (no fallback). */
-export function productionModelChecks(models: Record<'builder' | 'standards' | 'spec', { provider: string; model: string }>): Diagnostic[] {
-  return (['builder', 'standards', 'spec'] as const).map(role => {
-    const supported = models[role].provider === productionProfile.model.providerId && models[role].model === productionProfile.model.modelId;
+/**
+ * Exact configured provider/model of every role against the release's single production worker profile (no fallback). Spec #68 §2: the
+ * `triager` role, present only in a schema 3 config.yaml, is configured like the others.
+ */
+export function productionModelChecks(
+  models: Record<'builder' | 'standards' | 'spec', { provider: string; model: string }> & { triager?: { provider: string; model: string } },
+): Diagnostic[] {
+  const configured = { builder: models.builder, standards: models.standards, spec: models.spec, ...(models.triager ? { triager: models.triager } : {}) };
+  return Object.entries(configured).map(([role, model]) => {
+    const supported = model.provider === productionProfile.model.providerId && model.model === productionProfile.model.modelId;
     return {
       id: `worker-profile:${role}`,
       status: supported ? ('ok' as const) : ('blocked' as const),

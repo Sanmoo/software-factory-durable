@@ -2,6 +2,7 @@ import { constants, lstat, realpath, access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Diagnostic } from '../contracts/index.js';
 import { readConfiguration } from './configuration.js';
+import type { TriageHostProbe } from './triage-prerequisites.js';
 import { guestAssetsRequirement, inspectRelease, productionModelChecks, productionProfile } from './release.js';
 import {
   capacityDiagnostic,
@@ -14,7 +15,10 @@ import {
 
 /** `lambdaService` (v2 ticket 02): composition input for a Lambda installation's account diagnosis (the `aws` CLI by default).
  * `lambdaHostTool`: composition input for its host tool diagnosis (`ssh`, `websocat`; the real PATH by default). */
-export async function doctor(root: string, options: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe } = {}) {
+export async function doctor(
+  root: string,
+  options: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe; triageHost?: TriageHostProbe } = {},
+) {
   const canonicalRoot = await realpath(root).catch(() => resolve(root));
   // Release first: only a verified release contributes its guest asset pin and production worker profile (ticket 32).
   const release = await inspectRelease(canonicalRoot);
