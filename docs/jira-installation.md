@@ -137,9 +137,11 @@ Se o arquivo do token sumir, ficar ilegível ou com modo inseguro, nada é envia
 
 ## 7. Atualizar para esta release
 
-A release com Jira usa o formato de armazenamento 3. A atualização segue `factory upgrade` com a
-migração explícita (`--migrate factory-storage-2-to-3` a partir do formato 2, ou
-`--migrate factory-storage-1-to-2,factory-storage-2-to-3` a partir do 1). O rollback é pré-checado
+A release com Jira usa o formato de armazenamento 3 ou posterior (a release com Triagem usa o 4). A
+atualização segue `factory upgrade` com a migração explícita que `factory upgrade check` informa em
+`migration.required`: os passos do formato atual até o da release, em ordem e separados por vírgula
+(`--migrate factory-storage-3-to-4` a partir do formato 3,
+`--migrate factory-storage-2-to-3,factory-storage-3-to-4` a partir do 2). O rollback é pré-checado
 contra dados **e** `config.yaml`: um `config.yaml` v2 não volta para release que só aceita v1.
 
 ## Limites da evidência

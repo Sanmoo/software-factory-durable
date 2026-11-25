@@ -18,17 +18,23 @@ import { unsettledExecutions, type SettlementFacts } from '../rules/quiescence.j
  */
 export const currentFormat = controlStorageCompatibility.format;
 /**
- * Format → document kind → version. Jira ticket 02: format 3 differs from format 2 only by `factory.installation` v3 (its format identity), so a
- * format-2 release refuses a storage that may hold Jira-origin state. Format 3 is still open while the Jira origin is integrated: a later ticket
- * adds its new kinds HERE (format 3 only) and extends the 2→3 transformation; a kind absent from the detected format makes the storage mixed.
+ * Format → document kind → version. Jira ticket 02: format 3 differs from format 2 only by `factory.installation` v3 (its format identity) and the
+ * Jira kinds, so a format-2 release refuses a storage that may hold Jira-origin state. Triage ticket #70: format 4 differs from format 3 only by
+ * `factory.installation` v4 and the Triage request kinds, so a release that knows no Triage refuses it. Format 4 is still open while Triage is
+ * integrated: a later ticket adds its new kinds to the contract's `documents` (format 4 only); a kind absent from the detected format makes the
+ * storage mixed.
  */
 export type FormatTable = Record<number, Record<string, number>>;
+const original = { 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 };
 const formats: FormatTable = {
-  1: { 'factory.installation': 1, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
-  2: { 'factory.installation': 2, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
+  1: { 'factory.installation': 1, ...original },
+  2: { 'factory.installation': 2, ...original },
+  3: { 'factory.installation': 3, ...original, 'factory.jira-impediment': 1, 'factory.jira-comment': 1, 'factory.jira-link': 1 },
   // The current format's matrix is declared once, in the contract the release manifest publishes.
   [currentFormat]: { ...controlStorageCompatibility.documents },
 };
+/** Every format this release knows. A test derives from it the table of a release that knew fewer formats. */
+export const knownFormats: Readonly<FormatTable> = formats;
 /** Supported migrations: explicit, whole-storage, one Session commit each (a path of several is still applied in ONE commit, see `migrationPath`). */
 export const supportedMigrations = [
   {
@@ -45,11 +51,18 @@ export const supportedMigrations = [
     changes:
       'factory.installation v2 → v3: the storage format identity becomes 3 (a format-2 release refuses it); pause, history, migration records and lifecycle are kept; every other document is kept byte-for-byte; nothing is published.',
   },
+  {
+    id: 'factory-storage-3-to-4',
+    from: 3,
+    to: 4,
+    changes:
+      'factory.installation v3 → v4: the storage format identity becomes 4 (a release that knows no Triage refuses it); pause, history, migration records and lifecycle are kept; every other document is kept byte-for-byte; no Triage request is created and nothing is published.',
+  },
 ] as const;
 export type SupportedMigration = (typeof supportedMigrations)[number];
 /**
  * The explicit chain of supported migrations from `from` to `to` (each step's `to` is the next step's `from`), or null when none exists. Format 1
- * reaches 3 only through the existing 1→2 step followed by 2→3; nothing is skipped or invented.
+ * reaches 4 only through the existing 1→2 step followed by 2→3 and 3→4; nothing is skipped or invented.
  */
 export function migrationPath(from: number, to: number, available: readonly { id: string; from: number; to: number }[] = supportedMigrations) {
   const path: { id: string; from: number; to: number }[] = [];
@@ -143,7 +156,7 @@ const canonical = (value: JsonValue | undefined): string =>
           .sort()
           .map(key => `${JSON.stringify(key)}:${canonical((value as JsonObject)[key])}`)
           .join(',')}}`;
-/** Installation fields every migration preserves (format 2 and 3 additions excluded). */
+/** Installation fields every migration preserves (the additions of format 2 and the format identity excluded). */
 const preservedInstallation = (value: JsonObject) => ({ paused: value.paused ?? null, history: value.history ?? null });
 export const preservedCanonical = (value: JsonObject) => canonical(preservedInstallation(value) as JsonObject);
 
@@ -175,8 +188,9 @@ const empty = {
 /** Examines an open database. `storage` is returned only when the Pi Durable schema is exactly the supported one (opening never migrates). */
 export async function examine(
   database: SqliteDatabase,
-  options: { create: boolean },
+  options: { create: boolean; known: FormatTable },
 ): Promise<{ inspection: Extract<StorageInspection, { kind: 'storage' }>; storage?: SqliteStorage }> {
+  const table = options.known;
   const found = await durableSchema(database);
   const schema = typeof found === 'number' ? found : null;
   const sqlite = await database.get<{ version: string }>('SELECT sqlite_version() AS version').then(
@@ -241,10 +255,10 @@ export async function examine(
       const entry = (documents[record.kind] ??= { count: 0, versions: {} });
       entry.count++;
       entry.versions[String(stored.version)] = (entry.versions[String(stored.version)] ?? 0) + 1;
-      const known = Object.entries(formats)
+      const known = Object.entries(table)
         .filter(([, kinds]) => kinds[record.kind] === stored.version)
         .map(([format]) => Number(format));
-      if (!Object.values(formats).some(kinds => record.kind in kinds))
+      if (!Object.values(table).some(kinds => record.kind in kinds))
         problems.push({ code: 'STORAGE_DOCUMENT_UNKNOWN', detail: `Document kind ${record.kind} is not defined by any known format.` });
       else if (known.length === 0)
         problems.push({ code: 'STORAGE_DOCUMENT_VERSION_UNSUPPORTED', detail: `${record.kind} version ${stored.version} is not part of any known format.` });
@@ -277,7 +291,7 @@ export async function examine(
     }
     cursor = page.next;
   } while (cursor !== undefined);
-  const decided = decideFormat(installationVersion, Object.fromEntries(Object.entries(documents).map(([kind, entry]) => [kind, entry.versions])));
+  const decided = decideFormat(installationVersion, Object.fromEntries(Object.entries(documents).map(([kind, entry]) => [kind, entry.versions])), table);
   const detected = decided.format;
   problems.push(...decided.problems);
   // Factory documents without the installation document: never adopted, never completed by a lazily created installation.
@@ -326,9 +340,10 @@ export async function examine(
 
 /**
  * Read-only compatibility inspection of the canonical Control storage (ticket 33). The caller must hold the canonical-storage flock, as
- * for any open. Never creates the storage, never migrates the Pi Durable schema, never writes a document.
+ * for any open. Never creates the storage, never migrates the Pi Durable schema, never writes a document. `known` is the format table the
+ * storage is read with: this release's by default; a narrower one shows what a release that knew fewer formats finds in the same storage.
  */
-export async function inspectStorage(storagePath: string): Promise<StorageInspection> {
+export async function inspectStorage(storagePath: string, known: FormatTable = formats): Promise<StorageInspection> {
   try {
     await lstat(storagePath);
   } catch (error) {
@@ -337,7 +352,7 @@ export async function inspectStorage(storagePath: string): Promise<StorageInspec
   }
   const database = await openNodeSqliteDatabase(storagePath);
   try {
-    const { inspection, storage } = await examine(database, { create: false });
+    const { inspection, storage } = await examine(database, { create: false, known });
     if (storage) await storage.close(BACKGROUND_CONTEXT);
     else await database.close();
     return inspection;

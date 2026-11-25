@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { createSession } from '@earendil-works/pi-durable';
 import type { ScrubResult, StorageScrub } from '../types.js';
-import { examine, type StorageInspection } from './format.js';
+import { examine, knownFormats, type StorageInspection } from './format.js';
 
 export type Session = ReturnType<typeof createSession>;
 export type Persistence = { sqliteVersion: string; sqliteSourceId: string; journalMode: 'wal'; synchronous: 'FULL' };
@@ -47,7 +47,7 @@ export async function openStore(
       throw new Error('UNSUPPORTED_SQLITE_DURABILITY');
     }
     // A Pi Durable schema other than the supported one is never opened (SqliteStorage.open would migrate it implicitly).
-    const { inspection, storage } = await examine(database, { create: true });
+    const { inspection, storage } = await examine(database, { create: true, known: knownFormats });
     if (storage) closeStorage = () => storage.close(BACKGROUND_CONTEXT);
     const accepted = inspection.operational === 'ready' || (options.purpose === 'migration' && inspection.operational === 'migration-required');
     if (!storage || !accepted) {

@@ -7,7 +7,15 @@ import { join } from 'node:path';
 import { inspectStorage, openControl, type StorageInspection } from '../../src/control/index.js';
 import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '../../src/entrypoints/controller/upgrade.js';
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
-import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne, writeFormatTwo } from '../control/upgrade-fixture.js';
+import {
+  crashAfterStart,
+  reconcilingRun,
+  storageWithPendingQuestion,
+  storedBytesExceptInstallation,
+  writeFormatOne,
+  writeFormatThree,
+  writeFormatTwo,
+} from '../control/upgrade-fixture.js';
 import { configuration, installation, storageDeclarations } from './upgrade-fixture.js';
 import { remainingMs, untilHolds } from '../runner/budget.js';
 
@@ -17,17 +25,18 @@ import { remainingMs, untilHolds } from '../runner/budget.js';
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const node = process.execPath;
 const child = 'dist/test/entrypoints/upgrade-crash-child.js';
-/** Format 1 reaches the current format only through the existing 1→2 step, then 2→3 (one commit, requested explicitly as this path). */
-const fromOne = 'factory-storage-1-to-2,factory-storage-2-to-3';
-const fromTwo = 'factory-storage-2-to-3';
+/** Format 1 reaches the current format only through the existing 1→2 step, then 2→3 and 3→4 (one commit, requested explicitly as this path). */
+const fromOne = 'factory-storage-1-to-2,factory-storage-2-to-3,factory-storage-3-to-4';
+const fromTwo = 'factory-storage-2-to-3,factory-storage-3-to-4';
+const fromThree = 'factory-storage-3-to-4';
 /** A v2 config.yaml (ticketSources), valid for this release and for no release before the Jira origin. */
 const configurationTwo = configuration.replace('schemaVersion: 1', 'schemaVersion: 2') + 'ticketSources: []\n';
-async function rootWithFormatOne(t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}, format: 1 | 2 = 1) {
+async function rootWithFormatOne(t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}, format: 1 | 2 | 3 = 1) {
   const fixture = await installation(options);
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   const source = join(fixture.root, 'run', 'source.sqlite');
   const pending = await storageWithPendingQuestion(source);
-  await (format === 1 ? writeFormatOne(source, fixture.context.storagePath) : writeFormatTwo(source, fixture.context.storagePath));
+  await { 1: writeFormatOne, 2: writeFormatTwo, 3: writeFormatThree }[format](source, fixture.context.storagePath);
   await rm(source);
   await rm(`${source}-wal`, { force: true });
   await rm(`${source}-shm`, { force: true });
@@ -37,6 +46,9 @@ async function rootWithFormatOne(t: { after(fn: () => Promise<void>): void }, op
 /** A format-2 storage (pending published Question) under a previous release of the format-2 era. */
 const rootWithFormatTwo = (t: { after(fn: () => Promise<void>): void }, options: Parameters<typeof installation>[0] = {}) =>
   rootWithFormatOne(t, { previousStorage: storageDeclarations.formatTwo, ...options }, 2);
+/** A format-3 storage (pending published Question) under a previous release that knows the Jira origin and no Triage (configuration 1 and 2). */
+const rootWithFormatThree = (t: { after(fn: () => Promise<void>): void }) =>
+  rootWithFormatOne(t, { previousStorage: storageDeclarations.formatThree, previousConfigurationSchema: [1, 2] }, 3);
 const snapshot = async (root: string, storagePath: string) => ({
   launcher: sha(await readFile(join(root, 'factory'))),
   journal: await readJournal(root),
@@ -88,14 +100,14 @@ test('check verifies every compatibility point read-only; apply refuses a requir
     ['completed', ['guarding', 'migrating', 'migrated', 'selecting', 'completed']],
   );
   assert.deepEqual(storageOf(after.storage).preserved, storageOf(before.storage).preserved, 'ids, queues, Questions, Slots and history preserved');
-  assert.equal(storageOf(after.storage).format, 3);
+  assert.equal(storageOf(after.storage).format, 4);
   assert.deepEqual(
     (storageOf(after.storage).installation!.migrations as { migration: string }[]).map(item => item.migration),
     fromOne.split(','),
   );
   assert.equal((await verifyReleaseTree(previous.directory)).kind, 'release', 'previous release preserved intact');
   assert.equal(await upgradeBlocksStart(root), null);
-  // No universal rollback: the previous release operates format 1 only and this storage is now format 3.
+  // No universal rollback: the previous release operates format 1 only and this storage is now format 4.
   const rollback = await upgrade(context, 'rollback');
   assert.equal(rollback.code, 'ROLLBACK_FORMAT_UNSUPPORTED');
   assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
@@ -219,7 +231,7 @@ function frozenAt(context: Parameters<typeof upgrade>[0], cut: 'journal' | 'sele
   });
 }
 
-test('interruption after each durable step of 2→3 (a real SIGKILL at the migration commit; journal and selection frozen at their step): the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
+test('interruption after each durable step of 2→4 (a real SIGKILL at the migration commit; journal and selection frozen at their step): the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
   for (const cut of ['journal', 'migrated', 'selected'] as const) {
     const { root, context, previous, target, pending } = await rootWithFormatTwo(t);
     const before = storageOf(await inspectStorage(context.storagePath));
@@ -232,7 +244,7 @@ test('interruption after each durable step of 2→3 (a real SIGKILL at the migra
     assert.ok(journal && journal !== 'invalid');
     assert.equal(journal.state, { journal: 'migrating', migrated: 'migrated', selected: 'selecting' }[cut]);
     const storage = storageOf(await inspectStorage(context.storagePath));
-    assert.equal(storage.format, cut === 'journal' ? 2 : 3, `${cut}: never a partially migrated storage`);
+    assert.equal(storage.format, cut === 'journal' ? 2 : 4, `${cut}: never a partially migrated storage`);
     assert.deepEqual(storage.preserved, before.preserved);
     const selected = sha(await readFile(join(root, 'factory')));
     if (cut === 'selected') assert.equal(selected, target.manifest.launcher.sha256);
@@ -267,8 +279,12 @@ test('interruption after each durable step of 2→3 (a real SIGKILL at the migra
     assert.equal(resumed.code, 'UPGRADE_COMPLETED', `${cut}: ${JSON.stringify(resumed.checks)}`);
     assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
     const final = storageOf(await inspectStorage(context.storagePath));
-    assert.deepEqual([final.format, final.preserved], [3, before.preserved]);
-    assert.equal((final.installation!.migrations as unknown[]).length, 1, `${cut}: migrated exactly once`);
+    assert.deepEqual([final.format, final.preserved], [4, before.preserved]);
+    assert.deepEqual(
+      (final.installation!.migrations as { migration: string }[]).map(item => item.migration),
+      fromTwo.split(','),
+      `${cut}: migrated exactly once`,
+    );
     assert.equal(final.preserved!.questions.open, 1, 'the pending Question is still open (answerable after start)');
     assert.equal(
       pending.waiting.impediments.some(item => item.code === 'QUESTION_PENDING'),
@@ -424,7 +440,7 @@ test('rollback pre-checks config.yaml by its ACTUAL schema version against what 
   }
 });
 
-test('after 2→3 with a v2 config.yaml, rollback refuses on data AND configuration at once, changing nothing', async t => {
+test('after 2→4 with a v2 config.yaml, rollback refuses on data AND configuration at once, changing nothing', async t => {
   const { root, context, target } = await rootWithFormatTwo(t, { configuration: configurationTwo });
   assert.equal((await upgrade(context, 'apply', { migrate: fromTwo })).code, 'UPGRADE_COMPLETED');
   const before = await snapshot(root, context.storagePath);
@@ -433,4 +449,34 @@ test('after 2→3 with a v2 config.yaml, rollback refuses on data AND configurat
   assert.match(refused.checks.find(item => item.id === 'rollback:configuration')!.message, /schema version 2; release mvp-32\.1 validates only 1/);
   assert.deepEqual(await snapshot(root, context.storagePath), before);
   assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
+});
+
+test('TR-52: `upgrade apply --migrate factory-storage-3-to-4` keeps every other document byte for byte; after the commit the rollback is refused with ROLLBACK_FORMAT_UNSUPPORTED, no Triage request stored', async t => {
+  const { root, context, previous, target } = await rootWithFormatThree(t);
+  const before = await snapshot(root, context.storagePath);
+  const bytes = storedBytesExceptInstallation(context.storagePath);
+  const checked = await upgrade(context, 'check');
+  assert.deepEqual([checked.code, blocked(checked), checked.migration.required, checked.storage!.format], ['UPGRADE_MIGRATION_REQUIRED', [], fromThree, 3]);
+  // Never implicit: without the explicit request nothing changes.
+  assert.equal((await upgrade(context, 'apply')).code, 'UPGRADE_MIGRATION_NOT_REQUESTED');
+  assert.deepEqual(await snapshot(root, context.storagePath), before);
+  const applied = await upgrade(context, 'apply', { migrate: fromThree });
+  assert.equal(applied.code, 'UPGRADE_COMPLETED', JSON.stringify(applied));
+  const after = await snapshot(root, context.storagePath);
+  assert.equal(after.launcher, target.manifest.launcher.sha256);
+  assert.equal(storageOf(after.storage).format, 4);
+  assert.deepEqual(storedBytesExceptInstallation(context.storagePath), bytes, 'Works, Slots, Questions, receipts and the Ticket index as stored');
+  assert.deepEqual(storageOf(after.storage).preserved, storageOf(before.storage).preserved);
+  assert.equal(storageOf(after.storage).documents['factory.triage-request'], undefined, 'the migration creates no Triage request');
+  assert.deepEqual(
+    (storageOf(after.storage).installation!.migrations as { migration: string; from: number; to: number }[]).map(item => [item.migration, item.from, item.to]),
+    [[fromThree, 3, 4]],
+  );
+  // The previous release validates this config.yaml, so the data alone refuses: it operates format 3 and the storage is format 4 for good.
+  const rollback = await upgrade(context, 'rollback');
+  assert.deepEqual([rollback.code, blocked(rollback)], ['ROLLBACK_FORMAT_UNSUPPORTED', ['rollback:storage']]);
+  assert.match(rollback.checks.find(item => item.id === 'rollback:storage')!.message, /operates storage format 3 only; this storage is format 4/);
+  assert.match(rollback.nextStep, /correct forward/);
+  assert.deepEqual(await snapshot(root, context.storagePath), after, 'the refused rollback changed nothing (selection, journal, storage)');
+  assert.equal((await verifyReleaseTree(previous.directory)).kind, 'release', 'previous release preserved intact');
 });

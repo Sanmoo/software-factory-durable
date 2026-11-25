@@ -332,7 +332,7 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
       inspection.operational !== 'incompatible' &&
       (inspection.format === null || inspection.format === support.format || support.migratesFrom.includes(inspection.format));
     if (inspection.format !== null && inspection.format !== support.format && formatOk) {
-      // The explicit path (format 1: the existing 1→2 step, then 2→3), requested as its comma-joined step ids.
+      // The explicit path (format 1: the existing 1→2 step, then 2→3 and 3→4), requested as its comma-joined step ids.
       const path = controlStorageMigrationPath(inspection.format, support.format);
       required = path ? controlStorageMigrationPathId(path) : null;
     }
