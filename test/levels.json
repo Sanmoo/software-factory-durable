@@ -37,6 +37,7 @@
     "test/runner/secrets.test.ts",
     "test/runner/selection.test.ts",
     "test/runner/tiers.test.ts",
+    "test/sandbox/investigation-stop-rules.test.ts",
     "test/sandbox/lambda-guest-image.test.ts",
     "test/sandbox/sandbox-boot-markers.test.ts",
     "test/workers/gate-evidence.test.ts",

@@ -153,6 +153,8 @@ import type { RemoveResult } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
+// Spec #68 §6: the Investigation Environment of a Triage attempt, behind its own port (never `sandbox.adapter`).
+export * from './investigation/index.js';
 // Release build (ticket 32) only: the pinned private Gondolin profile prepared/verified inside a release tree; never at runtime.
 export { prepareReleaseGondolinSdk, verifyDevelopmentGondolinSdk as verifyGondolinSdk, gondolinSdkProfile } from './gondolin-sdk-profile.js';
 // Ticket 47 build tool (operator/supervisor only, never at runtime): a NEW guest asset version whose root ext4 has a journal.
