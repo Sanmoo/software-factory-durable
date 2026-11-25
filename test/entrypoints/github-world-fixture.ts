@@ -64,6 +64,8 @@ export type WorldComment = {
   created_at?: string;
   updated_at?: string;
   performed_via_github_app?: { id: number } | null;
+  /** Spec #68 ticket #74: GitHub's association of the author with the repository (absent in the payload when not given). */
+  author_association?: string;
   html_url?: string;
 };
 /** Ticket 44: the `.factory/environment.yaml` every fixture repository serves unless `environmentFiles` says otherwise. */

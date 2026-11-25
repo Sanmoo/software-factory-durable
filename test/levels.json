@@ -29,6 +29,7 @@
     "test/control/review-round51-rules.test.ts",
     "test/control/review-rules.test.ts",
     "test/control/substitute-rules.test.ts",
+    "test/control/ticket-comments-rules.test.ts",
     "test/runner/architecture.test.ts",
     "test/runner/avoided-terms.test.ts",
     "test/runner/complexity.test.ts",

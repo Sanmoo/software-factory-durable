@@ -64,6 +64,10 @@ export type Remote = {
   graphThrows?: boolean;
   /** Issue comments by issue number (ascending ids). postComment appends App-bot comments here. */
   comments?: Record<number, TrackerComment[]>;
+  /** Spec #68 ticket #74: GitHub's `author_association` by author login (absent = NONE), as readTicketComments reports it. */
+  associations?: Record<string, string>;
+  /** Number of next readTicketComments calls that are incomplete (unavailable). */
+  incompleteTicketComments?: number;
   /** Consumed one per postComment: unknown outcome (created or not) or known failure; absent = published. */
   postOutcomes?: ('unknown-created' | 'unknown-not-created' | 'failed')[];
   /** Number of next findQuestion calls that are incomplete (unavailable). */
@@ -278,6 +282,31 @@ export function githubDoubles(remote: Remote) {
           };
         },
         ref,
+      ),
+    // Spec #68 ticket #74: every comment of the Ticket issue with the author's association and whether the Factory App performed it.
+    readTicketComments: ref =>
+      track(
+        'readTicketComments',
+        () => {
+          if (remote.incompleteTicketComments) {
+            remote.incompleteTicketComments--;
+            return failure(ref.repository, { code: 'GITHUB_QUERY_FAILED' });
+          }
+          return {
+            kind: 'observed' as const,
+            source: 'github-rest' as const,
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete' as const,
+            comments: structuredClone(remote.comments?.[ref.number] ?? []).map(item => ({
+              ...item,
+              authorAssociation: remote.associations?.[item.author.login] ?? 'NONE',
+              ownApp: item.viaApp === factoryAppId && item.author.type === 'Bot',
+            })),
+            limitations: ['synthetic'],
+          };
+        },
+        { number: ref.number },
       ),
     readInputs: (ref, cursor) =>
       track(

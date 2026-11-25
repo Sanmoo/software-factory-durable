@@ -12,6 +12,7 @@ import type {
   GitHubTicketRef,
   GitHubTrackerScope,
   IssueTracker,
+  TicketCommentFact,
   TrackerComment,
   TrackerUnavailable,
 } from './tracker-types.js';
@@ -50,8 +51,26 @@ const commentSchema = z.object({
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),
   performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
+  author_association: z.string().min(1).max(64).optional(),
 });
 const maxCommentPages = 10;
+/** One validated comment payload as a fact; `ownApp`: performed through `appId` by a bot author (this installation's App). */
+function commentFact(comment: z.infer<typeof commentSchema>, appId: number): TicketCommentFact {
+  const viaApp = comment.performed_via_github_app?.id ?? null;
+  return {
+    commentId: comment.id,
+    nodeId: comment.node_id,
+    url: comment.html_url,
+    author: { id: comment.user.id, login: comment.user.login, type: comment.user.type },
+    body: comment.body ?? '',
+    createdAt: comment.created_at,
+    updatedAt: comment.updated_at,
+    viaApp,
+    authorAssociation: comment.author_association ?? 'NONE',
+    ownApp: viaApp === appId && comment.user.type === 'Bot',
+  };
+}
+
 const questionMarker = (questionId: string) => `<!-- ${questionMarkerPrefix}${questionId} -->`;
 const replyMarker = (replyId: string) => `<!-- ${replyMarkerPrefix}${replyId} -->`;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -327,22 +346,13 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
         .safeParse(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/comments`, { maxPages: maxCommentPages }));
       if (!parsed.success) throw new InvalidGitHubObservation();
       const seen = new Set<number>();
-      const result: TrackerComment[] = [];
+      const result: TicketCommentFact[] = [];
       for (const comment of parsed.data) {
         if (comment.html_url.toLowerCase() !== `https://github.com/${scope.repository}/issues/${ticket.number}#issuecomment-${comment.id}`.toLowerCase())
           throw new InvalidGitHubObservation();
         if (seen.has(comment.id)) continue;
         seen.add(comment.id);
-        result.push({
-          commentId: comment.id,
-          nodeId: comment.node_id,
-          url: comment.html_url,
-          author: { id: comment.user.id, login: comment.user.login, type: comment.user.type },
-          body: comment.body ?? '',
-          createdAt: comment.created_at,
-          updatedAt: comment.updated_at,
-          viaApp: comment.performed_via_github_app?.id ?? null,
-        });
+        result.push(commentFact(comment, options.github.appId));
       }
       return result.sort((a, b) => a.commentId - b.commentId);
     });
@@ -351,6 +361,24 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
   const ownQuestions = (list: TrackerComment[], questionId: string) => ownMarked(list, questionMarker(questionId));
 
   return {
+    async readTicketComments(ticket) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      const read = await comments(scope, ticket);
+      if (!read.ok) return unavailable(scope.repository, read);
+      return {
+        kind: 'observed',
+        source: 'github-rest',
+        observedAt: read.observedAt,
+        ticket,
+        completeness: 'complete',
+        comments: read.value,
+        limitations: [
+          'Complete listing at one instant, not an atomic snapshot.',
+          'Comments are facts; which of them compose the Ticket text is decided by the Control.',
+        ],
+      };
+    },
     async readInputs(ticket, cursor) {
       const scope = executableScope(ticket);
       if (!scope) return notConfigured(ticket);
