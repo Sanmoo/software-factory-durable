@@ -446,7 +446,7 @@ export function createJiraTracker(options: {
       };
     },
     async readLabelHistory(ticket) {
-      // By entry id: an entry repeated on a later page (a concurrent change) is read once, at its first position.
+      // By entry id: an entry repeated on a later page (a concurrent change) is read once, at its first position (a Map keeps it).
       const entries = new Map<string, Parameters<typeof labelChanges>[0]>();
       let startAt = 0;
       let observedAt = '';
@@ -467,7 +467,7 @@ export function createJiraTracker(options: {
         observedAt ||= answer.observedAt;
         const page = changelogPageOf(answer.body, startAt);
         if (!page) return invalid(ticket.siteId, answer.observedAt);
-        for (const entry of page.values) entries.set(entry.id, entries.get(entry.id) ?? entry);
+        for (const entry of page.values) entries.set(entry.id, entry);
         startAt += page.values.length;
         if (startAt >= page.total) break;
         if (!page.values.length)
