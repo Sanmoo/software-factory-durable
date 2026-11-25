@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decideFormat, migrationPath, migrationPathId, supportedMigrations } from '../../src/control/durable/format.js';
+import { decideFormat, knownFormats, migrationPath, migrationPathId, supportedMigrations } from '../../src/control/durable/format.js';
 
 // Pure rules of the storage format decision and the migration path (Jira ticket 02). The real storages are in storage-format*.test.ts.
 const v1 = { 'factory.request': { 1: 3 }, 'factory.ticket-index': { 1: 1 }, 'factory.work': { 1: 2 }, 'factory.slots': { 1: 1 }, 'factory.question': { 1: 1 } };
@@ -37,8 +37,15 @@ test('the migration path is the explicit chain of supported steps: 2â†’3, and 1â
     [
       ['factory-storage-1-to-2', 1, 2],
       ['factory-storage-2-to-3', 2, 3],
+      ['factory-storage-3-to-4', 3, 4],
     ],
   );
+  assert.deepEqual(
+    migrationPath(3, 4)?.map(item => item.id),
+    ['factory-storage-3-to-4'],
+  );
+  assert.equal(migrationPathId(migrationPath(1, 4)!), 'factory-storage-1-to-2,factory-storage-2-to-3,factory-storage-3-to-4');
+  assert.equal(migrationPath(4, 3), null, 'no way back from format 4');
   assert.deepEqual(
     migrationPath(2, 3)?.map(item => item.id),
     ['factory-storage-2-to-3'],
@@ -60,12 +67,27 @@ test('the migration path is the explicit chain of supported steps: 2â†’3, and 1â
 
 test('the release manifest declares exactly the migrations and the document matrix Control enforces', async () => {
   const { controlStorageCompatibility } = await import('../../src/contracts/index.js');
-  assert.deepEqual([controlStorageCompatibility.format, [...controlStorageCompatibility.migratesFrom]], [3, [1, 2]]);
+  assert.deepEqual([controlStorageCompatibility.format, [...controlStorageCompatibility.migratesFrom]], [4, [1, 2, 3]]);
   assert.deepEqual(
     [...controlStorageCompatibility.migrations],
     supportedMigrations.map(item => item.id),
   );
-  const v3 = Object.fromEntries(Object.entries(controlStorageCompatibility.documents).map(([kind, version]) => [kind, { [version]: 1 }]));
-  assert.deepEqual(decideFormat(3, v3), { format: 3, problems: [] });
-  assert.equal(controlStorageCompatibility.documents['factory.installation'], 3);
+  const v4 = Object.fromEntries(Object.entries(controlStorageCompatibility.documents).map(([kind, version]) => [kind, { [version]: 1 }]));
+  assert.deepEqual(decideFormat(4, v4), { format: 4, problems: [] });
+  assert.equal(controlStorageCompatibility.documents['factory.installation'], 4);
+});
+
+test('TR-52 (rules): format 4 is format 3 with another identity plus the Triage request kind; a release that knows no Triage finds no format in it', () => {
+  const { 4: four, ...beforeTriage } = knownFormats;
+  assert.deepEqual(four, { ...knownFormats[3], 'factory.installation': 4, 'factory.triage-request': 1 });
+  const works = { 'factory.work': { 1: 2 }, 'factory.slots': { 1: 1 }, 'factory.question': { 1: 1 }, 'factory.jira-comment': { 1: 1 } };
+  // The same Works, Slots and Questions belong to both formats unchanged: only the installation version tells them apart.
+  assert.deepEqual(decideFormat(3, { 'factory.installation': { 3: 1 }, ...works }), { format: 3, problems: [] });
+  assert.deepEqual(decideFormat(4, { 'factory.installation': { 4: 1 }, ...works }), { format: 4, problems: [] });
+  // A release whose table ends at format 3 (it knows no Triage) establishes no format for an installation of version 4.
+  assert.deepEqual(decideFormat(4, { 'factory.installation': { 4: 1 }, ...works }, beforeTriage), { format: null, problems: [] });
+  // A Triage request inside a storage still identified as format 3 is mixed: the migration is what opens the room for it.
+  assert.deepEqual(decideFormat(3, { 'factory.installation': { 3: 1 }, 'factory.triage-request': { 1: 1 } }).problems, [
+    { code: 'STORAGE_FORMAT_MIXED', detail: 'factory.triage-request is not part of format 3.' },
+  ]);
 });

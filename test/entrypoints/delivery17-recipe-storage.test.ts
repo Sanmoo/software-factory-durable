@@ -33,11 +33,11 @@ test('recipe preflight storage: a format-1 source is copied, ONLY the copy is mi
   const result = await prepareAuthority(source, join(dir, 'authority'), 'q17-test');
   assert.equal(result.kind, 'migrated');
   if (result.kind !== 'migrated') return;
-  assert.deepEqual([result.before.format, result.after.format], [1, 3]);
+  assert.deepEqual([result.before.format, result.after.format], [1, 4]);
   assert.equal(result.before.digest, sourceBefore.preserved!.digest);
   assert.equal(result.after.digest, result.before.digest, 'preserved documents identical after the migration');
   assert.equal(result.storagePath, join(dir, 'authority', 'control.sqlite'));
-  assert.equal(storage(await inspectStorage(result.storagePath)).format, 3);
+  assert.equal(storage(await inspectStorage(result.storagePath)).format, 4);
   assert.equal(storage(await inspectStorage(join(source, 'control.sqlite'))).format, 1, 'the original is never migrated');
   assert.equal(await sha(join(source, 'control.sqlite')), bytes, 'the original is byte-identical');
   await assert.rejects(prepareAuthority(source, join(dir, 'authority'), 'q17-test'), 'the authority copy is exclusive, never reused');

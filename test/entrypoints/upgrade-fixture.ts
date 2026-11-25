@@ -23,10 +23,14 @@ sandbox: { schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1 }
 repositories: []
 `;
 
-/** Storage declarations of releases: `current` = this checkout's; `formatTwo` = every release before the Jira origin (format 2, migrates 1). */
+/**
+ * Storage declarations of releases: `current` = this checkout's; `formatTwo` = every release before the Jira origin (format 2, migrates 1);
+ * `formatThree` = every release that knows the Jira origin and no Triage (format 3, migrates 1 and 2).
+ */
 export const storageDeclarations = {
   current: { format: controlStorageCompatibility.format, migratesFrom: [...controlStorageCompatibility.migratesFrom] },
   formatTwo: { format: 2, migratesFrom: [1] },
+  formatThree: { format: 3, migratesFrom: [1, 2] },
 };
 export type StorageDeclaration = false | { format: number; migratesFrom: number[] };
 /** Configuration schema declarations: this checkout's list, and the single number of every release before the Jira origin. */

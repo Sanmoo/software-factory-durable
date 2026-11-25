@@ -12,7 +12,7 @@ import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Jira ticket 02, spec §6.2-6.3): a REAL Control + Pi Durable + SQLite storage holding a published GitHub Question, re-expressed
 // as format 2 (every release before the Jira origin) through the public Pi Durable API, plus the minimal memory of a forgotten Work. The
-// explicit factory-storage-2-to-3 migration runs on it; then the current Control answers the same Question twice. GitHub and Jira are doubles
+// explicit migration path of a format-2 storage (factory-storage-2-to-3, then factory-storage-3-to-4 since Triage) runs on it; then the current Control answers the same Question twice. GitHub and Jira are doubles
 // that record every call. NOT evidence of a real VM, worker, model, GitHub or Jira.
 async function directory(t: { after(fn: () => Promise<void>): void }) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-format3-'));
@@ -74,7 +74,7 @@ function jiraRecorder() {
   return { calls, tracker: tracker as never };
 }
 
-test('format 2 → 3: the explicit migration is one commit that preserves everything; the published GitHub Question is answered once, twice delivered', async t => {
+test('format 2 → 3 → 4: the explicit migration is one commit that preserves everything; the published GitHub Question is answered once, twice delivered', async t => {
   const dir = await directory(t);
   const source = join(dir, 'source.sqlite'),
     path = join(dir, 'control.sqlite');
@@ -91,10 +91,10 @@ test('format 2 → 3: the explicit migration is one commit that preserves everyt
   );
   assert.deepEqual(storage(await inspectStorage(path)), before);
   const migrated = await migrateStorage(path, { upgradeId: 'up-3', release: 'jira-1', previousRelease: 'mvp-44.1', expectedDigest: before.preserved!.digest });
-  assert.deepEqual([migrated.kind, migrated.kind === 'migrated' && migrated.migration], ['migrated', 'factory-storage-2-to-3']);
+  assert.deepEqual([migrated.kind, migrated.kind === 'migrated' && migrated.migration], ['migrated', 'factory-storage-2-to-3,factory-storage-3-to-4']);
   const after = storage(await inspectStorage(path));
-  assert.deepEqual([after.format, after.operational, after.problems], [3, 'ready', []]);
-  assert.deepEqual(after.documents['factory.installation'], { count: 1, versions: { 3: 1 } });
+  assert.deepEqual([after.format, after.operational, after.problems], [4, 'ready', []]);
+  assert.deepEqual(after.documents['factory.installation'], { count: 1, versions: { 4: 1 } });
   // Counts, every preserved document (ids, GitHub keys, index and cycle memory after forget, FIFO, cursors, receipts, Questions, PRs, effects) and digest.
   assert.deepEqual(after.preserved, before.preserved);
   assert.deepEqual(
@@ -113,7 +113,10 @@ test('format 2 → 3: the explicit migration is one commit that preserves everyt
       item.from,
       item.to,
     ]),
-    [['up-3', 'factory-storage-2-to-3', 2, 3]],
+    [
+      ['up-3', 'factory-storage-2-to-3', 2, 3],
+      ['up-3', 'factory-storage-3-to-4', 3, 4],
+    ],
   );
   assert.equal(
     (await migrateStorage(path, { upgradeId: 'up-3', release: 'jira-1', previousRelease: 'mvp-44.1', expectedDigest: before.preserved!.digest })).kind,
@@ -182,7 +185,7 @@ test('format 2 → 3: the explicit migration is one commit that preserves everyt
     assert.equal(shown.work.history.filter(item => item.event === 'question-answered').length, 1, `run ${run}: one transition`);
     assert.equal(shown.questions[0]!.answer!.text, 'Use docs/factory.md');
     const status = (await control.inspect({ kind: 'status' })) as ControlStatus;
-    assert.deepEqual([status.storage.format, status.works.total, status.questions.answered], [3, list.works.length, 1]);
+    assert.deepEqual([status.storage.format, status.works.total, status.questions.answered], [4, list.works.length, 1]);
     const memory = (await control.inspect({ kind: 'show', work_id: forgottenId })) as { kind: string; memory: ForgottenWork };
     assert.deepEqual([memory.kind, memory.memory], ['work-forgotten', forgotten], 'the cycle memory after forget is preserved');
     stop.abort();
