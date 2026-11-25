@@ -423,7 +423,7 @@ export function createWorkers(configuration?: Configuration) {
         // The Host (not the worker or model) derives the exact readable pack paths from the verified manifest of THIS version.
         ...(invocation.skillPack === undefined || invocation.context.role !== 'builder'
           ? {}
-          : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack) }),
+          : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack, 'builder') }),
         ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }),
         ...(invocation.builderBudget === undefined ? {} : { builderBudget: { ...invocation.builderBudget } }),
         ...(invocation.deadlineMs === undefined ? {} : { deadlineMs: invocation.deadlineMs }),

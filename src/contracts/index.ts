@@ -281,7 +281,7 @@ export const reviewVerdictFormat =
   'Paths are guest paths: /workspace/checkout/... or /artifacts/....';
 
 /**
- * Versioned Factory Builder skill packs shipped with this release. A published pack is never edited: a change appends a new id (the pack
+ * Versioned Factory skill packs shipped with this release (from v13 on one pack serves every role: its manifest names the role of each skill and prompt). A published pack is never edited: a change appends a new id (the pack
  * decides its own guest paths and, in its manifest, which session protocols it supports). Consumers derive their enum/registry from this
  * list, so renumbering or adding a version is a data change here plus the pack directory.
  */
@@ -298,6 +298,7 @@ export const factorySkillPackIds = [
   'factory-skills-v10',
   'factory-skills-v11',
   'factory-skills-v12',
+  'factory-skills-v13',
 ] as const;
 export type FactorySkillPackId = (typeof factorySkillPackIds)[number];
 
