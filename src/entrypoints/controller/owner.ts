@@ -1,11 +1,11 @@
 import { lstat, unlink } from 'node:fs/promises';
-import { inspectStorage, openControl } from '../../control/index.js';
+import { inspectStorage, openControl, type ExecutionPorts, type TriagePorts } from '../../control/index.js';
 import { upgradeBlocksStart } from './upgrade.js';
 import { serveControl } from './serve.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
-import { composeProductionAccess, composeProductionExecution, composeRuntimeInventory } from './composition.js';
+import { composeProductionAccess, composeProductionExecution, composeProductionTriage, composeRuntimeInventory } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
 
 const refusalMessages: Record<'WORKER_PROFILE_UNSUPPORTED' | 'SANDBOX_CONFIGURATION_INVALID' | 'RELEASE_GUEST_ASSETS_ABSENT', string> = {
@@ -15,6 +15,28 @@ const refusalMessages: Record<'WORKER_PROFILE_UNSUPPORTED' | 'SANDBOX_CONFIGURAT
   RELEASE_GUEST_ASSETS_ABSENT:
     'This release distributes no guest assets and the gondolin sandbox adapter boots them; select the lambda adapter or install a release built with them. Storage was not opened.',
 };
+
+type Effective = Parameters<typeof composeProductionExecution>[0]['effective'] & Parameters<typeof composeProductionTriage>[0]['effective'];
+/**
+ * The ports of a distributed release: the execution and, where a source asks for Triage and the Host can serve it (spec #68 §2), the
+ * Triage. A development checkout carries no release and composes neither. Any refusal refuses the start: nothing is partially applied.
+ */
+async function composePorts(
+  release: Awaited<ReturnType<typeof inspectRelease>>,
+  root: string,
+  effective: Effective,
+  github: ReturnType<typeof createGitHubAccess>,
+): Promise<{ ports: { execution?: ExecutionPorts; triage?: TriagePorts } } | { refusal: Record<string, unknown> }> {
+  if (!release.release) return { ports: {} };
+  // #62: a release without guest assets is composed too; the composition refuses the adapter that needs them.
+  const execution = await composeProductionExecution({ root, effective, ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}), github });
+  const triage = execution.status === 'refused' ? execution : await composeProductionTriage({ root, effective, github });
+  if (triage.status === 'refused')
+    return { refusal: { code: 'CONFIGURATION_UNSUPPORTED', reason: triage.code, roles: triage.roles, message: refusalMessages[triage.code] } };
+  return {
+    ports: { ...(execution.status === 'composed' ? { execution: execution.ports } : {}), ...(triage.status === 'composed' ? { triage: triage.ports } : {}) },
+  };
+}
 
 async function own(root: string): Promise<number> {
   process.umask(0o077);
@@ -75,17 +97,9 @@ async function own(root: string): Promise<number> {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
   }
   const github = createGitHubAccess({ root: paths.root, ...validated.configuration.effective.githubApp });
-  // #62: a release without guest assets is composed too; the composition refuses the adapter that needs them.
-  const composed = release.release
-    ? await composeProductionExecution({
-        root: paths.root,
-        effective: validated.configuration.effective,
-        ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}),
-        github,
-      })
-    : undefined;
-  if (composed?.status === 'refused') {
-    console.error(JSON.stringify({ code: 'CONFIGURATION_UNSUPPORTED', reason: composed.code, roles: composed.roles, message: refusalMessages[composed.code] }));
+  const composed = await composePorts(release, paths.root, validated.configuration.effective, github);
+  if ('refusal' in composed) {
+    console.error(JSON.stringify(composed.refusal));
     return 2;
   }
   const stop = new AbortController();
@@ -114,7 +128,7 @@ async function own(root: string): Promise<number> {
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by (composeProductionAccess).
     access: composeProductionAccess({ root: paths.root, github, effective }),
     polling: { intervalSeconds: effective.pollingSeconds },
-    ...(composed?.status === 'composed' ? { execution: composed.ports } : {}),
+    ...composed.ports,
   });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

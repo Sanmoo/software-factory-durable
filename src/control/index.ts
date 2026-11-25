@@ -71,6 +71,21 @@ export type {
   TriageSourceRef,
   TriageTimelineEntry,
 } from './types.js';
+// Spec #68 §6-§8 (ticket #75): the investigation of a request up to its recorded Verdict, for the publication and operator tickets.
+export { readTriageVerdictText, updateTriageAttempt } from './durable/triage-requests.js';
+export { afterAttemptWithoutVerdict, attemptEndCode, holdsTriageCapacity } from './rules/triage.js';
+export {
+  intendedChanges,
+  triageCandidates,
+  triageEffectStatuses,
+  triageOutcomes,
+  validateVerdict,
+  verdictCategories,
+  verdictTextMaxBytes,
+} from './rules/triage-verdict.js';
+export type { TriageEffectStatus, TriageIntendedChange, TriageIntendedEffect, TriageOutcome, TriageVerdict, VerdictCategory } from './rules/triage-verdict.js';
+export type { TriageActivationText } from './rules/triage-prompt.js';
+export type { TriageAttempt, TriagePorts, TriageVerdictRecord } from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

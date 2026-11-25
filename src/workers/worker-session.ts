@@ -77,7 +77,7 @@ async function reopenSession(sessionsDirectory: string, expected: { file: string
 }
 
 /** #48: the reasoning level of this profile's sessions: the role's configured level, or the release default (maximum) when absent. */
-const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
+export const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
   ('thinkingLevel' in profile ? profile.thinkingLevel : undefined) ?? defaultWorkerThinkingLevel;
 
 /**
@@ -85,7 +85,7 @@ const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
  * profile's reasoning level. The SDK clamps silently when a model lacks a level, so a clamp refuses the session instead of running it with
  * another level. A legacy fixture model keeps the nearest level it declares.
  */
-function sessionRefusal(
+export function sessionRefusal(
   session: { model?: { provider: string; id: string } | undefined; thinkingLevel: string },
   profile: ReviewerProfile,
   oauth: boolean,

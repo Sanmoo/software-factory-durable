@@ -1,1 +1,12 @@
-{"version":1,"buildId":"f10cc2c0-d9a9-5b41-a666-987002487b92","config":{"arch":"x86_64","distro":"alpine"},"buildTime":"2026-11-05T00:00:00.000Z","assets":{"kernel":"vmlinuz-virt","initramfs":"initramfs.cpio.lz4","rootfs":"rootfs.ext4"},"checksums":{"kernel":"e0eaf8f5f0b8c73e368e4856a4ebdb9246b365f180c8e27f2cd4613d832ec9f6","initramfs":"358943bfd29efc17f1dfbb0155afa16030c132cff87d28b9cff6bf476b44bfbd","rootfs":"49f7c6606aeaa072b6e61155afa5645609935723645fe6bc2529e43f05f06f4b"}}
+{
+  "version": 1,
+  "buildId": "f10cc2c0-d9a9-5b41-a666-987002487b92",
+  "config": { "arch": "x86_64", "distro": "alpine" },
+  "buildTime": "2026-11-05T00:00:00.000Z",
+  "assets": { "kernel": "vmlinuz-virt", "initramfs": "initramfs.cpio.lz4", "rootfs": "rootfs.ext4" },
+  "checksums": {
+    "kernel": "e0eaf8f5f0b8c73e368e4856a4ebdb9246b365f180c8e27f2cd4613d832ec9f6",
+    "initramfs": "358943bfd29efc17f1dfbb0155afa16030c132cff87d28b9cff6bf476b44bfbd",
+    "rootfs": "49f7c6606aeaa072b6e61155afa5645609935723645fe6bc2529e43f05f06f4b"
+  }
+}

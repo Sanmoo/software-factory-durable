@@ -4,6 +4,7 @@ import {
   builderBudgetV1,
   qualificationRequestsV1,
   reviewerBudgetV1,
+  triagerBudgetV1,
   defaultWorkerThinkingLevel,
   type WorkerThinkingLevel,
 } from '../contracts/index.js';
@@ -61,6 +62,17 @@ export const reviewerBudget = Object.freeze({
   providerBytes: 16 * 1024 * 1024,
   deadlineMs: reviewerBudgetV1.requestTimeoutMinutes * 60 * 1000,
 });
+/** Spec #68 §5: the budget of one attempt of a Triager (`triager-v1`). Its first prompt carries the `triage` skill and the whole Ticket
+ * with every comment, hence the larger prompt bound; same observation limits otherwise, never a billing cap. */
+export const triagerBudget = Object.freeze({
+  requests: triagerBudgetV1.requests,
+  tools: triagerBudgetV1.toolCalls,
+  promptBytes: 1024 * 1024,
+  contextBytes: 4 * 1024 * 1024,
+  toolBytes: 262144,
+  providerBytes: 16 * 1024 * 1024,
+  deadlineMs: triagerBudgetV1.requestTimeoutMinutes * 60 * 1000,
+});
 export type QualificationLimits = {
   readonly requests: number;
   readonly tools: number;
@@ -70,6 +82,9 @@ export type QualificationLimits = {
   readonly providerBytes: number;
   readonly deadlineMs: number;
 };
+/** Budgets of the roles added after the Builder and the Reviewers, by `role:budget`. */
+const roleBudgets: Readonly<Record<string, QualificationLimits>> = { 'triager:triager-v1': triagerBudget };
+const laterRoleBudget = (role: string, modelBudget: string | undefined) => roleBudgets[`${role}:${modelBudget}`] ?? oauthQualification;
 /** Host policy -> limits; a budget never applies to a role it was not made for. Ticket 48: a Builder override (per repository, validated
  * again here: never above 2x) replaces only requests/tools/request timeout of `builder-v1`; an invalid one refuses the activation. */
 export function budgetFor(role: string, modelBudget: string | undefined, override?: BuilderBudgetOverride): QualificationLimits {
@@ -77,7 +92,7 @@ export function budgetFor(role: string, modelBudget: string | undefined, overrid
     throw new Error('WORKER_BUDGET_INVALID');
   if (modelBudget === 'builder-v1' && role === 'builder') return override ? Object.freeze({ ...builderBudget, ...override }) : builderBudget;
   if (modelBudget === 'reviewer-v1' && (role === 'standards' || role === 'spec')) return reviewerBudget;
-  return oauthQualification;
+  return laterRoleBudget(role, modelBudget);
 }
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? '');
 const unavailable = () => new Error('WORKER_QUALIFICATION_CLOSED');

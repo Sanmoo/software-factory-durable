@@ -15,6 +15,7 @@ import type {
   ListView,
   PollingOptions,
   PollingView,
+  TriagePorts,
   TriageRequestsView,
   QuestionQueryView,
   RecoveryView,
@@ -52,6 +53,7 @@ import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createTriageDiscovery } from './triage-discovery.js';
+import { createTriageInvestigations } from './triage-investigation.js';
 import { readTriageRequests } from './triage-requests.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
@@ -255,6 +257,23 @@ async function triageRequestsView(session: Session): Promise<TriageRequestsView>
   const requests = await readTriageRequests(session);
   return { kind: 'triage-requests', requests, queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id) };
 }
+/** Ticket #75: the investigation desk when the Triage ports, the access and the polling are all composed; a desk that does nothing otherwise. */
+function triageInvestigations(
+  options: { triage?: TriagePorts | undefined; access?: AccessDependencies | undefined },
+  session: Session,
+  poller: { repositoryId(repository: string): number | undefined } | undefined,
+  stopped: () => boolean,
+): Pick<ReturnType<typeof createTriageInvestigations>, 'pass' | 'stop'> {
+  if (!options.triage || !options.access || !poller) return { pass: async () => {}, stop: async () => {} };
+  return createTriageInvestigations({
+    session,
+    access: options.access,
+    ports: options.triage,
+    paused: async () => (await readInstallation(session)).paused,
+    stopped,
+    repositoryId: repository => poller.repositoryId(repository),
+  });
+}
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;
 
@@ -280,6 +299,8 @@ export async function openControl(options: {
   polling?: PollingOptions;
   /** Execution boundaries (sandbox lifecycle, Workers activation, Builder credentials). Absent: dispatch stays closed (EXECUTION_NOT_ENABLED). */
   execution?: ExecutionPorts;
+  /** Spec #68 (ticket #75): what composes a Triager attempt. Absent: Triage requests are created and queued, never investigated. */
+  triage?: TriagePorts;
 }): Promise<Control> {
   // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
   let dispatchReason: DispatchReason | null = 'RECONCILIATION_REQUIRED';
@@ -439,8 +460,11 @@ export async function openControl(options: {
           limits: configuredRepository,
         })
       : undefined;
+  // Spec #68 §6-§7 (ticket #75): queued Triage requests are investigated by a Triager when the Triage ports are composed.
+  const investigations = triageInvestigations(options, state, poller, () => stopped);
   // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
   const afterTick = async () => {
+    await investigations.pass().catch(() => {});
     await checks?.pass(tracking.signal).catch(() => {});
     await readiness?.pass(tracking.signal).catch(() => {});
     // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
@@ -1060,6 +1084,7 @@ export async function openControl(options: {
         await polling.catch(() => {});
         // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
         const uncertain = (await dispatcher?.stop())?.uncertain ?? 0;
+        await investigations.stop();
         await desk?.idle();
         // Ticket 33 + 26: ONE outcome (single source) for the run result and its durable end: clean only for a requested stop whose own
         // activities ticket 26's dispatcher stop confirmed ceased and persisted; otherwise `uncertain`. The intention to stop never makes an
@@ -1075,6 +1100,7 @@ export async function openControl(options: {
         stopped = true;
         await polling.catch(() => {});
         await dispatcher?.stop().catch(() => {});
+        await investigations.stop().catch(() => {});
         await desk?.idle().catch(() => {});
         await state.close(BACKGROUND_CONTEXT).catch(() => {});
         return { kind: 'failed' };

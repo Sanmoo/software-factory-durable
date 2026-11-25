@@ -28,6 +28,9 @@ const issueSchema = z.object({
   state_reason: z.string().nullable().optional(),
   labels: z.array(z.object({ id: z.number().int().positive().safe(), name: z.string().min(1).max(256) })),
   pull_request: z.unknown().optional(),
+  // Spec #68 §7: the text of the issue, read only by `readTicketText`; absent or null is a valid issue without it.
+  title: z.string().max(1024).nullable().optional(),
+  body: z.string().max(262144).nullable().optional(),
 });
 type Issue = z.infer<typeof issueSchema>;
 const summarySchema = z.object({ blocked_by: z.number().int().nonnegative().safe(), total_blocked_by: z.number().int().nonnegative().safe() });
@@ -622,6 +625,25 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
         completeness: 'complete',
         candidates: read.value,
         limitations: ['Listing is not an atomic remote snapshot and does not admit Work; each candidate is re-read before admission.'],
+      };
+    },
+    async readTicketText(ticket) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      const read = await options.github.read(scope, 'tracker-read', async session => {
+        const parsed = issueSchema.safeParse(await session.get(`/repos/${scope.repository}/issues/${ticket.number}`));
+        if (!parsed.success || session.repositoryId !== ticket.repositoryId || parsed.data.id !== ticket.issueId) throw new InvalidGitHubObservation();
+        return parsed.data;
+      });
+      if (!read.ok) return unavailable(scope.repository, read);
+      return {
+        kind: 'observed',
+        source: 'github-rest',
+        observedAt: read.observedAt,
+        ticket,
+        completeness: 'complete',
+        title: read.value.title ?? null,
+        body: read.value.body ?? null,
       };
     },
     async readTicket(ticket) {

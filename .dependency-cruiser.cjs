@@ -14,13 +14,15 @@ const allowed = {
   control: ['contracts', 'issue-tracker', 'code-repository', 'sandbox', 'workers', 'records'],
 };
 
-const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|image-cleanup|configuration|triage-prerequisites|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
+const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|image-cleanup|configuration|triage-prerequisites|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter|triager)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
 
 const compositions = {
   cli: ['contracts', 'protocol', 'records', 'sandbox', 'control', 'workers'],
   controller: zones,
   worker: ['contracts', 'workers', 'protocol', 'records'],
   adapter: ['contracts', 'sandbox', 'protocol', 'records'],
+  // Spec #68 §6: the agent of a Triager attempt runs the Workers session with the shell of the Sandbox's Investigation Environment.
+  triager: ['contracts', 'workers', 'sandbox', 'protocol', 'records'],
 };
 const entrypoint = role =>
   role === 'cli'

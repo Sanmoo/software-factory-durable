@@ -28,7 +28,12 @@ const oneOf = (values: readonly string[]) => values.join(', ');
 function textErrors(text: unknown): VerdictError[] {
   if (typeof text !== 'string' || !text.trim()) return [{ code: 'VERDICT_TEXT_EMPTY', message: '`text` must be the Verdict, a non-empty string.' }];
   if (bytes(text) > verdictTextMaxBytes)
-    return [{ code: 'VERDICT_TEXT_TOO_LARGE', message: `\`text\` has ${bytes(text)} bytes; at most ${verdictTextMaxBytes} are recorded. Shorten it: nothing is cut for you.` }];
+    return [
+      {
+        code: 'VERDICT_TEXT_TOO_LARGE',
+        message: `\`text\` has ${bytes(text)} bytes; at most ${verdictTextMaxBytes} are recorded. Shorten it: nothing is cut for you.`,
+      },
+    ];
   if (control.test(text)) return [{ code: 'VERDICT_TEXT_INVALID', message: '`text` carries control characters; only tabs and line breaks are accepted.' }];
   return [];
 }

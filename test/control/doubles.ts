@@ -40,6 +40,9 @@ export type RemoteIssue = {
   /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[];
   /** Spec #68: the issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
   labelEvents?: LabelEvent[];
+  /** Spec #68 ticket #75: the issue text as `readTicketText` reports it (absent = an issue without it). */
+  title?: string | null;
+  body?: string | null;
 };
 export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
@@ -259,6 +262,25 @@ export function githubDoubles(remote: Remote) {
           pullRequest: found.pullRequest ?? false,
         };
       }),
+    // Spec #68 ticket #75: title and body of the issue, for the Triager's first prompt.
+    readTicketText: ref =>
+      track(
+        'readTicketText',
+        () => {
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (remote.readFailure || !found) return failure(ref.repository, remote.readFailure ?? { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
+          return {
+            kind: 'observed' as const,
+            source: 'github-rest' as const,
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete' as const,
+            title: found.title ?? null,
+            body: found.body ?? null,
+          };
+        },
+        ref.number,
+      ),
     readLabelHistory: ref =>
       track(
         'readLabelHistory',

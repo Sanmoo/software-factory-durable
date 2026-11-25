@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory, TicketSource } from '../../control/index.js';
+import type {
+  AccessDependencies,
+  ConfiguredRepository,
+  DetailPorts,
+  ExecutionPorts,
+  RuntimeInventory,
+  TicketSource,
+  TriagePorts,
+} from '../../control/index.js';
 import {
   createIssueTracker,
   createJiraHttpTransport,
@@ -9,12 +17,15 @@ import {
   type JiraHttpResult,
   type JiraTransport,
 } from '../../issue-tracker/index.js';
-import { triageSources, type TicketSourceConfiguration, type TriageAvailability } from '../configuration.js';
+import { triageSources, type TicketSourceConfiguration, type TriageAvailability, type TriagerConfiguration } from '../configuration.js';
 import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import {
+  createInvestigationClones,
+  createInvestigationEnvironment,
   createPreparationVm,
   createSandbox,
+  investigationEnvironmentRoot,
   inventoryRuntime,
   reconcileInterruptedCaches,
   reconcileLambdaRuntime,
@@ -29,6 +40,7 @@ import {
 } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   forgetWorkRecords,
   inspectWorkRecords,
@@ -39,7 +51,7 @@ import {
   removeRecordsDetail,
 } from '../../records/index.js';
 import { readConfinedFile, readSessionFile, sessionRefOfInvocation, workerRuntimeDirectory } from '../../platform/host/index.js';
-import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
+import { createTriager, createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope, type WorkerThinkingLevel } from '../../contracts/index.js';
 import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
@@ -484,6 +496,60 @@ export async function composeProductionExecution(input: ProductionInput): Promis
         Role,
         { id: string; auth: string; providerId: string; modelId: string; api: string; thinkingLevel: WorkerThinkingLevel; systemPromptSha256: string }
       >,
+    },
+  };
+}
+
+/**
+ * Spec #68 §6-§7 (ticket #75): production composition of the Triage ports, only where Triage is on. The Triager is the release's single
+ * worker profile at the configured reasoning level, activated with the same pack as the Builder; its agent is the fixed `triager`
+ * entrypoint, started by the Investigation Environment with a closed environment and the attempt's bootstrap file as its only argument.
+ * The candidates are cloned from the bare cache the Works use, with the Host's read credential. A `triager` role that is not exactly the
+ * release profile refuses the composition, like any other role.
+ */
+export async function composeProductionTriage(input: {
+  root: string;
+  effective: {
+    triage: TriageAvailability;
+    triager: TriagerConfiguration;
+    models: { triager?: { provider: string; model: string; thinkingLevel?: WorkerThinkingLevel | undefined } | undefined };
+    repositories: readonly GitHubScope[];
+  };
+  github: GitHubAccess;
+}): Promise<{ status: 'off' } | { status: 'composed'; ports: TriagePorts } | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: ['triager'] }> {
+  const { effective, root } = input;
+  const model = effective.models.triager;
+  if (effective.triage.status !== 'on' || !model) return { status: 'off' };
+  if (model.provider !== productionProfile.model.providerId || model.model !== productionProfile.model.modelId)
+    return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: ['triager'] };
+  const entrypoint = fileURLToPath(new URL('../triager.js', import.meta.url));
+  const triager = createTriager({
+    root,
+    skillPack: await productionSkillPack(),
+    profile: {
+      id: productionProfile.sdkProfileId,
+      systemPrompt: productionProfile.prompts.triager,
+      auth: productionProfile.model.auth,
+      providerId: productionProfile.model.providerId,
+      modelId: productionProfile.model.modelId,
+      api: productionProfile.model.api,
+      thinkingLevel: model.thinkingLevel ?? productionProfile.model.thinkingLevel.default,
+    },
+    // The whole environment of the agent, on a command line: nothing secret (the model credential is read from the installation's store).
+    agent: bootstrap => ({
+      executable: process.execPath,
+      argv: [entrypoint, bootstrap],
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
+    }),
+  });
+  return {
+    status: 'composed',
+    ports: {
+      environment: createInvestigationEnvironment({ root: investigationEnvironmentRoot(root), factoryRoot: root }),
+      limits: { ...effective.triager.environment },
+      investigationMinutes: effective.triager.investigationMinutes,
+      triager: { activate: request => triager.activate(request) },
+      clones: createInvestigationClones({ root, fetch: createRepositoryFetchCredentials({ github: input.github, repositories: effective.repositories }) }),
     },
   };
 }

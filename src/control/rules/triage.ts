@@ -142,3 +142,23 @@ export const triageHoldNextStep: Record<TriageHoldCode, string> = {
     'The latest Triage request of this Ticket is over and needs-triage was not applied again since; remove and reapply the label to request another Triage.',
   TRIAGE_LABEL_HISTORY_UNAVAILABLE: "The Ticket's label history could not be read completely; no request is created on a guess. The next poll reads it again.",
 };
+
+/**
+ * Ticket #75: an attempt holds Triage capacity from its start until the environment CONFIRMED its cessation, whatever became of its
+ * request (a request abandoned while investigating is terminal at once; its attempt is not over).
+ */
+export const holdsTriageCapacity = (attempt: { end: { cessation: { cessationConfirmed: boolean } } | null }) => !attempt.end?.cessation.cessationConfirmed;
+/** Ticket #75: why an attempt that ended without a recorded Verdict ended, from what its session reported. */
+export function attemptEndCode(completion: { status: 'failure'; code: string } | { status: 'completed' | 'interrupted'; closedBy: string | null }): string {
+  if (completion.status === 'failure') return completion.code;
+  if (completion.closedBy === 'provider') return 'TRIAGER_PROVIDER_UNAVAILABLE';
+  if (completion.closedBy) return 'TRIAGER_MODEL_BUDGET_EXHAUSTED';
+  return completion.status === 'completed' ? 'TRIAGER_ENDED_WITHOUT_VERDICT' : 'TRIAGER_INTERRUPTED';
+}
+/**
+ * Ticket #75: what becomes of a request still `investigating` when its attempt ended without a Verdict. This ticket has no balance to
+ * consult, so every such end is terminal; ticket #76 decides here between `queued` (transient failure with balance left) and `failed`.
+ */
+export function afterAttemptWithoutVerdict(_request: { attempts: number }, code: string): { to: 'failed' | 'queued'; code: string } {
+  return { to: 'failed', code };
+}

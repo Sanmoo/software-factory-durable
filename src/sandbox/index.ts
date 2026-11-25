@@ -156,6 +156,8 @@ export { runSandboxAdapter } from './adapter.js';
 // Spec #68 §6: the Investigation Environment of a Triage attempt, behind its own port (never `sandbox.adapter`).
 export * from './investigation/index.js';
 export type { InvestigationCloneRequest, InvestigationCloneResult } from './checkout.js';
+/** Where the installation keeps the directories of its Investigation Environments (one per attempt), for the Control and for the agent. */
+export const investigationEnvironmentRoot = (factoryRoot: string) => join(factoryRoot, 'triage', 'e');
 /**
  * Spec #68 §6: the clones a Triager asks for, made from the Factory-exclusive bare cache shared with the Works' checkouts (same lock and
  * reconciliation). `remoteUrl` is the tests' local upstream.

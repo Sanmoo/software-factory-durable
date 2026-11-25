@@ -1349,7 +1349,7 @@
   {
    "file": "src/entrypoints/controller/owner.ts",
    "function": "own",
-   "complexity": 25,
+   "complexity": 20,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
   },
   {
@@ -1769,7 +1769,7 @@
   {
    "file": "src/sandbox/checkout.ts",
    "function": "createCheckouts > prepare",
-   "complexity": 21,
+   "complexity": 16,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
   },
   {

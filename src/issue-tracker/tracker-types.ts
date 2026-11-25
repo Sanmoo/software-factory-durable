@@ -8,6 +8,7 @@ import type {
   JiraCandidateObservation,
   JiraCommentAuthor,
   JiraCommentListing,
+  JiraTicketContent,
   JiraCommentResult,
   JiraInputCursor,
   JiraInputsObservation,
@@ -151,6 +152,18 @@ export type TicketCommentsObservation =
       limitations: string[];
     }
   | TrackerUnavailable;
+/** Spec #68 §7: title and body of the Ticket issue as written at the origin: untrusted text for whoever composes a prompt, never interpreted here. */
+export type TicketTextObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      ticket: GitHubTicketRef;
+      completeness: 'complete';
+      title: string | null;
+      body: string | null;
+    }
+  | TrackerUnavailable;
 /** Comments of THIS installation's App carrying the stable marker of the Question; several candidates are reported, never chosen. */
 export type QuestionSearch =
   | {
@@ -212,6 +225,7 @@ export type TrackerContracts = {
     cursor: number;
     search: QuestionSearch;
     comments: TicketCommentsObservation;
+    text: TicketTextObservation;
     result: CommentResult;
     access: AccessDiagnostic;
     labels: LabelHistoryObservation;
@@ -226,6 +240,7 @@ export type TrackerContracts = {
     cursor: JiraInputCursor;
     search: JiraQuestionSearch;
     comments: JiraCommentListing;
+    text: JiraTicketContent;
     result: JiraCommentResult;
     access: JiraAccessDiagnostic;
     labels: JiraLabelHistoryObservation;
@@ -254,4 +269,6 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
    * (the Jira adapter serves it by `JiraComments.listComments`); a tracker without it delivers no Ticket text and no Work starts on it.
    */
   readTicketComments?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['comments']>;
+  /** Spec #68 §7: title and body of a GitHub Ticket for the Triager's first prompt (a Card's text is `JiraContentReads.readTicketContent`). */
+  readTicketText?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['text']>;
 }

@@ -1,6 +1,12 @@
 // Spec #68 §7 (ticket #75): what the Control injects into the first prompt of a Triager, as text. Pure: the caller passes what it read.
 // Exactly six fields; the label history, anything of an earlier attempt and the MCP tools are never among them.
-import { fenced } from './continuation.js';
+
+/** Untrusted text inside a fence longer than any run of backticks it holds, so it cannot close its own fence. */
+const fenced = (text: string) => {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map(run => run[0].length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}\n${text}\n${fence}`;
+};
 
 /** One comment of the Ticket. `association`: what the origin says of the author's link to it; `text: null` = not delivered (see `note`). */
 export type TriagePromptComment = { author: string; association: string; at: string; text: string | null; note?: string };
@@ -13,8 +19,7 @@ export type TriagePromptTicket = {
   notes: readonly string[];
   comments: readonly TriagePromptComment[];
 };
-export type TriagePromptBlockers =
-  { kind: 'observed'; blockers: readonly { reference: string; url: string | null }[] } | { kind: 'unavailable'; code: string };
+export type TriagePromptBlockers = { kind: 'observed'; blockers: readonly { reference: string; url: string | null }[] } | { kind: 'unavailable'; code: string };
 export type TriageActivationInput = {
   ticket: TriagePromptTicket;
   origin: string;

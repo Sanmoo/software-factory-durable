@@ -845,6 +845,8 @@ export function createPoller(deps: {
         ...(deps.triage?.views().length ? { triage: deps.triage.views() } : {}),
       };
     },
+    /** Ticket #75: the GitHub identity of an executable repository as its latest listing observed it (undefined: not observed in this run). */
+    repositoryId: (repository: string) => repositoryIds.get(repository.toLowerCase()),
     /** Resolves when signalled; rejects only for durable-authority failures (never for remote observation failures). */
     async run(signal: AbortSignal): Promise<void> {
       if (!repositories.length) {

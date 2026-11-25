@@ -59,7 +59,14 @@ async function world(t: { after(fn: () => Promise<void>): void }) {
   });
   return { dir, upstream, root, directory, clones, issued, revoked };
 }
-const request = (directory: string, name = 'acme__project') => ({ directory, name, repository: 'acme/project', repositoryId: 7, installationId: 2, base: 'main' });
+const request = (directory: string, name = 'acme__project') => ({
+  directory,
+  name,
+  repository: 'acme/project',
+  repositoryId: 7,
+  installationId: 2,
+  base: 'main',
+});
 
 test('TR-30: a requested clone is the default branch with its history, fetched through the bare cache, with no remote and no credential', async t => {
   const w = await world(t);

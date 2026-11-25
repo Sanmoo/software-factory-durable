@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import type { TicketRef } from '../../issue-tracker/index.js';
-import type { TriageRequest, TriageSourceRef, TriageTimelineEntry } from '../types.js';
+import type { TriageAttempt, TriageRequest, TriageSourceRef, TriageTimelineEntry } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { isTerminalTriageState, triageTransitionAllowed, type TriageLabelApplication, type TriageRequestState } from '../rules/triage.js';
 import { ticketIndex } from './admission.js';
@@ -29,6 +29,20 @@ export const triageIndex = defineDoc<TriageIndex>({
   initial: () => ({ sequence: 0, order: [], live: [], tickets: {} }),
   checkpointWhen: () => true,
 });
+
+/**
+ * Ticket #75: the text of a recorded Verdict, apart from the request so that the request stays metadata and the text can expire alone
+ * (spec #68 §10). Written in the commit that moves the request to `publishing`; `null` = no Verdict, or its text was removed.
+ */
+export const triageVerdicts = defineDocFamily<{ verdict: { triage_request_id: string; text: string } | null }, null>({
+  kind: 'factory.triage-verdict',
+  version: 1,
+  scope: 'session',
+  family: true,
+  initial: () => ({ verdict: null }),
+  checkpointWhen: () => true,
+});
+type Transaction = Parameters<Parameters<Session['commit']>[0]>[0];
 
 /** A plain copy of a request read inside a commit (the transaction's draft is not a cloneable object and must not leave it). */
 const copy = (request: TriageRequest): TriageRequest => JSON.parse(JSON.stringify(request)) as TriageRequest;
@@ -123,7 +137,7 @@ export async function transitionTriageRequest(
   session: Session,
   triage_request_id: string,
   change: TriageTransition,
-  also?: (request: TriageRequest) => void,
+  also?: (request: TriageRequest, tx: Transaction) => void | Promise<void>,
 ): Promise<TriageTransitionResult> {
   return session.commit(async tx => {
     const document = await tx.doc(triageRequests, triage_request_id, null);
@@ -136,7 +150,7 @@ export async function transitionTriageRequest(
       const index = await tx.doc(triageIndex);
       index.live = index.live.filter(id => id !== triage_request_id);
     }
-    also?.(request);
+    await also?.(request, tx);
     return { kind: 'applied' as const, request: copy(request) };
   }, BACKGROUND_CONTEXT);
 }
@@ -168,4 +182,17 @@ export async function triageQueue(session: Session): Promise<TriageRequest[]> {
 /** Every request of one Ticket, oldest first (the last one is its latest). */
 export async function ticketTriageRequests(session: Session, ticket: TicketRef): Promise<TriageRequest[]> {
   return readMany(session, (await session.snapshot(triageIndex, BACKGROUND_CONTEXT))?.tickets[ticketKey(ticket)] ?? []);
+}
+
+/** Ticket #75: changes one attempt of a request in its own commit, whatever the request's state (an attempt outlives an abandoned request). */
+export async function updateTriageAttempt(session: Session, triage_request_id: string, attempt: string, change: (attempt: TriageAttempt) => void) {
+  return session.commit(async tx => {
+    const found = (await tx.doc(triageRequests, triage_request_id, null)).request?.attempts?.find(item => item.attempt === attempt);
+    if (found) change(found);
+    return found !== undefined;
+  }, BACKGROUND_CONTEXT);
+}
+/** Ticket #75: the text of the recorded Verdict of a request (undefined: none recorded, or already removed). */
+export async function readTriageVerdictText(session: Session, triage_request_id: string): Promise<string | undefined> {
+  return (await session.snapshot(triageVerdicts, triage_request_id, BACKGROUND_CONTEXT))?.verdict?.text;
 }

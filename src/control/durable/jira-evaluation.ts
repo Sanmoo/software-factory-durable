@@ -125,7 +125,7 @@ function candidacyOf(source: JiraSource, observation: Extract<JiraTicketObservat
   return source.triage && suspendsAdmission(source.triage, observation.labels, true) ? ('suspended' as const) : ('candidate' as const);
 }
 
-async function visibleBlockers(
+export async function visibleBlockers(
   tracker: JiraOriginTracker,
   root: JiraTicketRef,
   observed: Parameters<typeof blockerDirection>[0]['link'][] | null,

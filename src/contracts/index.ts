@@ -102,6 +102,8 @@ export const builderBudgetMaximumFactor = 2;
 /** Ticket 51 (operator decision 2026-11-19, pilot 35): the fixed reviewer budget of ONE opinion (`reviewer-v1`). Ticket 59: one source for the
  * worker limits, the release record and the owner's secret-sync bound. */
 export const reviewerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
+/** Spec #68 §5: the fixed model budget of ONE attempt of a Triager (`triager-v1`); the definitive values come from the real qualification. */
+export const triagerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
 /**
  * #48 (operator decisions 2026-11-22): every agent session (Builder, Standards, Spec) requires model reasoning. The levels a role may be
  * configured with (`models.<role>.thinkingLevel`) are the reasoning levels of the release's single model (gpt-6-luna); there is no `off`.
@@ -341,6 +343,7 @@ export const controlStorageCompatibility = Object.freeze({
     'factory.triage-request': 1,
     // Triage ticket #71: arrival sequence, live requests and the requests of each Ticket.
     'factory.triage-index': 1,
+    'factory.triage-verdict': 1,
   }),
 });
 

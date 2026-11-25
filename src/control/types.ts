@@ -26,7 +26,24 @@ import type {
   SandboxCapabilities,
   StartRetryRemedy,
 } from '../contracts/index.js';
-import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
+import type {
+  CheckoutRequest,
+  EnvironmentRef,
+  PreparedWork,
+  RemoveResult,
+  StartResult,
+  StopResult,
+  BootRef,
+  InvestigationAgent,
+  InvestigationCloneRequest,
+  InvestigationCloneResult,
+  InvestigationEnvironmentPort,
+  InvestigationLimits,
+  InvestigationRecord,
+  InvestigationStop,
+} from '../sandbox/index.js';
+import type { TriageIntendedEffect, TriageOutcome, VerdictCategory, VerdictError } from './rules/triage-verdict.js';
+import type { TriageActivationText } from './rules/triage-prompt.js';
 import type {
   ActivationDelivery,
   DeliveryResult,
@@ -2876,6 +2893,78 @@ export type TriageRequest = {
   end: { at: string; code: string } | null;
   requestedAt: string;
   timeline: TriageTimelineEntry[];
+  /** Ticket #75: every activation of the Triager of this request, oldest first. Absent = none started (nothing spent). */
+  attempts?: TriageAttempt[];
+  /** Ticket #75: the accepted Verdict, metadata only (its text is the `factory.triage-verdict` document). Set on entering `publishing`. */
+  verdict?: TriageVerdictRecord;
+  /** Ticket #75: what the Control intends to write on the Ticket for the Verdict, in writing order; recorded WITH the Verdict. */
+  intended?: TriageIntendedEffect[];
+};
+/**
+ * Ticket #75: one attempt of a request, from the commit that moves it to `investigating` (`environment` holds the intent, recorded before
+ * the Investigation Environment starts, then the invocation) to `end`. An attempt holds Triage capacity until `end` carries a confirmed
+ * cessation (`holdsTriageCapacity`), whatever the state of its request.
+ */
+export type TriageAttempt = {
+  /** Reference of the attempt, never reused; names the environment's unit and the attempt's private directory. */
+  attempt: string;
+  ordinal: number;
+  startedAt: string;
+  environment: InvestigationRecord;
+  /** The pack whose `triage` skill the attempt ran (null until the Triager was activated). */
+  skillPack: { id: string; version: string; manifestSha256: string } | null;
+  /** Candidate repositories cloned for this attempt, with the commit read. */
+  clones: { repository: string; commit: string; at: string }[];
+  /**
+   * How the attempt ended: `code` (`VERDICT_RECORDED` or why there is none), what the environment answered to the stop, and the session
+   * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
+   */
+  end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null } | null;
+};
+/** Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. */
+export type TriageVerdictRecord = {
+  outcome: TriageOutcome;
+  category: VerdictCategory;
+  component: string | null;
+  attempt: string;
+  recordedAt: string;
+  textSha256: string;
+  textBytes: number;
+};
+/**
+ * Ticket #75: what composes one Triager attempt (spec #68 §6-§7). The Control records the environment's intent before `open`, validates
+ * every clone request and Verdict itself, and never hands a credential to any of these.
+ */
+export type TriagePorts = {
+  /** The Investigation Environment of the Host (never `sandbox.adapter`). */
+  environment: InvestigationEnvironmentPort;
+  /** `triager.environment` of the configuration. */
+  limits: InvestigationLimits;
+  /** `triager.investigationMinutes`: the investigation clock of one request (its spending is ticket #76's). */
+  investigationMinutes: number;
+  triager: {
+    /** Prepares the Host side of one attempt's session and names the agent the environment starts. Always a new session. */
+    activate(request: {
+      attempt: string;
+      activation: TriageActivationText;
+      host: {
+        requestClone(
+          repository: string,
+        ): Promise<{ status: 'cloned'; repository: string; path: string; commit: string } | { status: 'refused'; code: string; message: string }>;
+        conclude(verdict: Record<string, unknown>): Promise<{ status: 'recorded' } | { status: 'refused'; errors: VerdictError[] }>;
+      };
+    }): Promise<{
+      agent: InvestigationAgent;
+      skillPack: { id: string; version: string; manifestSha256: string };
+      completed: Promise<
+        | { status: 'completed' | 'interrupted'; concluded: boolean; transcript: string | null; closedBy: 'requests' | 'tools' | 'provider' | null }
+        | { status: 'failure'; code: string }
+      >;
+      close(): Promise<void>;
+    }>;
+  };
+  /** A candidate's copy from the bare cache, created under the attempt's clones directory (the read credential stays on the Host). */
+  clones: { create(request: InvestigationCloneRequest): Promise<InvestigationCloneResult> };
 };
 export type TriageRequestsView = {
   kind: 'triage-requests';
