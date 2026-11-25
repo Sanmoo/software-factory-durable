@@ -12,6 +12,7 @@ import type {
   GitHubTicketRef,
   GitHubTrackerScope,
   IssueTracker,
+  LabelEvent,
   TrackerComment,
   TrackerUnavailable,
 } from './tracker-types.js';
@@ -52,6 +53,38 @@ const commentSchema = z.object({
   performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
 });
 const maxCommentPages = 10;
+/** A timeline entry that changes a label; every other kind of entry is skipped unread. */
+const labelEventSchema = z.object({
+  id: z.number().int().positive().safe(),
+  event: z.enum(['labeled', 'unlabeled']),
+  label: z.object({ name: z.string().min(1).max(256) }),
+  created_at: z.iso.datetime(),
+  actor: z
+    .object({ id: z.number().int().positive().safe(), login: z.string().min(1).max(256), type: z.string().min(1).max(64) })
+    .nullable()
+    .optional(),
+  performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
+});
+/** The label changes of a timeline, in its order. One label entry that cannot be verified fails the whole read (never a shorter history). */
+function labelEvents(timeline: unknown[]): LabelEvent[] {
+  const events: LabelEvent[] = [];
+  for (const entry of timeline) {
+    const kind = z.object({ event: z.string() }).safeParse(entry);
+    if (!kind.success) throw new InvalidGitHubObservation();
+    if (kind.data.event !== 'labeled' && kind.data.event !== 'unlabeled') continue;
+    const parsed = labelEventSchema.safeParse(entry);
+    if (!parsed.success) throw new InvalidGitHubObservation();
+    events.push({
+      eventId: String(parsed.data.id),
+      action: parsed.data.event === 'labeled' ? 'added' : 'removed',
+      label: parsed.data.label.name,
+      at: parsed.data.created_at,
+      actor: parsed.data.actor ? { id: parsed.data.actor.id, login: parsed.data.actor.login, type: parsed.data.actor.type } : null,
+      viaApp: parsed.data.performed_via_github_app?.id ?? null,
+    });
+  }
+  return events;
+}
 const questionMarker = (questionId: string) => `<!-- ${questionMarkerPrefix}${questionId} -->`;
 const replyMarker = (replyId: string) => `<!-- ${replyMarkerPrefix}${replyId} -->`;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -459,6 +492,24 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
       };
     },
     readDependencyGraph,
+    async readLabelHistory(ticket) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      const read = await options.github.read(scope, 'tracker-read', async session => {
+        if (session.repositoryId !== ticket.repositoryId) throw new InvalidGitHubObservation();
+        return labelEvents(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/timeline`));
+      });
+      if (!read.ok) return unavailable(scope.repository, read);
+      return {
+        kind: 'observed',
+        source: 'github-rest',
+        observedAt: read.observedAt,
+        ticket,
+        completeness: 'complete',
+        events: read.value,
+        limitations: ['The timeline is read at one instant, not an atomic snapshot; who changed a label is evidence, never an authorization.'],
+      };
+    },
     checkAccess(scope) {
       if ('role' in scope)
         return options.github.diagnose(scope, 'dependency', async session => {

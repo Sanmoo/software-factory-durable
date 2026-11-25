@@ -8,6 +8,8 @@ import type {
   GitHubTrackerScope as TrackerScope,
   DependencyNode,
   DependencyProblem,
+  LabelEvent,
+  LabelHistoryObservation,
   TrackerComment,
 } from '../../src/issue-tracker/index.js';
 import type {
@@ -36,6 +38,8 @@ export type RemoteIssue = {
   reread?: Partial<TicketRef>;
   stateReason?: string | null;
   /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[];
+  /** Spec #68: the issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
+  labelEvents?: LabelEvent[];
 };
 export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
@@ -50,6 +54,8 @@ export type Remote = {
   baseProtection?: { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
   listFailure?: Unavailable;
   readFailure?: Unavailable;
+  /** Spec #68: readLabelHistory answers unavailable while set. */
+  labelHistoryFailure?: Unavailable;
   publicationFailure?: Unavailable;
   /** Per-Ticket incomplete association (e.g. timeline unavailable). */
   incompleteAssociation?: Record<number, Unavailable>;
@@ -144,6 +150,24 @@ export function ticket(number: number, overrides: Partial<TicketRef> = {}): Tick
 export function remoteIssue(number: number, overrides: Partial<RemoteIssue> = {}): RemoteIssue {
   return { ref: ticket(number), state: 'open', labels: [{ id: 55, name: 'ready-for-agent' }], ...overrides };
 }
+let labelEventSequence = 90000;
+const labelEvent = (action: LabelEvent['action'], label: string, actor: LabelEvent['actor']): LabelEvent => ({
+  eventId: String(++labelEventSequence),
+  action,
+  label,
+  at: new Date().toISOString(),
+  actor,
+  viaApp: null,
+});
+/** Spec #68: a person applies a label to the issue (label set and timeline together), as any account allowed to label would. */
+export function applyLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
+  if (!issue.labels.some(label => label.name === name)) issue.labels = [...issue.labels, { id: 500 + issue.labels.length, name }];
+  issue.labelEvents = [...(issue.labelEvents ?? []), labelEvent('added', name, actor)];
+}
+export function removeLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
+  issue.labels = issue.labels.filter(label => label.name !== name);
+  issue.labelEvents = [...(issue.labelEvents ?? []), labelEvent('removed', name, actor)];
+}
 export function foreignPull(number: number, overrides: Partial<PullRequestCandidate> = {}): PullRequestCandidate {
   return {
     pullRequestId: 9000 + number,
@@ -231,6 +255,24 @@ export function githubDoubles(remote: Remote) {
           pullRequest: found.pullRequest ?? false,
         };
       }),
+    readLabelHistory: ref =>
+      track(
+        'readLabelHistory',
+        (): LabelHistoryObservation => {
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (remote.labelHistoryFailure || !found) return failure(ref.repository, remote.labelHistoryFailure ?? { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
+          return {
+            kind: 'observed',
+            source: 'github-rest',
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete',
+            events: structuredClone(found.labelEvents ?? []),
+            limitations: [],
+          };
+        },
+        ref.number,
+      ),
     // Reachable native graph over remote.issues (same repository), each node once; problems are injected per root Ticket.
     readDependencyGraph: ref =>
       track(

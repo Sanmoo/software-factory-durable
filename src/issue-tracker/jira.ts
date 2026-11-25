@@ -11,6 +11,7 @@ import type {
   JiraContentReads,
   JiraInputCursor,
   JiraInputsObservation,
+  JiraLabelEvent,
   JiraRemoteLinks,
   JiraTicketRef,
   JiraTrackerScope,
@@ -141,6 +142,45 @@ const commentNotCreated = new Set([
   'JIRA_SITE_URL_INVALID',
 ]);
 const maxJiraCommentPages = 50;
+const jiraChangelogPageSchema = z.object({
+  startAt: z.number().int().min(0),
+  total: z.number().int().min(0),
+  values: z
+    .array(
+      z.object({
+        id: jiraId,
+        author: z.object({ accountId: z.string().max(128).optional() }).optional(),
+        created: z.string().min(1).max(64),
+        items: z.array(z.object({ field: z.string().max(255), fromString: z.string().nullable().optional(), toString: z.unknown().optional() })).max(1000),
+      }),
+    )
+    .max(5000),
+});
+const maxJiraChangelogPages = 50;
+/** One verified changelog page, only when it starts where the read is. */
+function changelogPageOf(body: unknown, startAt: number) {
+  const page = jiraChangelogPageSchema.safeParse(body);
+  if (!page.success || page.data.startAt !== startAt) return null;
+  return page.data;
+}
+/** Jira writes the `labels` field of a changelog item as the space-separated set before and after (labels never contain spaces). */
+const labelSet = (text: unknown) => (typeof text === 'string' ? text.split(' ').filter(Boolean) : []);
+/** The label changes of one changelog entry: what its `labels` items added and removed. */
+function labelChanges(entry: z.infer<typeof jiraChangelogPageSchema>['values'][number]): JiraLabelEvent[] {
+  const author = entry.author?.accountId ? { tracker: 'jira' as const, accountId: entry.author.accountId } : null;
+  return entry.items
+    .filter(item => item.field === 'labels')
+    .flatMap(item => {
+      // `toString` is read as an own property: on a parsed object the name otherwise resolves to Object.prototype.toString.
+      const before = labelSet(item.fromString);
+      const after = labelSet(Object.hasOwn(item, 'toString') ? item.toString : null);
+      return [
+        ...before.filter(label => !after.includes(label)).map(label => ({ action: 'removed' as const, label })),
+        ...after.filter(label => !before.includes(label)).map(label => ({ action: 'added' as const, label })),
+      ];
+    })
+    .map(change => ({ eventId: entry.id, ...change, at: entry.created, author }));
+}
 
 /** Jira ticket 10: project permissions the Factory's account needs (reads; ordinary comments; remote links). */
 const jiraPermissions = [
@@ -320,8 +360,9 @@ export function createJiraTracker(options: {
       };
     },
     async listCandidates(scope) {
-      const configured = site(scope.siteId);
-      if (!configuredAs(configured, scope)) return notConfigured(scope.siteId);
+      // A site may carry several configured listings (other projects; the needs-triage label of a source with Triage, spec #68 §4).
+      const configured = options.scopes.find(candidate => candidate.siteId === scope.siteId && configuredAs(candidate, scope));
+      if (!configured) return notConfigured(scope.siteId);
       const jql = `project = ${scope.projectId} AND labels = ${jqlString(scope.label)}`;
       const seen = new Map<string, JiraTicketRef>();
       const tokens = new Set<string>();
@@ -402,6 +443,49 @@ export function createJiraTracker(options: {
               };
             })
           : null,
+      };
+    },
+    async readLabelHistory(ticket) {
+      // By entry id: an entry repeated on a later page (a concurrent change) is read once, at its first position.
+      const entries = new Map<string, Parameters<typeof labelChanges>[0]>();
+      let startAt = 0;
+      let observedAt = '';
+      for (let pages = 0; ; pages += 1) {
+        if (pages >= maxJiraChangelogPages)
+          return unavailable(
+            ticket.siteId,
+            'JIRA_CHANGELOG_TOO_LARGE',
+            `More than ${maxJiraChangelogPages} changelog pages; nothing is concluded.`,
+            observedAt || undefined,
+          );
+        const answer = await read(ticket.siteId, {
+          method: 'GET',
+          path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}/changelog`,
+          query: { startAt: String(startAt), maxResults: '100' },
+        });
+        if (!answer.ok) return answer.fact;
+        observedAt ||= answer.observedAt;
+        const page = changelogPageOf(answer.body, startAt);
+        if (!page) return invalid(ticket.siteId, answer.observedAt);
+        for (const entry of page.values) entries.set(entry.id, entries.get(entry.id) ?? entry);
+        startAt += page.values.length;
+        if (startAt >= page.total) break;
+        if (!page.values.length)
+          return unavailable(
+            ticket.siteId,
+            'JIRA_CHANGELOG_INCOMPLETE',
+            'A changelog page ended before the announced total; nothing is concluded, the next poll reads again.',
+            answer.observedAt,
+          );
+      }
+      return {
+        kind: 'observed',
+        source: 'jira-rest',
+        observedAt,
+        ticket,
+        completeness: 'complete',
+        events: [...entries.values()].flatMap(labelChanges),
+        limitations: [visibleOnly, 'A label the Card was created with has no changelog entry.'],
       };
     },
     async readTicketContent(ticket) {

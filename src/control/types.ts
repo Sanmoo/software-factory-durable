@@ -1,3 +1,4 @@
+import type { TriageRequestState } from './rules/triage.js';
 import type {
   AccessDiagnostic,
   BootUsage,
@@ -100,7 +101,7 @@ export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlo
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
  */
 export type TicketSource =
-  | { tracker: 'github'; repository: string; discover: boolean }
+  | { tracker: 'github'; repository: string; discover: boolean; triage?: SourceTriage }
   | {
       tracker: 'jira';
       siteId: string;
@@ -108,10 +109,17 @@ export type TicketSource =
       projectId: string;
       label: string;
       discover: boolean;
+      triage?: SourceTriage;
       routes: { componentId: string; repository: string }[];
       /** The operator's blocking meaning of custom or ambiguous link types, by link type ID (spec §3.2); the same on every source of a site. */
       linkTypes?: { id: string; blocks: 'inward' | 'outward' | 'none' }[];
     };
+/**
+ * Spec #68 §2/§4 (ticket #71): the `triage` block of a source, with its four label names (the `ready-for-agent` role is always the admission
+ * label of the destination). Absent = the source has no Triage and behaves as before. `available: false` = the block is configured but the
+ * Host lacks a Triage prerequisite: no request is created or moved, none is abandoned, and `needs-triage` still suspends admission.
+ */
+export type SourceTriage = { needsTriage: string; needsInfo: string; readyForHuman: string; wontfix: string; available: boolean };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
@@ -276,6 +284,8 @@ export type ControlQuery =
   /** Ticket 29: `cursor`/`limit` page the Works (admission order) and the page is fitted to one frame; neither = the full list. */
   | { kind: 'list'; cursor?: number | undefined; limit?: number | undefined }
   | { kind: 'question'; question_id: string }
+  /** Spec #68 (ticket #71): every Triage request in arrival order, metadata only. The operator views of #80 are built over it. */
+  | { kind: 'triage-requests' }
   /** Ticket 29: `cursor`/`limit` page `chain.executions` of a big Work (the full view is returned when it fits one frame). */
   | { kind: 'show'; work_id: string; cursor?: number | undefined; limit?: number | undefined }
   /** Ticket 29: paginated/filtered history, logs listing, one log page and consumption (read-only). */
@@ -1242,6 +1252,8 @@ export type PollingView = {
   repositories: RepositoryPollView[];
   /** Jira ticket 04: the configured Jira sources (absent when there is none). */
   sources?: JiraSourcePollView[];
+  /** Spec #68 (ticket #71): the sources carrying a `triage` block (absent when there is none). */
+  triage?: TriageSourcePollView[];
 };
 
 /**
@@ -2148,6 +2160,7 @@ export interface Control {
     | ListView
     | ShowView
     | QuestionQueryView
+    | TriageRequestsView
     | HistoryView
     | LogsView
     | LogPageView
@@ -2821,3 +2834,60 @@ export type JiraLinkIntent = {
 };
 /** Status view: links not yet confirmed (their diagnostic is the operator's view) and how many are confirmed. */
 export type JiraLinkStatus = { pending: JiraLinkIntent[]; confirmed: number };
+
+// ---- Spec #68 §4-§5 (ticket #71): the Triage request, from `needs-triage` up to `queued` ----
+/** The source a Triage request was discovered in; a request whose source loses its `triage` block is abandoned. */
+export type TriageSourceRef = { tracker: 'github'; repository: string } | { tracker: 'jira'; siteId: string; projectId: string };
+/** One stamped fact of a request's life, metadata only (never Ticket text, tool arguments or the Verdict). */
+export type TriageTimelineEntry = { at: string; event: string; code?: string; labels?: string[] };
+/**
+ * Durable record of one request of Triage of a Ticket (`factory.triage-request` v1), kept even if no Work ever exists. Metadata only. This
+ * ticket writes it up to `queued`, `suspended` and `abandoned`; later tickets of spec #68 add their own optional fields (attempts, budget,
+ * Verdict, publication effects) and move it through `transitionTriageRequest`.
+ */
+export type TriageRequest = {
+  triage_request_id: string;
+  /** Arrival order in the single installation-wide queue (FIFO among `queued` requests); kept across a suspension. */
+  sequence: number;
+  /** 1 for the Ticket's first request; earlier requests of the same Ticket are `previous`, oldest first. */
+  ordinal: number;
+  previous: string[];
+  ticket: TicketRef;
+  source: TriageSourceRef;
+  state: TriageRequestState;
+  /**
+   * What authorized it: `needs-triage` present on a fresh read by ID. `application` is the latest application of the label in the origin's
+   * history then (GitHub timeline event, Jira changelog entry; `null`: the history shows none), which a later request must differ from.
+   */
+  authorization: { label: string; observedAt: string; application: { eventId: string } | null };
+  /** Set while `suspended`: the state labels in conflict with `needs-triage`. */
+  suspension: { code: 'TRIAGE_LABEL_CONFLICT'; labels: string[]; since: string } | null;
+  /** Set in a terminal state: when and why. */
+  end: { at: string; code: string } | null;
+  requestedAt: string;
+  timeline: TriageTimelineEntry[];
+};
+export type TriageRequestsView = {
+  kind: 'triage-requests';
+  /** Every request, in arrival order. */
+  requests: TriageRequest[];
+  /** Ids of the `queued` requests, first to be investigated first. */
+  queue: string[];
+};
+/** What the latest round found for one Ticket carrying `needs-triage` (or holding a live request) in a source with Triage. */
+export type TriageCandidateView = { ticket: TicketRef; observedAt: string } & (
+  | { outcome: 'requested' | 'queued' | 'suspended' | 'abandoned' | 'tracked'; triage_request_id: string; code?: string; labels?: string[] }
+  | { outcome: 'held'; holds: { code: string; nextStep: string; labels?: string[]; observedCode?: string }[] }
+);
+/** In-memory observation of the latest Triage round of one source; not authority. `not-available`: the Host lacks a prerequisite. */
+export type TriageSourcePollView = {
+  source: TriageSourceRef;
+  needsTriage: string;
+  state: 'pending' | 'observed' | 'unavailable' | 'not-available';
+  observedAt: string | null;
+  code?: string;
+  nextStep?: string;
+  /** `null` when the round did not list. In `status` only the count of held Tickets is kept. */
+  candidates: TriageCandidateView[] | null;
+  held?: number;
+};

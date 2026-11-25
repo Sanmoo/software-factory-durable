@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { createSandbox, type HostToolProbe, type LambdaServiceFactory } from '../sandbox/index.js';
 import { builderBudgetMaximumFactor, builderBudgetV1, defaultWorkerThinkingLevel, workerThinkingLevels } from '../contracts/index.js';
 import { createTriageHostProbe, triageAvailability, triageDiagnostics, type TriageHostProbe } from './triage-prerequisites.js';
+// The controller composition reads the configuration through this module only: which sources have Triage on is part of it.
+export { triageSources, type TriageAvailability } from './triage-prerequisites.js';
 
 const text = z
   .string()

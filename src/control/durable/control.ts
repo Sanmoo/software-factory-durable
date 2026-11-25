@@ -15,6 +15,7 @@ import type {
   ListView,
   PollingOptions,
   PollingView,
+  TriageRequestsView,
   QuestionQueryView,
   RecoveryView,
   RuntimeInventory,
@@ -24,7 +25,7 @@ import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredential
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { createChecksTracker } from './checks.js';
 import { acceptReadinessAuthorization, createReadinessDesk } from './readiness.js';
-import { openStore } from './store.js';
+import { openStore, type Session } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
 import {
@@ -50,6 +51,8 @@ import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
+import { createTriageDiscovery } from './triage-discovery.js';
+import { readTriageRequests } from './triage-requests.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
 import { jiraConversationOwners, prepareJiraQuestions } from './jira-questions.js';
@@ -236,6 +239,22 @@ export async function withdrawActivityCredentials(
 }
 
 /** The Jira adapter when this owner polls: the Jira desks need both (no adapter composed, or no polling: no Jira desk). */
+/** Spec #68 (ticket #71): the Triage rounds as `status` shows them: no candidate list, only how many Tickets wait for a person. */
+const triageStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
+  polling.triage
+    ? {
+        triage: polling.triage.map(({ candidates, ...source }) => ({
+          ...source,
+          candidates: null,
+          held: candidates?.filter(candidate => candidate.outcome === 'held').length ?? 0,
+        })),
+      }
+    : {};
+/** Spec #68 (ticket #71): every Triage request in arrival order and the queue, metadata only. */
+async function triageRequestsView(session: Session): Promise<TriageRequestsView> {
+  const requests = await readTriageRequests(session);
+  return { kind: 'triage-requests', requests, queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id) };
+}
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;
 
@@ -354,6 +373,7 @@ export async function openControl(options: {
           ownCycles: issueIds => ownCycles(state, issueIds),
           record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
           recordEnvironment: (work_id, observation) => recordEnvironment(state, work_id, observation),
+          triage: createTriageDiscovery({ session: state, access: options.access }),
           // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
           // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
           afterCycle: async () => {
@@ -950,6 +970,7 @@ export async function openControl(options: {
           ...polling,
           repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
           ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}),
+          ...triageStatus(polling),
         },
         persistence: store.persistence,
         recovery,
@@ -1065,5 +1086,8 @@ export async function openControl(options: {
     correction: (work_id, reason) => openCorrection(state, work_id, reason, configuredRepository),
     recovery: (work_id, reason) => requestOperationalRecovery(state, work_id, reason, configuredRepository),
   });
+  // Spec #68 (ticket #71): Triage requests are read beside the Work views, never through them.
+  const inspectWorks = control.inspect;
+  control.inspect = query => (query.kind === 'triage-requests' ? triageRequestsView(state) : inspectWorks(query));
   return control;
 }

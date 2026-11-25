@@ -15,6 +15,8 @@ import type {
 } from '../types.js';
 import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
 import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.js';
+import { suspendsAdmission } from '../rules/triage.js';
+import type { TriageDiscovery } from './triage-discovery.js';
 import type { AdmissionEvidence, AdmissionResult, WorkRecord } from './admission.js';
 import { admittedJiraEvaluation, evaluateJiraTicket, evaluateJiraWork, type JiraCandidateEvaluation } from './jira-evaluation.js';
 
@@ -158,6 +160,8 @@ export function createPoller(deps: {
   record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>;
   /** Called after every completed polling iteration (same loop; no scheduler). */
   afterCycle?(): Promise<void>;
+  /** Spec #68 §4-§5 (ticket #71): Triage requests of the sources with a `triage` block, discovered in the same sequential rounds. */
+  triage?: TriageDiscovery;
 }) {
   const { tracker, repository } = deps.access;
   const interval = deps.intervalSeconds;
@@ -235,6 +239,33 @@ export function createPoller(deps: {
       source => source.tracker === 'github' && source.discover && source.repository.toLowerCase() === configured.repository.toLowerCase(),
     );
   const held = (ref: TicketRef, holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
+  /** Spec #68 §4.3: in a source with a `triage` block, `needs-triage` present suspends admission by the admission label. */
+  const suspendedByTriage: Hold = {
+    code: 'ADMISSION_SUSPENDED_BY_TRIAGE',
+    nextStep:
+      'The Ticket carries needs-triage in a source with Triage: admission by the admission label is suspended and nothing is written to the Ticket. ' +
+      'It is admitted on a later poll once needs-triage is gone.',
+  };
+
+  /** Entry authorization of a re-read GitHub Ticket; `needs-triage` in a source with a `triage` block suspends it whatever else holds. */
+  function entryDecision(configured: ConfiguredRepository, ref: GitHubTicketRef, facts: Parameters<typeof evaluateEntry>[0]['facts']) {
+    const triage = deps.triage?.githubTriage(configured.repository);
+    const labels = facts.kind === 'observed' ? facts.labels.map(label => label.name) : [];
+    if (triage && suspendsAdmission(triage, labels, false)) return { authorized: false as const, holds: [suspendedByTriage] };
+    return evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
+  }
+  /** Why a Card is not a candidate: suspended by `needs-triage` (spec #68 §4.3), or its entry label is gone. Neither is commented. */
+  const notCandidateHold = (source: JiraSource, evaluated: JiraCandidateEvaluation): Hold =>
+    evaluated.suspendedByTriage
+      ? suspendedByTriage
+      : {
+          code: 'LABEL_NOT_PRESENT',
+          nextStep: `The Card no longer carries the entry label "${source.label}" in its project; nothing is admitted and nothing is commented.`,
+        };
+  /** Triage requests of a repository's source, after its admissions (one pass at a time). */
+  const githubTriageRound = async (scope: ConfiguredRepository) => {
+    await deps.triage?.github(scope);
+  };
 
   /** Phase 1: index, pause, configured repository and current Ticket facts. Authorized candidates wait for the shared publication read. */
   async function entry(ref: GitHubTicketRef): Promise<Outcome | { pending: Pending }> {
@@ -260,7 +291,7 @@ export function createPoller(deps: {
       return { view: held(ref, result.authorized ? [] : result.holds) };
     }
     const facts = await guarded(configured.repository, () => tracker.readTicket(ref));
-    const decision = evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
+    const decision = entryDecision(configured, ref, facts);
     if (decision.authorized && facts.kind === 'observed')
       return { pending: { ref, configured, ticket: facts.ticket, observedAt: facts.observedAt, label: decision.label } };
     return { view: held(ref, decision.authorized ? [] : decision.holds, facts.observedAt), ...unavailableSignals(facts, transient) };
@@ -480,6 +511,8 @@ export function createPoller(deps: {
         nextPollInSeconds: delay,
         candidates: outcomes.map(outcome => outcome.view),
       };
+      // An unlisted repository concludes nothing, for Triage as for admission.
+      await githubTriageRound(entry_.scope);
     }
     entry_.dueAt = deps.clock.monotonic() + delay * 1000;
   }
@@ -533,16 +566,7 @@ export function createPoller(deps: {
     if (evaluation.decision === 'not-candidate')
       return {
         evaluated,
-        view: held(
-          ticket,
-          [
-            {
-              code: 'LABEL_NOT_PRESENT',
-              nextStep: `The Card no longer carries the entry label "${source.label}" in its project; nothing is admitted and nothing is commented.`,
-            },
-          ],
-          observedAt,
-        ),
+        view: held(ticket, [notCandidateHold(source, evaluated)], observedAt),
       };
     if (evaluation.decision !== 'eligible')
       return {
@@ -697,6 +721,7 @@ export function createPoller(deps: {
       observedAt: discovered.observedAt,
       candidates: discovered.candidates,
     });
+    await deps.triage?.jira(source);
   }
 
   /** Jira ticket 04: the listing of a discovering source and the admission of its Cards, one at a time until Jira asks to wait. */
@@ -817,6 +842,7 @@ export function createPoller(deps: {
         source: 'in-memory-observation',
         repositories: repositories.map(entry => ({ ...entry.view, nextPollInSeconds: due(entry.view, entry.dueAt) })),
         ...(sources.length ? { sources: sources.map(entry => ({ ...entry.view, nextPollInSeconds: due(entry.view, entry.dueAt) })) } : {}),
+        ...(deps.triage?.views().length ? { triage: deps.triage.views() } : {}),
       };
     },
     /** Resolves when signalled; rejects only for durable-authority failures (never for remote observation failures). */
@@ -831,6 +857,7 @@ export function createPoller(deps: {
       try {
         while (!signal.aborted) {
           state = 'polling';
+          await deps.triage?.sweep();
           await pollDue(repositories, signal, cycle);
           // Jira sources after the GitHub repositories: a destination's GitHub identity is then observed in this iteration.
           await pollDue(sources, signal, jiraCycle);

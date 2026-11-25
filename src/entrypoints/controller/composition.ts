@@ -9,7 +9,7 @@ import {
   type JiraHttpResult,
   type JiraTransport,
 } from '../../issue-tracker/index.js';
-import type { TicketSourceConfiguration } from '../configuration.js';
+import { triageSources, type TicketSourceConfiguration, type TriageAvailability } from '../configuration.js';
 import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import {
@@ -155,6 +155,8 @@ export function composeProductionAccess(input: {
     dependencyRepositories: readonly { repository: string; installationId: number }[];
     operators: (string | { login: string; id?: number })[];
     ticketSources?: readonly TicketSourceConfiguration[];
+    /** Spec #68 §2: whether Triage is on in this installation (absent = off: schemas 1 and 2, and callers predating Triage). */
+    triage?: TriageAvailability;
   };
   /**
    * Production: the host HTTPS REST v3 transport of each Jira site (ticket 03). Tests substitute the whole transport, or only its raw
@@ -170,10 +172,16 @@ export function composeProductionAccess(input: {
   }));
   const configured =
     effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
+  // Spec #68 §2/§4: the `triage` block of a source, on only where `triageSources` says so. A block the Host cannot serve stays on the
+  // source as not available: its requests are kept and `needs-triage` still suspends admission, but nothing is created or investigated.
+  const triageOn = new Set<unknown>(triageSources({ triage: input.effective.triage ?? { status: 'off' }, ticketSources: configured }));
+  const triageOf = (source: (typeof configured)[number]) =>
+    'triage' in source && source.triage ? { triage: { ...source.triage, available: triageOn.has(source) } } : {};
   const sources: TicketSource[] = configured.map(source =>
     source.tracker === 'github'
-      ? { tracker: 'github', repository: source.repository, discover: source.discover }
+      ? { tracker: 'github', repository: source.repository, discover: source.discover, ...triageOf(source) }
       : {
+          ...triageOf(source),
           tracker: 'jira',
           siteId: source.siteId,
           url: source.url,
@@ -190,7 +198,16 @@ export function composeProductionAccess(input: {
   const transport = input.jira?.transport ?? ((site: JiraSiteAccess) => createJiraHttpTransport(site, send ? { send } : {}));
   const jira = jiraSources.length
     ? createJiraTracker({
-        scopes: jiraSources.map(source => ({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label })),
+        // Each source lists by its entry label and, with a `triage` block, by its needs-triage label too.
+        scopes: jiraSources.flatMap(source =>
+          [source.label, ...('triage' in source && source.triage ? [source.triage.needsTriage] : [])].map(label => ({
+            tracker: 'jira' as const,
+            siteId: source.siteId,
+            url: source.url,
+            projectId: source.projectId,
+            label,
+          })),
+        ),
         transport: scope => {
           // One account per site (validated by the configuration): its first source names the e-mail and token file.
           const account = jiraSources.find(source => source.siteId === scope.siteId)!;

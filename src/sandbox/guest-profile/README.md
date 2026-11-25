@@ -22,7 +22,7 @@ próprios preservados; não descobrir/substituir automaticamente assets.
    em `filesystem-modes.json`. O próprio `writeAssetManifest` do SDK recalcula
    checksums/buildId depois. JSON nativo sozinho não reproduz essa finalização.
 5. Conferir o artefato empacotado: banco/versões/digests, `apk audit --system
-   --check-permissions`, ownership/modos dos inodes raw, e2fsck e hashes/pin
+--check-permissions`, ownership/modos dos inodes raw, e2fsck e hashes/pin
    públicos. Não equiparar isso a boot/Docker/TLS/persistência em runtime.
 
 Receitas, comandos, transformações e tentativas preservadas:

@@ -251,3 +251,60 @@ test('Jira ticket 04: readTicketContent reads summary and description by ID and 
     assert.deepEqual(read.kind === 'unavailable' && read.code, 'JIRA_OBSERVATION_INVALID');
   }
 });
+
+// Spec #68 §4.6 (ticket #71; TR-06): the Card's label changes, from its changelog, are the origin's evidence of a re-application.
+test('TR-06: readLabelHistory reads every changelog page and reports what each entry added and removed, oldest first', async () => {
+  const entry = (id: string, fromString: string | null, toString: string | null, accountId: string | undefined = 'acc-1') => ({
+    id,
+    ...(accountId ? { author: { accountId } } : {}),
+    created: `2026-11-21T10:00:${id.slice(-2)}.000-0300`,
+    items: [
+      { field: 'status', fromString: 'To Do', toString: 'Doing' },
+      { field: 'labels', fieldtype: 'jira', from: null, fromString, to: null, toString },
+    ],
+  });
+  const pages: Record<string, unknown> = {
+    '0': { startAt: 0, maxResults: 100, total: 3, values: [entry('5001', '', 'needs-triage bug'), entry('5002', 'needs-triage bug', 'bug needs-info')] },
+    '2': { startAt: 2, maxResults: 100, total: 3, values: [entry('5003', 'bug needs-info', 'bug needs-triage', '')] },
+  };
+  const { calls, transport } = recording(request => ok(pages[request.query!.startAt!]));
+  const history = await createJiraTracker({ scopes: [scope], transport: () => transport }).readLabelHistory!(ref);
+  assert.deepEqual(
+    calls.map(call => [call.method, call.path, call.query]),
+    [
+      ['GET', '/rest/api/3/issue/81017/changelog', { startAt: '0', maxResults: '100' }],
+      ['GET', '/rest/api/3/issue/81017/changelog', { startAt: '2', maxResults: '100' }],
+    ],
+  );
+  assert.equal(history.kind, 'observed');
+  if (history.kind !== 'observed') return;
+  const author = { tracker: 'jira', accountId: 'acc-1' };
+  assert.deepEqual(history.events, [
+    { eventId: '5001', action: 'added', label: 'needs-triage', at: '2026-11-21T10:00:01.000-0300', author },
+    { eventId: '5001', action: 'added', label: 'bug', at: '2026-11-21T10:00:01.000-0300', author },
+    { eventId: '5002', action: 'removed', label: 'needs-triage', at: '2026-11-21T10:00:02.000-0300', author },
+    { eventId: '5002', action: 'added', label: 'needs-info', at: '2026-11-21T10:00:02.000-0300', author },
+    { eventId: '5003', action: 'removed', label: 'needs-info', at: '2026-11-21T10:00:03.000-0300', author: null },
+    { eventId: '5003', action: 'added', label: 'needs-triage', at: '2026-11-21T10:00:03.000-0300', author: null },
+  ]);
+});
+
+test('a failed, malformed or short changelog page makes the label history unavailable, never a shorter history', async () => {
+  const read = (respond: (request: JiraRequest) => JiraResponse) =>
+    createJiraTracker({ scopes: [scope], transport: () => recording(respond).transport }).readLabelHistory!(ref);
+  const codeOf = (observation: Awaited<ReturnType<typeof read>>) => (observation.kind === 'unavailable' ? observation.code : observation.kind);
+  assert.equal(codeOf(await read(() => ({ ok: false, code: 'JIRA_HTTP_403', observedAt: '2026-11-21T10:00:00.000Z', nextStep: 'x' }))), 'JIRA_HTTP_403');
+  assert.equal(codeOf(await read(() => ok({ startAt: 0, total: 1, values: [{ id: 'not-an-id', created: 'x', items: [] }] }))), 'JIRA_OBSERVATION_INVALID');
+  assert.equal(codeOf(await read(() => ok({ startAt: 0, total: 2, values: [] }))), 'JIRA_CHANGELOG_INCOMPLETE');
+});
+
+test('a second listing of the same site (another label, as the needs-triage label of a source with Triage) is listed under its own scope', async () => {
+  const triage = { ...scope, label: 'needs-triage' };
+  const { calls, transport } = recording(() => ok({ issues: [{ id: '81017', key: 'PAG-42', fields: { project: { id: '10010' } } }], isLast: true }));
+  const tracker = createJiraTracker({ scopes: [scope, triage], transport: () => transport });
+  const listing = await tracker.listCandidates(triage);
+  assert.equal(listing.kind === 'observed' && listing.candidates.length, 1);
+  assert.match(JSON.stringify(calls[0]!.body), /labels = \\"needs-triage\\"/);
+  const unknown = await tracker.listCandidates({ ...scope, label: 'other' });
+  assert.equal(unknown.kind === 'unavailable' && unknown.code, 'JIRA_SITE_NOT_CONFIGURED');
+});

@@ -79,7 +79,7 @@ test('the release manifest declares exactly the migrations and the document matr
 
 test('TR-52 (rules): format 4 is format 3 with another identity plus the Triage request kind; a release that knows no Triage finds no format in it', () => {
   const { 4: four, ...beforeTriage } = knownFormats;
-  assert.deepEqual(four, { ...knownFormats[3], 'factory.installation': 4, 'factory.triage-request': 1 });
+  assert.deepEqual(four, { ...knownFormats[3], 'factory.installation': 4, 'factory.triage-request': 1, 'factory.triage-index': 1 });
   const works = { 'factory.work': { 1: 2 }, 'factory.slots': { 1: 1 }, 'factory.question': { 1: 1 }, 'factory.jira-comment': { 1: 1 } };
   // The same Works, Slots and Questions belong to both formats unchanged: only the installation version tells them apart.
   assert.deepEqual(decideFormat(3, { 'factory.installation': { 3: 1 }, ...works }), { format: 3, problems: [] });

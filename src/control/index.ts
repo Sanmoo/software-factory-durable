@@ -49,6 +49,28 @@ export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluatio
 export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
 export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
 export type { JiraOriginTracker } from './types.js';
+// Spec #68 §4-§5 (ticket #71): the Triage request document, its guarded transitions and its pure rules, for the later tickets of the spec.
+export {
+  liveTriageRequests,
+  readTriageRequest,
+  readTriageRequests,
+  requestTriage,
+  ticketTriageRequests,
+  transitionTriageRequest,
+  triageQueue,
+} from './durable/triage-requests.js';
+export type { TriageRequestResult, TriageTransition, TriageTransitionResult } from './durable/triage-requests.js';
+export { isTerminalTriageState, terminalTriageStates, triageRequestStates, triageTransitionAllowed } from './rules/triage.js';
+export type { TriageRequestState, TriageRoles } from './rules/triage.js';
+export type {
+  SourceTriage,
+  TriageCandidateView,
+  TriageRequest,
+  TriageRequestsView,
+  TriageSourcePollView,
+  TriageSourceRef,
+  TriageTimelineEntry,
+} from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

@@ -2,6 +2,7 @@
 // included (a Proxy records any method not modelled and answers unavailable), so a test can assert absence of comments/writes.
 import {
   jiraInputsOf,
+  type JiraLabelEvent,
   type JiraLink,
   type JiraLinkType,
   type JiraStatusCategory,
@@ -22,6 +23,8 @@ export type JiraCard = {
   statusCategory: JiraStatusCategory;
   summary: string | null;
   description?: string | null;
+  /** Spec #68: the Card's label changes as its changelog reports them (`relabel` keeps it with `labels`). */
+  labelEvents?: JiraLabelEvent[];
 };
 export type JiraRemote = {
   cards: JiraCard[];
@@ -29,6 +32,8 @@ export type JiraRemote = {
   listed?: JiraTicketRef[];
   catalogue?: JiraLinkType[];
   listFailure?: { code: string; waitSeconds?: number };
+  /** Spec #68: readLabelHistory answers unavailable with this code while set. */
+  labelHistoryFailure?: string;
   /** Per issue id: the re-read fails with this code. */
   readFailures?: Record<string, string>;
   /** Called after the listing, before any re-read (models an edit between discovery and admission). */
@@ -70,6 +75,21 @@ export const card = (issueId: string, key: string, overrides: Partial<JiraCard> 
   summary: `Summary ${key}`,
   ...overrides,
 });
+let changelogSequence = 60000;
+/** Spec #68: a person edits the Card's labels (label set and changelog together), in one changelog entry. */
+export function relabel(item: JiraCard, change: { add?: string[]; remove?: string[] }, accountId = 'acc-stranger') {
+  const eventId = String((changelogSequence += 1));
+  const at = new Date().toISOString();
+  const author = { tracker: 'jira' as const, accountId };
+  const removed = (change.remove ?? []).filter(label => item.labels.includes(label));
+  const added = (change.add ?? []).filter(label => !item.labels.includes(label));
+  item.labels = [...item.labels.filter(label => !removed.includes(label)), ...added];
+  item.labelEvents = [
+    ...(item.labelEvents ?? []),
+    ...removed.map(label => ({ eventId, action: 'removed' as const, label, at, author })),
+    ...added.map(label => ({ eventId, action: 'added' as const, label, at, author })),
+  ];
+}
 export const refOf = (item: Pick<JiraCard, 'issueId' | 'key'>): JiraTicketRef => ({
   tracker: 'jira',
   siteId: site.siteId,
@@ -135,6 +155,20 @@ export function jiraDoubles(remote: JiraRemote) {
         statusCategory: found.statusCategory,
         summary: found.summary,
         links: found.links ? structuredClone(found.links) : null,
+      };
+    },
+    readLabelHistory: async ticket => {
+      calls.push({ method: 'readLabelHistory', args: ticket.issueId });
+      const found = find(ticket.issueId);
+      if (remote.labelHistoryFailure || !found) return unavailable(remote.labelHistoryFailure ?? 'JIRA_NOT_FOUND');
+      return {
+        kind: 'observed',
+        source: 'jira-rest',
+        observedAt: observedAt(),
+        ticket,
+        completeness: 'complete',
+        events: structuredClone(found.labelEvents ?? []),
+        limitations: [],
       };
     },
     readTicketContent: async ticket => {

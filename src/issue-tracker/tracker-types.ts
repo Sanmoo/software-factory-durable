@@ -3,6 +3,7 @@ import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
 import type { TokenRevocation } from '../platform/github/index.js';
 import type {
   JiraAccessDiagnostic,
+  JiraLabelHistoryObservation,
   JiraBlockersObservation,
   JiraCandidateObservation,
   JiraCommentAuthor,
@@ -158,6 +159,24 @@ export type CommentResult = (
   | { kind: 'unknown'; observedAt: string; code: string; nextStep: string }
 ) & { revocation?: TokenRevocation };
 
+/**
+ * Spec #68 §4.6: one label change of a GitHub issue, from its timeline. `actor` and `viaApp` are who made it (the App id when performed
+ * through a GitHub App), evidence for the Control; `null` when GitHub reports none. Never interpreted here.
+ */
+export type LabelEvent = { eventId: string; action: 'added' | 'removed'; label: string; at: string; actor: CommentAuthorRef | null; viaApp: number | null };
+/** Every label change of a Ticket in the order the origin reports, from a COMPLETE read only (an unavailable one proves nothing). */
+export type LabelHistoryObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      ticket: GitHubTicketRef;
+      completeness: 'complete';
+      events: LabelEvent[];
+      limitations: string[];
+    }
+  | TrackerUnavailable;
+
 /** Author of an input, discriminated by provider (GitHub keeps its untagged `{id, login, type}`). */
 export type TrackerCommentAuthor = CommentAuthorRef | JiraCommentAuthor;
 /** Read position of inputs, discriminated by provider: GitHub = highest comment id (unchanged), Jira = {@link JiraInputCursor}. */
@@ -176,6 +195,7 @@ export type TrackerContracts = {
     search: QuestionSearch;
     result: CommentResult;
     access: AccessDiagnostic;
+    labels: LabelHistoryObservation;
   };
   jira: {
     scope: JiraTrackerScope;
@@ -188,6 +208,7 @@ export type TrackerContracts = {
     search: JiraQuestionSearch;
     result: JiraCommentResult;
     access: JiraAccessDiagnostic;
+    labels: JiraLabelHistoryObservation;
   };
 };
 
@@ -201,6 +222,8 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
   readTicket(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['observation']>;
   /** GitHub: native blocked_by graph. Jira: visible "is blocked by" neighbours. Neither substitutes for the other. */
   readDependencyGraph(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['blockers']>;
+  /** Spec #68 §4.6: the Ticket's label changes (GitHub timeline, Jira changelog): the origin's evidence of a withdrawal and re-application. */
+  readLabelHistory?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['labels']>;
   readInputs(ticket: TrackerContracts[P]['ticket'], cursor: TrackerContracts[P]['cursor'] | null): Promise<TrackerContracts[P]['inputs']>;
   findQuestion(ticket: TrackerContracts[P]['ticket'], questionId: string): Promise<TrackerContracts[P]['search']>;
   postComment(ticket: TrackerContracts[P]['ticket'], comment: QuestionComment, effect: CommentEffect): Promise<TrackerContracts[P]['result']>;

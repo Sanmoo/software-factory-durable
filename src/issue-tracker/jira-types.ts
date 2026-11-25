@@ -84,6 +84,23 @@ export type JiraBlocker = { issueId: string; key: string; statusCategory: JiraSt
 export type JiraBlockersObservation =
   | { kind: 'observed'; source: 'jira-rest'; observedAt: string; root: JiraTicketRef; coverage: 'visible'; blockers: JiraBlocker[]; limitations: string[] }
   | JiraUnavailable;
+/**
+ * Spec #68 §4.6: one label change of a Card, from its changelog. `eventId` is the changelog entry's id (one entry may add and remove
+ * several labels: they share it). `author: null` = Jira gave no author account.
+ */
+export type JiraLabelEvent = { eventId: string; action: 'added' | 'removed'; label: string; at: string; author: JiraCommentAuthor | null };
+/** Every label change of a Card, oldest first, from a COMPLETE changelog read. A label the Card was created with has no entry. */
+export type JiraLabelHistoryObservation =
+  | {
+      kind: 'observed';
+      source: 'jira-rest';
+      observedAt: string;
+      ticket: JiraTicketRef;
+      completeness: 'complete';
+      events: JiraLabelEvent[];
+      limitations: string[];
+    }
+  | JiraUnavailable;
 /** Author of a Jira comment: the observed `accountId` is the identity (a shared Factory account may also author human answers). */
 export type JiraCommentAuthor = { tracker: 'jira'; accountId: string };
 /** Stable reference of one Jira input: (siteId, issueId, commentId). */

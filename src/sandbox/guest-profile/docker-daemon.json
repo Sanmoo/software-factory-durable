@@ -3,12 +3,8 @@
   "features": {
     "containerd-snapshotter": false
   },
-  "exec-opts": [
-    "native.cgroupdriver=cgroupfs"
-  ],
-  "hosts": [
-    "unix:///run/docker.sock"
-  ],
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
+  "hosts": ["unix:///run/docker.sock"],
   "group": "root",
   "iptables": false,
   "ip6tables": false,

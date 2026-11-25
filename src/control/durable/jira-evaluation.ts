@@ -10,6 +10,7 @@ import type {
 } from '../../issue-tracker/index.js';
 import type { AccessDependencies, DependencyEvaluation, JiraOriginTracker, TicketContent, TicketSource } from '../types.js';
 import { jiraAuthorizationFacts } from '../rules/cycles.js';
+import { suspendsAdmission } from '../rules/triage.js';
 import type { WorkRecord } from './admission.js';
 import {
   blockerDirection,
@@ -35,6 +36,8 @@ export type JiraCandidateEvaluation = {
   blockers: JiraBlockersObservation | null;
   /** Jira ticket 04: the component IDs read (null = not read or not complete), for the admission evidence. */
   components?: string[] | null;
+  /** Spec #68 §4.3: the Card carries `needs-triage` in a source with a `triage` block, so it is no candidate for admission now. */
+  suspendedByTriage?: true;
 };
 export type JiraSourceEvaluation =
   | {
@@ -73,8 +76,16 @@ export async function evaluateJiraTicket(input: {
     return { ticket: input.ticket, evaluation: ticketUnverifiable(observation), observedAt: observation.observedAt, route: null, blockers: null };
   }
   const ticket = observation.ticket;
-  if (observation.projectId !== source.projectId || !observation.labels.includes(source.label)) {
-    return { ticket, evaluation: { decision: 'not-candidate', reasons: [] }, observedAt: observation.observedAt, route: null, blockers: null };
+  const candidacy = candidacyOf(source, observation);
+  if (candidacy !== 'candidate') {
+    const base = {
+      ticket,
+      evaluation: { decision: 'not-candidate' as const, reasons: [] as [] },
+      observedAt: observation.observedAt,
+      route: null,
+      blockers: null,
+    };
+    return candidacy === 'suspended' ? { ...base, suspendedByTriage: true } : base;
   }
   const route = routeTicket({
     components: componentIds(observation.components),
@@ -95,7 +106,23 @@ export async function evaluateJiraTicket(input: {
     links,
     blockers: blockers.kind === 'observed' ? { kind: 'observed', blockers: blockers.blockers } : blockers,
   });
-  return { ticket, evaluation, observedAt: observation.observedAt, route, blockers, components: componentIds(observation.components) };
+  return {
+    ticket,
+    evaluation,
+    observedAt: observation.observedAt,
+    route,
+    blockers,
+    components: componentIds(observation.components),
+  };
+}
+
+/**
+ * Whether a re-read Card is a candidate for admission from this source: in its project, with its entry label and, where the source has a
+ * `triage` block (available on this Host or not), without `needs-triage` (spec #68 §4.3: no admission, no notice, nothing read further).
+ */
+function candidacyOf(source: JiraSource, observation: Extract<JiraTicketObservation, { kind: 'observed' }>) {
+  if (observation.projectId !== source.projectId || !observation.labels.includes(source.label)) return 'not-candidate' as const;
+  return source.triage && suspendsAdmission(source.triage, observation.labels, true) ? ('suspended' as const) : ('candidate' as const);
 }
 
 async function visibleBlockers(

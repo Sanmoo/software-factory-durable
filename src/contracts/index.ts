@@ -339,6 +339,8 @@ export const controlStorageCompatibility = Object.freeze({
     'factory.jira-link': 1,
     // Triage ticket #70: one document per Triage request (spec #68 §4-5). Format 4 only; the migration creates none.
     'factory.triage-request': 1,
+    // Triage ticket #71: arrival sequence, live requests and the requests of each Ticket.
+    'factory.triage-index': 1,
   }),
 });
 
