@@ -57,6 +57,7 @@ import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
+import type { BoundedComments } from './rules/ticket-comments.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
 /** `dependencyResults`: preflight of repositories accessible only for dependency reads (no issue/relation is created). */
@@ -593,6 +594,8 @@ export type ExecutionView = {
     promptSha256: string | null;
     /** Jira ticket 04: the Card's text read by the controller at dispatch (the Builder has no Jira access); data for the Builder, never instructions. */
     ticketContent?: TicketContent;
+    /** Spec #68 §9: the selected comments of a GitHub issue (the Builder reads the issue itself; a Jira Card carries them in `ticketContent`). */
+    ticketComments?: TicketComments;
     skillPack: { name: string; manifestSha256: string } | null;
     /** Ticket 44: identity of the environment base this Execution's environment was created from (declaration hash + resolved manifest). */
     environment?: EnvironmentBaseIdentity | null;
@@ -1611,6 +1614,11 @@ export type ReadinessView = {
   stages: { internal: 'ready' | 'not-ready' | 'unknown'; flag: 'draft' | 'ready' | 'unknown'; humanReview: 'human-stage'; delivery: 'not-delivered' };
   nextStep: string;
 };
+/**
+ * Spec #68 §9: the comments of a Ticket selected and bounded for the Builder, read ONCE with the Work's first Execution (they compose
+ * version v1 of the Ticket) and carried unchanged by every later Execution; a comment written later is never read into it.
+ */
+export type TicketComments = BoundedComments & { observedAt: string; sha256: string };
 /** Jira ticket 04: a Jira Card's summary and description (ADF as plain text, bounded: `truncated` says so) as read at dispatch. */
 export type TicketContent = {
   source: 'jira-rest';
@@ -1621,6 +1629,8 @@ export type TicketContent = {
   description: string | null;
   truncated: boolean;
   sha256: string;
+  /** Spec #68 §9: every comment of the Card (absent on a Work whose first Execution predates it). */
+  comments?: TicketComments;
 };
 /**
  * Jira ticket 04: evidence of a Jira Work's admission (spec §3.5): the Card re-read by ID immediately before the commit, with the source

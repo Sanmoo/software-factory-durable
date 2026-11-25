@@ -7,6 +7,7 @@ import type {
   JiraBlockersObservation,
   JiraCandidateObservation,
   JiraCommentAuthor,
+  JiraCommentListing,
   JiraCommentResult,
   JiraInputCursor,
   JiraInputsObservation,
@@ -133,6 +134,23 @@ export type InputsObservation =
       limitations: string[];
     }
   | TrackerUnavailable;
+/**
+ * One comment of the Ticket issue as a fact for whoever composes the Ticket text (spec #68 §9). `authorAssociation`: GitHub's
+ * `author_association` as sent (`NONE` when absent); `ownApp`: performed by THIS installation's App as its bot. Never filtered here.
+ */
+export type TicketCommentFact = TrackerComment & { authorAssociation: string; ownApp: boolean };
+/** Every comment of the Ticket issue (ascending id), from a COMPLETE listing only; an unavailable read never proves there are none. */
+export type TicketCommentsObservation =
+  | {
+      kind: 'observed';
+      source: 'github-rest';
+      observedAt: string;
+      ticket: GitHubTicketRef;
+      completeness: 'complete';
+      comments: TicketCommentFact[];
+      limitations: string[];
+    }
+  | TrackerUnavailable;
 /** Comments of THIS installation's App carrying the stable marker of the Question; several candidates are reported, never chosen. */
 export type QuestionSearch =
   | {
@@ -193,6 +211,7 @@ export type TrackerContracts = {
     inputs: InputsObservation;
     cursor: number;
     search: QuestionSearch;
+    comments: TicketCommentsObservation;
     result: CommentResult;
     access: AccessDiagnostic;
     labels: LabelHistoryObservation;
@@ -206,6 +225,7 @@ export type TrackerContracts = {
     inputs: JiraInputsObservation;
     cursor: JiraInputCursor;
     search: JiraQuestionSearch;
+    comments: JiraCommentListing;
     result: JiraCommentResult;
     access: JiraAccessDiagnostic;
     labels: JiraLabelHistoryObservation;
@@ -229,4 +249,9 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
   postComment(ticket: TrackerContracts[P]['ticket'], comment: QuestionComment, effect: CommentEffect): Promise<TrackerContracts[P]['result']>;
   /** Ticket 23: comments of THIS installation's App carrying the reply marker; several candidates are reported, never chosen. */
   findReply?(ticket: TrackerContracts[P]['ticket'], replyId: string): Promise<TrackerContracts[P]['search']>;
+  /**
+   * Spec #68 §9: every comment of the Ticket with what the origin says of its author, for whoever composes the Ticket text. GitHub only
+   * (the Jira adapter serves it by `JiraComments.listComments`); a tracker without it delivers no Ticket text and no Work starts on it.
+   */
+  readTicketComments?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['comments']>;
 }

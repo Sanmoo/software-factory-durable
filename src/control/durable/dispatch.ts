@@ -45,7 +45,7 @@ import type {
   PublicationView,
 } from '../types.js';
 import { evaluateEntry, githubOnly, workBranchName } from '../rules/admission.js';
-import { evaluateJiraWorkOf, observeJiraAuthorization, readJiraContent } from './jira-evaluation.js';
+import { evaluateJiraWorkOf, observeJiraAuthorization } from './jira-evaluation.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import { readWork, recordTicketPresentation, type WorkRecord } from './admission.js';
@@ -78,6 +78,7 @@ import {
   withdrawCredentials,
 } from './execution.js';
 import { systemClock } from './polling.js';
+import { ticketOf, ticketTextOf } from './ticket-comments.js';
 import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
@@ -1127,7 +1128,7 @@ export function createDispatcher(deps: {
       const prompt = [
         ...(reconciling ? [reconciling, ''] : []),
         packaged
-          ? withNotice(recreated, [packaged, ...ticketContentSection(execution.request.ticketContent), ...(summary ? ['', summary] : [])]).join('\n')
+          ? withNotice(recreated, [packaged, ...ticketContentSection(ticketTextOf(execution.request)), ...(summary ? ['', summary] : [])]).join('\n')
           : interruptionRecoveryPrompt({
               ticketUrl: work.ticket.url,
               repository: work.repository.repository,
@@ -1144,7 +1145,7 @@ export function createDispatcher(deps: {
               reviews: Boolean(ports.reviews),
               summary,
               recreated,
-              ticketContent: execution.request.ticketContent ?? null,
+              ticketContent: ticketTextOf(execution.request),
             }),
         ...(updates.length ? ['', ...scopeSection(updates)] : []),
         ...(repair ?? []),
@@ -1173,7 +1174,7 @@ export function createDispatcher(deps: {
         reviews: Boolean(ports.reviews),
         scopeUpdates: updates,
         reviewRounds: Boolean(ports.reviews?.rounds),
-        ticketContent: execution.request.ticketContent ?? null,
+        ticketContent: ticketTextOf(execution.request),
       });
       if (initial.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
       return { kind: 'ready', prompt: withNotice(recreated, [initial.prompt]).join('\n'), resume: null, decision: null, continuation: null };
@@ -1301,7 +1302,7 @@ export function createDispatcher(deps: {
       reviewRounds: Boolean(ports.reviews?.rounds),
       ...(repair ? { repair } : {}),
       recreated,
-      ticketContent: execution.request.ticketContent ?? null,
+      ticketContent: ticketTextOf(execution.request),
       // Ticket 53: a replacement session gets EVERY answered Question of the Work (ticket 48's bounded block), not only the current answer.
       summary: allAnswered.length
         ? workSummary(current, execution, {
@@ -1570,7 +1571,7 @@ export function createDispatcher(deps: {
       answer: { author: answerAuthorLabel(answered.answer.author, true), note },
       commits,
       recreated: prepared.recreated?.notice ?? null,
-      ticketContent: execution.request.ticketContent ?? null,
+      ticketContent: ticketTextOf(execution.request),
     });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
@@ -3935,14 +3936,11 @@ export function createDispatcher(deps: {
     const { attemptId } = await freshEvaluation(work);
     // Jira ticket 04 (agent context): the Builder has no Jira client or token; the controller reads the Card's text now and hands it over
     // with the request. An unreadable Card never starts on a guess.
-    let ticketContent: NonNullable<ExecutionView['request']['ticketContent']> | undefined;
-    if (work.ticket.tracker === 'jira') {
-      const content = await readJiraContent(deps.access, work.ticket);
-      if (content.kind !== 'observed') {
-        observe(work.work_id, 'refused', ['TICKET_CONTENT_UNAVAILABLE', content.code]);
-        return true;
-      }
-      ticketContent = content.content;
+    // Spec #68 §9: so are the comments of the Ticket, read with the Work's first Execution (v1); later Executions carry the same.
+    const ticketText = await ticketOf(deps.access, work);
+    if (ticketText.kind !== 'observed') {
+      observe(work.work_id, 'refused', ticketText.reasons);
+      return true;
     }
     const configuredScope = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     // Ticket 48: the repository's Builder budget adjustment (validated by the configuration: at most 2x) travels with the Execution's policies.
@@ -3969,7 +3967,7 @@ export function createDispatcher(deps: {
         base: work.repository.base,
         branch: workBranchName(work.ticket, work.work_id),
         policies,
-        ...(ticketContent ? { ticketContent } : {}),
+        ...ticketText.request,
         ...(publication ? { publication } : {}),
         ...(reconciliation ? { reconciliation } : {}),
         ...(repair ? { repair } : {}),
