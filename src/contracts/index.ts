@@ -319,12 +319,14 @@ export function jiraInputOrder(a: { createdAt: string; commentId: string }, b: {
   return a.commentId.length - b.commentId.length || (a.commentId < b.commentId ? -1 : a.commentId > b.commentId ? 1 : 0);
 }
 
+// Triage ticket #70: format 4 (installation v4) marks every storage that may hold Triage requests, so a release that knows no Triage refuses it.
+// The Triage request document kinds are declared in `documents` below (format 4 only); a later Triage ticket adds its kinds next to them.
 export const controlStorageCompatibility = Object.freeze({
-  format: 3,
-  migratesFrom: Object.freeze([1, 2]),
-  migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3']),
+  format: 4,
+  migratesFrom: Object.freeze([1, 2, 3]),
+  migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3', 'factory-storage-3-to-4']),
   documents: Object.freeze({
-    'factory.installation': 3,
+    'factory.installation': 4,
     'factory.request': 1,
     'factory.ticket-index': 1,
     'factory.work': 1,
@@ -335,6 +337,8 @@ export const controlStorageCompatibility = Object.freeze({
     'factory.jira-comment': 1,
     // Jira ticket 08: the Work's remote link on its Card (latest desired state + confirmation), independent of comments and of Work cleanup.
     'factory.jira-link': 1,
+    // Triage ticket #70: one document per Triage request (spec #68 §4-5). Format 4 only; the migration creates none.
+    'factory.triage-request': 1,
   }),
 });
 

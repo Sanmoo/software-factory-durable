@@ -5,6 +5,7 @@ export {
   currentFormat as controlStorageFormat,
   supportedMigrations as controlStorageMigrations,
   durableSchemaVersion,
+  knownFormats as controlStorageFormats,
   migrationPath as controlStorageMigrationPath,
   migrationPathId as controlStorageMigrationPathId,
 } from './durable/format.js';
