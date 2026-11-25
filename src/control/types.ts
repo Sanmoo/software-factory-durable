@@ -2942,6 +2942,8 @@ export type TriagePorts = {
   limits: InvestigationLimits;
   /** `triager.investigationMinutes`: the investigation clock of one request (its spending is ticket #76's). */
   investigationMinutes: number;
+  /** How often a running attempt's environment is observed for an agent that ended without reporting (default 2000 ms). */
+  agentWatchMs?: number;
   triager: {
     /** Prepares the Host side of one attempt's session and names the agent the environment starts. Always a new session. */
     activate(request: {

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { InvestigationRecord, InvestigationStop } from '../../sandbox/index.js';
 import type { AccessDependencies, TriageAttempt, TriagePorts, TriageRequest } from '../types.js';
 import { afterAttemptWithoutVerdict, attemptEndCode, holdsTriageCapacity } from '../rules/triage.js';
@@ -23,6 +24,8 @@ type Running = {
   cloned: Map<string, { path: string; commit: string }>;
 };
 const cloneName = (repository: string) => repository.replace('/', '__');
+/** How often a running attempt's environment is observed for an agent that ended without reporting. */
+const agentWatchMs = 2000;
 const unconfirmed: InvestigationStop = { cessationConfirmed: false, code: 'INVESTIGATION_MANAGER_UNAVAILABLE' };
 
 export function createTriageInvestigations(deps: {
@@ -113,6 +116,18 @@ export function createTriageInvestigations(deps: {
     };
   }
 
+  /**
+   * An agent that ended without reporting (it never reached its channel, or died with it): the environment confirms the attempt ceased
+   * while its completion never came. Observed until the attempt is no longer running here; without it such an attempt would never end.
+   */
+  async function agentGone(record: InvestigationRecord): Promise<{ status: 'failure'; code: string }> {
+    for (;;) {
+      await delay(ports.agentWatchMs ?? agentWatchMs, undefined, { ref: false });
+      const observed = await ports.environment.observe(record).catch(() => unconfirmed);
+      if (observed.cessationConfirmed || !running.has(record.attempt)) return { status: 'failure', code: 'TRIAGER_AGENT_EXITED' };
+    }
+  }
+
   /** One attempt, after its start commit: activate the Triager, open the environment with its agent, wait for the session, end. */
   async function investigate(state: Running, intent: InvestigationRecord) {
     const id = state.request.triage_request_id;
@@ -136,7 +151,7 @@ export function createTriageInvestigations(deps: {
         record = opened.record;
         state.clones = opened.clones;
         await updateTriageAttempt(session, id, state.attempt, attempt => void (attempt.environment = opened.record));
-        const completion = await activation.completed;
+        const completion = await Promise.race([activation.completed, agentGone(opened.record)]);
         const recorded = (await readTriageRequest(session, id))?.verdict?.attempt === state.attempt;
         end = { code: recorded ? 'VERDICT_RECORDED' : attemptEndCode(completion), transcript: 'transcript' in completion ? completion.transcript : null };
       }

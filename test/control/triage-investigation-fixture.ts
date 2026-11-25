@@ -106,7 +106,15 @@ export function firstPrompt(body: string): string {
 
 export async function triageWorld(
   t: { after(fn: () => Promise<void> | void): void },
-  options: { github?: Remote; jira?: JiraRemote; sources: TicketSource[]; script: ModelTurn[]; ports?: Partial<TriagePorts> },
+  options: {
+    github?: Remote;
+    jira?: JiraRemote;
+    sources: TicketSource[];
+    script: ModelTurn[];
+    ports?: Partial<TriagePorts>;
+    /** Wraps the in-process environment the Control uses (to inject what the Host would observe). */
+    environment?: (port: TriagePorts['environment']) => TriagePorts['environment'];
+  },
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-triage-inv-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -177,7 +185,7 @@ export async function triageWorld(
     remoteUrl: () => `file://${upstream}`,
   });
   const ports: TriagePorts = {
-    environment,
+    environment: options.environment?.(environment) ?? environment,
     limits: { memoryGiB: 2, processes: 512, commandSeconds: 120 },
     investigationMinutes: 15,
     triager: { activate: request => triager.activate(request) },

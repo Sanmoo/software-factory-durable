@@ -31,6 +31,7 @@ import {
   reconcileLambdaRuntime,
   selectSandboxAdapter,
   type GuestAssetPin,
+  type InvestigationAgent,
   type GuestTransport,
   type LambdaBootClock,
   type LambdaImageWait,
@@ -501,6 +502,19 @@ export async function composeProductionExecution(input: ProductionInput): Promis
 }
 
 /**
+ * Spec #68 §6 (ticket #75): how the Investigation Environment starts the agent of one attempt: the fixed `triager` entrypoint of this
+ * release under the running Node, with the attempt's bootstrap file as its only argument. `env` is its WHOLE environment and travels on a
+ * command line, so nothing secret is in it (the model credential is read from the installation's own store).
+ */
+export function triagerAgentStart(bootstrap: string): InvestigationAgent {
+  return {
+    executable: process.execPath,
+    argv: [fileURLToPath(new URL('../triager.js', import.meta.url)), bootstrap],
+    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
+  };
+}
+
+/**
  * Spec #68 §6-§7 (ticket #75): production composition of the Triage ports, only where Triage is on. The Triager is the release's single
  * worker profile at the configured reasoning level, activated with the same pack as the Builder; its agent is the fixed `triager`
  * entrypoint, started by the Investigation Environment with a closed environment and the attempt's bootstrap file as its only argument.
@@ -522,7 +536,6 @@ export async function composeProductionTriage(input: {
   if (effective.triage.status !== 'on' || !model) return { status: 'off' };
   if (model.provider !== productionProfile.model.providerId || model.model !== productionProfile.model.modelId)
     return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: ['triager'] };
-  const entrypoint = fileURLToPath(new URL('../triager.js', import.meta.url));
   const triager = createTriager({
     root,
     skillPack: await productionSkillPack(),
@@ -535,12 +548,7 @@ export async function composeProductionTriage(input: {
       api: productionProfile.model.api,
       thinkingLevel: model.thinkingLevel ?? productionProfile.model.thinkingLevel.default,
     },
-    // The whole environment of the agent, on a command line: nothing secret (the model credential is read from the installation's store).
-    agent: bootstrap => ({
-      executable: process.execPath,
-      argv: [entrypoint, bootstrap],
-      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
-    }),
+    agent: triagerAgentStart,
   });
   return {
     status: 'composed',

@@ -321,3 +321,38 @@ test('an attempt starts at the commit that records the environment intent and en
   assert.deepEqual(w.environment.controls.active(), []);
   assert.equal(w.bodies.length, 1, 'no new session reattaches or retries');
 });
+
+test('an agent that ends without ever reporting ends its attempt: the environment confirms it ceased and the capacity is freed', async t => {
+  let exited = false;
+  const w = await triageWorld(t, {
+    github: { issues: [triageIssue(7)], pulls: {} },
+    sources: [githubSource],
+    script: [],
+    ports: {
+      agentWatchMs: 5,
+      // An agent that dies before it reaches its channel: its completion never comes.
+      triager: {
+        activate: async () => ({
+          agent: { executable: '/bin/true', argv: [], env: {} },
+          skillPack: { id: 'factory-skills-v13', version: '13.0.0', manifestSha256: 'f'.repeat(64) },
+          completed: new Promise(() => {}),
+          close: async () => {},
+        }),
+      },
+    },
+    environment: port => ({
+      ...port,
+      async open(intent, request) {
+        const opened = await port.open(intent, request);
+        exited = true;
+        return opened;
+      },
+      observe: async record => (exited ? { cessationConfirmed: true, evidence: 'unit-inactive' } : port.observe(record)),
+    }),
+  });
+  await w.start();
+  const request = await w.investigated();
+  assert.deepEqual([request.state, request.end?.code, request.attempts![0]!.end?.code], ['failed', 'TRIAGER_AGENT_EXITED', 'TRIAGER_AGENT_EXITED']);
+  assert.equal(request.attempts![0]!.end?.cessation.cessationConfirmed, true);
+  assert.equal(w.bodies.length, 0);
+});
