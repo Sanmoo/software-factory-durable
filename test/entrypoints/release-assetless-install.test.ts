@@ -11,7 +11,12 @@ import { assetlessId, builtRelease, check, type Check } from './release-fixture.
 // private Node running setup/doctor/run. The Lambda account is never reached: its checks fail on this host, and only the absence of any
 // guest asset requirement is asserted. No VM, network, GitHub, model or credential.
 let work: string, root: string, output: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
-before(async () => ({ work, root, output, report, factory } = await builtRelease(assetlessId)));
+// `setup` writes the installation's config.yaml, which every test below reads: it runs here so no test depends on another having run first.
+let prepared: ReturnType<typeof factory>;
+before(async () => {
+  ({ work, root, output, report, factory } = await builtRelease(assetlessId));
+  prepared = factory(root, ['setup', '--json'], { XDG_CONFIG_HOME: join(work, 'xdg') });
+});
 after(async () => {
   if (work) await rm(work, { recursive: true, force: true });
 });
@@ -30,7 +35,6 @@ test('#62: a release built without guest assets distributes none and is verified
   assert.equal('guestAssets' in manifest, false);
   assert.equal(manifest.metadata.guestAssets, null);
   assert.deepEqual(await readdir(join(root, 'assets')), []);
-  const prepared = factory(root, ['setup', '--json'], { XDG_CONFIG_HOME: join(work, 'xdg') });
   assert.equal(prepared.status, 0, prepared.stderr);
   const checks: Check[] = JSON.parse(prepared.stdout).diagnostics.checks;
   for (const name of ['release:integrity', 'release:location', 'release:selected', 'release:node', 'release:assets', 'permissions:assets'])
