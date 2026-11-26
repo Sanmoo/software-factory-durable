@@ -291,9 +291,10 @@ const authorshipImpediments = (request: TriageRequest): TriageAuthorshipImpedime
   request.state === 'publishing' && request.publication?.impediment
     ? [{ ...request.publication.impediment, scope: 'triage-request', triage_request_id: request.triage_request_id }]
     : [];
-/** Ticket #77: the publication desk with the publisher of each tracker (ticket #78 adds Jira's); a desk that does nothing without polling. */
+/** Ticket #77: the publication desk with the publisher of each tracker (ticket #78 adds Jira's); a desk that does nothing without polling or without a source with Triage. */
 function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
-  if (!access || !polling) return { pass: async () => {} };
+  // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
+  if (!access || !polling || !access.sources?.some(source => source.triage)) return { pass: async () => {} };
   return createTriagePublications({ session, stopped, publishers: { github: githubTriagePublisher(access) } });
 }
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>

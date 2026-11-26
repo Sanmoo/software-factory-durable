@@ -62,7 +62,8 @@ test('TR-07: three requests of two sources and capacity 1 are investigated one a
     await w.poll();
     const view = await w.view();
     assert.deepEqual(
-      view.requests.map(request => request.state),
+      // A recorded Verdict is published by the next round (ticket #77): an issue's request is then `concluded`, a Card's still `publishing`.
+      view.requests.map(request => (request.state === 'concluded' ? 'publishing' : request.state)),
       ['publishing', 'publishing', 'publishing'].fill('investigating', turn, turn + 1).fill('queued', turn + 1),
       `round ${turn + 1}: one investigation, in arrival order`,
     );

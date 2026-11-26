@@ -42,7 +42,10 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // Line breaks, indentation and trailing commas are the formatter's, not what this gate asserts (sourceShape).
   const github = sourceShape(files.find(item => item.path === 'src/platform/github/index.ts')!.text);
   assert.equal((github.match(/JSON\.stringify\(\{ body \}\)/g) ?? []).length, 1, 'the only POST body is the issue comment');
-  assert.doesNotMatch(github, /\/pulls['`]|\/git\/refs|PATCH|PUT/, 'no PR creation/update or ref write by the controller');
+  assert.doesNotMatch(github, /\/pulls['`]|\/git\/refs|PUT/, 'no PR creation/update or ref write by the controller');
+  // Spec #68 §8: the one PATCH is the `not_planned` closing of a Ticket issue by a Triage publication; never a pull request or a ref.
+  assert.equal((github.match(/method: 'PATCH'/g) ?? []).length, 1, 'a single PATCH');
+  assert.match(github, /input: JSON\.stringify\(\{ state: 'closed', state_reason: 'not_planned' \}\), method: 'PATCH'/, 'which closes an issue');
   // The CodeRepository contract stays read-only for the implementation publication.
   const repository = files.find(item => item.path === 'src/code-repository/index.ts')!.text;
   const contract = /export interface CodeRepository \{([\s\S]*?)\n\}/.exec(repository)![1]!;
