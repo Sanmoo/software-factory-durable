@@ -6,6 +6,7 @@ import type {
   ExecutionPorts,
   RuntimeInventory,
   TicketSource,
+  TriageDetailPorts,
   TriagePorts,
 } from '../../control/index.js';
 import {
@@ -59,7 +60,7 @@ import {
   removeRecordsDetail,
 } from '../../records/index.js';
 import { readConfinedFile, readSessionFile, sessionRefOfInvocation, workerRuntimeDirectory } from '../../platform/host/index.js';
-import { createTriager, createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
+import { createTriager, createTriagerDetails, createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope, type WorkerThinkingLevel } from '../../contracts/index.js';
 import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
@@ -529,6 +530,11 @@ export function triagerAgentStart(bootstrap: string): InvestigationAgent {
  * release profile refuses the composition, like any other role. Ticket #79: the registered MCP servers and Profiles go to the Triager with
  * the active ones; the agent of each attempt reads a server's token from its file, so no token passes through here.
  */
+/**
+ * Spec #68 §10 (ticket #80): the session files of the Triager attempts of this installation, composed whether or not Triage is on now,
+ * so that the transcripts of earlier requests are still read on purpose, measured and removed when their retention ends.
+ */
+export const composeTriageDetails = (root: string): TriageDetailPorts => createTriagerDetails(root);
 export async function composeProductionTriage(input: {
   root: string;
   /** Ticket #82: the verified running release, recorded on every attempt it starts. */

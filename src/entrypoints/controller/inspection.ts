@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Control } from '../../control/index.js';
+import { triageAttemptPattern, triageReferencePattern } from '../../contracts/index.js';
 import { listen, maxFrameBytes, protocolVersion, type Envelope } from '../../protocol/index.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
@@ -41,6 +42,16 @@ export const inspectionQuery = z.discriminatedUnion('kind', [
     limit: z.number().int().min(1).max(16384).optional(),
   }),
   z.strictObject({ kind: z.literal('usage'), work_id: z.uuid().optional(), ...page }),
+  // Spec #68 §10 (ticket #80): the Triage requests (metadata) and, by name only, one page of a transcript or the Verdict text.
+  z.strictObject({ kind: z.literal('triages'), ...page }),
+  z.strictObject({ kind: z.literal('triage'), request: z.string().regex(triageReferencePattern) }),
+  z.strictObject({
+    kind: z.literal('triage-transcript'),
+    triage_request_id: z.uuid(),
+    attempt: z.string().regex(triageAttemptPattern).max(64).optional(),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    verdict: z.literal(true).optional(),
+  }),
 ]);
 /** Ticket 29: stable inspection error payloads (code, scope, next step; never a secret or a stack). */
 export const inspectionErrors = {

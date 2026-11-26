@@ -16,8 +16,8 @@ import type {
   PollingOptions,
   PollingView,
   TriagePorts,
-  TriageAuthorshipImpediment,
-  TriageRequest,
+  TriageDetailPorts,
+  TriageSourcePollView,
   TriageRequestsView,
   QuestionQueryView,
   RecoveryView,
@@ -54,7 +54,8 @@ import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
-import { holdsTriageCapacity, triageImpediments } from '../rules/triage.js';
+import { triageCapacity, triageRequestImpediments } from '../rules/triage-operator.js';
+import { createTriageOperator } from './triage-operator.js';
 import { createTriageDiscovery } from './triage-discovery.js';
 import { createTriageInvestigations } from './triage-investigation.js';
 import { createTriagePublications } from './triage-publication.js';
@@ -83,7 +84,7 @@ import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDe
 import { createRetentionDesk } from './retention-desk.js';
 import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './retention.js';
 import { planCleanup } from '../rules/delivery.js';
-import { retentionProtections, type PlanFacts } from '../rules/retention.js';
+import { defaultRetentionDays, retentionProtections, type PlanFacts } from '../rules/retention.js';
 import { createRepairDesk } from './repair.js';
 import { acceptRepairRequest, createFeedbackDesk } from './feedback.js';
 import { queueOrder } from '../rules/repair.js';
@@ -261,11 +262,10 @@ const triageStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
 /** Spec #68 (ticket #71): every Triage request in arrival order and the queue, metadata only. */
 async function triageRequestsView(session: Session, capacity: number | null): Promise<TriageRequestsView> {
   const requests = await readTriageRequests(session);
-  const holding = requests.flatMap(request => request.attempts ?? []).filter(holdsTriageCapacity);
   return {
     kind: 'triage-requests',
-    capacity: { configured: capacity, investigating: holding.filter(attempt => !attempt.end).length, retained: holding.filter(attempt => attempt.end).length },
-    impediments: requests.flatMap(request => [...triageImpediments(request), ...authorshipImpediments(request)]),
+    capacity: triageCapacity(requests, capacity),
+    impediments: requests.flatMap(triageRequestImpediments),
     requests,
     queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id),
   };
@@ -287,11 +287,28 @@ function triageInvestigations(
     repositoryId: repository => poller.repositoryId(repository),
   });
 }
-/** Ticket #77: the ambiguous-authorship Impediment of a request, open only while it is still `publishing`. */
-const authorshipImpediments = (request: TriageRequest): TriageAuthorshipImpediment[] =>
-  request.state === 'publishing' && request.publication?.impediment
-    ? [{ ...request.publication.impediment, scope: 'triage-request', triage_request_id: request.triage_request_id }]
-    : [];
+/**
+ * Ticket #80 (spec #68 §10): the operator's views of the Triage requests and the retention of their local details. The limits are the
+ * Triage ports' when this Control investigates; the details follow the retention term of the Work details, on the same calendar.
+ */
+function triageOperator(
+  options: { triage?: TriagePorts | undefined; triageDetails?: TriageDetailPorts | undefined; execution?: ExecutionPorts | undefined },
+  session: Session,
+  polled: () => TriageSourcePollView[],
+  stopped: () => boolean,
+) {
+  const { triage } = options;
+  const now = triage?.clock ? () => triage.clock!.now() : (retentionClock(options).now ?? Date.now);
+  return createTriageOperator({
+    session,
+    limits: triage ? { capacity: triage.capacity, attempts: triage.attempts, investigationMinutes: triage.investigationMinutes } : null,
+    details: options.triageDetails,
+    retentionDays: options.execution?.cleanup?.retentionDays ?? defaultRetentionDays,
+    now,
+    polled,
+    stopped,
+  });
+}
 /** Tickets #77 and #78: the publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
 function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
   // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
@@ -326,6 +343,9 @@ export async function openControl(options: {
   execution?: ExecutionPorts;
   /** Spec #68 (ticket #75): what composes a Triager attempt. Absent: Triage requests are created and queued, never investigated. */
   triage?: TriagePorts;
+  /** Spec #68 §10 (ticket #80): the session files of the Triager attempts, for the explicit transcript command, usage and retention.
+   * Absent: the requests are still shown (metadata), no transcript is read and no detail is removed. */
+  triageDetails?: TriageDetailPorts;
 }): Promise<Control> {
   // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
   let dispatchReason: DispatchReason | null = 'RECONCILIATION_REQUIRED';
@@ -491,9 +511,17 @@ export async function openControl(options: {
   // restarts with requests in `publishing` completes them). Ticket #78 adds the Jira publisher here.
   const publications = triagePublications(options.access, state, poller !== undefined, () => stopped);
   // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
+  // Spec #68 §10 (ticket #80): the operator views of the requests and the retention of their transcripts and Verdict texts.
+  const operator = triageOperator(
+    options,
+    state,
+    () => pollingView().triage ?? [],
+    () => stopped,
+  );
   const afterTick = async () => {
     await investigations.pass().catch(() => {});
     await publications.pass().catch(() => {});
+    await operator.sweep().catch(() => {});
     await checks?.pass(tracking.signal).catch(() => {});
     await readiness?.pass(tracking.signal).catch(() => {});
     // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
@@ -1143,6 +1171,10 @@ export async function openControl(options: {
   });
   // Spec #68 (ticket #71): Triage requests are read beside the Work views, never through them.
   const inspectWorks = control.inspect;
-  control.inspect = query => (query.kind === 'triage-requests' ? triageRequestsView(state, options.triage?.capacity ?? null) : inspectWorks(query));
+  const inspectRecords: Control['inspect'] = query =>
+    query.kind === 'triage-requests' ? triageRequestsView(state, options.triage?.capacity ?? null) : inspectWorks(query);
+  control.inspect = query => operator.inspect(query, inspectRecords);
+  const acceptWorks = control.accept;
+  control.accept = input => operator.accept(input, acceptWorks);
   return control;
 }

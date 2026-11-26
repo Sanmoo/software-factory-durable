@@ -7,13 +7,16 @@ import { connect, protocolVersion, type Envelope } from '../protocol/index.js';
 import { pathToFileURL } from 'node:url';
 import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
+import { isTriageCommand, triageCommand, triageUsage } from './triage-cli.js';
 import { cleanupImages, imageCleanupExitCode, imageCleanupText } from './image-cleanup.js';
 import { releaseInstallationRoot } from './release.js';
 // Ticket 41: the blocked reference shown by `factory show`; its shape is shared, Control checks it is exactly the blocked one.
 import { blockedReferencePattern as blockedReference, blockedStartCodePattern, startRetryRemedies } from '../contracts/index.js';
 
 const usage =
-  'factory <setup|doctor|cleanup-images [<image name>] [--yes]|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
+  'factory <setup|doctor|cleanup-images [<image name>] [--yes]|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|' +
+  triageUsage +
+  '|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage =
   'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>[,<next id>...]] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
@@ -321,6 +324,8 @@ export async function main(input: string[]): Promise<number> {
   }
   const command = args[0];
   const installation = releaseInstallationRoot();
+  // Spec #68 §10 (ticket #80): `triages` and `triage ...` have their own command table (triage-cli.ts).
+  if (isTriageCommand(command)) return triageCommand(args, { installation, exchange });
   if (command === 'login') {
     // Strict explicit root only; never accept an auth file, provider, key, JSON
     // output, environment/profile default or silently canonicalize aliases.
@@ -410,7 +415,7 @@ export async function main(input: string[]): Promise<number> {
     }
   }
   let requestId: string | undefined;
-  const withReason = command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' || command === 'reevaluate-publication';
+  const withReason = reasonCommands.includes(command ?? '');
   const requested =
     command === 'request' ||
     command === 'show' ||

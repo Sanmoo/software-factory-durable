@@ -5,7 +5,7 @@ import { serveControl } from './serve.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
-import { composeProductionAccess, composeProductionExecution, composeProductionTriage, composeRuntimeInventory } from './composition.js';
+import { composeProductionAccess, composeProductionExecution, composeProductionTriage, composeRuntimeInventory, composeTriageDetails } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
 
 const refusalMessages: Record<'WORKER_PROFILE_UNSUPPORTED' | 'SANDBOX_CONFIGURATION_INVALID' | 'RELEASE_GUEST_ASSETS_ABSENT', string> = {
@@ -30,7 +30,7 @@ async function composePorts(
   if (!release.release) return { ports: {} };
   // #62: a release without guest assets is composed too; the composition refuses the adapter that needs them.
   const execution = await composeProductionExecution({ root, effective, ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}), github });
-  const triage = execution.status === 'refused' ? execution : await composeProductionTriage({ root, release: release.release.release, effective, github });
+  const triage = execution.status === 'refused' ? execution : await composeProductionTriage({ root, effective, github, release: release.release.release });
   if (triage.status === 'refused')
     return { refusal: { code: 'CONFIGURATION_UNSUPPORTED', reason: triage.code, roles: triage.roles, message: refusalMessages[triage.code] } };
   return {
@@ -128,6 +128,7 @@ async function own(root: string): Promise<number> {
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by (composeProductionAccess).
     access: composeProductionAccess({ root: paths.root, github, effective }),
     polling: { intervalSeconds: effective.pollingSeconds },
+    triageDetails: composeTriageDetails(paths.root),
     ...composed.ports,
   });
   const status = await control.inspect({ kind: 'status' });
