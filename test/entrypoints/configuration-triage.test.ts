@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfiguration } from '../../src/entrypoints/configuration.js';
@@ -182,7 +182,7 @@ test('MCP servers and MCP Profiles are registered by id; only the profiles `tria
   assert.deepEqual((await effective(v3({ rest: `${mcp}triager: {mcpProfiles: [investigar-erros]}\n` }))).triager.mcpProfiles, ['investigar-erros']);
 });
 
-test('a profile of an unknown server, an unknown active profile, stdio and legacy SSE are configuration errors', async () => {
+test('TR-34: a profile of an unknown server, an unknown active profile, stdio and legacy SSE are configuration errors', async () => {
   const refused = async (rest: string) => (await read(v3({ rest }))).configuration.valid;
   assert.deepEqual(await refusedPaths(v3({ rest: 'mcpProfiles:\n  - {id: p, server: ausente, tools: all}\n' })), [
     'CONFIGURATION_INVALID:mcpProfiles.0.server',
@@ -204,6 +204,24 @@ test('a profile of an unknown server, an unknown active profile, stdio and legac
     false,
     'no empty selection',
   );
+});
+
+test('`factory doctor` checks the token file of a registered MCP server as a credential reference, without reading it', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-triage-doctor-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await chmod(root, 0o700);
+  await writeFile(join(root, 'config.yaml'), v3({ rest: mcp }), { mode: 0o600 });
+  const check = async () => (await doctor(root, { triageHost: capable })).checks.filter(item => item.id.startsWith('credential-file:mcpServers.'));
+  // Only the server that names a token file is checked; the file does not exist yet.
+  assert.deepEqual(
+    (await check()).map(item => [item.id, item.status]),
+    [['credential-file:mcpServers.observabilidade', 'blocked']],
+  );
+  await mkdir(join(root, 'credentials'), { mode: 0o700 });
+  await writeFile(join(root, 'credentials', 'observabilidade-token'), 'x', { mode: 0o644 });
+  assert.equal((await check())[0]?.status, 'blocked', 'a token file others can read is refused');
+  await chmod(join(root, 'credentials', 'observabilidade-token'), 0o600);
+  assert.equal((await check())[0]?.status, 'ok');
 });
 
 test('TR-55: a schema 1 or 2 config.yaml stays valid under this release with Triage off, and is never edited', async () => {

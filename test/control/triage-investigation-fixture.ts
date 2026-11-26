@@ -12,7 +12,7 @@ import type { Control, TicketSource, TriagePorts, TriageRequest, TriageRequestsV
 import { openStore } from '../../src/control/durable/store.js';
 import { readTriageVerdictText } from '../../src/control/durable/triage-requests.js';
 import { createInvestigationClones, type InvestigationAgent } from '../../src/sandbox/index.js';
-import { createTriager, runTriagerAgent } from '../../src/workers/index.js';
+import { createTriager, runTriagerAgent, type McpRegistration } from '../../src/workers/index.js';
 import { until } from '../runner/budget.js';
 import { createInProcessInvestigationEnvironment } from '../sandbox/investigation-in-process.js';
 import { githubDoubles, manualClock, scope, type Remote } from './doubles.js';
@@ -112,6 +112,10 @@ export async function triageWorld(
     sources: TicketSource[];
     script: ModelTurn[];
     ports?: Partial<TriagePorts>;
+    /** Spec §7 (ticket #79): the registered MCP servers and Profiles, and the active ones. */
+    mcp?: McpRegistration;
+    /** Private files written under `<root>/credentials` before the Control starts (name -> content). */
+    credentials?: Record<string, string>;
     /** Wraps the in-process environment the Control uses (to inject what the Host would observe). */
     environment?: (port: TriagePorts['environment']) => TriagePorts['environment'];
   },
@@ -121,6 +125,8 @@ export async function triageWorld(
   const root = join(dir, 'root');
   await mkdir(root, { mode: 0o700 });
   await mkdir(join(dir, 'e'), { mode: 0o700 });
+  await mkdir(join(root, 'credentials'), { mode: 0o700 });
+  for (const [name, content] of Object.entries(options.credentials ?? {})) await writeFile(join(root, 'credentials', name), content, { mode: 0o600 });
   // The upstream every candidate is fetched from: two commits on `main`, so "with history" is observable.
   const upstream = join(dir, 'upstream');
   await mkdir(upstream);
@@ -135,6 +141,8 @@ export async function triageWorld(
   const script = [...options.script];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    // Only the model provider is doubled here: a local MCP source of the test is reached for real.
+    if (new URL(input instanceof Request ? input.url : input).hostname === '127.0.0.1') return originalFetch(input, init);
     const body = input instanceof Request ? await input.text() : String(init?.body);
     bodies.push(body);
     const turn = script.shift()?.(body) ?? 'The scripted provider has no further turn.';
@@ -168,6 +176,7 @@ export async function triageWorld(
     root,
     profile,
     skillPack: 'factory-skills-v13',
+    ...(options.mcp ? { mcp: options.mcp } : {}),
     agent: bootstrap => ({ executable: process.execPath, argv: [bootstrap], env: { PATH: '/usr/bin:/bin' } }),
   });
   const fetched: string[] = [];

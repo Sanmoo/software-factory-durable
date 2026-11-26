@@ -2915,11 +2915,15 @@ export type TriageAttempt = {
   skillPack: { id: string; version: string; manifestSha256: string } | null;
   /** Candidate repositories cloned for this attempt, with the commit read. */
   clones: { repository: string; commit: string; at: string }[];
+  /** Ticket #79: ids of the MCP Profiles active in the attempt (absent until the Triager was activated, and in older records). */
+  mcpProfiles?: string[];
   /**
    * How the attempt ended: `code` (`VERDICT_RECORDED` or why there is none), what the environment answered to the stop, and the session
    * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
+   * `toolCalls` (ticket #79): calls per session tool as the session reported them, an MCP tool as `mcp__<server>__<tool>`; null when the
+   * session ended without reporting. Names and counts only: never arguments or results.
    */
-  end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null } | null;
+  end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null; toolCalls?: Record<string, number> | null } | null;
 };
 /** Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. */
 export type TriageVerdictRecord = {
@@ -2958,8 +2962,16 @@ export type TriagePorts = {
     }): Promise<{
       agent: InvestigationAgent;
       skillPack: { id: string; version: string; manifestSha256: string };
+      /** Ids of the MCP Profiles active in the attempt. */
+      mcpProfiles?: string[];
       completed: Promise<
-        | { status: 'completed' | 'interrupted'; concluded: boolean; transcript: string | null; closedBy: 'requests' | 'tools' | 'provider' | null }
+        | {
+            status: 'completed' | 'interrupted';
+            concluded: boolean;
+            transcript: string | null;
+            closedBy: 'requests' | 'tools' | 'provider' | null;
+            toolCalls?: Record<string, number>;
+          }
         | { status: 'failure'; code: string }
       >;
       close(): Promise<void>;
