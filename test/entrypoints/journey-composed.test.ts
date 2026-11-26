@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { until } from '../runner/budget.js';
@@ -14,7 +13,7 @@ import type { ReviewOpinion } from '../../src/contracts/index.js';
 import { builderToolNames, type BuilderDirective, type HandoffEvent, type Invocation, type WorkerQuestion } from '../../src/workers/index.js';
 import { manualClock } from '../control/doubles.js';
 import { gate, sessionRef, summary } from '../control/publication-doubles.js';
-import { githubWorld, issue, worldScope } from './github-world-fixture.js';
+import { builderGh, githubWorld, issue, worldScope } from './github-world-fixture.js';
 
 // Ticket 18 composed level (I with substituted VM/model boundaries): ONE owner run of the PRODUCTION composition — `composeProductionAccess`
 // (the owner's IssueTracker/CodeRepository/operators/App identity) and `composeProductionExecution` (release profile, derived skill pack,
@@ -38,33 +37,6 @@ const effective = {
   concurrency: 1,
   sandbox: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' },
 };
-
-function builderGh(executable: string, token: string, endpoint: string, body: object): Promise<number> {
-  return new Promise(resolve => {
-    const child = execFile(
-      executable,
-      [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        '--include',
-        '-H',
-        'Accept: application/vnd.github+json',
-        '-H',
-        'X-GitHub-Api-Version: 2026-03-10',
-        '--input',
-        '-',
-        '--',
-        endpoint,
-      ],
-      { env: { PATH: process.env.PATH ?? '', GH_TOKEN: token }, encoding: 'utf8' },
-      (_error, stdout) => resolve(Number(/^HTTP\/[\d.]+ (\d{3})/.exec(stdout)?.[1] ?? 0)),
-    );
-    child.stdin?.end(JSON.stringify(body));
-  });
-}
 
 /** Scripted Builder (three activations) and reviewers; Sandbox lifecycle and own-environment removal. Never a VM, worker process or model. */
 function journeyDoubles(executable: string) {

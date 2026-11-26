@@ -4,7 +4,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -586,7 +586,7 @@ process.exit(result.status ?? 1);
   await writeFile(
     join(root, 'flock'),
     `#!${process.execPath}
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 const args=process.argv.slice(2); args.splice(7,0,'--import',${JSON.stringify(preload)});
 const child=spawn('/usr/bin/flock',args,{stdio:'inherit'});
 process.on('SIGTERM',()=>child.kill('SIGTERM')); process.on('SIGINT',()=>child.kill('SIGINT'));
@@ -667,4 +667,32 @@ async function underWorldLock(lock: string, critical: () => void): Promise<void>
     holder.stdin.end();
     await exited;
   }
+}
+
+/** One write of a Builder through the world's `gh`, with the grant delivered to it (a ref or a pull request of its publication): the HTTP status. */
+export function builderGh(executable: string, token: string, endpoint: string, body: object): Promise<number> {
+  return new Promise(resolve => {
+    const child = execFile(
+      executable,
+      [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'POST',
+        '--include',
+        '-H',
+        'Accept: application/vnd.github+json',
+        '-H',
+        'X-GitHub-Api-Version: 2026-03-10',
+        '--input',
+        '-',
+        '--',
+        endpoint,
+      ],
+      { env: { PATH: process.env.PATH ?? '', GH_TOKEN: token }, encoding: 'utf8' },
+      (_error, stdout) => resolve(Number(/^HTTP\/[\d.]+ (\d{3})/.exec(stdout)?.[1] ?? 0)),
+    );
+    child.stdin?.end(JSON.stringify(body));
+  });
 }
