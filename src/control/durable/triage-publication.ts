@@ -341,21 +341,19 @@ export function createTriagePublications(deps: {
   }
   /**
    * The operator's `triage complete` (spec §10, ticket #81), to be called inside `exclusive`. The Impediment is validated twice: its
-   * exact reference against the record, then against a fresh read of the Ticket, which must still show the same ambiguous effects
-   * (otherwise the tracker changed since the operator read it: the read is recorded as any pass would, with its new Impediment if any,
-   * and the command is refused). Then those effects, and only those, are taken as the Factory's and the publication goes on under
-   * every other rule. It does not read the pause: the command refuses a paused installation first, with its own code.
+   * exact reference against the record, then against a fresh read of the Ticket, which must still show the same ambiguous effects.
+   * Otherwise the reference is out of date (the tracker changed since the operator read it): the command is refused before anything
+   * is written or recorded, the Impediment stays, and the next pass acts on the Ticket as it is. Then those effects, and only those,
+   * are taken as the Factory's and the publication goes on under every other rule. It does not read the pause: the command refuses a
+   * paused installation first, with its own code.
    */
   async function complete(triage_request_id: string, ref: string): Promise<Completion> {
     const found = await impeded(triage_request_id, ref);
     if (found.kind !== 'impeded') return found;
     const { turn, impediment, expected, facts } = found;
-    const written = new Set<number>();
     const plain = stepOf(turn, facts, []);
-    if (plain.next.action !== 'impediment' || !sameJson(plain.next.effects, impediment.effects)) {
-      if (await act(turn, plain, expected, written)) await drive(triage_request_id, written);
-      return refused('TRIAGE_IMPEDIMENT_CHANGED');
-    }
+    if (plain.next.action !== 'impediment' || !sameJson(plain.next.effects, impediment.effects)) return refused('TRIAGE_IMPEDIMENT_CHANGED');
+    const written = new Set<number>();
     const owned = stepOf(turn, facts, impediment.effects);
     const refusal = completionRefusal(turn.intended, owned, facts);
     if (refusal) return refused(refusal);

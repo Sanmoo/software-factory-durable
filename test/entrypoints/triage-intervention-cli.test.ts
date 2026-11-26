@@ -402,15 +402,25 @@ test('TR-50 (GitHub): a state-label conflict refuses `triage complete`, writes n
   );
 });
 
-test('TR-50 (GitHub): a tracker that changed since the Impediment was shown refuses `triage complete`; nothing is taken as the Factory’s', async t => {
-  const { issue, id, ref, cli } = await impeded(t);
+test('TR-50 (GitHub): a tracker that changed since the Impediment was shown refuses `triage complete` before any write; the Impediment is kept', async t => {
+  const { w, issue, id, ref, cli } = await impeded(t);
   // Somebody removed the label whose author was ambiguous: the Impediment the operator read no longer describes the Ticket.
   removeLabel(issue, 'needs-info');
+  const before = { writes: triageWrites(w), labels: names(issue) };
   const refused = await cli('triage', 'complete', id, '--impediment', ref);
-  assert.deepEqual([refused.code, receiptOf(refused).outcome, receiptOf(refused).reason], [2, 'not-applied', 'TRIAGE_IMPEDIMENT_CHANGED'], refused.stdout);
-  assert.notEqual(receiptOf(refused).impediment, ref, 'the stale Impediment is gone');
+  assert.deepEqual(summary(refused), [2, 'not-applied', 'TRIAGE_IMPEDIMENT_CHANGED', 'publishing', null], refused.stdout + refused.stderr);
+  assert.deepEqual({ writes: triageWrites(w), labels: names(issue) }, before, 'the refused command wrote nothing to the Ticket');
+  assert.equal(receiptOf(refused).impediment, ref, 'the Impediment stays');
   const detail = await detailOf(cli, id);
-  assert.ok(!detail.request.impediments.includes(ref));
+  assert.deepEqual([detail.request.state, detail.request.impediments], ['publishing', [ref]]);
+  assert.deepEqual(
+    detail.request.effects.map(effect => effect.status),
+    ['confirmed', 'ambiguous-authorship', 'pending'],
+    'nothing was taken as the Factory’s',
+  );
+  // The publication itself goes on from the Ticket as it is now, at its next pass and under its own rules.
+  await w.poll();
+  assert.ok(!(await detailOf(cli, id)).request.impediments.includes(ref), 'the pass, not the refused command, replaced the stale Impediment');
 });
 
 test('TR-50 (Jira): `triage complete` takes the edit of ambiguous authorship as the Factory’s and concludes the Card’s request; paused, it is refused', async t => {

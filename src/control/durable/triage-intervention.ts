@@ -83,7 +83,7 @@ const notApplied: Record<string, (id: string) => string> = {
   TRIAGE_COMPLETE_INSTALLATION_PAUSED: () => steps.paused,
   TRIAGE_IMPEDIMENT_REFERENCE_MISMATCH: id => `This is not the open Impediment of the request; read its reference again: factory triage ${id}.`,
   TRIAGE_IMPEDIMENT_CHANGED: id =>
-    `The Ticket changed since this Impediment was shown; nothing was taken as the Factory's. Read the request again: factory triage ${id}.`,
+    `The Ticket changed since this Impediment was shown; nothing was taken as the Factory's and nothing was written. The next poll acts on the Ticket as it is now; then read the request again: factory triage ${id}.`,
 };
 const conflictStep = (id: string) =>
   `The Ticket no longer allows the effects still to write, so nothing was written and the Impediment stays. Leave a single state label and repeat, or end the request: factory triage cancel ${id}.`;
