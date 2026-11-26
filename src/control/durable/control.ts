@@ -312,7 +312,8 @@ function triageOperator(
 function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
   // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
   if (!access || !polling || !access.sources?.some(source => source.triage)) return { pass: async () => {} };
-  return createTriagePublications({ session, stopped, publishers: { github: githubTriagePublisher(access) } });
+  const paused = async () => (await readInstallation(session)).paused;
+  return createTriagePublications({ session, stopped, paused, publishers: { github: githubTriagePublisher(access) } });
 }
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;

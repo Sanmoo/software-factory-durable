@@ -6,7 +6,15 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { Diagnostic } from '../../contracts/index.js';
 import { factorySkillPackIds } from '../../contracts/index.js';
-import { controlStorageMigrationPath, controlStorageMigrationPathId, inspectStorage, migrateStorage, type StorageInspection } from '../../control/index.js';
+import {
+  controlStorageMigrationPath,
+  controlStorageMigrationPathId,
+  inspectStorage,
+  migrateStorage,
+  triageUnsettled,
+  type StorageInspection,
+  type TriageSettlement,
+} from '../../control/index.js';
 import { protocolVersion } from '../../protocol/index.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { environmentDependencies } from '../../sandbox/index.js';
@@ -101,6 +109,8 @@ type StorageSummary = {
   preserved: unknown;
   stateDigest: string | null;
   activity: unknown;
+  /** Spec #68 §11: the Triage requests by situation, the Triage capacity held and the attempts holding it. Metadata only. */
+  triage: TriageSettlement | null;
   lifecycle: unknown;
   migrations: unknown[];
 };
@@ -204,6 +214,7 @@ function summary(inspection: StorageInspection): StorageSummary {
       preserved: null,
       stateDigest: null,
       activity: null,
+      triage: null,
       lifecycle: null,
       migrations: [],
     };
@@ -216,6 +227,7 @@ function summary(inspection: StorageInspection): StorageSummary {
     preserved: inspection.preserved,
     stateDigest: inspection.stateDigest,
     activity: inspection.activity,
+    triage: inspection.triage,
     lifecycle: inspection.installation?.lifecycle ?? null,
     migrations: inspection.installation?.migrations ?? [],
   };
@@ -256,6 +268,24 @@ async function environmentsCheck(root: string, targetAssets: UpgradeTarget['gues
       ? unchanged
       : `Environment(s) ${incompatible.join(', ')} depend on other guest assets/profile or are unreadable; disks are never migrated.`,
     'Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them.',
+  );
+}
+
+/**
+ * Spec #68 §11 (ticket #82): the Triage requests of the storage. An investigation under way, a stop not confirmed and a retained unit of
+ * Triage capacity block, as an unsettled Execution and a held Slot do, until a reconciling boot settles them. A queued request and a
+ * recorded Verdict whose publication is incomplete are information: the new release takes them up from the same records.
+ */
+function triageCheck(triage: TriageSettlement): Diagnostic {
+  const { requests, capacity } = triage;
+  const waiting = `${requests.queued} queued, ${requests.suspended} suspended, ${requests.publishing} with a recorded Verdict still to publish, ${requests.ended} ended`;
+  return check(
+    'upgrade:triage',
+    !triageUnsettled(triage),
+    triageUnsettled(triage)
+      ? `Triage investigations not settled: ${requests.investigating} under way, ${requests.stopUnconfirmed} with a stop not confirmed, ${capacity.retained} unit(s) of Triage capacity retained (attempts ${triage.unsettled.join(', ') || 'unknown'}). Other Triage requests: ${waiting}.`
+      : `Triage requests: ${waiting}; no investigation is unsettled. The new release investigates the queued ones and completes the pending publications from the same records.`,
+    'Start the current release, let its boot reconcile the interrupted investigations (each one stopped, counted as spent, its cessation confirmed), keep it paused and stop it cleanly; a unit that stays retained is shown by `factory triages` with its own next step.',
   );
 }
 
@@ -404,6 +434,7 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
         'Start the current release, let its boot reconcile the interrupted activity (cessation confirmed, Slots released), keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop.',
       ),
     );
+    checks.push(triageCheck(inspection.triage));
   } else {
     checks.push(check('upgrade:storage', true, 'No Control storage yet: nothing to migrate or preserve.', 'Nothing to do.'));
   }

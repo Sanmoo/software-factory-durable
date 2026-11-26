@@ -537,6 +537,8 @@ export function triagerAgentStart(bootstrap: string): InvestigationAgent {
 export const composeTriageDetails = (root: string): TriageDetailPorts => createTriagerDetails(root);
 export async function composeProductionTriage(input: {
   root: string;
+  /** Ticket #82: the verified running release, recorded on every attempt it starts. */
+  release: string;
   effective: {
     triage: TriageAvailability;
     triager: TriagerConfiguration;
@@ -572,6 +574,7 @@ export async function composeProductionTriage(input: {
   return {
     status: 'composed',
     ports: {
+      release: input.release,
       environment: createInvestigationEnvironment({ root: investigationEnvironmentRoot(root), factoryRoot: root }),
       limits: { ...effective.triager.environment },
       investigationMinutes: effective.triager.investigationMinutes,
