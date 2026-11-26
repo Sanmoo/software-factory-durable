@@ -13,6 +13,7 @@ import {
   type TriageCommentInput,
 } from '../rules/triage-publication.js';
 import type { TriageRoles } from '../rules/triage.js';
+import { completionRefusal } from '../rules/triage-intervention.js';
 import { intendedChanges, type TriageIntendedEffect } from '../rules/triage-verdict.js';
 import { indexedWork } from './admission.js';
 import type { Session } from './store.js';
@@ -77,15 +78,18 @@ export function createTriagePublications(deps: {
 }) {
   const { session } = deps;
 
-  /** Records the effects and the publication of a request still `publishing`; an unchanged record costs no commit. */
+  /**
+   * Records the effects and the publication of a request still `publishing`; an unchanged record costs no commit. `false`: the request
+   * left `publishing` meanwhile (the operator cancelled it) and nothing was recorded.
+   */
   async function record(
     request: TriageRequest,
     effects: readonly TriageIntendedEffect[],
     publication: TriagePublication,
     event?: { event: string; code?: string },
-  ) {
-    if (!event && sameJson(request.intended, effects) && sameJson(request.publication ?? empty, publication)) return;
-    await updatePublishingRequest(session, request.triage_request_id, current => {
+  ): Promise<boolean> {
+    if (!event && sameJson(request.intended, effects) && sameJson(request.publication ?? empty, publication)) return true;
+    return updatePublishingRequest(session, request.triage_request_id, current => {
       current.intended = structuredClone(effects) as TriageIntendedEffect[];
       current.publication = structuredClone(publication);
       if (event) current.timeline.push({ at: new Date().toISOString(), ...event });
@@ -224,7 +228,8 @@ export function createTriagePublications(deps: {
     );
     const started = request.publication?.startedAt ?? null;
     const publication: TriagePublication = { mode: next.mode, startedAt: started ?? at, impediment: null, hold: null };
-    await record(request, effects, publication, started ? undefined : { event: 'publication-started', code: next.mode });
+    // A request that is no longer `publishing` (cancelled meanwhile) gets no write: its attempt was not recorded.
+    if (!(await record(request, effects, publication, started ? undefined : { event: 'publication-started', code: next.mode }))) return 'sent';
     const result = await publisher.write(request, next.group, comment).catch(() => ({ kind: 'unknown' as const, code: 'TRIAGE_WRITE_FAILED' }));
     if (result.kind === 'failed' && result.fallback) {
       await fallBack(turn, result.fallback, { observed: result.code });
@@ -243,25 +248,28 @@ export function createTriagePublications(deps: {
     const roles = publisher?.roles(request);
     return publisher && roles ? { request, intended: request.intended, publisher, roles, publication: request.publication ?? empty } : undefined;
   }
-  /** A fresh read of the Ticket and the rule's next move; a read that did not observe holds the pass and decides nothing. */
-  async function decide(turn: Turn, expected: string, ambiguousAsOwn: boolean): Promise<PublicationStep | undefined> {
+  /** A fresh read of the Ticket, with the local fact of a Work; a read that did not observe holds the pass (undefined). */
+  async function observe(turn: Turn, expected: string): Promise<PublicationFacts | undefined> {
     const { request, publisher, publication } = turn;
     const observed = await publisher.observe(request, expected).catch(() => ({ kind: 'unavailable' as const, code: 'POLLING_QUERY_FAILED' }));
     if (observed.kind !== 'observed') {
       await held(request, turn.intended, publication, observed.code);
       return undefined;
     }
-    return publicationStep({
+    return { ...observed.facts, hasWork: (await indexedWork(session, request.ticket)) !== undefined };
+  }
+  /** The rule's next move from one read of the Ticket. */
+  const stepOf = (turn: Turn, facts: PublicationFacts, ambiguousAsOwn: readonly number[]): PublicationStep =>
+    publicationStep({
       roles: turn.roles,
-      caseSensitive: publisher.caseSensitive,
-      mode: publication.mode,
+      caseSensitive: turn.publisher.caseSensitive,
+      mode: turn.publication.mode,
       intended: turn.intended,
-      facts: { ...observed.facts, hasWork: (await indexedWork(session, request.ticket)) !== undefined },
-      groups: publisher.groups(turn.intended),
+      facts,
+      groups: turn.publisher.groups(turn.intended),
       at: new Date().toISOString(),
       ambiguousAsOwn,
     });
-  }
   /** Carries out the move. `true`: a unit was written and the Ticket must be read again; `false`: this pass can do no more. */
   async function act(turn: Turn, step: PublicationStep, expected: string, written: Set<number>): Promise<boolean> {
     const { request, publication } = turn;
@@ -289,7 +297,7 @@ export function createTriagePublications(deps: {
   }
 
   /** One fresh read of the request and its single next move. `true`: something changed and the request must be read again. */
-  async function advance(triage_request_id: string, ambiguousAsOwn: boolean, written: Set<number>): Promise<boolean> {
+  async function advance(triage_request_id: string, written: Set<number>): Promise<boolean> {
     const turn = await turnOf(triage_request_id);
     if (!turn) return false;
     const expected = await commentOf(turn, turn.publication.mode ?? 'verdict');
@@ -297,15 +305,62 @@ export function createTriagePublications(deps: {
       await held(turn.request, turn.intended, turn.publication, expected.code);
       return false;
     }
-    const step = await decide(turn, expected, ambiguousAsOwn);
-    if (!step) return false;
+    const facts = await observe(turn, expected);
+    if (!facts) return false;
+    const step = stepOf(turn, facts, []);
     const route = await routed(turn, step);
     return route === 'same' ? act(turn, step, expected, written) : route === 'changed';
   }
   /** One request, until it leaves `publishing` or a pass can do no more: at most one write per unit and per pass. */
-  async function publish(triage_request_id: string, options: { ambiguousAsOwn?: boolean } = {}) {
+  async function drive(triage_request_id: string, written = new Set<number>()) {
+    while (!deps.stopped() && (await advance(triage_request_id, written)));
+  }
+
+  // One request is driven at a time, and the operator's commands take the same turn: a cancellation never lands between the decision
+  // of a write and its sending, and `triage complete` never races the pass on the same Ticket.
+  let turns: Promise<unknown> = Promise.resolve();
+  function exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const result = turns.then(work, work);
+    turns = result.catch(() => {});
+    return result;
+  }
+
+  type Completion = { kind: 'completed' } | { kind: 'refused'; code: string };
+  const refused = (code: string): Completion & { kind: 'refused' } => ({ kind: 'refused', code });
+  /** The publication of a request stopped by the Impediment `ref`, with the comment it expects and a fresh read of its Ticket. */
+  async function impeded(triage_request_id: string, ref: string) {
+    const turn = await turnOf(triage_request_id);
+    if (!turn) return refused('TRIAGE_REQUEST_NOT_PUBLISHING');
+    const { impediment, mode } = turn.publication;
+    if (!impediment) return refused('TRIAGE_IMPEDIMENT_NOT_OPEN');
+    if (impediment.ref !== ref) return refused('TRIAGE_IMPEDIMENT_REFERENCE_MISMATCH');
+    const expected = await commentOf(turn, mode ?? 'verdict');
+    if (typeof expected !== 'string') return refused(expected.code);
+    const facts = await observe(turn, expected);
+    return facts ? { kind: 'impeded' as const, turn, impediment, expected, facts } : refused('TRIAGE_TICKET_NOT_OBSERVED');
+  }
+  /**
+   * The operator's `triage complete` (spec §10, ticket #81), to be called inside `exclusive`. The Impediment is validated twice: its
+   * exact reference against the record, then against a fresh read of the Ticket, which must still show the same ambiguous effects
+   * (otherwise the tracker changed since the operator read it: the read is recorded as any pass would, with its new Impediment if any,
+   * and the command is refused). Then those effects, and only those, are taken as the Factory's and the publication goes on under
+   * every other rule. It does not read the pause: the command refuses a paused installation first, with its own code.
+   */
+  async function complete(triage_request_id: string, ref: string): Promise<Completion> {
+    const found = await impeded(triage_request_id, ref);
+    if (found.kind !== 'impeded') return found;
+    const { turn, impediment, expected, facts } = found;
     const written = new Set<number>();
-    while (!deps.stopped() && (await advance(triage_request_id, options.ambiguousAsOwn ?? false, written)));
+    const plain = stepOf(turn, facts, []);
+    if (plain.next.action !== 'impediment' || !sameJson(plain.next.effects, impediment.effects)) {
+      if (await act(turn, plain, expected, written)) await drive(triage_request_id, written);
+      return refused('TRIAGE_IMPEDIMENT_CHANGED');
+    }
+    const owned = stepOf(turn, facts, impediment.effects);
+    const refusal = completionRefusal(turn.intended, owned, facts);
+    if (refusal) return refused(refusal);
+    if (await act(turn, owned, expected, written)) await drive(triage_request_id, written);
+    return { kind: 'completed' };
   }
 
   return {
@@ -317,15 +372,11 @@ export function createTriagePublications(deps: {
     async pass() {
       for (const request of await liveTriageRequests(session)) {
         if (deps.stopped() || (await deps.paused())) return;
-        if (request.state === 'publishing') await publish(request.triage_request_id).catch(() => {});
+        if (request.state === 'publishing') await exclusive(() => drive(request.triage_request_id)).catch(() => {});
       }
     },
-    /**
-     * Drives one request now. `ambiguousAsOwn` is the operator's `triage complete` (ticket #81): effects without an attributable author
-     * are taken as the Factory's, under every other rule of the publication. It does not read the pause: the command that calls it
-     * refuses a paused installation first, with its own code.
-     */
-    publish,
+    complete,
+    exclusive,
   };
 }
 export type TriagePublications = ReturnType<typeof createTriagePublications>;

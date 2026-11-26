@@ -103,6 +103,9 @@ export { resolveTriageRequest, triageDetailProtections, triageDetailsView, triag
 export type {
   TriageCleanupPlan,
   TriageCleanupReceipt,
+  TriageAttestation,
+  TriageInterventionReceipt,
+  TriageReceiptEffect,
   TriageDetailPorts,
   TriageDetails,
   TriageDetailView,

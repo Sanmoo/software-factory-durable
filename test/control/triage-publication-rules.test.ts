@@ -25,7 +25,7 @@ const step = (
   effects: TriageIntendedEffect[],
   facts: Partial<PublicationFacts> & { effects: EffectFact[] },
   mode: 'verdict' | 'informative' | null = 'verdict',
-  ambiguousAsOwn = false,
+  ambiguousAsOwn: number[] = [],
 ) =>
   publicationStep({
     roles,
@@ -114,9 +114,11 @@ test('TR-20: an attempted effect present without an attributable author stops th
   assert.deepEqual(result.next, { action: 'impediment', effects: [1] });
   assert.deepEqual(statuses(result.effects), ['confirmed', 'ambiguous-authorship', 'pending']);
   // The operator's completion (#81) takes the ambiguous effect as the Factory's and goes on.
-  const completed = step(result.effects, facts, 'verdict', true);
+  const completed = step(result.effects, facts, 'verdict', [1]);
   assert.deepEqual(completed.next, { action: 'write', mode: 'verdict', group: [2] });
   assert.deepEqual(statuses(completed.effects), ['confirmed', 'confirmed', 'pending']);
+  // Only the effects the operator named: another one found without an author still stops the publication.
+  assert.deepEqual(step(result.effects, facts, 'verdict', [2]).next, { action: 'impediment', effects: [1] });
 });
 
 test('TR-21: a human change between two writes marks every remaining effect as no longer allowed', () => {

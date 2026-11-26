@@ -11,6 +11,7 @@ import {
   triageStarts,
   triageTimeExhausted,
 } from '../rules/triage.js';
+import { cancelledByOperator } from '../rules/triage-intervention.js';
 import { triageActivation } from '../rules/triage-prompt.js';
 import { intendedChanges, validateVerdict } from '../rules/triage-verdict.js';
 import type { Session } from './store.js';
@@ -72,6 +73,8 @@ export function createTriageInvestigations(deps: {
   const { session, ports } = deps;
   /** Attempts whose session this process is running (memory only); every other open attempt belongs to an earlier process. */
   const running = new Map<string, Promise<void>>();
+  /** How the operator's cancellation interrupts each of them (ticket #81). */
+  const halts = new Map<string, () => Promise<void>>();
   const clock = ports.clock ?? systemClock;
   const budget = { investigationMs: ports.investigationMinutes * 60_000, attempts: ports.attempts };
   const stamp = () => new Date(clock.now()).toISOString();
@@ -202,15 +205,29 @@ export function createTriageInvestigations(deps: {
     };
   }
   type Deadline = ReturnType<typeof investigationDeadline>;
+  /** Why a running attempt is being stopped from outside its session, if it is: the clock ran out, or the operator cancelled the request. */
+  type Halt = { due(): boolean; code(): string };
+  /**
+   * The two outside stops of one running attempt: its clock, and the operator's cancellation of its request (ticket #81), which stops
+   * the environment the same way. A stop asked while the environment was starting named no invocation and is asked again once it is open.
+   */
+  function attemptHalt(attempt: string, deadline: Deadline, stop: () => Promise<unknown>): Halt {
+    let cancelled = false;
+    halts.set(attempt, async () => {
+      cancelled = true;
+      await stop();
+    });
+    return { due: () => cancelled || deadline.due(), code: () => (cancelled ? cancelledByOperator : triageTimeExhausted) };
+  }
 
   /** Opens the environment with the attempt's agent and records its invocation. A stopping controller or a spent clock opens none. */
-  async function open(state: Running, intent: InvestigationRecord, activation: Activation, deadline: Deadline) {
+  async function open(state: Running, intent: InvestigationRecord, activation: Activation, deadline: Halt) {
     const { skillPack, mcpProfiles = [] } = activation;
     const id = state.request.triage_request_id;
     await updateTriageAttempt(session, id, state.attempt, attempt => void Object.assign(attempt, { skillPack, mcpProfiles }));
     // A controller that is stopping starts no environment: the attempt ends here, spent, with nothing to stop.
     if (deps.stopped()) return { status: 'failure', code: 'CONTROLLER_STOPPED' } as const;
-    if (deadline.due()) return { status: 'failure', code: triageTimeExhausted } as const;
+    if (deadline.due()) return { status: 'failure', code: deadline.code() } as const;
     const opened = await ports.environment.open(intent, { limits: ports.limits, agent: activation.agent });
     if (opened.status === 'failure') return opened;
     state.clones = opened.clones;
@@ -219,12 +236,12 @@ export function createTriageInvestigations(deps: {
   }
 
   /** Waits for the session of an open environment and tells how the attempt ended: the Verdict, the clock, or what the session reported. */
-  async function sessionEnd(state: Running, record: InvestigationRecord, activation: Activation, deadline: Deadline) {
+  async function sessionEnd(state: Running, record: InvestigationRecord, activation: Activation, deadline: Halt) {
     // The clock ran out while the environment was starting: the stop asked then named no invocation, so it is asked again.
     if (deadline.due()) await ports.environment.stop(record).catch(() => unconfirmed);
     const completion = await Promise.race([activation.completed, agentGone(record)]);
     const recorded = (await readTriageRequest(session, state.request.triage_request_id))?.verdict?.attempt === state.attempt;
-    const timedOut = deadline.due() ? triageTimeExhausted : attemptEndCode(completion);
+    const timedOut = deadline.due() ? deadline.code() : attemptEndCode(completion);
     return { code: recorded ? 'VERDICT_RECORDED' : timedOut, ...reportedBy(completion) };
   }
 
@@ -236,16 +253,18 @@ export function createTriageInvestigations(deps: {
     let record = intent;
     let activation: Activation | undefined;
     let end: AttemptEnd = { code: 'TRIAGE_ATTEMPT_FAILED', transcript: null };
-    const deadline = investigationDeadline(remainingMs, () => ports.environment.stop(record).catch(() => unconfirmed));
+    const stop = () => ports.environment.stop(record).catch(() => unconfirmed);
+    const deadline = investigationDeadline(remainingMs, stop);
+    const halt = attemptHalt(state.attempt, deadline, stop);
     try {
       activation = await ports.triager.activate({
         attempt: state.attempt,
         activation: triageActivation({ ...state.subject, remainingMs }),
         host: { requestClone: repository => requestClone(state, repository), conclude: verdict => conclude(state, verdict) },
       });
-      const opened = await open(state, intent, activation, deadline);
+      const opened = await open(state, intent, activation, halt);
       if (opened.status === 'success') record = opened.record;
-      end = opened.status === 'failure' ? { code: opened.code, transcript: null } : await sessionEnd(state, record, activation, deadline);
+      end = opened.status === 'failure' ? { code: opened.code, transcript: null } : await sessionEnd(state, record, activation, halt);
     } catch {
       /* `end` keeps the generic failure: the attempt is ended below whatever threw. */
     }
@@ -284,7 +303,10 @@ export function createTriageInvestigations(deps: {
       attempt,
       investigate(state, intent, balance.remainingMs)
         .catch(() => {})
-        .finally(() => running.delete(attempt)),
+        .finally(() => {
+          running.delete(attempt);
+          halts.delete(attempt);
+        }),
     );
   }
 
@@ -297,7 +319,8 @@ export function createTriageInvestigations(deps: {
     let changed = false;
     for (const request of requests)
       for (const attempt of request.attempts ?? []) {
-        if (running.has(attempt.attempt) || !holdsTriageCapacity(attempt)) continue;
+        // An attempt the operator attested as over (ticket #81) holds no unit, and its stop is still asked until the Host confirms it.
+        if (running.has(attempt.attempt) || attempt.end?.cessation.cessationConfirmed) continue;
         changed = true;
         if (attempt.end) await confirmStop(request.triage_request_id, attempt);
         else await endAttempt(request.triage_request_id, attempt.environment, { code: 'INVESTIGATION_INTERRUPTED', transcript: null });
@@ -326,6 +349,17 @@ export function createTriageInvestigations(deps: {
         for (const attempt of request.attempts ?? [])
           if (!attempt.end && running.has(attempt.attempt)) await ports.environment.stop(attempt.environment).catch(() => unconfirmed);
       await Promise.allSettled([...running.values()]);
+    },
+    /**
+     * The operator cancelled the request (ticket #81): its attempt running here is stopped, and ends as any other, with what the
+     * environment answers to the stop. Resolves once that attempt has ended; an attempt of another process is left to the next pass.
+     */
+    async interrupt(triage_request_id: string) {
+      const request = await readTriageRequest(session, triage_request_id);
+      for (const attempt of request?.attempts ?? []) {
+        await halts.get(attempt.attempt)?.();
+        await running.get(attempt.attempt);
+      }
     },
     /** Resolves when no attempt of this process is running (tests and the stop wait on it). */
     idle: () => Promise.allSettled([...running.values()]).then(() => undefined),

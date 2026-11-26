@@ -38,9 +38,9 @@ import {
   triageUsageTotal,
   type TriageViewFacts,
 } from '../rules/triage-operator.js';
-import { requests as acceptedRequests } from './admission.js';
 import { viewBudgetBytes } from './inspection.js';
 import type { Session } from './store.js';
+import { acceptOnce, isTriageIntervention } from './triage-intervention.js';
 import { readTriageRequest, readTriageRequests, readTriageVerdictText, ticketTriageRequests, triageRequests, triageVerdicts } from './triage-requests.js';
 
 // Spec #68 §10 (ticket #80): the operator's side of the Triage requests. Views (`triages`, `triage`, the sections of `status` and `usage`)
@@ -50,7 +50,6 @@ import { readTriageRequest, readTriageRequests, readTriageVerdictText, ticketTri
 
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 type CleanupInput = Extract<ControlInput, { operation: 'triage-cleanup-plan' | 'triage-cleanup-confirm' }>;
-type Refused = { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' | 'INVALID_COMMAND' };
 type Inspect = Control['inspect'];
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const cleanupSchema = z.discriminatedUnion('operation', [
@@ -100,6 +99,8 @@ export function createTriageOperator(deps: {
   /** The Triage rounds of the latest polling iteration, with their candidates. */
   polled(): TriageSourcePollView[];
   stopped(): boolean;
+  /** Ticket #81: `triage cancel | release | complete`. */
+  interventions: { accept(input: ControlInput): ReturnType<Control['accept']> };
 }) {
   const { session, details } = deps;
   const stamp = () => new Date(deps.now()).toISOString();
@@ -232,20 +233,7 @@ export function createTriageOperator(deps: {
     };
   }
 
-  /** Deduplicated acceptance: the same identity and content returns the recorded receipt; other content is a conflict. */
-  async function command(input: CleanupInput, decide: (tx: Tx) => Promise<TriageCleanupReceipt>): Promise<TriageCleanupReceipt | Refused> {
-    return session.commit(async tx => {
-      const accepted = await tx.doc(acceptedRequests, input.request_id, null);
-      if (accepted.input) {
-        if (JSON.stringify(accepted.input) !== JSON.stringify(input)) return { kind: 'refused' as const, code: 'REQUEST_ID_CONFLICT' as const };
-        return copy(accepted.receipt) as TriageCleanupReceipt;
-      }
-      const receipt = await decide(tx);
-      accepted.input = input;
-      accepted.receipt = receipt;
-      return copy(receipt);
-    }, BACKGROUND_CONTEXT);
-  }
+  const command = (input: CleanupInput, decide: (tx: Tx) => Promise<TriageCleanupReceipt>) => acceptOnce(session, input, decide);
   const receipt = (input: CleanupInput, outcome: TriageCleanupReceipt['outcome'], reason: string | null, plan: TriageCleanupPlan | null) => ({
     kind: 'durable' as const,
     request_id: input.request_id,
@@ -393,9 +381,14 @@ export function createTriageOperator(deps: {
       const triage = await usage(query, Math.max(8192, viewBudgetBytes - size(view)));
       return triage ? { ...(view as UsageView), triage } : view;
     },
-    /** The early removal commands; `inner` accepts every other operation. A confirmed plan is carried out once its receipt is recorded. */
+    /**
+     * The early removal commands and the interventions (ticket #81); `inner` accepts every other operation. A confirmed plan is carried
+     * out once its receipt is recorded.
+     */
     async accept(input: ControlInput, inner: Control['accept']): ReturnType<Control['accept']> {
-      if (!String((input as { operation?: unknown }).operation).startsWith('triage-cleanup-')) return inner(input);
+      const { operation } = input as { operation?: unknown };
+      if (isTriageIntervention(operation)) return deps.interventions.accept(input);
+      if (!String(operation).startsWith('triage-cleanup-')) return inner(input);
       const parsed = cleanupSchema.safeParse(input);
       if (!parsed.success) return { kind: 'refused', code: 'INVALID_COMMAND' };
       if (parsed.data.operation === 'triage-cleanup-plan') return acceptPlan(parsed.data);

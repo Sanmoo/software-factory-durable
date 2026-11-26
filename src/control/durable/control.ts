@@ -57,8 +57,9 @@ import { createPoller, systemClock } from './polling.js';
 import { triageCapacity, triageRequestImpediments } from '../rules/triage-operator.js';
 import { createTriageOperator } from './triage-operator.js';
 import { createTriageDiscovery } from './triage-discovery.js';
-import { createTriageInvestigations } from './triage-investigation.js';
-import { createTriagePublications } from './triage-publication.js';
+import { createTriageInvestigations, type TriageInvestigations } from './triage-investigation.js';
+import { createTriageInterventions } from './triage-intervention.js';
+import { createTriagePublications, type TriagePublications } from './triage-publication.js';
 import { githubTriagePublisher } from './triage-publication-github.js';
 import { jiraTriagePublisher } from './triage-publication-jira.js';
 import { readTriageRequests } from './triage-requests.js';
@@ -276,7 +277,7 @@ function triageInvestigations(
   session: Session,
   poller: { repositoryId(repository: string): number | undefined } | undefined,
   stopped: () => boolean,
-): Pick<ReturnType<typeof createTriageInvestigations>, 'pass' | 'stop'> {
+): Pick<TriageInvestigations, 'pass' | 'stop'> & Partial<Pick<TriageInvestigations, 'interrupt'>> {
   if (!options.triage || !options.access || !poller) return { pass: async () => {}, stop: async () => {} };
   return createTriageInvestigations({
     session,
@@ -296,6 +297,7 @@ function triageOperator(
   session: Session,
   polled: () => TriageSourcePollView[],
   stopped: () => boolean,
+  desks: { investigations: Partial<Pick<TriageInvestigations, 'interrupt'>>; publications: Partial<Pick<TriagePublications, 'complete' | 'exclusive'>> },
 ) {
   const { triage } = options;
   const now = triage?.clock ? () => triage.clock!.now() : (retentionClock(options).now ?? Date.now);
@@ -307,10 +309,17 @@ function triageOperator(
     now,
     polled,
     stopped,
+    // Ticket #81: the operator's interventions, over the desks this Control composed (a command says so when its desk is not there).
+    interventions: createTriageInterventions({ session, now, interrupt: desks.investigations.interrupt, publications: desks.publications, ports: triage }),
   });
 }
 /** Tickets #77 and #78: the publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
-function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
+function triagePublications(
+  access: AccessDependencies | undefined,
+  session: Session,
+  polling: boolean,
+  stopped: () => boolean,
+): Pick<TriagePublications, 'pass'> & Partial<TriagePublications> {
   // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
   if (!access || !polling || !access.sources?.some(source => source.triage)) return { pass: async () => {} };
   const paused = async () => (await readInstallation(session)).paused;
@@ -517,6 +526,7 @@ export async function openControl(options: {
     state,
     () => pollingView().triage ?? [],
     () => stopped,
+    { investigations, publications },
   );
   const afterTick = async () => {
     await investigations.pass().catch(() => {});
