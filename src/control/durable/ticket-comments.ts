@@ -4,7 +4,14 @@ import type { WorkRecord } from './admission.js';
 import { readJiraContent } from './jira-evaluation.js';
 import type { TicketRef } from '../../issue-tracker/index.js';
 import type { TicketText } from '../rules/continuation.js';
-import { boundTicketComments, githubTicketComments, jiraTicketComments, ticketCommentsBound, type SelectedComment } from '../rules/ticket-comments.js';
+import {
+  boundTicketComments,
+  githubTicketCommentsBound,
+  githubTicketComments,
+  jiraTicketComments,
+  ticketCommentsBound,
+  type SelectedComment,
+} from '../rules/ticket-comments.js';
 
 // Spec #68 §9 (ticket #74): the Control reads the comments of the Ticket with its own adapters, selects and bounds them, and hands them to
 // the Builder with the request. The Builder never fetches comments: what is not delivered here is not part of the Ticket.
@@ -43,7 +50,8 @@ export async function readTicketComments(
 ): Promise<{ kind: 'observed'; comments: TicketComments } | Unavailable> {
   const read = await selectedComments(access, ticket);
   if (read.kind !== 'observed') return read;
-  const bounded = boundTicketComments(read.selected, ticketCommentsBound(ticketTextBytes));
+  const bound = ticket.tracker === 'github' ? githubTicketCommentsBound : ticketCommentsBound(ticketTextBytes);
+  const bounded = boundTicketComments(read.selected, bound);
   const sha256 = createHash('sha256').update(JSON.stringify(bounded.comments)).digest('hex');
   return { kind: 'observed', comments: { ...bounded, observedAt: read.observedAt, sha256 } };
 }

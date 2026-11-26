@@ -54,9 +54,17 @@ test('TR-06: readLabelHistory reports every label change of the timeline in orde
   if (history.kind !== 'observed') return;
   assert.equal(history.completeness, 'complete');
   assert.deepEqual(history.events, [
-    { eventId: '11', action: 'added', label: 'needs-triage', at: '2026-11-20T10:00:11Z', actor: human, viaApp: null },
-    { eventId: '12', action: 'removed', label: 'needs-triage', at: '2026-11-20T10:00:12Z', actor: { id: 5, login: 'factory[bot]', type: 'Bot' }, viaApp: 1 },
-    { eventId: '14', action: 'added', label: 'needs-triage', at: '2026-11-20T10:00:14Z', actor: null, viaApp: null },
+    { eventId: '11', action: 'added', label: 'needs-triage', at: '2026-11-20T10:00:11Z', actor: human, viaApp: null, ownApp: false },
+    {
+      eventId: '12',
+      action: 'removed',
+      label: 'needs-triage',
+      at: '2026-11-20T10:00:12Z',
+      actor: { id: 5, login: 'factory[bot]', type: 'Bot' },
+      viaApp: 1,
+      ownApp: true,
+    },
+    { eventId: '14', action: 'added', label: 'needs-triage', at: '2026-11-20T10:00:14Z', actor: null, viaApp: null, ownApp: false },
   ]);
   const trace = await world.trace();
   assert.ok(

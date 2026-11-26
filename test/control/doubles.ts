@@ -8,9 +8,12 @@ import type {
   GitHubTrackerScope as TrackerScope,
   DependencyNode,
   DependencyProblem,
+  ClosureEvent,
   LabelEvent,
   LabelHistoryObservation,
   TrackerComment,
+  TriageWrite,
+  TriageWriteResult,
 } from '../../src/issue-tracker/index.js';
 import type {
   BranchComparison,
@@ -40,6 +43,8 @@ export type RemoteIssue = {
   /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[];
   /** Spec #68: the issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
   labelEvents?: LabelEvent[];
+  /** Spec #68 ticket #77: the closings and reopenings of the issue as its timeline reports them (`closeIssue` keeps it with `state`). */
+  closures?: ClosureEvent[];
   /** Spec #68 ticket #75: the issue text as `readTicketText` reports it (absent = an issue without it). */
   title?: string | null;
   body?: string | null;
@@ -77,6 +82,14 @@ export type Remote = {
   associations?: Record<string, string>;
   /** Number of next readTicketComments calls that are incomplete (unavailable). */
   incompleteTicketComments?: number;
+  /**
+   * Spec #68 ticket #77, consumed one per writeTriage (absent = applied and accepted): `unknown-applied`/`unknown-not-applied` answer an
+   * unknown outcome; `failed` applies nothing; `retained` is accepted by the API and never applied; `anonymous` is applied with a history
+   * event that names no author.
+   */
+  triageWrites?: (TriageWriteFault | undefined)[];
+  /** Called after each writeTriage reached the remote, before its answer: what somebody else does to the Ticket between two writes. */
+  afterTriageWrite?: (write: TriageWrite, issue: RemoteIssue) => void;
   /** Consumed one per postComment: unknown outcome (created or not) or known failure; absent = published. */
   postOutcomes?: ('unknown-created' | 'unknown-not-created' | 'failed')[];
   /** Number of next findQuestion calls that are incomplete (unavailable). */
@@ -157,15 +170,22 @@ export function ticket(number: number, overrides: Partial<TicketRef> = {}): Tick
 export function remoteIssue(number: number, overrides: Partial<RemoteIssue> = {}): RemoteIssue {
   return { ref: ticket(number), state: 'open', labels: [{ id: 55, name: 'ready-for-agent' }], ...overrides };
 }
+export type TriageWriteFault = 'unknown-applied' | 'unknown-not-applied' | 'failed' | 'retained' | 'anonymous';
+/** The account the Factory App writes as. */
+export const factoryBot = { id: 41898282, login: 'factory-app[bot]', type: 'Bot' };
 let labelEventSequence = 90000;
-const labelEvent = (action: LabelEvent['action'], label: string, actor: LabelEvent['actor']): LabelEvent => ({
-  eventId: String(++labelEventSequence),
-  action,
-  label,
-  at: new Date().toISOString(),
-  actor,
-  viaApp: null,
-});
+/** Who a timeline event names: a change by the Factory App's bot is performed through the App. */
+const eventAuthor = (actor: LabelEvent['actor']) => {
+  const own = actor?.id === factoryBot.id;
+  return { eventId: String(++labelEventSequence), at: new Date().toISOString(), actor, viaApp: own ? factoryAppId : null, ownApp: own };
+};
+const labelEvent = (action: LabelEvent['action'], label: string, actor: LabelEvent['actor']): LabelEvent => ({ action, label, ...eventAuthor(actor) });
+/** Spec #68: the issue is closed (state and timeline together), by a person unless another actor is given. */
+export function closeIssue(issue: RemoteIssue, actor: ClosureEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }, stateReason = 'completed') {
+  issue.state = 'closed';
+  issue.stateReason = stateReason;
+  issue.closures = [...(issue.closures ?? []), { action: 'closed', ...eventAuthor(actor) }];
+}
 /** Spec #68: a person applies a label to the issue (label set and timeline together), as any account allowed to label would. */
 export function applyLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
   if (!issue.labels.some(label => label.name === name)) issue.labels = [...issue.labels, { id: 500 + issue.labels.length, name }];
@@ -294,6 +314,7 @@ export function githubDoubles(remote: Remote) {
             ticket: ref,
             completeness: 'complete',
             events: structuredClone(found.labelEvents ?? []),
+            closures: structuredClone(found.closures ?? []),
             limitations: [],
           };
         },
@@ -346,6 +367,30 @@ export function githubDoubles(remote: Remote) {
           };
         },
         ref,
+      ),
+    // Spec #68 ticket #77: one write of a Triage publication, applied to the remote as GitHub would (by the App's bot), unless a fault says otherwise.
+    writeTriage: (ref, write) =>
+      track(
+        'writeTriage',
+        (): TriageWriteResult => {
+          const fault = remote.triageWrites?.shift();
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (!found || fault === 'failed') return { kind: 'failed', observedAt: observedAt(), code: 'GITHUB_ACCESS_DENIED', nextStep: 'synthetic' };
+          const actor = fault === 'anonymous' ? null : factoryBot;
+          let created: TrackerComment | undefined;
+          if (fault !== 'retained' && fault !== 'unknown-not-applied') {
+            if (write.kind === 'comment') {
+              created = comment(write.body, factoryBot, ref.number, factoryAppId);
+              (remote.comments ??= {})[ref.number] = [...(remote.comments?.[ref.number] ?? []), created];
+            } else if (write.kind === 'add-label') applyLabel(found, write.label, actor);
+            else if (write.kind === 'remove-label') removeLabel(found, write.label, actor);
+            else closeIssue(found, actor, write.reason);
+            remote.afterTriageWrite?.(write, found);
+          }
+          if (fault?.startsWith('unknown')) return { kind: 'unknown', observedAt: observedAt(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' };
+          return { kind: 'accepted', observedAt: observedAt(), ...(created ? { comment: { commentId: created.commentId, url: created.url } } : {}) };
+        },
+        { number: ref.number, write },
       ),
     // Spec #68 ticket #74: every comment of the Ticket issue with the author's association and whether the Factory App performed it.
     readTicketComments: ref =>

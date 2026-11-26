@@ -84,10 +84,16 @@ export type TriageIntendedChange =
   | { kind: 'remove-label'; label: string }
   | { kind: 'close'; reason: 'not_planned' }
   | { kind: 'add-component'; componentId: string };
-/** Situation of an intended change (spec §10). This ticket only ever records `pending`; the publication moves it. */
+/** Situation of an intended change (spec §10). Recorded `pending` with the Verdict; only the publication moves it. */
 export const triageEffectStatuses = ['pending', 'confirmed', 'no-longer-allowed', 'ambiguous-authorship'] as const;
 export type TriageEffectStatus = (typeof triageEffectStatuses)[number];
-export type TriageIntendedEffect = TriageIntendedChange & { status: TriageEffectStatus };
+/**
+ * What the publication records on an intended change (ticket #77), all absent until it reaches it. `attempts`/`attemptedAt`: writes sent
+ * for it, committed BEFORE each one (an effect never attempted and found present is somebody else's). `settledAt`: when it left `pending`.
+ * `code`: why it is `no-longer-allowed`. `reference`: what confirmed it at the origin (the comment URL, or the id of the history event).
+ */
+export type TriageEffectProgress = { attempts?: number; attemptedAt?: string; settledAt?: string; code?: string; reference?: string };
+export type TriageIntendedEffect = TriageIntendedChange & { status: TriageEffectStatus } & TriageEffectProgress;
 
 const outcomeLabel = (outcome: TriageOutcome, roles: TriageRoles) =>
   ({ 'ready-for-agent': roles.admission, 'needs-info': roles.needsInfo, 'ready-for-human': roles.readyForHuman, wontfix: roles.wontfix })[outcome];

@@ -194,7 +194,25 @@ export type CommentResult = (
  * Spec #68 §4.6: one label change of a GitHub issue, from its timeline. `actor` and `viaApp` are who made it (the App id when performed
  * through a GitHub App), evidence for the Control; `null` when GitHub reports none. Never interpreted here.
  */
-export type LabelEvent = { eventId: string; action: 'added' | 'removed'; label: string; at: string; actor: CommentAuthorRef | null; viaApp: number | null };
+export type LabelEvent = {
+  eventId: string;
+  action: 'added' | 'removed';
+  label: string;
+  at: string;
+  actor: CommentAuthorRef | null;
+  viaApp: number | null;
+  /** Performed by THIS installation's App as its bot (spec #68 §8: how the Control recognises a label change of its own). */
+  ownApp: boolean;
+};
+/** Spec #68 §8: one closing or reopening of a GitHub issue, from its timeline, with who made it (as in {@link LabelEvent}). */
+export type ClosureEvent = {
+  eventId: string;
+  action: 'closed' | 'reopened';
+  at: string;
+  actor: CommentAuthorRef | null;
+  viaApp: number | null;
+  ownApp: boolean;
+};
 /** Every label change of a Ticket in the order the origin reports, from a COMPLETE read only (an unavailable one proves nothing). */
 export type LabelHistoryObservation =
   | {
@@ -204,9 +222,26 @@ export type LabelHistoryObservation =
       ticket: GitHubTicketRef;
       completeness: 'complete';
       events: LabelEvent[];
+      /** Every closing and reopening of the issue, in the same order (spec #68 §8: the authorship of a `not_planned` closing). */
+      closures: ClosureEvent[];
       limitations: string[];
     }
   | TrackerUnavailable;
+
+/**
+ * Spec #68 §8: one write of a Triage publication on a GitHub issue. The comment body is sent as given (the Control composes it with the
+ * request's marker); labels change by relative operation, never by replacing the set; the closing is always `not_planned`.
+ */
+export type TriageWrite =
+  { kind: 'comment'; body: string } | { kind: 'add-label'; label: string } | { kind: 'remove-label'; label: string } | { kind: 'close'; reason: 'not_planned' };
+/**
+ * `accepted`: the origin answered success, which proves nothing until a read shows the effect. `failed`: nothing was applied. `unknown`:
+ * the write may have been applied; read the Ticket before anything else.
+ */
+export type TriageWriteResult =
+  | { kind: 'accepted'; observedAt: string; comment?: { commentId: number; url: string } }
+  | { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string }
+  | { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
 
 /** Author of an input, discriminated by provider (GitHub keeps its untagged `{id, login, type}`). */
 export type TrackerCommentAuthor = CommentAuthorRef | JiraCommentAuthor;
@@ -229,6 +264,7 @@ export type TrackerContracts = {
     result: CommentResult;
     access: AccessDiagnostic;
     labels: LabelHistoryObservation;
+    triageWrite: TriageWrite;
   };
   jira: {
     scope: JiraTrackerScope;
@@ -244,6 +280,8 @@ export type TrackerContracts = {
     result: JiraCommentResult;
     access: JiraAccessDiagnostic;
     labels: JiraLabelHistoryObservation;
+    /** Ticket #78 defines the writes of a Card (comment, then one `PUT` with labels and component). */
+    triageWrite: never;
   };
 };
 
@@ -269,6 +307,11 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
    * (the Jira adapter serves it by `JiraComments.listComments`); a tracker without it delivers no Ticket text and no Work starts on it.
    */
   readTicketComments?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['comments']>;
+  /**
+   * Spec #68 §8: one write of a Triage publication. The adapter sends it and reports what the origin answered; it never decides an
+   * outcome, and a write it accepted is confirmed only by a later read.
+   */
+  writeTriage?(ticket: TrackerContracts[P]['ticket'], write: TrackerContracts[P]['triageWrite']): Promise<TriageWriteResult>;
   /** Spec #68 §7: title and body of a GitHub Ticket for the Triager's first prompt (a Card's text is `JiraContentReads.readTicketContent`). */
   readTicketText?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['text']>;
 }

@@ -10,7 +10,8 @@ export const isTerminalTriageState = (state: TriageRequestState) => (terminalTri
 const transitions: Record<TriageRequestState, readonly TriageRequestState[]> = {
   queued: ['investigating', 'suspended', 'abandoned', 'failed'],
   investigating: ['queued', 'publishing', 'abandoned', 'failed'],
-  suspended: ['queued', 'abandoned'],
+  // `publishing`: a request suspended with its Verdict recorded goes back to its publication, never to another investigation (#77).
+  suspended: ['queued', 'publishing', 'abandoned'],
   publishing: ['concluded', 'suspended', 'abandoned'],
   concluded: [],
   abandoned: [],

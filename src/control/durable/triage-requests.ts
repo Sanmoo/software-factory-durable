@@ -196,3 +196,16 @@ export async function updateTriageAttempt(session: Session, triage_request_id: s
 export async function readTriageVerdictText(session: Session, triage_request_id: string): Promise<string | undefined> {
   return (await session.snapshot(triageVerdicts, triage_request_id, BACKGROUND_CONTEXT))?.verdict?.text;
 }
+
+/**
+ * Ticket #77: changes a request that is still `publishing`, in its own commit (the effects' situation, the publication record). A request
+ * that left `publishing` meanwhile is left as it is (`false`).
+ */
+export async function updatePublishingRequest(session: Session, triage_request_id: string, change: (request: TriageRequest) => void): Promise<boolean> {
+  return session.commit(async tx => {
+    const request = (await tx.doc(triageRequests, triage_request_id, null)).request;
+    if (request?.state !== 'publishing') return false;
+    change(request);
+    return true;
+  }, BACKGROUND_CONTEXT);
+}

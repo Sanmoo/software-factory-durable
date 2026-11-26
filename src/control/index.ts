@@ -86,6 +86,10 @@ export {
 export type { TriageEffectStatus, TriageIntendedChange, TriageIntendedEffect, TriageOutcome, TriageVerdict, VerdictCategory } from './rules/triage-verdict.js';
 export type { TriageActivationText } from './rules/triage-prompt.js';
 export type { TriageAttempt, TriagePorts, TriageVerdictRecord } from './types.js';
+// Spec #68 §8 (ticket #77): the publication of a recorded Verdict: its record on the request and the per-effect situation.
+export type { TriagePublication, TriagePublicationImpediment } from './types.js';
+export type { TriageEffectProgress } from './rules/triage-verdict.js';
+export type { PublicationMode } from './rules/triage-publication.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

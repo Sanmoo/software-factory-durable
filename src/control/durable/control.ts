@@ -54,6 +54,8 @@ import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createTriageDiscovery } from './triage-discovery.js';
 import { createTriageInvestigations } from './triage-investigation.js';
+import { createTriagePublications } from './triage-publication.js';
+import { githubTriagePublisher } from './triage-publication-github.js';
 import { readTriageRequests } from './triage-requests.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
@@ -274,6 +276,11 @@ function triageInvestigations(
     repositoryId: repository => poller.repositoryId(repository),
   });
 }
+/** Ticket #77: the publication desk with the publisher of each tracker (ticket #78 adds Jira's); a desk that does nothing without polling. */
+function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
+  if (!access || !polling) return { pass: async () => {} };
+  return createTriagePublications({ session, stopped, publishers: { github: githubTriagePublisher(access) } });
+}
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;
 
@@ -462,9 +469,13 @@ export async function openControl(options: {
       : undefined;
   // Spec #68 §6-§7 (ticket #75): queued Triage requests are investigated by a Triager when the Triage ports are composed.
   const investigations = triageInvestigations(options, state, poller, () => stopped);
+  // Spec #68 §8 (ticket #77): a recorded Verdict is published on its Ticket, whether or not this run can investigate (a release that
+  // restarts with requests in `publishing` completes them). Ticket #78 adds the Jira publisher here.
+  const publications = triagePublications(options.access, state, poller !== undefined, () => stopped);
   // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
   const afterTick = async () => {
     await investigations.pass().catch(() => {});
+    await publications.pass().catch(() => {});
     await checks?.pass(tracking.signal).catch(() => {});
     await readiness?.pass(tracking.signal).catch(() => {});
     // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).

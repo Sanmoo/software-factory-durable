@@ -44,6 +44,7 @@ import type {
 } from '../sandbox/index.js';
 import type { TriageIntendedEffect, TriageOutcome, VerdictCategory, VerdictError } from './rules/triage-verdict.js';
 import type { TriageActivationText } from './rules/triage-prompt.js';
+import type { PublicationMode } from './rules/triage-publication.js';
 import type {
   ActivationDelivery,
   DeliveryResult,
@@ -2899,6 +2900,8 @@ export type TriageRequest = {
   verdict?: TriageVerdictRecord;
   /** Ticket #75: what the Control intends to write on the Ticket for the Verdict, in writing order; recorded WITH the Verdict. */
   intended?: TriageIntendedEffect[];
+  /** Ticket #77: how the publication of the recorded Verdict stands. Absent = no pass has reached the request yet. */
+  publication?: TriagePublication;
 };
 /**
  * Ticket #75: one attempt of a request, from the commit that moves it to `investigating` (`environment` holds the intent, recorded before
@@ -2920,6 +2923,29 @@ export type TriageAttempt = {
    * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
    */
   end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null } | null;
+};
+/**
+ * Ticket #77 (spec #68 §8, §10): an effect of the publication is present at the origin and nobody can be named for it. The publication is
+ * stopped until the operator decides (`triage complete <id> --impediment <ref>` takes the effects as the Factory's; `triage cancel`).
+ */
+export type TriagePublicationImpediment = {
+  ref: string;
+  code: 'TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS';
+  since: string;
+  /** Indexes of the `ambiguous-authorship` effects in `intended`. */
+  effects: number[];
+  nextStep: string;
+};
+/**
+ * Ticket #77: the publication of one request, beside its per-effect situation in `intended`. `mode` is null until the first write is
+ * committed (`informative`: `needs-triage` was withdrawn during the investigation, only one comment is published). `hold`: why the latest
+ * pass could not go on (origin unreadable, write refused or of unknown outcome, effect not read back yet); it is retried on every pass.
+ */
+export type TriagePublication = {
+  mode: PublicationMode | null;
+  startedAt: string | null;
+  impediment: TriagePublicationImpediment | null;
+  hold: { code: string; at: string } | null;
 };
 /** Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. */
 export type TriageVerdictRecord = {

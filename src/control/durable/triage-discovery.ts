@@ -212,7 +212,10 @@ export function createTriageDiscovery(deps: { session: Session; access: AccessDe
       decision.action === 'suspend'
         ? { to: 'suspended' as const, event: 'suspended', code: 'TRIAGE_LABEL_CONFLICT', labels: decision.labels }
         : decision.action === 'requeue'
-          ? { to: 'queued' as const, event: 'requeued' }
+          ? // Ticket #77: a request suspended at its publication keeps its recorded Verdict; it resumes publishing and calls no model.
+            request.verdict
+            ? { to: 'publishing' as const, event: 'publication-resumed' }
+            : { to: 'queued' as const, event: 'requeued' }
           : { to: 'abandoned' as const, event: 'abandoned', code: decision.code };
     const result = await transitionTriageRequest(session, request.triage_request_id, { from: [request.state], ...change });
     const now = result.kind === 'applied' ? result.request : request;

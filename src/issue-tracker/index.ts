@@ -11,6 +11,8 @@ import type {
   DependencyProblem,
   GitHubTicketRef,
   GitHubTrackerScope,
+  ClosureEvent,
+  CommentAuthorRef,
   IssueTracker,
   LabelEvent,
   TicketCommentFact,
@@ -70,25 +72,45 @@ const labelEventSchema = z.object({
     .optional(),
   performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
 });
-/** The label changes of a timeline, in its order. One label entry that cannot be verified fails the whole read (never a shorter history). */
-function labelEvents(timeline: unknown[]): LabelEvent[] {
+const closureEventSchema = labelEventSchema.omit({ label: true }).extend({ event: z.enum(['closed', 'reopened']) });
+/** Who made a timeline change: the actor GitHub names, the App it was performed through, and whether that is this installation's bot. */
+function eventAuthor(event: { actor?: CommentAuthorRef | null | undefined; performed_via_github_app?: { id: number } | null | undefined }, appId: number) {
+  const actor = event.actor ? { id: event.actor.id, login: event.actor.login, type: event.actor.type } : null;
+  const viaApp = event.performed_via_github_app?.id ?? null;
+  return { actor, viaApp, ownApp: viaApp === appId && actor?.type === 'Bot' };
+}
+const verified = <T>(parsed: { success: true; data: T } | { success: false }): T => {
+  if (!parsed.success) throw new InvalidGitHubObservation();
+  return parsed.data;
+};
+/** A label change of the timeline, or undefined for another kind of entry. */
+function labelEventOf(kind: string, entry: unknown, appId: number): LabelEvent | undefined {
+  if (kind !== 'labeled' && kind !== 'unlabeled') return undefined;
+  const data = verified(labelEventSchema.safeParse(entry));
+  const action = data.event === 'labeled' ? 'added' : 'removed';
+  return { eventId: String(data.id), action, label: data.label.name, at: data.created_at, ...eventAuthor(data, appId) };
+}
+/** A closing or reopening of the timeline, or undefined for another kind of entry. */
+function closureEventOf(kind: string, entry: unknown, appId: number): ClosureEvent | undefined {
+  if (kind !== 'closed' && kind !== 'reopened') return undefined;
+  const data = verified(closureEventSchema.safeParse(entry));
+  return { eventId: String(data.id), action: data.event, at: data.created_at, ...eventAuthor(data, appId) };
+}
+/**
+ * The label changes and the closings of a timeline, in its order. One such entry that cannot be verified fails the whole read (never a
+ * shorter history); every other kind of entry is skipped unread.
+ */
+function timelineEvents(timeline: unknown[], appId: number): { events: LabelEvent[]; closures: ClosureEvent[] } {
   const events: LabelEvent[] = [];
+  const closures: ClosureEvent[] = [];
   for (const entry of timeline) {
-    const kind = z.object({ event: z.string() }).safeParse(entry);
-    if (!kind.success) throw new InvalidGitHubObservation();
-    if (kind.data.event !== 'labeled' && kind.data.event !== 'unlabeled') continue;
-    const parsed = labelEventSchema.safeParse(entry);
-    if (!parsed.success) throw new InvalidGitHubObservation();
-    events.push({
-      eventId: String(parsed.data.id),
-      action: parsed.data.event === 'labeled' ? 'added' : 'removed',
-      label: parsed.data.label.name,
-      at: parsed.data.created_at,
-      actor: parsed.data.actor ? { id: parsed.data.actor.id, login: parsed.data.actor.login, type: parsed.data.actor.type } : null,
-      viaApp: parsed.data.performed_via_github_app?.id ?? null,
-    });
+    const kind = verified(z.object({ event: z.string() }).safeParse(entry)).event;
+    const label = labelEventOf(kind, entry, appId);
+    const closure = closureEventOf(kind, entry, appId);
+    if (label) events.push(label);
+    if (closure) closures.push(closure);
   }
-  return events;
+  return { events, closures };
 }
 /** One validated comment payload as a fact; `ownApp`: performed through `appId` by a bot author (this installation's App). */
 function commentFact(comment: z.infer<typeof commentSchema>, appId: number): TicketCommentFact {
@@ -522,12 +544,36 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
       };
     },
     readDependencyGraph,
+    async writeTriage(ticket, write) {
+      const scope = executableScope(ticket);
+      const observedAt = new Date().toISOString();
+      if (!scope) return { kind: 'failed', observedAt, code: 'REPOSITORY_NOT_CONFIGURED', nextStep: 'Only configured repositories are written.' };
+      const written = await options.github.triageWrite(scope, ticket.number, write);
+      if (!written.ok) {
+        const { code, nextStep, waitSeconds } = written;
+        if (written.outcome === 'unknown') return { kind: 'unknown', observedAt: written.observedAt, code, nextStep };
+        return { kind: 'failed', observedAt: written.observedAt, code, ...(waitSeconds !== undefined ? { waitSeconds } : {}), nextStep };
+      }
+      if (written.repositoryId !== ticket.repositoryId)
+        return {
+          kind: 'unknown',
+          observedAt: written.observedAt,
+          code: 'GITHUB_WRITE_UNVERIFIED',
+          nextStep: 'GitHub accepted a write on a repository that is not the one of the Ticket; read the issue before any new write.',
+        };
+      const comment = write.kind === 'comment' ? commentSchema.safeParse(written.value) : undefined;
+      return {
+        kind: 'accepted',
+        observedAt: written.observedAt,
+        ...(comment?.success ? { comment: { commentId: comment.data.id, url: comment.data.html_url } } : {}),
+      };
+    },
     async readLabelHistory(ticket) {
       const scope = executableScope(ticket);
       if (!scope) return notConfigured(ticket);
       const read = await options.github.read(scope, 'tracker-read', async session => {
         if (session.repositoryId !== ticket.repositoryId) throw new InvalidGitHubObservation();
-        return labelEvents(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/timeline`));
+        return timelineEvents(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/timeline`), options.github.appId);
       });
       if (!read.ok) return unavailable(scope.repository, read);
       return {
@@ -536,7 +582,8 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Git
         observedAt: read.observedAt,
         ticket,
         completeness: 'complete',
-        events: read.value,
+        events: read.value.events,
+        closures: read.value.closures,
         limitations: ['The timeline is read at one instant, not an atomic snapshot; who changed a label is evidence, never an authorization.'],
       };
     },
