@@ -4,6 +4,8 @@
  * environment. Types only; the first implementation is `systemd.ts` (bubblewrap inside a transient unit of the user manager).
  */
 
+import { triageAttemptPattern } from '../../contracts/index.js';
+
 /** Names the attempt: lowercase letters, digits and single hyphens, at most 64. Never reused: the unit name is derived from it. */
 export type InvestigationAttemptRef = string;
 
@@ -84,8 +86,7 @@ export interface InvestigationEnvironmentPort {
 }
 
 export const defaultOutputBytes = 65536;
-export const attemptPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const investigationUnit = (attempt: InvestigationAttemptRef) => {
-  if (attempt.length > 64 || !attemptPattern.test(attempt)) throw new Error('INVESTIGATION_ATTEMPT_INVALID');
+  if (attempt.length > 64 || !triageAttemptPattern.test(attempt)) throw new Error('INVESTIGATION_ATTEMPT_INVALID');
   return `factory-triage-${attempt}.service`;
 };

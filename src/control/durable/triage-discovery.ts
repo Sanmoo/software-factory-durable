@@ -15,6 +15,7 @@ import {
   evaluateTriage,
   isTerminalTriageState,
   triageHoldNextStep,
+  triageRoles,
   type TriageDecision,
   type TriageEvaluationInput,
   type TriageLabelEvent,
@@ -66,7 +67,7 @@ function githubOrigin(access: AccessDependencies, source: GitHubSource, triage: 
   return {
     ref: refOf(source),
     triage,
-    roles: { ...triage, admission: scope.label },
+    roles: triageRoles(triage, scope.label),
     caseSensitive: false,
     discover: source.discover,
     list: () => guarded(() => tracker.listCandidates({ ...scope, label: triage.needsTriage })),
@@ -91,7 +92,7 @@ function jiraOrigin(tracker: JiraOriginTracker, source: JiraSource, triage: Sour
   return {
     ref: refOf(source),
     triage,
-    roles: { ...triage, admission: source.label },
+    roles: triageRoles(triage, source.label),
     caseSensitive: true,
     discover: source.discover,
     list: () =>

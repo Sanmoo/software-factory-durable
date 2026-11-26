@@ -4,18 +4,18 @@
 // reporting it (the agent was killed) is found all the same.
 import { constants } from 'node:fs';
 import { lstat, open, readdir, rm } from 'node:fs/promises';
+import { triageAttemptPattern } from '../contracts/index.js';
 import { join } from 'node:path';
 import { sessionUsage, type SessionUsage } from './session-usage.js';
 import { triagerAttemptDirectory } from './triager.js';
 
-const attemptName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const maxUsageBytes = 64 * 1024 * 1024;
 type Found = { state: 'found'; files: { path: string; bytes: number }[] } | { state: 'absent' } | { state: 'unavailable'; code: string };
 
 const missing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT';
 /** The session files of an attempt, oldest first (the SDK names them by their start instant). Only regular files directly there. */
 async function sessionsOf(root: string, attempt: string): Promise<Found> {
-  if (!attemptName.test(attempt) || attempt.length > 64) return { state: 'unavailable', code: 'TRIAGE_ATTEMPT_INVALID' };
+  if (!triageAttemptPattern.test(attempt) || attempt.length > 64) return { state: 'unavailable', code: 'TRIAGE_ATTEMPT_INVALID' };
   const directory = join(triagerAttemptDirectory(root, attempt), 'profile', 'sessions');
   try {
     const files: { path: string; bytes: number }[] = [];
@@ -84,7 +84,7 @@ export function createTriagerDetails(root: string) {
       }
     },
     async remove(attempt: string) {
-      if (!attemptName.test(attempt) || attempt.length > 64) return { state: 'failed' as const, code: 'TRIAGE_ATTEMPT_INVALID' };
+      if (!triageAttemptPattern.test(attempt) || attempt.length > 64) return { state: 'failed' as const, code: 'TRIAGE_ATTEMPT_INVALID' };
       const directory = triagerAttemptDirectory(root, attempt);
       try {
         await lstat(directory);

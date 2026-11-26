@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { triageAttemptPattern } from '../contracts/index.js';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { connect, listen, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
@@ -18,10 +19,9 @@ export { triagerToolNames } from './triager-tools.js';
 // bootstrap is a private file and its tool calls travel over a private socket of the attempt. Nothing secret is on a command line.
 
 type Profile = ReviewerProfile extends infer P ? (P extends unknown ? Omit<P, 'directory'> : never) : never;
-const attemptName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const bootstrapSchema = z.object({
   version: z.literal(1),
-  attempt: z.string().regex(attemptName).max(64),
+  attempt: z.string().regex(triageAttemptPattern).max(64),
   endpoint: z.string().min(1),
   factoryRoot: z.string().min(1),
   prompt: z.string().min(1),
@@ -86,7 +86,7 @@ export const triagerAttemptDirectory = (root: string, attempt: string) => join(r
 export function createTriager(configuration: TriagerConfiguration) {
   return {
     async activate(request: { attempt: string; activation: TriagerActivation; host: TriagerHost }): Promise<ActivatedTriager> {
-      if (!attemptName.test(request.attempt) || request.attempt.length > 64) throw new Error('TRIAGER_ATTEMPT_INVALID');
+      if (!triageAttemptPattern.test(request.attempt) || request.attempt.length > 64) throw new Error('TRIAGER_ATTEMPT_INVALID');
       const pack = await loadSkillPack(skillPacks[configuration.skillPack].directory, configuration.skillPack);
       const prompt = await triagerActivationPrompt(pack, request.activation);
       const mcp = configuration.mcp?.active.length ? activeMcpSources(configuration.root, configuration.mcp) : undefined;

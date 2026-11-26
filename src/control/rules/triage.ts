@@ -22,6 +22,11 @@ export const triageTransitionAllowed = (from: TriageRequestState, to: TriageRequ
 
 /** The five state labels of one source: the four of its `triage` block plus the admission label of its destination (`ready-for-agent`). */
 export type TriageRoles = { needsTriage: string; needsInfo: string; readyForHuman: string; wontfix: string; admission: string };
+/**
+ * The roles of one source: the labels of its `triage` block with the admission label of its destination (GitHub: the label of the
+ * source's repository; Jira: the label of the source).
+ */
+export const triageRoles = <Block extends Omit<TriageRoles, 'admission'>>(triage: Block, admission: string): Block & TriageRoles => ({ ...triage, admission });
 /** GitHub label names are case-insensitive; Jira labels are case-sensitive. */
 const sameLabel = (caseSensitive: boolean) => (a: string, b: string) => (caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase());
 

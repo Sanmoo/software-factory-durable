@@ -1,5 +1,6 @@
 import type { ClosureEvent, GitHubTicketRef, LabelEvent, TicketCommentFact, TriageWrite } from '../../issue-tracker/index.js';
 import type { AccessDependencies, TriageRequest } from '../types.js';
+import { triageRoles } from '../rules/triage.js';
 import { sameCommentText, triageCommentMarker, type EffectFact } from '../rules/triage-publication.js';
 import type { TriageIntendedEffect } from '../rules/triage-verdict.js';
 import type { TriagePublisher } from './triage-publication.js';
@@ -72,7 +73,7 @@ export function githubTriagePublisher(access: AccessDependencies): TriagePublish
     roles(request) {
       const source = triageSourceOf(access, request);
       const scope = source?.tracker === 'github' ? access.repositories.find(item => same(item.repository, source.repository)) : undefined;
-      return source?.triage && scope ? { ...source.triage, admission: scope.label } : undefined;
+      return source?.triage && scope ? triageRoles(source.triage, scope.label) : undefined;
     },
     groups: intended => intended.map((_, index) => [index]),
     async observe(request, comment) {

@@ -1,6 +1,6 @@
 import type { GitHubTicketRef, JiraTicketRef, TicketCommentFact } from '../../issue-tracker/index.js';
 import type { AccessDependencies, ConfiguredRepository, JiraOriginTracker, TicketSource, TriageRequest } from '../types.js';
-import type { TriageRoles } from '../rules/triage.js';
+import { triageRoles, type TriageRoles } from '../rules/triage.js';
 import type { TriagePromptBlockers, TriagePromptComment, TriagePromptTicket } from '../rules/triage-prompt.js';
 import { triageCandidates, type TriageCandidate, type VerdictContext } from '../rules/triage-verdict.js';
 import { jiraLinkTypesOf, visibleBlockers } from './jira-evaluation.js';
@@ -67,7 +67,7 @@ async function githubSubject(access: AccessDependencies, source: GitHubSource, t
       origin: `GitHub issue ${ticket.repository}#${ticket.number} (${ticket.url})`,
       candidates: triageCandidates({ tracker: 'github', repository: source.repository }, access.repositories),
       blockers: await githubBlockers(access, ticket),
-      roles: { ...source.triage, admission: scope.label },
+      roles: triageRoles(source.triage, scope.label),
       verdictContext: { tracker: 'github' },
     },
   };
@@ -120,7 +120,7 @@ async function jiraSubject(access: AccessDependencies, source: JiraSource, ticke
       origin: `Jira Card ${ticket.key} (${ticket.url}), project ${source.projectId} of the site ${source.url}`,
       candidates,
       blockers: await jiraBlockers(access, tracker, source, ticket),
-      roles: { ...source.triage, admission: source.label },
+      roles: triageRoles(source.triage, source.label),
       verdictContext: { tracker: 'jira', components: candidates.flatMap(candidate => candidate.components) },
     },
   };

@@ -2,6 +2,7 @@ import { triageMarkerPrefix } from '../../contracts/index.js';
 import type { JiraComponentEvent, JiraLabelEvent, JiraTicketRef, JiraTriageWrite, JiraVisibleComment } from '../../issue-tracker/index.js';
 import type { AccessDependencies, JiraOriginTracker, TicketSource, TriageRequest } from '../types.js';
 import { routeTicket } from '../rules/jira-admission.js';
+import { triageRoles } from '../rules/triage.js';
 import { cardRoute, sameCommentText, triageCommentMarker, type EffectFact } from '../rules/triage-publication.js';
 import type { TriageIntendedEffect } from '../rules/triage-verdict.js';
 import type { TriagePublisher } from './triage-publication.js';
@@ -133,7 +134,7 @@ export function jiraTriagePublisher(access: AccessDependencies): TriagePublisher
     caseSensitive: true,
     roles(request) {
       const source = sourceOf(request);
-      return source?.triage ? { ...source.triage, admission: source.label } : undefined;
+      return source?.triage ? triageRoles(source.triage, source.label) : undefined;
     },
     groups(intended) {
       const comment = intended.flatMap((effect, index) => (effect.kind === 'comment' ? [index] : []));
