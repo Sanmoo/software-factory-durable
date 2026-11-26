@@ -51,7 +51,8 @@ export type TriagerCompletion =
     }
   /** The agent could not run a session, or its channel ended before it reported one. */
   | { status: 'failure'; code: string };
-export type TriagerAttempt = {
+/** A Triager activated for one attempt of a Triage request (the Control's own record of that attempt is `TriageAttempt`). */
+type ActivatedTriager = {
   /** What the Investigation Environment starts as the attempt's main process. */
   agent: InvestigationAgent;
   /** The pack whose `triage` skill this attempt runs (operator metadata). */
@@ -84,7 +85,7 @@ export const triagerAttemptDirectory = (root: string, attempt: string) => join(r
 /** Host facade of the Triager role: one `activate` per attempt, always a new session. It grants nothing: the Control validates each call. */
 export function createTriager(configuration: TriagerConfiguration) {
   return {
-    async activate(request: { attempt: string; activation: TriagerActivation; host: TriagerHost }): Promise<TriagerAttempt> {
+    async activate(request: { attempt: string; activation: TriagerActivation; host: TriagerHost }): Promise<ActivatedTriager> {
       if (!attemptName.test(request.attempt) || request.attempt.length > 64) throw new Error('TRIAGER_ATTEMPT_INVALID');
       const pack = await loadSkillPack(skillPacks[configuration.skillPack].directory, configuration.skillPack);
       const prompt = await triagerActivationPrompt(pack, request.activation);

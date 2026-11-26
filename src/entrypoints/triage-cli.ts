@@ -12,7 +12,7 @@ type TriageExchange = (root: string, kind: 'inspect' | 'accept', payload: Payloa
 type Flags = Record<string, 'value' | 'flag'>;
 type Given = { positional: string[]; values: Map<string, string> };
 /** What one command line asks of the controller: a read-only view, or a change with its own identity. */
-type TriageRequest =
+type TriageCommand =
   | { mode: 'inspect'; payload: Payload }
   | {
       mode: 'accept';
@@ -20,7 +20,7 @@ type TriageRequest =
       /** A second request sent right after an accepted first one (`--yes`), under the identity `<id>-confirm`. */
       confirm?(receipt: Payload, requestId: string): Payload | null;
     };
-type Subcommand = { usage: string; flags: Flags; request(given: Given): TriageRequest | null };
+type Subcommand = { usage: string; flags: Flags; request(given: Given): TriageCommand | null };
 
 export const triageUsage =
   'triages [--cursor <n> --limit <n>]|triage <request id|owner/repo#number|JIRA-KEY>|triage transcript <request id> [--attempt <attempt> [--offset <n>]|--verdict]|' +
@@ -50,7 +50,7 @@ function given(args: string[], flags: Flags): Given | null {
 const one = (given: Given, pattern: RegExp) => (given.positional.length === 1 && pattern.test(given.positional[0]!) ? given.positional[0]! : null);
 
 /** `triage transcript <id>`: the only command that shows content, one page of an attempt's session or the Verdict text. */
-function transcript(given: Given): TriageRequest | null {
+function transcript(given: Given): TriageCommand | null {
   const id = one(given, uuid);
   const selection = transcriptSelection(given.values);
   if (!id || !selection) return null;
@@ -72,7 +72,7 @@ function plannedId(receipt: Payload): string | null {
   return receipt.outcome === 'accepted' && typeof plan?.planId === 'string' && plan.items?.length ? plan.planId : null;
 }
 /** `triage cleanup <id> [--yes]`: the plan of losses of the request's transcripts and Verdict text; `--yes` confirms it at once. */
-function cleanup(given: Given): TriageRequest | null {
+function cleanup(given: Given): TriageCommand | null {
   const id = one(given, uuid);
   if (!id) return null;
   const confirm = (receipt: Payload, requestId: string): Payload | null => {
@@ -85,7 +85,7 @@ function cleanup(given: Given): TriageRequest | null {
     ...(given.values.has('--yes') ? { confirm } : {}),
   };
 }
-function cleanupConfirm(given: Given): TriageRequest | null {
+function cleanupConfirm(given: Given): TriageCommand | null {
   const [id, plan] = given.positional;
   if (given.positional.length !== 2 || !uuid.test(id!) || !uuid.test(plan!)) return null;
   return {
@@ -97,7 +97,7 @@ function cleanupConfirm(given: Given): TriageRequest | null {
  * Ticket #81: an intervention on the request named by its id or its Ticket reference. `more`: the command's own fields, or null when a
  * required flag is missing or malformed.
  */
-function intervention(given: Given, operation: string, more: Payload | null): TriageRequest | null {
+function intervention(given: Given, operation: string, more: Payload | null): TriageCommand | null {
   const request = one(given, triageReferencePattern);
   if (!request || !more) return null;
   return { mode: 'accept', payload: requestId => ({ request_id: requestId, operation, request, ...more, origin: 'local-cli' }) };
@@ -155,7 +155,7 @@ const list: Subcommand = {
   },
 };
 
-type Parsed = { request: TriageRequest; root: string | undefined; json: boolean; requestId: string | undefined };
+type Parsed = { request: TriageCommand; root: string | undefined; json: boolean; requestId: string | undefined };
 /** The command a line names and its own arguments: `triages`, a named subcommand of `triage`, or `triage <reference>`. */
 function subcommandOf(args: string[]): { subcommand: Subcommand; rest: string[] } {
   if (args[0] === 'triages') return { subcommand: list, rest: args.slice(1) };
@@ -163,7 +163,7 @@ function subcommandOf(args: string[]): { subcommand: Subcommand; rest: string[] 
   return Object.hasOwn(triageSubcommands, name) ? { subcommand: triageSubcommands[name]!, rest: args.slice(2) } : { subcommand: show, rest: args.slice(1) };
 }
 /** `--request-id` names a change only; with `--yes` the derived `<id>-confirm` must still be a valid request identity. */
-function identityValid(request: TriageRequest, requestId: string | undefined): boolean {
+function identityValid(request: TriageCommand, requestId: string | undefined): boolean {
   if (requestId === undefined) return true;
   if (request.mode !== 'accept' || !identity.test(requestId)) return false;
   return !request.confirm || requestId.length <= 120;
