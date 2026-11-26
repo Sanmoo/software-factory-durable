@@ -30,6 +30,7 @@
     "test/control/review-rules.test.ts",
     "test/control/substitute-rules.test.ts",
     "test/control/ticket-comments-rules.test.ts",
+    "test/control/triage-operator-rules.test.ts",
     "test/control/triage-rules.test.ts",
     "test/control/triage-publication-rules.test.ts",
     "test/control/triage-verdict-rules.test.ts",

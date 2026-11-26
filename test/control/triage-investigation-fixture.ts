@@ -12,7 +12,7 @@ import type { Control, ExecutionPorts, TicketSource, TriageClock, TriagePorts, T
 import { openStore } from '../../src/control/durable/store.js';
 import { readTriageVerdictText } from '../../src/control/durable/triage-requests.js';
 import { createInvestigationClones, type InvestigationAgent } from '../../src/sandbox/index.js';
-import { createTriager, runTriagerAgent, type McpRegistration } from '../../src/workers/index.js';
+import { createTriager, createTriagerDetails, runTriagerAgent, type McpRegistration } from '../../src/workers/index.js';
 import { until } from '../runner/budget.js';
 import { createInProcessInvestigationEnvironment } from '../sandbox/investigation-in-process.js';
 import { githubDoubles, manualClock, scope, type Remote } from './doubles.js';
@@ -30,8 +30,12 @@ export const hang = Symbol('hang');
 /** A model request the provider answers with an error. */
 export const unavailable = Symbol('unavailable');
 export const call = (name: string, input: unknown) => [{ name, arguments: input }];
+/** What every scripted answer reports as its consumption (ticket #80: the Triages' line of `usage`). */
+export const turnTokens = { input: 11, output: 7 };
+const usage = { prompt_tokens: turnTokens.input, completion_tokens: turnTokens.output, total_tokens: turnTokens.input + turnTokens.output };
 const sse = (choices: unknown[]) =>
   choices.map(choice => `data: ${JSON.stringify({ id: 'r', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [choice] })}\n\n`).join('') +
+  `data: ${JSON.stringify({ id: 'r', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [], usage })}\n\n` +
   'data: [DONE]\n\n';
 function answer(turn: Exclude<ModelAnswer, typeof hang | typeof unavailable>, request: number): Response {
   const choices =
@@ -265,6 +269,7 @@ export async function triageWorld(
       access: { tracker: github.tracker, repository: github.repository, repositories, sources: options.sources, trackers: { jira: jira.tracker } },
       polling: { intervalSeconds: 60, clock: time.clock },
       triage: ports,
+      triageDetails: createTriagerDetails(root),
       ...(options.execution ? { execution: options.execution } : {}),
     });
     const stop = new AbortController();

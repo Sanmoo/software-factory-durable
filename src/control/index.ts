@@ -95,6 +95,20 @@ export type { TriageAttempt, TriagePorts, TriageVerdictRecord } from './types.js
 export type { TriageAuthorshipImpediment, TriagePublication, TriagePublicationImpediment } from './types.js';
 export type { TriageEffectProgress } from './rules/triage-verdict.js';
 export type { PublicationMode } from './rules/triage-publication.js';
+// Spec #68 §10 (ticket #80): the operator views of the Triage requests (metadata only), the explicit transcript read and the detail store.
+export { resolveTriageRequest, triageDetailProtections, triageDetailsView, triageRequestImpediments, triageSummary } from './rules/triage-operator.js';
+export type {
+  TriageCleanupPlan,
+  TriageCleanupReceipt,
+  TriageDetailPorts,
+  TriageDetails,
+  TriageDetailView,
+  TriageStatusView,
+  TriageSummaryView,
+  TriagesView,
+  TriageTranscriptView,
+  TriageUsageView,
+} from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

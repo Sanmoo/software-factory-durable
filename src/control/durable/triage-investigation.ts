@@ -75,6 +75,8 @@ export function createTriageInvestigations(deps: {
   const clock = ports.clock ?? systemClock;
   const budget = { investigationMs: ports.investigationMinutes * 60_000, attempts: ports.attempts };
   const stamp = () => new Date(clock.now()).toISOString();
+  /** Ticket #80: the release that starts an attempt is part of its record (nothing in a development checkout). */
+  const released = ports.release ? { release: ports.release } : {};
 
   /** Stops the attempt's environment, removes it once the stop is confirmed and records how the attempt ended. */
   async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: AttemptEnd) {
@@ -270,7 +272,7 @@ export function createTriageInvestigations(deps: {
     const ordinal = (request.attempts?.length ?? 0) + 1;
     const attempt = `t${request.sequence}-${ordinal}-${randomBytes(4).toString('hex')}`;
     const intent = await ports.environment.plan(attempt);
-    const record: TriageAttempt = { attempt, ordinal, startedAt: stamp(), environment: intent, skillPack: null, clones: [], end: null };
+    const record: TriageAttempt = { attempt, ordinal, startedAt: stamp(), environment: intent, skillPack: null, clones: [], ...released, end: null };
     const moved = await transitionTriageRequest(
       session,
       request.triage_request_id,
