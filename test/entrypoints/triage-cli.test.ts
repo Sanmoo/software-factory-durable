@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { chmod } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import type {
   SourceTriage,
@@ -302,4 +304,39 @@ test('TR-46: a transcript is read only by its command; 30 days after the termina
   const after = await detailOf(retained.triage_request_id);
   assert.deepEqual([after.request.state, after.request.endCode, after.request.details.state], ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', 'removed']);
   assert.deepEqual(Object.keys(await w.attemptFiles()), []);
+});
+
+test('TR-46: while a removal of the details is intended and not yet carried out, the transcript and the Verdict text are still read as they are, never reported as gone', async t => {
+  const time = investigationClock(Date.now());
+  const w = await triageWorld(t, {
+    github: { issues: [triageIssue(7)], pulls: {} },
+    sources: [source],
+    script: [() => conclude()],
+    ports: { clock: time.clock },
+  });
+  await w.start();
+  await w.investigated(0);
+  await w.poll();
+  const concluded = await w.settled(0, 'concluded');
+  const id = concluded.triage_request_id;
+  const part = async (verdict: boolean) =>
+    (await w.control().inspect({ kind: 'triage-transcript', triage_request_id: id, ...(verdict ? { verdict: true } : {}) })) as TriageTranscriptView;
+  const session = await part(false);
+  const verdict = (await part(true)).text;
+  assert.ok(session.text && verdict);
+  // The session files cannot be removed: the retention records its intent and the removal fails.
+  const sessions = dirname(join(w.root, concluded.attempts![0]!.end!.transcript!));
+  await chmod(sessions, 0o500);
+  t.after(() => chmod(sessions, 0o700).catch(() => {}));
+  time.advance(31 * 86_400_000);
+  await w.poll();
+  const pending = ((await w.control().inspect({ kind: 'triage', request: id })) as TriageDetailView).request;
+  assert.deepEqual([pending.details.state, pending.details.removedAt, events(pending.timeline).at(-1)], ['removing', null, 'details-removal-intended']);
+  assert.deepEqual(await part(false), session, 'the session is still there and is still read');
+  assert.deepEqual([(await part(true)).state, (await part(true)).text], ['complete', verdict], 'the Verdict text is still stored and is still read');
+  // Once the removal is carried out, both are reported as expired.
+  await chmod(sessions, 0o700);
+  time.advance(86_400_000);
+  await w.poll();
+  assert.deepEqual([(await part(false)).state, (await part(true)).state, (await part(true)).text], ['expired', 'expired', null]);
 });

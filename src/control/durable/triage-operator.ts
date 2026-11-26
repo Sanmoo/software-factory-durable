@@ -168,8 +168,10 @@ export function createTriageOperator(deps: {
     const attempt = attemptOf(attempts, query);
     const offset = query.offset ?? 0;
     const base = { kind: 'triage-transcript' as const, triage_request_id: id, part: partOf(query), attempt, attempts, offset, trust };
+    // Reported as gone only once the removal was carried out: an intent still open (a removal that failed, or is under way) leaves
+    // the session files or the Verdict text where they are, and they are read as they are.
     const removal = request.details?.removal;
-    if (removal) return { ...base, ...removedContent(removal.origin) };
+    if (removal?.removedAt) return { ...base, ...removedContent(removal.origin) };
     const read = query.verdict ? await verdictContent(id) : await sessionContent(attempt, offset);
     const nextStep = read.nextOffset === null ? null : `factory triage transcript ${id} --attempt ${attempt} --offset ${read.nextOffset}`;
     return { ...base, ...read, nextStep };
