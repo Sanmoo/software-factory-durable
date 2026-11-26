@@ -2953,8 +2953,6 @@ export type TriageAttempt = {
   clones: { repository: string; commit: string; at: string }[];
   /** Ticket #79: ids of the MCP Profiles active in the attempt (absent until the Triager was activated, and in older records). */
   mcpProfiles?: string[];
-  /** Ticket #80: the release whose Control started the attempt (absent: a development checkout, or an older record). */
-  release?: string;
   /**
    * How the attempt ended: `code` (`VERDICT_RECORDED` or why there is none), what the environment answered to the stop, and the session
    * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
@@ -3026,8 +3024,6 @@ export type TriagePorts = {
   capacity: number;
   /** Ticket #76, `triager.attempts`: the attempts of one request. */
   attempts: number;
-  /** Ticket #80: the running release, recorded on each attempt it starts (absent in a development checkout). */
-  release?: string;
   /** Ticket #76: calendar clock of the investigation time (default the system's); tests substitute it. `sleep` ends early on abort. */
   clock?: TriageClock;
   /** How often a running attempt's environment is observed for an agent that ended without reporting (default 2000 ms). */

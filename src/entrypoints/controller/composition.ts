@@ -548,8 +548,6 @@ export async function composeProductionTriage(input: {
     repositories: readonly GitHubScope[];
   };
   github: GitHubAccess;
-  /** Ticket #80: the id of the running release, recorded on every attempt it starts. */
-  release?: string;
 }): Promise<{ status: 'off' } | { status: 'composed'; ports: TriagePorts } | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: ['triager'] }> {
   const { effective, root } = input;
   const model = effective.models.triager;
@@ -580,7 +578,6 @@ export async function composeProductionTriage(input: {
       investigationMinutes: effective.triager.investigationMinutes,
       capacity: effective.triager.capacity,
       attempts: effective.triager.attempts,
-      ...(input.release ? { release: input.release } : {}),
       triager: { activate: request => triager.activate(request) },
       clones: createInvestigationClones({ root, fetch: createRepositoryFetchCredentials({ github: input.github, repositories: effective.repositories }) }),
     },
