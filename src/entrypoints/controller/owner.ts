@@ -30,7 +30,7 @@ async function composePorts(
   if (!release.release) return { ports: {} };
   // #62: a release without guest assets is composed too; the composition refuses the adapter that needs them.
   const execution = await composeProductionExecution({ root, effective, ...(release.guestAssets ? { guestAssets: release.guestAssets } : {}), github });
-  const triage = execution.status === 'refused' ? execution : await composeProductionTriage({ root, effective, github });
+  const triage = execution.status === 'refused' ? execution : await composeProductionTriage({ root, release: release.release.release, effective, github });
   if (triage.status === 'refused')
     return { refusal: { code: 'CONFIGURATION_UNSUPPORTED', reason: triage.code, roles: triage.roles, message: refusalMessages[triage.code] } };
   return {

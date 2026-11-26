@@ -79,6 +79,9 @@ export { triageAttemptsExhausted, triageBalance, triageImpediments, triageStarts
 export type { TriageAttemptFacts, TriageBudget, TriageImpediment } from './rules/triage.js';
 export { endTriageAttempt, recordTriageCessation } from './durable/triage-requests.js';
 export type { TriageClock } from './types.js';
+// Spec #68 §11 (ticket #82): the Triage requests of a storage as an upgrade reads them (`inspectStorage(...).triage`).
+export { triageSettlement, triageUnsettled } from './rules/triage-settlement.js';
+export type { TriageSettlement, TriageSettlementFacts } from './rules/triage-settlement.js';
 export {
   intendedChanges,
   triageCandidates,

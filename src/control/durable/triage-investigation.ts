@@ -270,7 +270,8 @@ export function createTriageInvestigations(deps: {
     const ordinal = (request.attempts?.length ?? 0) + 1;
     const attempt = `t${request.sequence}-${ordinal}-${randomBytes(4).toString('hex')}`;
     const intent = await ports.environment.plan(attempt);
-    const record: TriageAttempt = { attempt, ordinal, startedAt: stamp(), environment: intent, skillPack: null, clones: [], end: null };
+    const { release } = ports;
+    const record: TriageAttempt = { attempt, ordinal, startedAt: stamp(), environment: intent, release, skillPack: null, clones: [], end: null };
     const moved = await transitionTriageRequest(
       session,
       request.triage_request_id,

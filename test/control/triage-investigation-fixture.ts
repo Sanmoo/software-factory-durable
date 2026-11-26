@@ -240,6 +240,7 @@ export async function triageWorld(
   });
   const time = investigationClock();
   const ports: TriagePorts = {
+    release: 'release-under-test',
     environment: options.environment?.(environment) ?? environment,
     limits: { memoryGiB: 2, processes: 512, commandSeconds: 120 },
     investigationMinutes: 15,
@@ -323,6 +324,10 @@ export async function triageWorld(
   return {
     dir,
     root,
+    /** The Control storage of this world (ticket #82: an upgrade inspects it; a live copy of it is what a killed controller leaves). */
+    storagePath,
+    /** The Triage ports every start of the Control composes; a test changes them between two starts (another release, another pack). */
+    ports,
     upstream,
     git,
     bodies,

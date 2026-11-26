@@ -73,6 +73,7 @@ test('check verifies every compatibility point read-only; apply refuses a requir
       'upgrade:registry',
       'upgrade:pause',
       'upgrade:stop',
+      'upgrade:triage',
       'upgrade:protocol',
       'upgrade:profiles',
       'upgrade:environments',

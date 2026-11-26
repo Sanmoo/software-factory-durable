@@ -68,7 +68,13 @@ const ambiguousNextStep = (triage_request_id: string, ref: string) =>
 const empty: TriagePublication = { mode: null, startedAt: null, impediment: null, hold: null };
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function createTriagePublications(deps: { session: Session; stopped(): boolean; publishers: Partial<Record<TrackerKind, TriagePublisher>> }) {
+export function createTriagePublications(deps: {
+  session: Session;
+  stopped(): boolean;
+  /** Whether the installation is paused, read from the installation document each time it is asked. */
+  paused(): Promise<boolean>;
+  publishers: Partial<Record<TrackerKind, TriagePublisher>>;
+}) {
   const { session } = deps;
 
   /** Records the effects and the publication of a request still `publishing`; an unchanged record costs no commit. */
@@ -304,16 +310,20 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
 
   return {
     /**
-     * One pass, after each polling cycle: every request in `publishing`, in arrival order. Ticket #82 holds the pass here while the
-     * installation is paused (spec §11: a paused installation publishes no Verdict).
+     * One pass, after each polling cycle: every request in `publishing`, in arrival order. A paused installation publishes no Verdict
+     * (spec §11, ticket #82): the pause is read before each request, so the recorded Verdicts wait as they are and nothing is read from
+     * or written to their Tickets until the installation is unpaused.
      */
     async pass() {
-      for (const request of await liveTriageRequests(session))
-        if (request.state === 'publishing' && !deps.stopped()) await publish(request.triage_request_id).catch(() => {});
+      for (const request of await liveTriageRequests(session)) {
+        if (deps.stopped() || (await deps.paused())) return;
+        if (request.state === 'publishing') await publish(request.triage_request_id).catch(() => {});
+      }
     },
     /**
      * Drives one request now. `ambiguousAsOwn` is the operator's `triage complete` (ticket #81): effects without an attributable author
-     * are taken as the Factory's, under every other rule of the publication.
+     * are taken as the Factory's, under every other rule of the publication. It does not read the pause: the command that calls it
+     * refuses a paused installation first, with its own code.
      */
     publish,
   };

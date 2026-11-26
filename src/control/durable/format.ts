@@ -8,6 +8,7 @@ import type { Cursor, DocumentRecord, JsonObject } from '@earendil-works/pi-dura
 import { CURRENT_SQLITE_SCHEMA_VERSION, SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { controlStorageCompatibility } from '../../contracts/index.js';
 import { unsettledExecutions, type SettlementFacts } from '../rules/quiescence.js';
+import { triageSettlement, type TriageSettlement, type TriageSettlementFacts } from '../rules/triage-settlement.js';
 
 /**
  * Ticket 33 (spec §11.4): the Control storage FORMATS this release knows, read through the public Pi Durable Storage contract.
@@ -143,6 +144,11 @@ export type StorageInspection =
       stateDigest: string | null;
       /** Durable activity evidence: Executions not settled (see rules/quiescence) and Slots held. */
       activity: { unsettled: string[]; heldSlots: number };
+      /**
+       * Spec #68 §11 (ticket #82): the Triage requests by situation, the units of Triage capacity held and the attempts holding them.
+       * Metadata only (states and how attempts ended); all zero in a storage without Triage requests.
+       */
+      triage: TriageSettlement;
       /** What is needed before an operational open: nothing, an explicitly requested supported migration, or it is refused. */
       operational: 'ready' | 'migration-required' | 'incompatible';
     };
@@ -184,7 +190,11 @@ const empty = {
   preserved: null,
   stateDigest: null,
   activity: { unsettled: [], heldSlots: 0 },
+  triage: triageSettlement([]),
 };
+/** The settlement facts of a stored Triage request (none for any other document): its state and its attempts, never its content. */
+const triageRequestFacts = (kind: string, value: JsonObject): TriageSettlementFacts[] =>
+  kind === 'factory.triage-request' && value.request ? [value.request as unknown as TriageSettlementFacts] : [];
 /** Examines an open database. `storage` is returned only when the Pi Durable schema is exactly the supported one (opening never migrates). */
 export async function examine(
   database: SqliteDatabase,
@@ -240,6 +250,7 @@ export async function examine(
   const digest = createHash('sha256');
   const full = createHash('sha256');
   const workFacts: SettlementFacts[] = [];
+  const triageFacts: TriageSettlementFacts[] = [];
   let installation: Extract<StorageInspection, { kind: 'storage' }>['installation'] = null;
   const counts = { works: 0, open: 0, answered: 0, heldSlots: 0, requests: 0, sessions: 0 };
   let installationVersion: number | null = null;
@@ -282,6 +293,7 @@ export async function examine(
         if ((((value.work as JsonObject).execution as JsonObject | null)?.end as JsonObject | null)?.session) counts.sessions++;
       }
       if (record.kind === 'factory.request' && value.receipt) counts.requests++;
+      triageFacts.push(...triageRequestFacts(record.kind, value));
       if (record.kind === 'factory.slots') counts.heldSlots = Object.keys((value.held as JsonObject | undefined) ?? {}).length;
       if (record.kind === 'factory.question') {
         const state = (value.question as JsonObject | null)?.state;
@@ -333,6 +345,7 @@ export async function examine(
       },
       stateDigest: full.digest('hex'),
       activity: { unsettled: unsettledExecutions(workFacts), heldSlots: counts.heldSlots },
+      triage: triageSettlement(triageFacts),
       operational,
     },
   };
