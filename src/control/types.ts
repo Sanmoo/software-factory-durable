@@ -2920,6 +2920,11 @@ export type TriageAttempt = {
   ordinal: number;
   startedAt: string;
   environment: InvestigationRecord;
+  /**
+   * Ticket #82 (spec #68 §11): the release whose controller ran the attempt (`TriagePorts.release`), recorded at its start. Absent in a
+   * record written before ticket #82.
+   */
+  release?: string;
   /** The pack whose `triage` skill the attempt ran (null until the Triager was activated). */
   skillPack: { id: string; version: string; manifestSha256: string } | null;
   /** Candidate repositories cloned for this attempt, with the commit read. */
@@ -2985,6 +2990,8 @@ export type TriageVerdictRecord = {
  * every clone request and Verdict itself, and never hands a credential to any of these.
  */
 export type TriagePorts = {
+  /** Ticket #82: the identity of the running release, recorded on every attempt it starts beside the pack the Triager reports. */
+  release: string;
   /** The Investigation Environment of the Host (never `sandbox.adapter`). */
   environment: InvestigationEnvironmentPort;
   /** `triager.environment` of the configuration. */

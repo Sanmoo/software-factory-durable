@@ -58,6 +58,7 @@ export async function openCrashControl(options: { factoryRoot: string; storagePa
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], sources: [source] },
     polling: { intervalSeconds: 60, clock: time.clock },
     triage: {
+      release: 'release-under-test',
       environment,
       limits: { memoryGiB: 2, processes: 512, commandSeconds: 120 },
       investigationMinutes: 15,
