@@ -16,3 +16,4 @@ export {
 } from './port.js';
 export { stopConfirmation, type StopFacts } from './stop-rules.js';
 export { createInvestigationEnvironment } from './systemd.js';
+export { createInvestigationHostProbe, type InvestigationHostProbe, type InvestigationPrerequisite } from './host.js';

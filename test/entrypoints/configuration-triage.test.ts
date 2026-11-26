@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readConfiguration } from '../../src/entrypoints/configuration.js';
+import { readConfiguration, triageSources } from '../../src/entrypoints/configuration.js';
 import { doctor } from '../../src/entrypoints/doctor.js';
-import { createTriageHostProbe, triageSources, type TriageHostProbe } from '../../src/entrypoints/triage-prerequisites.js';
+import { createInvestigationHostProbe, type InvestigationHostProbe } from '../../src/sandbox/index.js';
 import { productionModelChecks, productionProfile } from '../../src/entrypoints/release.js';
 
 // Spec #68 §2 (ticket #69): config.yaml schema 3 carries the Triage configuration; the host prerequisites decide whether it turns on.
@@ -41,9 +41,9 @@ const older = {
   1: `schemaVersion: 1\n${base}models:\n${roles}`,
   2: `schemaVersion: 2\n${base}models:\n${roles}ticketSources:\n  - {tracker: github, repository: equipe/payments-api, discover: true}\n`,
 };
-const capable: TriageHostProbe = async () => [];
+const capable: InvestigationHostProbe = async () => [];
 
-async function read(yaml: string, triageHost: TriageHostProbe = capable) {
+async function read(yaml: string, triageHost: InvestigationHostProbe = capable) {
   const root = await mkdtemp(join(tmpdir(), 'factory-config-triage-'));
   try {
     await writeFile(join(root, 'config.yaml'), yaml);
@@ -53,7 +53,7 @@ async function read(yaml: string, triageHost: TriageHostProbe = capable) {
     await rm(root, { recursive: true, force: true });
   }
 }
-async function effective(yaml: string, triageHost?: TriageHostProbe) {
+async function effective(yaml: string, triageHost?: InvestigationHostProbe) {
   const { configuration } = await read(yaml, triageHost);
   assert.equal(configuration.valid, true, JSON.stringify(configuration));
   if (!configuration.valid) throw new Error('unreachable');
@@ -273,7 +273,7 @@ async function privatePath(t: { after(fn: () => Promise<void>): void }, tools: R
     await writeFile(join(directory, name), `#!/bin/sh\nexit ${exit}\n`);
     await chmod(join(directory, name), 0o700);
   }
-  return createTriageHostProbe({ environment: { PATH: directory } });
+  return createInvestigationHostProbe({ environment: { PATH: directory } });
 }
 const everyTool = { bwrap: 0, systemctl: 0, git: 0, rg: 0 };
 
@@ -315,12 +315,12 @@ test('TR-29: a user systemd that does not answer and namespaces bwrap cannot cre
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const name of ['systemctl', 'git', 'rg']) await writeFile(join(directory, name), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   await writeFile(join(directory, 'bwrap'), '#!/bin/sh\n[ "$1" = --version ] && exit 0\nexit 1\n', { mode: 0o700 });
-  const noNamespaces = await read(triaged, createTriageHostProbe({ environment: { PATH: directory } }));
+  const noNamespaces = await read(triaged, createInvestigationHostProbe({ environment: { PATH: directory } }));
   assert.deepEqual(noNamespaces.configuration.valid && noNamespaces.configuration.effective.triage, {
     status: 'unavailable',
     missing: ['unprivileged-namespaces'],
   });
-  const everything = await read(triaged, createTriageHostProbe({ environment: { PATH: join(directory, 'absent') } }));
+  const everything = await read(triaged, createInvestigationHostProbe({ environment: { PATH: join(directory, 'absent') } }));
   assert.deepEqual(everything.configuration.valid && everything.configuration.effective.triage, {
     status: 'unavailable',
     missing: ['bwrap', 'systemd-user', 'git', 'rg'],
@@ -328,7 +328,7 @@ test('TR-29: a user systemd that does not answer and namespaces bwrap cannot cre
 });
 
 test('TR-29: a host that is not Linux never turns Triage on', async () => {
-  const probe = createTriageHostProbe({ platform: 'darwin', environment: { PATH: '/nonexistent' } });
+  const probe = createInvestigationHostProbe({ platform: 'darwin', environment: { PATH: '/nonexistent' } });
   assert.deepEqual((await probe()).slice(0, 1), ['linux']);
 });
 

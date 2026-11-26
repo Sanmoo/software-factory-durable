@@ -14,7 +14,7 @@ const allowed = {
   control: ['contracts', 'issue-tracker', 'code-repository', 'sandbox', 'workers', 'records'],
 };
 
-const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|triage-prerequisites|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter|triager)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
+const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter|triager)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
 
 const compositions = {
   cli: ['contracts', 'protocol', 'records', 'sandbox', 'control', 'workers'],
@@ -26,7 +26,7 @@ const compositions = {
 };
 const entrypoint = role =>
   role === 'cli'
-    ? '^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|triage-prerequisites|release|release-build)\\.ts$'
+    ? '^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$'
     : `^src/entrypoints/${role}(\\.ts$|/)`;
 
 module.exports = {
@@ -45,7 +45,7 @@ module.exports = {
     {
       name: 'cli-workers-setup-only',
       severity: 'error',
-      from: { path: '^src/entrypoints/(cli|triage-cli|doctor|image-cleanup|configuration|triage-prerequisites|release|release-build)\\.ts$' },
+      from: { path: '^src/entrypoints/(cli|triage-cli|doctor|image-cleanup|configuration|release|release-build)\\.ts$' },
       to: { path: '^src/workers/' },
     },
     { name: 'cli-control-types-only', severity: 'error', from: { path: entrypoint('cli') }, to: { path: '^src/control/', dependencyTypesNot: ['type-only'] } },

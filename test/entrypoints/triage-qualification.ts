@@ -935,7 +935,7 @@ async function preflightPhase(save: Save) {
   const { execFileSync } = await import('node:child_process');
   const { createGitHubAccess } = await import('../../src/platform/github/index.js');
   const { createCodeRepository } = await import('../../src/code-repository/index.js');
-  const { createTriageHostProbe } = await import('../../src/entrypoints/triage-prerequisites.js');
+  const { createInvestigationHostProbe } = await import('../../src/sandbox/index.js');
   const { productionProfile } = await import('../../src/entrypoints/release.js');
   const { triagerToolNames } = await import('../../src/workers/index.js');
   const reasons: string[] = [];
@@ -945,7 +945,7 @@ async function preflightPhase(save: Save) {
     () => reasons.push('CONFIG_YAML_PRESENT'),
     () => {},
   );
-  const missing = await createTriageHostProbe()();
+  const missing = await createInvestigationHostProbe()();
   if (missing.length) reasons.push(`HOST_PREREQUISITES:${missing.join('+')}`);
   const github = createGitHubAccess({ root, appId: fixture.appId, privateKeyFile: files.appKey });
   const issues: Record<string, unknown> = {};

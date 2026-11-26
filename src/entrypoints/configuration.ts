@@ -2,11 +2,54 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { z } from 'zod';
-import { createSandbox, type HostToolProbe, type LambdaServiceFactory } from '../sandbox/index.js';
-import { builderBudgetMaximumFactor, builderBudgetV1, defaultWorkerThinkingLevel, workerThinkingLevels } from '../contracts/index.js';
-import { createTriageHostProbe, triageAvailability, triageDiagnostics, type TriageHostProbe } from './triage-prerequisites.js';
-// The controller composition reads the configuration through this module only: which sources have Triage on is part of it.
-export { triageSources, type TriageAvailability } from './triage-prerequisites.js';
+import {
+  createInvestigationHostProbe,
+  createSandbox,
+  type HostToolProbe,
+  type InvestigationHostProbe,
+  type InvestigationPrerequisite,
+  type LambdaServiceFactory,
+} from '../sandbox/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, defaultWorkerThinkingLevel, workerThinkingLevels, type Diagnostic } from '../contracts/index.js';
+
+/**
+ * Whether Triage is on in this installation (spec #68 §2): `off` when no Ticket source carries a `triage` block (every schema 1 or 2
+ * config.yaml), `unavailable` when a source asks for it and the Host lacks a prerequisite of the Investigation Environment (the
+ * Sandbox module probes the Host), `on` otherwise.
+ */
+export type TriageAvailability = { status: 'off' } | { status: 'on' } | { status: 'unavailable'; missing: InvestigationPrerequisite[] };
+/** `sources`: how many Ticket sources carry a `triage` block. The Host is probed only when one does. */
+async function triageAvailability(sources: number, probe: InvestigationHostProbe): Promise<TriageAvailability> {
+  if (sources === 0) return { status: 'off' };
+  const missing = await probe();
+  return missing.length === 0 ? { status: 'on' } : { status: 'unavailable', missing };
+}
+/** The installation diagnostic of a configured Triage (none while it is off: nothing was asked of the Host). */
+function triageDiagnostics(availability: TriageAvailability): Diagnostic[] {
+  if (availability.status === 'off') return [];
+  const on = availability.status === 'on';
+  return [
+    {
+      id: 'triage:prerequisites',
+      status: on ? 'ok' : 'blocked',
+      message: on
+        ? 'The Host has what the Investigation Environment needs (Linux, bwrap, unprivileged namespaces, user systemd, git, rg).'
+        : `Triage is off in every Ticket source: the Host lacks ${availability.missing.join(', ')}. Works are admitted as without the triage block.`,
+      nextStep: 'Administrator provides the named Host prerequisite, or the operator removes the `triage` block; nothing is installed or repaired.',
+    },
+  ];
+}
+/**
+ * The Ticket sources where Triage is on: the ones carrying a `triage` block, and none while the Host lacks a prerequisite. The only
+ * reading of "is Triage on for this source" (the configured block alone never starts a Triage).
+ */
+export function triageSources<Source extends { triage?: unknown }>(effective: {
+  triage: TriageAvailability;
+  ticketSources: readonly Source[];
+}): (Source & { triage: NonNullable<Source['triage']> })[] {
+  if (effective.triage.status !== 'on') return [];
+  return effective.ticketSources.filter((source): source is Source & { triage: NonNullable<Source['triage']> } => source.triage !== undefined);
+}
 
 const text = z
   .string()
@@ -322,7 +365,11 @@ const fieldOf = (input: unknown, key: string): unknown =>
 export async function readConfiguration(
   root: string,
   guestAssets?: { directory: string; manifestSha256: string },
-  { lambdaService, lambdaHostTool, triageHost }: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe; triageHost?: TriageHostProbe } = {},
+  {
+    lambdaService,
+    lambdaHostTool,
+    triageHost,
+  }: { lambdaService?: LambdaServiceFactory; lambdaHostTool?: HostToolProbe; triageHost?: InvestigationHostProbe } = {},
 ) {
   const sandboxOf = () =>
     createSandbox({
@@ -373,7 +420,7 @@ export async function readConfiguration(
   }
   const effective = normalized(parsed.data);
   // Spec #68 §2: a `triage` block only turns on where the Host can run the Investigation Environment; the diagnostic says what is missing.
-  const triage = await triageAvailability(effective.ticketSources.filter(source => source.triage).length, triageHost ?? createTriageHostProbe());
+  const triage = await triageAvailability(effective.ticketSources.filter(source => source.triage).length, triageHost ?? createInvestigationHostProbe());
   return {
     checks: [...sandbox.checks, ...triageDiagnostics(triage)],
     versions: sandbox.versions,
