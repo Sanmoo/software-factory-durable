@@ -17,7 +17,14 @@ import {
   type JiraHttpResult,
   type JiraTransport,
 } from '../../issue-tracker/index.js';
-import { triageSources, type TicketSourceConfiguration, type TriageAvailability, type TriagerConfiguration } from '../configuration.js';
+import {
+  triageSources,
+  type McpProfileConfiguration,
+  type McpServerConfiguration,
+  type TicketSourceConfiguration,
+  type TriageAvailability,
+  type TriagerConfiguration,
+} from '../configuration.js';
 import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import {
@@ -519,13 +526,16 @@ export function triagerAgentStart(bootstrap: string): InvestigationAgent {
  * worker profile at the configured reasoning level, activated with the same pack as the Builder; its agent is the fixed `triager`
  * entrypoint, started by the Investigation Environment with a closed environment and the attempt's bootstrap file as its only argument.
  * The candidates are cloned from the bare cache the Works use, with the Host's read credential. A `triager` role that is not exactly the
- * release profile refuses the composition, like any other role.
+ * release profile refuses the composition, like any other role. Ticket #79: the registered MCP servers and Profiles go to the Triager with
+ * the active ones; the agent of each attempt reads a server's token from its file, so no token passes through here.
  */
 export async function composeProductionTriage(input: {
   root: string;
   effective: {
     triage: TriageAvailability;
     triager: TriagerConfiguration;
+    mcpServers: readonly McpServerConfiguration[];
+    mcpProfiles: readonly McpProfileConfiguration[];
     models: { triager?: { provider: string; model: string; thinkingLevel?: WorkerThinkingLevel | undefined } | undefined };
     repositories: readonly GitHubScope[];
   };
@@ -539,6 +549,7 @@ export async function composeProductionTriage(input: {
   const triager = createTriager({
     root,
     skillPack: await productionSkillPack(),
+    mcp: { servers: effective.mcpServers, profiles: effective.mcpProfiles, active: effective.triager.mcpProfiles },
     profile: {
       id: productionProfile.sdkProfileId,
       systemPrompt: productionProfile.prompts.triager,

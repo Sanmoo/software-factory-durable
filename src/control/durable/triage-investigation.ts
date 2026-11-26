@@ -23,6 +23,10 @@ type Running = {
   clones: string | null;
   cloned: Map<string, { path: string; commit: string }>;
 };
+/** What the session of an attempt left: its transcript and its calls per tool (absent when it never reported). */
+type AttemptEnd = { code: string; transcript: string | null; toolCalls?: Record<string, number> | null };
+const reportedBy = (completion: Awaited<Activation['completed']>): Omit<AttemptEnd, 'code'> =>
+  'transcript' in completion ? { transcript: completion.transcript, toolCalls: completion.toolCalls ?? null } : { transcript: null };
 const cloneName = (repository: string) => repository.replace('/', '__');
 /** How often a running attempt's environment is observed for an agent that ended without reporting. */
 const agentWatchMs = 2000;
@@ -43,11 +47,11 @@ export function createTriageInvestigations(deps: {
   let reconciled = false;
 
   /** Stops the attempt's environment, removes it once the stop is confirmed and records how the attempt ended. */
-  async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: { code: string; transcript: string | null }) {
+  async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: AttemptEnd) {
     const cessation = await ports.environment.stop(record).catch(() => unconfirmed);
     if (cessation.cessationConfirmed) await ports.environment.close(record).catch(() => {});
     await updateTriageAttempt(session, triage_request_id, record.attempt, attempt => {
-      attempt.end = { at: new Date().toISOString(), code: end.code, cessation, transcript: end.transcript };
+      attempt.end = { at: new Date().toISOString(), code: end.code, cessation, transcript: end.transcript, toolCalls: end.toolCalls ?? null };
     });
     const request = await readTriageRequest(session, triage_request_id);
     if (request?.state !== 'investigating') return;
@@ -133,15 +137,15 @@ export function createTriageInvestigations(deps: {
     const id = state.request.triage_request_id;
     let record = intent;
     let activation: Activation | undefined;
-    let end = { code: 'TRIAGE_ATTEMPT_FAILED', transcript: null as string | null };
+    let end: AttemptEnd = { code: 'TRIAGE_ATTEMPT_FAILED', transcript: null };
     try {
       activation = await ports.triager.activate({
         attempt: state.attempt,
         activation: triageActivation({ ...state.subject, remainingMs: ports.investigationMinutes * 60_000 }),
         host: { requestClone: repository => requestClone(state, repository), conclude: verdict => conclude(state, verdict) },
       });
-      const { skillPack } = activation;
-      await updateTriageAttempt(session, id, state.attempt, attempt => void (attempt.skillPack = skillPack));
+      const { skillPack, mcpProfiles = [] } = activation;
+      await updateTriageAttempt(session, id, state.attempt, attempt => void Object.assign(attempt, { skillPack, mcpProfiles }));
       // A controller that is stopping starts no environment: the attempt ends here, spent, with nothing to stop.
       const opened = deps.stopped()
         ? ({ status: 'failure', code: 'CONTROLLER_STOPPED' } as const)
@@ -153,7 +157,7 @@ export function createTriageInvestigations(deps: {
         await updateTriageAttempt(session, id, state.attempt, attempt => void (attempt.environment = opened.record));
         const completion = await Promise.race([activation.completed, agentGone(opened.record)]);
         const recorded = (await readTriageRequest(session, id))?.verdict?.attempt === state.attempt;
-        end = { code: recorded ? 'VERDICT_RECORDED' : attemptEndCode(completion), transcript: 'transcript' in completion ? completion.transcript : null };
+        end = { code: recorded ? 'VERDICT_RECORDED' : attemptEndCode(completion), ...reportedBy(completion) };
       }
     } catch {
       /* `end` keeps the generic failure: the attempt is ended below whatever threw. */

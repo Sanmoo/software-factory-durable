@@ -244,6 +244,7 @@ test('architecture gate keeps SDK ownership rules sensitive to resolved package 
   const packages = [
     ['@earendil-works/pi-durable', 'durable', 'src/records/index.ts'],
     ['@earendil-works/pi-coding-agent', 'coding-agent', 'src/control/index.ts'],
+    ['@earendil-works/pi-mcp', 'mcp', 'src/control/index.ts'],
     ['@earendil-works/gondolin', 'gondolin', 'src/workers/index.ts'],
     ['@octokit/rest', 'github', 'src/sandbox/index.ts'],
   ];

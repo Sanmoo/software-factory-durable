@@ -12,6 +12,7 @@ import {
 import type { InvestigationShell } from '../sandbox/index.js';
 import { openFactoryOAuth } from './factory-oauth.js';
 import { budgetFor, qualifyOAuth } from './oauth-qualification.js';
+import { openTriagerMcp, type TriagerMcp } from './triager-mcp.js';
 import { triagerTools, type TriagerHost } from './triager-tools.js';
 import { sessionRefusal, thinkingLevelOf } from './worker-session.js';
 import type { ReviewerProfile } from './worker-start.js';
@@ -29,6 +30,8 @@ export type TriagerSessionOptions = {
   signal: AbortSignal;
   /** Installation root of an OAuth profile's credential store; a profile with its own key needs none. */
   factoryRoot?: string;
+  /** The servers and selections of the active MCP Profiles (none: the session has no MCP tool). */
+  mcp?: TriagerMcp | undefined;
 };
 /**
  * `concluded`: the Control accepted a Verdict in this session. `closedBy`: which Host count or failure closed a session that did not end
@@ -39,6 +42,8 @@ export type TriagerSessionResult = {
   concluded: boolean;
   sessionFile: string | null;
   sessionTools: string[];
+  /** How many calls of each session tool reached its implementation (operator metadata; never arguments or results). */
+  toolCalls: Record<string, number>;
   closedBy: 'requests' | 'tools' | 'provider' | null;
 };
 
@@ -158,17 +163,28 @@ async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, s
     return stream(...args);
   };
   qualification?.check();
-  const tools = triagerTools({
-    shell: options.shell,
-    host: options.host,
-    withheld: text => secrets.some(secret => text.includes(secret)),
-    concluded: () => state.concluded,
-    onConcluded() {
-      state.concluded = true;
-      setImmediate(() => state.abort());
+  const toolCalls: Record<string, number> = {};
+  // The client of the active MCP Profiles lives in this process, configured by the attempt's bootstrap alone (spec §7).
+  const mcp = await openTriagerMcp(options.mcp, signal);
+  secrets.push(...mcp.secrets);
+  const tools = triagerTools(
+    {
+      shell: options.shell,
+      host: options.host,
+      withheld: text => secrets.some(secret => text.includes(secret)),
+      concluded: () => state.concluded,
+      onConcluded() {
+        state.concluded = true;
+        setImmediate(() => state.abort());
+      },
+      onCall: tool => void (toolCalls[tool] = (toolCalls[tool] ?? 0) + 1),
     },
+    mcp.tools,
+  );
+  const { session, manager } = await openSession(options, runtime, tools, qualification).catch(async error => {
+    await mcp.close();
+    throw error;
   });
-  const { session, manager } = await openSession(options, runtime, tools, qualification);
   state.abort = () => void session.abort().catch(() => {});
   const abort = () => {
     state.interrupted = true;
@@ -184,16 +200,18 @@ async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, s
       ...resultOf(state, signal.aborted, qualification),
       sessionFile: manager.getSessionFile() ?? null,
       sessionTools: tools.map(tool => tool.name).sort(),
+      toolCalls,
     };
   } finally {
     signal.removeEventListener('abort', abort);
     session.dispose();
+    await mcp.close();
   }
 }
 
 /**
  * Spec #68 §7: one session of the `triager` role. Its tools are the shell and read bound to the attempt's Investigation Environment, the
- * clone request and `concluir_triagem`; there is no tracker write and no `ask_user`. An accepted Verdict ends it: no further model
+ * clone request, the tools of the active MCP Profiles and `concluir_triagem`; there is no tracker write and no `ask_user`. An accepted Verdict ends it: no further model
  * request or tool call starts. Never continued: every attempt is a new session.
  */
 export async function runTriagerSession(options: TriagerSessionOptions): Promise<TriagerSessionResult> {

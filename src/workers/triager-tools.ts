@@ -20,6 +20,8 @@ type Hooks = {
   withheld(text: string): boolean;
   concluded(): boolean;
   onConcluded(): void;
+  /** A call of a session tool reached its implementation (operator metadata: how many times each tool ran). */
+  onCall?(tool: string): void;
 };
 const schema = (properties: Record<string, unknown>, required: string[]) =>
   ({ type: 'object', additionalProperties: false, required, properties }) as unknown as ToolDefinition['parameters'];
@@ -148,18 +150,30 @@ function conclude(hooks: Hooks): ToolDefinition {
   };
 }
 
-/** The whole tool set of a Triager session (the MCP Profile tools of spec §7 are appended by their own ticket). */
-export function triagerTools(hooks: Hooks): ToolDefinition[] {
-  // No call starts after the accepted Verdict, whatever the tool.
-  return [bash(hooks), read(hooks), requestClone(hooks), conclude(hooks)].map(tool =>
-    tool.name === 'concluir_triagem'
-      ? tool
-      : {
-          ...tool,
-          async execute(...args: Parameters<ToolDefinition['execute']>) {
-            if (hooks.concluded()) throw new Error('TRIAGE_CONCLUDED');
-            return tool.execute(...args);
-          },
-        },
-  );
+const withheldOutput = 'TOOL_OUTPUT_WITHHELD: the output carried a Factory credential and was not delivered.';
+/** A tool of an MCP Profile (spec §7): what its source answers, result or error, never carries a credential of the Factory to the model. */
+function external(hooks: Hooks, tool: ToolDefinition): ToolDefinition {
+  return {
+    ...tool,
+    async execute(...args: Parameters<ToolDefinition['execute']>) {
+      const result = await tool.execute(...args).catch((error: unknown) => {
+        throw hooks.withheld(error instanceof Error ? error.message : String(error)) ? new Error(withheldOutput) : error;
+      });
+      if (hooks.withheld(JSON.stringify(result))) throw new Error(withheldOutput);
+      return result;
+    },
+  };
+}
+
+/** The whole tool set of a Triager session: its own four tools and `mcp`, the tools of the active MCP Profiles (spec §7). */
+export function triagerTools(hooks: Hooks, mcp: ToolDefinition[] = []): ToolDefinition[] {
+  return [bash(hooks), read(hooks), requestClone(hooks), conclude(hooks), ...mcp.map(tool => external(hooks, tool))].map(tool => ({
+    ...tool,
+    async execute(...args: Parameters<ToolDefinition['execute']>) {
+      // No call starts after the accepted Verdict, whatever the tool (`concluir_triagem` answers that itself).
+      if (tool.name !== 'concluir_triagem' && hooks.concluded()) throw new Error('TRIAGE_CONCLUDED');
+      hooks.onCall?.(tool.name);
+      return tool.execute(...args);
+    },
+  }));
 }
