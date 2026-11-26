@@ -52,6 +52,7 @@ import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
+import { holdsTriageCapacity, triageImpediments } from '../rules/triage.js';
 import { createTriageDiscovery } from './triage-discovery.js';
 import { createTriageInvestigations } from './triage-investigation.js';
 import { readTriageRequests } from './triage-requests.js';
@@ -253,9 +254,16 @@ const triageStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
       }
     : {};
 /** Spec #68 (ticket #71): every Triage request in arrival order and the queue, metadata only. */
-async function triageRequestsView(session: Session): Promise<TriageRequestsView> {
+async function triageRequestsView(session: Session, capacity: number | null): Promise<TriageRequestsView> {
   const requests = await readTriageRequests(session);
-  return { kind: 'triage-requests', requests, queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id) };
+  const holding = requests.flatMap(request => request.attempts ?? []).filter(holdsTriageCapacity);
+  return {
+    kind: 'triage-requests',
+    capacity: { configured: capacity, investigating: holding.filter(attempt => !attempt.end).length, retained: holding.filter(attempt => attempt.end).length },
+    impediments: requests.flatMap(triageImpediments),
+    requests,
+    queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id),
+  };
 }
 /** Ticket #75: the investigation desk when the Triage ports, the access and the polling are all composed; a desk that does nothing otherwise. */
 function triageInvestigations(
@@ -1114,6 +1122,6 @@ export async function openControl(options: {
   });
   // Spec #68 (ticket #71): Triage requests are read beside the Work views, never through them.
   const inspectWorks = control.inspect;
-  control.inspect = query => (query.kind === 'triage-requests' ? triageRequestsView(state) : inspectWorks(query));
+  control.inspect = query => (query.kind === 'triage-requests' ? triageRequestsView(state, options.triage?.capacity ?? null) : inspectWorks(query));
   return control;
 }

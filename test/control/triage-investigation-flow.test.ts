@@ -143,7 +143,7 @@ test('TR-14: an invalid Verdict returns its errors to the session; the corrected
   assert.equal(request.state, 'publishing');
   assert.deepEqual(
     request.timeline.map(entry => entry.event),
-    ['requested', 'attempt-started', 'verdict-recorded'],
+    ['requested', 'attempt-started', 'verdict-recorded', 'attempt-ended'],
   );
   const attempt = request.attempts![0]!;
   assert.deepEqual(
@@ -171,10 +171,11 @@ test('TR-14: a session that ends without an accepted Verdict records none; the r
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
     sources: [githubSource],
     script: [() => call('concluir_triagem', { outcome: 'needs-info' }), () => 'Não consegui concluir.', () => call('concluir_triagem', verdict)],
+    ports: { attempts: 1 },
   });
   await w.start();
   const failed = await w.investigated();
-  assert.deepEqual([failed.state, failed.end?.code, failed.verdict, failed.intended], ['failed', 'TRIAGER_ENDED_WITHOUT_VERDICT', undefined, undefined]);
+  assert.deepEqual([failed.state, failed.end?.code, failed.verdict, failed.intended], ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', undefined, undefined]);
   assert.equal(failed.attempts![0]!.end?.code, 'TRIAGER_ENDED_WITHOUT_VERDICT');
   // The capacity is free again: the next request of the queue is investigated by a new session.
   await w.poll();
@@ -300,6 +301,7 @@ test('an attempt starts at the commit that records the environment intent and en
     github: { issues: [triageIssue(7)], pulls: {} },
     sources: [githubSource],
     script: [() => hang],
+    ports: { attempts: 1 },
   });
   await w.start();
   await untilHolds('the session to ask the model', () => w.bodies.length === 1);
@@ -315,7 +317,8 @@ test('an attempt starts at the commit that records the environment intent and en
   await w.stop();
   await w.start();
   const [ended] = await w.requests();
-  assert.deepEqual([ended!.state, ended!.end?.code, ended!.attempts!.length], ['failed', 'TRIAGER_INTERRUPTED', 1]);
+  assert.deepEqual([ended!.state, ended!.end?.code, ended!.attempts!.length], ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', 1]);
+  assert.equal(ended!.attempts![0]!.end?.code, 'TRIAGER_INTERRUPTED');
   assert.deepEqual(ended!.attempts![0]!.end?.cessation, { cessationConfirmed: true, evidence: 'unit-inactive' });
   assert.ok(ended!.attempts![0]!.environment.invocation, 'the invocation was recorded right after the start');
   assert.deepEqual(w.environment.controls.active(), []);
@@ -329,6 +332,7 @@ test('an agent that ends without ever reporting ends its attempt: the environmen
     sources: [githubSource],
     script: [],
     ports: {
+      attempts: 1,
       agentWatchMs: 5,
       // An agent that dies before it reaches its channel: its completion never comes.
       triager: {
@@ -352,7 +356,7 @@ test('an agent that ends without ever reporting ends its attempt: the environmen
   });
   await w.start();
   const request = await w.investigated();
-  assert.deepEqual([request.state, request.end?.code, request.attempts![0]!.end?.code], ['failed', 'TRIAGER_AGENT_EXITED', 'TRIAGER_AGENT_EXITED']);
+  assert.deepEqual([request.state, request.end?.code, request.attempts![0]!.end?.code], ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', 'TRIAGER_AGENT_EXITED']);
   assert.equal(request.attempts![0]!.end?.cessation.cessationConfirmed, true);
   assert.equal(w.bodies.length, 0);
 });

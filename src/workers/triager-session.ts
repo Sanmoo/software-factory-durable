@@ -11,7 +11,7 @@ import {
 } from '#factory-pi';
 import type { InvestigationShell } from '../sandbox/index.js';
 import { openFactoryOAuth } from './factory-oauth.js';
-import { budgetFor, qualifyOAuth } from './oauth-qualification.js';
+import { budgetFor, qualifyOAuth, type QualificationLimits } from './oauth-qualification.js';
 import { triagerTools, type TriagerHost } from './triager-tools.js';
 import { sessionRefusal, thinkingLevelOf } from './worker-session.js';
 import type { ReviewerProfile } from './worker-start.js';
@@ -105,7 +105,60 @@ async function openRuntime(options: TriagerSessionOptions, secrets: string[], si
   };
 }
 
-type Qualification = ReturnType<typeof qualifyOAuth> | undefined;
+type Qualification = Pick<ReturnType<typeof qualifyOAuth>, 'check' | 'tool' | 'failed' | 'exhausted' | 'providerFailed'>;
+
+/**
+ * Spec #68 §5 (ticket #76): the two counts of `triager-v1` for a profile with its own key, which has no OAuth qualification to hold them.
+ * One request or tool call past its count closes the session, and a model request that ends in error while the Host did not abort is the
+ * provider's failure. Host facts only; the byte bounds and the model pinning of the release profile stay with `qualifyOAuth`.
+ */
+function countBudget(runtime: ModelRuntime, signal: AbortSignal, abort: () => void, limits: QualificationLimits): Qualification {
+  let requests = 0;
+  let tools = 0;
+  let failed = false;
+  let exhausted: 'requests' | 'tools' | null = null;
+  let providerFailed = false;
+  const close = (by: 'requests' | 'tools') => {
+    if (!failed) exhausted = by;
+    failed = true;
+    abort();
+    return new Error('WORKER_QUALIFICATION_CLOSED');
+  };
+  const observe = (message: { stopReason?: string }) => {
+    if (message.stopReason !== 'error' || failed || signal.aborted) return;
+    providerFailed = true;
+    failed = true;
+  };
+  const native = runtime.streamSimple.bind(runtime);
+  runtime.streamSimple = (...args: Parameters<typeof native>) => {
+    if (failed || signal.aborted) throw new Error('WORKER_QUALIFICATION_CLOSED');
+    if (++requests > limits.requests) throw close('requests');
+    const stream = native(...args);
+    const push = stream.push.bind(stream);
+    stream.push = event => {
+      if (event.type === 'error') observe(event.error);
+      else if (event.type === 'done') observe(event.message);
+      push(event);
+    };
+    return stream;
+  };
+  return {
+    check() {
+      if (failed || signal.aborted) throw new Error('WORKER_QUALIFICATION_CLOSED');
+    },
+    failed: () => failed,
+    exhausted: () => exhausted,
+    providerFailed: () => providerFailed,
+    tool: tool => ({
+      ...tool,
+      async execute(...args) {
+        if (failed || signal.aborted) throw new Error('WORKER_QUALIFICATION_CLOSED');
+        if (++tools > limits.tools) throw close('tools');
+        return tool.execute(...args);
+      },
+    }),
+  };
+}
 type Conversation = { concluded: boolean; interrupted: boolean; abort(): void };
 
 /** The profile's model, and nothing else: an OAuth profile only ever speaks the Responses API. */
@@ -127,7 +180,7 @@ async function openSession(options: TriagerSessionOptions, runtime: ModelRuntime
     model: modelOf(runtime, profile),
     thinkingLevel: thinkingLevelOf(profile),
     tools: tools.map(tool => tool.name),
-    customTools: qualification ? tools.map(tool => qualification.tool(tool)) : tools,
+    customTools: tools.map(tool => qualification.tool(tool)),
     resourceLoader: resources(profile.systemPrompt),
     sessionManager: manager,
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false, provider: { maxRetries: 0 } }, compaction: { enabled: false }, cacheWarming: 'off' }),
@@ -143,9 +196,9 @@ async function openSession(options: TriagerSessionOptions, runtime: ModelRuntime
 /** How the session ended, from Host facts only: an accepted Verdict is a completed session whatever aborted it afterwards. */
 function resultOf(state: Conversation, aborted: boolean, qualification: Qualification): Pick<TriagerSessionResult, 'status' | 'concluded' | 'closedBy'> {
   if (state.concluded) return { status: 'completed', concluded: true, closedBy: null };
-  if (!aborted && !state.interrupted && !qualification?.failed()) return { status: 'completed', concluded: false, closedBy: null };
-  const provider = qualification?.providerFailed() ? ('provider' as const) : null;
-  return { status: 'interrupted', concluded: false, closedBy: qualification?.exhausted() ?? provider };
+  if (!aborted && !state.interrupted && !qualification.failed()) return { status: 'completed', concluded: false, closedBy: null };
+  const provider = qualification.providerFailed() ? ('provider' as const) : null;
+  return { status: 'interrupted', concluded: false, closedBy: qualification.exhausted() ?? provider };
 }
 
 /** The conversation itself: the first prompt, then whatever the model does with its tools until it concludes, stops or is closed. */
@@ -157,7 +210,7 @@ async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, s
     if (state.concluded) throw new Error('TRIAGE_CONCLUDED');
     return stream(...args);
   };
-  qualification?.check();
+  qualification.check();
   const tools = triagerTools({
     shell: options.shell,
     host: options.host,
@@ -207,8 +260,12 @@ export async function runTriagerSession(options: TriagerSessionOptions): Promise
   const safe = () => !secrets.some(secret => options.prompt.includes(secret));
   const { runtime, settle } = await openRuntime(options, secrets, signal);
   try {
-    // The Host budget of the attempt bounds the release profile's session (requests, tool calls, bytes); a fixture model has none.
-    const qualification = 'apiKey' in profile ? undefined : qualifyOAuth(runtime, signal, safe, () => closed.abort(), limits, thinkingLevelOf(profile));
+    // The Host budget of the attempt (`triager-v1`) bounds every session: the release profile's through its qualification (requests,
+    // tool calls, bytes), a profile with its own key through the two counts.
+    const qualification =
+      'apiKey' in profile
+        ? countBudget(runtime, signal, () => closed.abort(), limits)
+        : qualifyOAuth(runtime, signal, safe, () => closed.abort(), limits, thinkingLevelOf(profile));
     return await converse(options, runtime, secrets, signal, qualification);
   } finally {
     await settle();

@@ -1,4 +1,4 @@
-import type { TriageRequestState } from './rules/triage.js';
+import type { TriageImpediment, TriageRequestState } from './rules/triage.js';
 import type {
   AccessDiagnostic,
   BootUsage,
@@ -2866,7 +2866,13 @@ export type JiraLinkStatus = { pending: JiraLinkIntent[]; confirmed: number };
 /** The source a Triage request was discovered in; a request whose source loses its `triage` block is abandoned. */
 export type TriageSourceRef = { tracker: 'github'; repository: string } | { tracker: 'jira'; siteId: string; projectId: string };
 /** One stamped fact of a request's life, metadata only (never Ticket text, tool arguments or the Verdict). */
-export type TriageTimelineEntry = { at: string; event: string; code?: string; labels?: string[] };
+export type TriageTimelineEntry = {
+  at: string;
+  event: string;
+  code?: string;
+  labels?: string[];
+  /** Ticket #76: the attempt the fact is about. */ attempt?: string;
+};
 /**
  * Durable record of one request of Triage of a Ticket (`factory.triage-request` v1), kept even if no Work ever exists. Metadata only. This
  * ticket writes it up to `queued`, `suspended` and `abandoned`; later tickets of spec #68 add their own optional fields (attempts, budget,
@@ -2918,8 +2924,11 @@ export type TriageAttempt = {
   /**
    * How the attempt ended: `code` (`VERDICT_RECORDED` or why there is none), what the environment answered to the stop, and the session
    * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
+   * Ticket #76: `cessation` is the LATEST answer (the stop is asked again at every reconciliation and start until it is confirmed);
+   * `cessationObservedAt` is when that answer was last obtained (absent: at `at`). `spentMs` is the investigation time the attempt took
+   * from the request's clock, from its start to this end (absent in a record written before ticket #76: nothing counted).
    */
-  end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null } | null;
+  end: { at: string; code: string; cessation: InvestigationStop; transcript: string | null; spentMs?: number; cessationObservedAt?: string } | null;
 };
 /** Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. */
 export type TriageVerdictRecord = {
@@ -2940,8 +2949,14 @@ export type TriagePorts = {
   environment: InvestigationEnvironmentPort;
   /** `triager.environment` of the configuration. */
   limits: InvestigationLimits;
-  /** `triager.investigationMinutes`: the investigation clock of one request (its spending is ticket #76's). */
+  /** `triager.investigationMinutes`: the investigation clock of one request, spent only while an attempt of it runs. */
   investigationMinutes: number;
+  /** Ticket #76, `triager.capacity`: the Triage capacity, the most attempts that may hold a unit at once (never a Slot). */
+  capacity: number;
+  /** Ticket #76, `triager.attempts`: the attempts of one request. */
+  attempts: number;
+  /** Ticket #76: calendar clock of the investigation time (default the system's); tests substitute it. `sleep` ends early on abort. */
+  clock?: TriageClock;
   /** How often a running attempt's environment is observed for an agent that ended without reporting (default 2000 ms). */
   agentWatchMs?: number;
   triager: {
@@ -2968,8 +2983,16 @@ export type TriagePorts = {
   /** A candidate's copy from the bare cache, created under the attempt's clones directory (the read credential stays on the Host). */
   clones: { create(request: InvestigationCloneRequest): Promise<InvestigationCloneResult> };
 };
+export type TriageClock = { now(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type TriageRequestsView = {
   kind: 'triage-requests';
+  /**
+   * Ticket #76: the Triage capacity. `configured`: `triager.capacity` (null: this Control investigates nothing); `investigating`: attempts
+   * still open; `retained`: ended attempts whose stop is not confirmed. Both hold a unit; neither is a Slot.
+   */
+  capacity: { configured: number | null; investigating: number; retained: number };
+  /** Ticket #76: the open Impediments of the requests (retained capacity), derived from the attempt records. */
+  impediments: TriageImpediment[];
   /** Every request, in arrival order. */
   requests: TriageRequest[];
   /** Ids of the `queued` requests, first to be investigated first. */

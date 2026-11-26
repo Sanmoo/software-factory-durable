@@ -155,10 +155,94 @@ export function attemptEndCode(completion: { status: 'failure'; code: string } |
   if (completion.closedBy) return 'TRIAGER_MODEL_BUDGET_EXHAUSTED';
   return completion.status === 'completed' ? 'TRIAGER_ENDED_WITHOUT_VERDICT' : 'TRIAGER_INTERRUPTED';
 }
+
+// ---- Ticket #76 (spec §5): the budget of a request, the Triage capacity and the retained capacity ----
+/** The two installation limits of one request (`triager.investigationMinutes`, `triager.attempts`); the third axis is the model's, per attempt. */
+export type TriageBudget = { investigationMs: number; attempts: number };
+/** What the rules read of an attempt record: the investigation time it spent and how its stop was answered (`end: null` = still open). */
+export type TriageAttemptFacts = { end: { at: string; code: string; spentMs?: number; cessation: { cessationConfirmed: boolean; code?: string } } | null };
+/** The investigation clock ran out during the attempt, or no time is left for another one. */
+export const triageTimeExhausted = 'TRIAGE_INVESTIGATION_TIME_EXHAUSTED';
+/** The last attempt of the request ended without a Verdict. */
+export const triageAttemptsExhausted = 'TRIAGE_ATTEMPTS_EXHAUSTED';
+/** A session the release profile itself refuses: another attempt would be refused alike, so it is not a transient failure. */
+const permanentAttemptCodes: readonly string[] = ['WORKER_MODEL_MISMATCH', 'WORKER_THINKING_LEVEL_UNSUPPORTED', 'WORKER_MODEL_UNAVAILABLE'];
+
 /**
- * Ticket #75: what becomes of a request still `investigating` when its attempt ended without a Verdict. This ticket has no balance to
- * consult, so every such end is terminal; ticket #76 decides here between `queued` (transient failure with balance left) and `failed`.
+ * What a request has left. Only the time of its attempts is spent (`end.spentMs` of each ended one, `openMs` for the one still open): the
+ * queue costs nothing, and the balance is read from the durable attempts, so a restart of the Control gives nothing back.
  */
-export function afterAttemptWithoutVerdict(_request: { attempts: number }, code: string): { to: 'failed' | 'queued'; code: string } {
-  return { to: 'failed', code };
+export function triageBalance(budget: TriageBudget, attempts: readonly TriageAttemptFacts[], openMs = 0): { attemptsLeft: number; remainingMs: number } {
+  const spent = attempts.reduce((sum, attempt) => sum + Math.max(0, attempt.end ? (attempt.end.spentMs ?? 0) : openMs), 0);
+  return { attemptsLeft: Math.max(0, budget.attempts - attempts.length), remainingMs: Math.max(0, budget.investigationMs - spent) };
+}
+
+/**
+ * What becomes of a request still `investigating` when its latest attempt (the last of `attempts`) ended without a Verdict: back to the
+ * queue for a new session when the end was transient and both attempts and time are left, `failed` otherwise, with the code of the axis
+ * that ran out (the attempt keeps its own end code). Nothing of this is ever written to the Ticket.
+ */
+export function afterAttemptWithoutVerdict(budget: TriageBudget, attempts: readonly TriageAttemptFacts[]): { to: 'queued' } | { to: 'failed'; code: string } {
+  const code = attempts.at(-1)?.end?.code ?? 'TRIAGE_ATTEMPT_FAILED';
+  const balance = triageBalance(budget, attempts);
+  if (code === triageTimeExhausted || balance.remainingMs <= 0) return { to: 'failed', code: triageTimeExhausted };
+  if (permanentAttemptCodes.includes(code)) return { to: 'failed', code };
+  if (balance.attemptsLeft <= 0) return { to: 'failed', code: triageAttemptsExhausted };
+  return { to: 'queued' };
+}
+
+/**
+ * The queued requests to start now, in arrival order, while a unit of Triage capacity is free. `held`: the attempts holding a unit in the
+ * whole installation (`holdsTriageCapacity`). A queued request whose own earlier attempt is not confirmed stopped is passed over: its
+ * next session never starts before that confirmation. Slots are not consulted: the capacity is independent of them.
+ */
+export function triageStarts(input: {
+  capacity: number;
+  held: number;
+  queue: readonly { triage_request_id: string; attempts?: readonly TriageAttemptFacts[] | undefined }[];
+}): string[] {
+  const free = Math.max(0, input.capacity - input.held);
+  return input.queue
+    .filter(request => !request.attempts?.some(holdsTriageCapacity))
+    .slice(0, free)
+    .map(request => request.triage_request_id);
+}
+
+/** An open obstacle of a Triage request the operator must know of. `ref` is what the intervention commands name. */
+export type TriageImpediment = {
+  ref: string;
+  code: 'TRIAGE_CAPACITY_RETAINED';
+  scope: 'installation';
+  triage_request_id: string;
+  attempt: string;
+  since: string;
+  /** What the environment last answered to the stop. */
+  observed: string;
+  nextStep: string;
+};
+/**
+ * The retained capacity of a request: every ENDED attempt whose stop the environment did not confirm, whatever the state of the request.
+ * Derived from the attempt records, so it opens with the unconfirmed stop and closes with the confirmation, never apart from them.
+ */
+export function triageImpediments(request: {
+  triage_request_id: string;
+  attempts?: readonly (TriageAttemptFacts & { attempt: string })[] | undefined;
+}): TriageImpediment[] {
+  return (request.attempts ?? []).flatMap(attempt => {
+    if (!attempt.end || attempt.end.cessation.cessationConfirmed) return [];
+    const observed = attempt.end.cessation.code ?? 'INVESTIGATION_STOP_UNCONFIRMED';
+    return {
+      ref: attempt.attempt,
+      code: 'TRIAGE_CAPACITY_RETAINED' as const,
+      scope: 'installation' as const,
+      triage_request_id: request.triage_request_id,
+      attempt: attempt.attempt,
+      since: attempt.end.at,
+      observed,
+      nextStep:
+        `The stop of Triager attempt ${attempt.attempt} is not confirmed (${observed}); it keeps one unit of Triage capacity and no Slot. ` +
+        'The Factory asks again at every reconciliation and at every start. If the attempt is known to be over, as a last resort: ' +
+        `factory triage release ${request.triage_request_id} --attempt ${attempt.attempt} --reason "..."`,
+    };
+  });
 }

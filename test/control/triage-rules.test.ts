@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  afterAttemptWithoutVerdict,
   evaluateTriage,
   latestLabelApplication,
   stateLabelConflict,
   suspendsAdmission,
+  triageBalance,
+  triageImpediments,
+  triageStarts,
   triageTransitionAllowed,
   type TriageEvaluationInput,
   type TriageLabelEvent,
@@ -152,4 +156,84 @@ test('TR-44 groundwork: seven states, no retry state; terminal states never move
   assert.equal(triageTransitionAllowed('publishing', 'concluded'), true);
   assert.equal(triageTransitionAllowed('queued', 'publishing'), false);
   assert.equal(triageTransitionAllowed('suspended', 'investigating'), false);
+});
+
+// ---- Ticket #76 (spec §5): capacity, the three budget axes and what becomes of a request after an attempt without a Verdict ----
+const budget = { investigationMs: 15 * 60_000, attempts: 2 };
+const confirmed: { cessationConfirmed: boolean; code?: string } = { cessationConfirmed: true };
+const at = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes)).toISOString();
+const ended = (from: number, to: number, code = 'TRIAGER_PROVIDER_UNAVAILABLE', cessation = confirmed) => ({
+  attempt: `t1-${from}`,
+  end: { at: at(to), code, spentMs: (to - from) * 60_000, cessation },
+});
+
+test('TR-08: the balance counts only the time of the attempts, never the queue, and a recorded attempt is never given back', () => {
+  assert.deepEqual(triageBalance(budget, []), { attemptsLeft: 2, remainingMs: 900_000 });
+  // 4 minutes investigating, then 50 minutes in the queue: only the 4 minutes are spent.
+  assert.deepEqual(triageBalance(budget, [ended(0, 4)]), { attemptsLeft: 1, remainingMs: 660_000 });
+  assert.deepEqual(triageBalance(budget, [ended(0, 4), ended(54, 60)]), { attemptsLeft: 0, remainingMs: 300_000 });
+  // An attempt still open has spent up to `now`; the balance never goes below zero.
+  assert.deepEqual(triageBalance(budget, [{ end: null }], 360_000), { attemptsLeft: 1, remainingMs: 540_000 });
+  assert.deepEqual(triageBalance(budget, [ended(0, 40), ended(41, 42), ended(43, 44)]), { attemptsLeft: 0, remainingMs: 0 });
+});
+
+test('TR-08: each budget axis ends the request with its own code; an attempt that ends with balance sends it back to the queue', () => {
+  // Model budget of the attempt (`triager-v1`): the attempt is spent, the next one starts only with time left.
+  assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 4, 'TRIAGER_MODEL_BUDGET_EXHAUSTED')]), { to: 'queued' });
+  assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 15, 'TRIAGER_MODEL_BUDGET_EXHAUSTED')]), {
+    to: 'failed',
+    code: 'TRIAGE_INVESTIGATION_TIME_EXHAUSTED',
+  });
+  // The clock ended the attempt itself.
+  assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 15, 'TRIAGE_INVESTIGATION_TIME_EXHAUSTED')]), {
+    to: 'failed',
+    code: 'TRIAGE_INVESTIGATION_TIME_EXHAUSTED',
+  });
+  // The attempts.
+  assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 2), ended(3, 5)]), { to: 'failed', code: 'TRIAGE_ATTEMPTS_EXHAUSTED' });
+  assert.deepEqual(afterAttemptWithoutVerdict({ ...budget, attempts: 3 }, [ended(0, 2), ended(3, 5)]), { to: 'queued' });
+});
+
+test('TR-09/TR-11: a transient end is retried with balance; a session the profile refuses is not; an interrupted attempt counts as spent', () => {
+  for (const code of ['TRIAGER_PROVIDER_UNAVAILABLE', 'TRIAGER_AGENT_EXITED', 'TRIAGER_INTERRUPTED', 'INVESTIGATION_INTERRUPTED', 'CONTROLLER_STOPPED'])
+    assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 1, code)]), { to: 'queued' }, code);
+  for (const code of ['WORKER_MODEL_MISMATCH', 'WORKER_THINKING_LEVEL_UNSUPPORTED', 'WORKER_MODEL_UNAVAILABLE'])
+    assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 1, code)]), { to: 'failed', code }, code);
+  assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 1), ended(2, 3, 'INVESTIGATION_INTERRUPTED')]), {
+    to: 'failed',
+    code: 'TRIAGE_ATTEMPTS_EXHAUSTED',
+  });
+});
+
+test('TR-07: free capacity goes to the queue in arrival order; a request whose earlier attempt is not confirmed stopped never starts', () => {
+  const queue = ['a', 'b', 'c'].map(triage_request_id => ({ triage_request_id, attempts: [] as ReturnType<typeof ended>[] }));
+  assert.deepEqual(triageStarts({ capacity: 1, held: 0, queue }), ['a']);
+  assert.deepEqual(triageStarts({ capacity: 1, held: 1, queue }), []);
+  assert.deepEqual(triageStarts({ capacity: 2, held: 0, queue }), ['a', 'b']);
+  assert.deepEqual(triageStarts({ capacity: 3, held: 1, queue }), ['a', 'b']);
+  // TR-09: `a` went back to the queue while the stop of its attempt is unconfirmed: it holds a unit and is not started again.
+  const retained = [
+    { triage_request_id: 'a', attempts: [ended(0, 1, 'TRIAGER_AGENT_EXITED', { cessationConfirmed: false, code: 'INVESTIGATION_CGROUP_POPULATED' })] },
+  ];
+  assert.deepEqual(triageStarts({ capacity: 2, held: 1, queue: [...retained, ...queue.slice(1)] }), ['b']);
+  assert.deepEqual(triageStarts({ capacity: 1, held: 1, queue: retained }), []);
+});
+
+test('TR-09/TR-27: an attempt whose stop is not confirmed is an Impediment of retained capacity with its next step; `failed` is none', () => {
+  const held = ended(0, 1, 'TRIAGER_AGENT_EXITED', { cessationConfirmed: false, code: 'INVESTIGATION_MANAGER_UNAVAILABLE' });
+  const impediments = triageImpediments({ triage_request_id: 'r1', attempts: [ended(5, 6), held, { attempt: 't1-9', end: null }] });
+  assert.equal(impediments.length, 1);
+  const { nextStep, ...impediment } = impediments[0]!;
+  assert.deepEqual(impediment, {
+    ref: 't1-0',
+    code: 'TRIAGE_CAPACITY_RETAINED',
+    scope: 'installation',
+    triage_request_id: 'r1',
+    attempt: 't1-0',
+    since: at(1),
+    observed: 'INVESTIGATION_MANAGER_UNAVAILABLE',
+  });
+  assert.match(nextStep, /triage release r1 --attempt t1-0/);
+  assert.deepEqual(triageImpediments({ triage_request_id: 'r2', attempts: [ended(0, 1), ended(2, 3)] }), []);
+  assert.deepEqual(triageImpediments({ triage_request_id: 'r3' }), []);
 });
