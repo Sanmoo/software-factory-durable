@@ -8,7 +8,16 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
-import type { Control, ExecutionPorts, TicketSource, TriageClock, TriagePorts, TriageRequest, TriageRequestsView } from '../../src/control/types.js';
+import type {
+  AccessDependencies,
+  Control,
+  ExecutionPorts,
+  TicketSource,
+  TriageClock,
+  TriagePorts,
+  TriageRequest,
+  TriageRequestsView,
+} from '../../src/control/types.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { readTriageVerdictText } from '../../src/control/durable/triage-requests.js';
 import { createInvestigationClones, type InvestigationAgent } from '../../src/sandbox/index.js';
@@ -162,6 +171,11 @@ export async function triageWorld(
     credentials?: Record<string, string>;
     /** Wraps the in-process environment the Control uses (to inject what the Host would observe). */
     environment?: (port: TriagePorts['environment']) => TriagePorts['environment'];
+    /**
+     * Ticket #83: the access of the Control, composed anew at every start, in place of the tracker doubles (`doubles` is what this
+     * world would have used). A composed journey gives the production composition over the gh world or the Jira HTTP world here.
+     */
+    access?: (doubles: AccessDependencies) => AccessDependencies | Promise<AccessDependencies>;
   },
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-triage-inv-'));
@@ -260,10 +274,17 @@ export async function triageWorld(
   /** Starts a Control over the same storage and waits for its first complete polling iteration (the first investigation pass included). */
   async function start() {
     const time = manualClock();
+    const doubles: AccessDependencies = {
+      tracker: github.tracker,
+      repository: github.repository,
+      repositories,
+      sources: options.sources,
+      trackers: { jira: jira.tracker },
+    };
     const control = await openControl({
       storagePath,
       runtimeInventory: 'empty',
-      access: { tracker: github.tracker, repository: github.repository, repositories, sources: options.sources, trackers: { jira: jira.tracker } },
+      access: options.access ? await options.access(doubles) : doubles,
       polling: { intervalSeconds: 60, clock: time.clock },
       triage: ports,
       ...(options.execution ? { execution: options.execution } : {}),

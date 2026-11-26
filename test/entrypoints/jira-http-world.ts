@@ -2,6 +2,8 @@
 // It models only what the Factory's Jira adapter uses (enhanced JQL search, issue re-reads, link type catalogue, comments, account, remote
 // links; spec #68 ticket #78: the one issue edit of a Triage publication and the changelog it leaves). Every exchange is recorded, unexpected ones included (answered 404), so a test can assert the absence of any other write
 // (status, assignee, resolution). Synthetic IDs only: it is not a Jira tenant and proves nothing about real permissions or audiences.
+import { createServer, request as httpRequest } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { JiraHttpExchange, JiraHttpResult } from '../../src/issue-tracker/index.js';
 
 export const jiraOrigin = 'https://equipe.atlassian.net';
@@ -159,4 +161,51 @@ export function jiraHttpWorld(cards: HttpCard[]) {
   const posted = (issueId: string) => (comments[issueId] ?? []).filter(item => item.text.startsWith('[Software Factory · ')).map(item => item.text);
   const requests = () => exchanges.map(exchange => `${exchange.method} ${new URL(exchange.url).pathname}`);
   return { send, exchanges, unexpected, comments, links, changelog, editFaults, edit, write, posted, requests };
+}
+
+/**
+ * Spec #68 §13 (ticket #83): the world as a local HTTP server on port 0, with its state. The production transport keeps the origin,
+ * the credential and the failure handling; its raw exchange (`send`) travels a real socket to this server instead of TLS to the
+ * configured site, and the server answers as the site would (the request is handed to the world under the site's origin).
+ */
+export async function jiraHttpServer(world: Pick<ReturnType<typeof jiraHttpWorld>, 'send'>) {
+  const server = createServer((incoming, outgoing) => {
+    const chunks: Buffer[] = [];
+    incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+    incoming.on('end', () => {
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(incoming.headers)) if (typeof value === 'string') headers[name] = value;
+      const body = Buffer.concat(chunks).toString('utf8');
+      void world
+        .send({ method: incoming.method as JiraHttpExchange['method'], url: `${jiraOrigin}${incoming.url}`, headers, ...(body ? { body } : {}) })
+        .then(result => {
+          if (result.kind === 'failed') return void outgoing.destroy();
+          outgoing.writeHead(result.status, result.headers);
+          outgoing.end(result.body);
+        });
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  /** The raw exchange of the transport, sent to the local server: same method, path, query, headers and body. */
+  const send = (exchange: JiraHttpExchange): Promise<JiraHttpResult> =>
+    new Promise(resolve => {
+      const url = new URL(exchange.url);
+      const outgoing = httpRequest(
+        { host: '127.0.0.1', port, method: exchange.method, path: `${url.pathname}${url.search}`, headers: exchange.headers, agent: false },
+        response => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('error', () => resolve({ kind: 'failed', reason: 'network' }));
+          response.on('end', () => {
+            const headers: Record<string, string> = {};
+            for (const [name, value] of Object.entries(response.headers)) if (typeof value === 'string') headers[name.toLowerCase()] = value;
+            resolve({ kind: 'response', status: response.statusCode ?? 0, headers, body: Buffer.concat(chunks).toString('utf8') });
+          });
+        },
+      );
+      outgoing.on('error', () => resolve({ kind: 'failed', reason: 'network' }));
+      outgoing.end(exchange.body);
+    });
+  return { port, send, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
 }
