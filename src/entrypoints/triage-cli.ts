@@ -1,6 +1,6 @@
 // Spec #68 §10 (ticket #80): the `factory triages` and `factory triage ...` commands. `triage <id or Ticket reference>` shows one Triage
-// request; every other form is `triage <subcommand> <id> ...`, one entry of `triageSubcommands` (ticket #81 adds `cancel`, `release` and
-// `complete` there: an entry names its own flags and builds the `accept` payload, and nothing else in this file changes).
+// request; every other form is `triage <subcommand> <id> ...`, one entry of `triageSubcommands`: an entry names its own flags and
+// builds its payload. Ticket #81: the interventions `cancel`, `release` and `complete`, which also take a Ticket reference.
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -24,7 +24,8 @@ type Subcommand = { usage: string; flags: Flags; request(given: Given): TriageRe
 
 export const triageUsage =
   'triages [--cursor <n> --limit <n>]|triage <request id|owner/repo#number|JIRA-KEY>|triage transcript <request id> [--attempt <attempt> [--offset <n>]|--verdict]|' +
-  'triage cleanup <request id> [--yes]|triage cleanup-confirm <request id> <plan>';
+  'triage cleanup <request id> [--yes]|triage cleanup-confirm <request id> <plan>|triage cancel <request id|Ticket reference>|' +
+  'triage release <request id|Ticket reference> --attempt <attempt> --reason <text>|triage complete <request id|Ticket reference> --impediment <reference>';
 const commonFlags: Flags = { '--root': 'value', '--json': 'flag', '--request-id': 'value' };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const identity = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -92,11 +93,42 @@ function cleanupConfirm(given: Given): TriageRequest | null {
     payload: requestId => ({ request_id: requestId, operation: 'triage-cleanup-confirm', triage_request_id: id!, plan_id: plan!, origin: 'local-cli' }),
   };
 }
+/**
+ * Ticket #81: an intervention on the request named by its id or its Ticket reference. `more`: the command's own fields, or null when a
+ * required flag is missing or malformed.
+ */
+function intervention(given: Given, operation: string, more: Payload | null): TriageRequest | null {
+  const request = one(given, triageReferencePattern);
+  if (!request || !more) return null;
+  return { mode: 'accept', payload: requestId => ({ request_id: requestId, operation, request, ...more, origin: 'local-cli' }) };
+}
+/** `triage release <id> --attempt <ref> --reason "..."`: the exact attempt of the Impediment and why the operator says it is over. */
+function releaseFields(values: Map<string, string>): Payload | null {
+  const attempt = values.get('--attempt');
+  const reason = values.get('--reason')?.trim();
+  return attempt && triageAttemptPattern.test(attempt) && reason && reason.length <= 500 ? { attempt, reason } : null;
+}
+/** `triage complete <id> --impediment <ref>`: the exact ambiguous-authorship Impediment the operator read. */
+function completeFields(values: Map<string, string>): Payload | null {
+  const impediment = values.get('--impediment');
+  return impediment && uuid.test(impediment) ? { impediment } : null;
+}
 /** The subcommands of `factory triage`. A Ticket reference never collides with a name here: none of these is a valid reference. */
 export const triageSubcommands: Record<string, Subcommand> = {
   transcript: { usage: 'triage transcript <request id>', flags: { '--attempt': 'value', '--offset': 'value', '--verdict': 'flag' }, request: transcript },
   cleanup: { usage: 'triage cleanup <request id>', flags: { '--yes': 'flag' }, request: cleanup },
   'cleanup-confirm': { usage: 'triage cleanup-confirm <request id> <plan>', flags: {}, request: cleanupConfirm },
+  cancel: { usage: 'triage cancel <request id|Ticket reference>', flags: {}, request: given => intervention(given, 'triage-cancel', {}) },
+  release: {
+    usage: 'triage release <request id|Ticket reference> --attempt <attempt> --reason <text>',
+    flags: { '--attempt': 'value', '--reason': 'value' },
+    request: given => intervention(given, 'triage-release', releaseFields(given.values)),
+  },
+  complete: {
+    usage: 'triage complete <request id|Ticket reference> --impediment <reference>',
+    flags: { '--impediment': 'value' },
+    request: given => intervention(given, 'triage-complete', completeFields(given.values)),
+  },
 };
 /** `triage <id or Ticket reference>`: the detail of one request (for a reference, the Ticket's most recent one). */
 const show: Subcommand = {

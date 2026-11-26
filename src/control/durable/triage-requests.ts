@@ -139,20 +139,26 @@ export async function transitionTriageRequest(
   change: TriageTransition,
   also?: (request: TriageRequest, tx: Transaction) => void | Promise<void>,
 ): Promise<TriageTransitionResult> {
-  return session.commit(async tx => {
-    const document = await tx.doc(triageRequests, triage_request_id, null);
-    const request = document.request;
-    if (!request) return { kind: 'not-applied' as const, state: null };
-    if (!change.from.includes(request.state) || !triageTransitionAllowed(request.state, change.to))
-      return { kind: 'not-applied' as const, state: request.state };
-    applyTransition(request, change, new Date().toISOString());
-    if (request.end) {
-      const index = await tx.doc(triageIndex);
-      index.live = index.live.filter(id => id !== triage_request_id);
-    }
-    await also?.(request, tx);
-    return { kind: 'applied' as const, request: copy(request) };
-  }, BACKGROUND_CONTEXT);
+  return session.commit(tx => transitionTriageRequestIn(tx, triage_request_id, change, also), BACKGROUND_CONTEXT);
+}
+/** Ticket #81: the same transition inside a commit the caller already holds (an operator command decides and records its receipt in it). */
+export async function transitionTriageRequestIn(
+  tx: Transaction,
+  triage_request_id: string,
+  change: TriageTransition,
+  also?: (request: TriageRequest, tx: Transaction) => void | Promise<void>,
+): Promise<TriageTransitionResult> {
+  const document = await tx.doc(triageRequests, triage_request_id, null);
+  const request = document.request;
+  if (!request) return { kind: 'not-applied' as const, state: null };
+  if (!change.from.includes(request.state) || !triageTransitionAllowed(request.state, change.to)) return { kind: 'not-applied' as const, state: request.state };
+  applyTransition(request, change, new Date().toISOString());
+  if (request.end) {
+    const index = await tx.doc(triageIndex);
+    index.live = index.live.filter(id => id !== triage_request_id);
+  }
+  await also?.(request, tx);
+  return { kind: 'applied' as const, request: copy(request) };
 }
 
 export async function readTriageRequest(session: Session, triage_request_id: string): Promise<TriageRequest | undefined> {
@@ -231,6 +237,7 @@ export async function endTriageAttempt(
 /**
  * Ticket #76: a later answer to the stop of an ENDED attempt whose cessation was not confirmed. Confirmed: the capacity is free
  * (`capacity-released` in the timeline). Still unconfirmed: only the latest code and instant are kept. Nothing else of the request moves.
+ * `false`: the attempt is not ended, or its stop is already confirmed.
  */
 export async function recordTriageCessation(
   session: Session,
@@ -245,7 +252,9 @@ export async function recordTriageCessation(
     if (!request || !end || end.cessation.cessationConfirmed) return false;
     end.cessation = cessation;
     end.cessationObservedAt = at;
-    if (cessation.cessationConfirmed) request.timeline.push({ at, event: 'capacity-released', code: cessation.evidence, attempt });
+    // A unit the operator's attestation already freed (ticket #81) is not released twice: the confirmation is recorded as what it is.
+    if (cessation.cessationConfirmed)
+      request.timeline.push({ at, event: end.attestation ? 'stop-confirmed' : 'capacity-released', code: cessation.evidence, attempt });
     return true;
   }, BACKGROUND_CONTEXT);
 }

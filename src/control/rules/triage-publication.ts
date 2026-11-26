@@ -36,8 +36,8 @@ export type PublicationInput = {
   /** The write units of the tracker, in order: one effect each on GitHub; on a Card the label and component effects share one `PUT`. */
   groups: readonly (readonly number[])[];
   at: string;
-  /** The operator's `triage complete`: an effect without an attributable author is taken as the Factory's. */
-  ambiguousAsOwn?: boolean;
+  /** The operator's `triage complete`: these effects (indexes), found without an attributable author, are taken as the Factory's. */
+  ambiguousAsOwn?: readonly number[];
 };
 
 const unsettled = (effect: TriageIntendedEffect) => effect.status === 'pending' || effect.status === 'ambiguous-authorship';
@@ -130,7 +130,7 @@ function finished(effects: TriageIntendedEffect[], mode: PublicationMode): Publi
 export function publicationStep(input: PublicationInput): PublicationStep {
   const { mode, at } = input;
   if (mode === null) return begin(input);
-  const seen = input.intended.map((effect, index) => sighting(effect, input.facts.effects[index], input.ambiguousAsOwn ?? false));
+  const seen = input.intended.map((effect, index) => sighting(effect, input.facts.effects[index], input.ambiguousAsOwn?.includes(index) ?? false));
   const effects = input.intended.map((effect, index) => sighted(effect, seen[index]!, input.facts.effects[index], at));
   const ambiguous = seen.flatMap((item, index) => (item === 'ambiguous' ? [index] : []));
   if (ambiguous.length) return { effects, mode, next: { action: 'impediment', effects: ambiguous } };

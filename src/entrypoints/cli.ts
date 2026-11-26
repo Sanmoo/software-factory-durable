@@ -35,7 +35,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
   const channel = await connect(endpoint, 'local-operator');
-  const timeout = setTimeout(() => channel.close(), payload.kind === 'access' ? 120000 : 5000);
+  // `access` and `triage complete` (spec #68 §10) read or write a tracker before they answer.
+  const timeout = setTimeout(() => channel.close(), payload.kind === 'access' || payload.operation === 'triage-complete' ? 120000 : 5000);
   try {
     await channel.send({ protocol_version: protocolVersion, controller_run_id: runId, message_id: id, reply_to: null, kind, payload });
     for await (const response of channel.messages) {

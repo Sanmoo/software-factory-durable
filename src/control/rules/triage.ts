@@ -148,7 +148,8 @@ export const triageHoldNextStep: Record<TriageHoldCode, string> = {
  * Ticket #75: an attempt holds Triage capacity from its start until the environment CONFIRMED its cessation, whatever became of its
  * request (a request abandoned while investigating is terminal at once; its attempt is not over).
  */
-export const holdsTriageCapacity = (attempt: { end: { cessation: { cessationConfirmed: boolean } } | null }) => !attempt.end?.cessation.cessationConfirmed;
+export const holdsTriageCapacity = (attempt: { end: { cessation: { cessationConfirmed: boolean }; attestation?: unknown } | null }) =>
+  !attempt.end || !(attempt.end.cessation.cessationConfirmed || attempt.end.attestation);
 /** Ticket #75: why an attempt that ended without a recorded Verdict ended, from what its session reported. */
 export function attemptEndCode(completion: { status: 'failure'; code: string } | { status: 'completed' | 'interrupted'; closedBy: string | null }): string {
   if (completion.status === 'failure') return completion.code;
@@ -161,7 +162,9 @@ export function attemptEndCode(completion: { status: 'failure'; code: string } |
 /** The two installation limits of one request (`triager.investigationMinutes`, `triager.attempts`); the third axis is the model's, per attempt. */
 export type TriageBudget = { investigationMs: number; attempts: number };
 /** What the rules read of an attempt record: the investigation time it spent and how its stop was answered (`end: null` = still open). */
-export type TriageAttemptFacts = { end: { at: string; code: string; spentMs?: number; cessation: { cessationConfirmed: boolean; code?: string } } | null };
+export type TriageAttemptFacts = {
+  end: { at: string; code: string; spentMs?: number; cessation: { cessationConfirmed: boolean; code?: string }; attestation?: unknown } | null;
+};
 /** The investigation clock ran out during the attempt, or no time is left for another one. */
 export const triageTimeExhausted = 'TRIAGE_INVESTIGATION_TIME_EXHAUSTED';
 /** The last attempt of the request ended without a Verdict. */
@@ -223,14 +226,15 @@ export type TriageImpediment = {
 };
 /**
  * The retained capacity of a request: every ENDED attempt whose stop the environment did not confirm, whatever the state of the request.
- * Derived from the attempt records, so it opens with the unconfirmed stop and closes with the confirmation, never apart from them.
+ * Derived from the attempt records, so it opens with the unconfirmed stop and closes with the confirmation, or with the operator's
+ * attestation (`triage release`, ticket #81), never apart from them.
  */
 export function triageImpediments(request: {
   triage_request_id: string;
   attempts?: readonly (TriageAttemptFacts & { attempt: string })[] | undefined;
 }): TriageImpediment[] {
   return (request.attempts ?? []).flatMap(attempt => {
-    if (!attempt.end || attempt.end.cessation.cessationConfirmed) return [];
+    if (!attempt.end || !holdsTriageCapacity(attempt)) return [];
     const observed = attempt.end.cessation.code ?? 'INVESTIGATION_STOP_UNCONFIRMED';
     return {
       ref: attempt.attempt,

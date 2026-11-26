@@ -177,6 +177,13 @@ export type ControlInput =
    * losses (no effect), then its confirmation, revalidated then and again at execution. Metadata and the published link are kept. */
   | { request_id: string; operation: 'triage-cleanup-plan'; triage_request_id: string; origin: 'local-cli' }
   | { request_id: string; operation: 'triage-cleanup-confirm'; triage_request_id: string; plan_id: string; origin: 'local-cli' }
+  /** Spec #68 §10 (ticket #81): the operator's interventions on ONE Triage request, named by its id or by its Ticket reference. `triage-cancel`
+   * ends it in any live state with nothing written to the Ticket; `triage-release` frees the capacity an ended attempt retains (exact
+   * attempt reference; the Factory observes again first); `triage-complete` takes the ambiguous effects of the exact Impediment as the
+   * Factory's and completes the publication. */
+  | { request_id: string; operation: 'triage-cancel'; request: string; origin: 'local-cli' }
+  | { request_id: string; operation: 'triage-release'; request: string; attempt: string; reason: string; origin: 'local-cli' }
+  | { request_id: string; operation: 'triage-complete'; request: string; impediment: string; origin: 'local-cli' }
   /** Ticket 31 (spec §12.4 `forget`): explicit deletion of the history of ONE ended Work. `forget-plan` records the plan of losses (no effect);
    * `forget-confirm` confirms it; it is revalidated now and again just before the deletion, which keeps only the minimal cycle memory. */
   | { request_id: string; operation: 'forget-plan'; work_id: string; origin: 'local-cli' }
@@ -265,6 +272,9 @@ export type ControlReceipt =
   /** Ticket #80. `accepted`: the plan was recorded (nothing removed) or confirmed (executed after the receipt); `not-applied`: refused with
    * `reason`, nothing changed. */
   | TriageCleanupReceipt
+  /** Ticket #81. `accepted`: the intervention was applied as the receipt says; `not-applied`: refused, or the request had already moved on
+   * by itself, with `reason`; nothing changed. */
+  | TriageInterventionReceipt
   /** Ticket 31. `forget-plan`: `accepted` = plan of losses recorded (nothing deleted), `not-applied` = refused with `reason` (the plan names every refusal);
    * `forget-confirm`: `accepted` = confirmed after revalidation, executed after the ACK (result in `factory show`: the Work, or its minimal memory once
    * forgotten); `already-satisfied` = already confirmed/forgotten; `not-applied` = refused, nothing changed. */
@@ -2893,6 +2903,9 @@ export type TriageTimelineEntry = {
   code?: string;
   labels?: string[];
   /** Ticket #76: the attempt the fact is about. */ attempt?: string;
+  /** Ticket #81: who attested the fact and why, when it is the operator's word and not an observation (`triage release`). */
+  author?: string;
+  reason?: string;
 };
 /**
  * Durable record of one request of Triage of a Ticket (`factory.triage-request` v1), kept even if no Work ever exists. Metadata only. This
@@ -2970,7 +2983,48 @@ export type TriageAttempt = {
     spentMs?: number;
     cessationObservedAt?: string;
     toolCalls?: Record<string, number> | null;
+    /**
+     * Ticket #81 (`triage release`): the operator attested that the attempt is over when the Factory could observe nothing (`observed`: what
+     * the environment answered then). It frees the unit of Triage capacity; `cessation` stays what the environment last answered.
+     */
+    attestation?: TriageAttestation;
   } | null;
+};
+export type TriageAttestation = { author: 'local-operator'; reason: string; at: string; observed: string; request_id: string };
+/** One intended effect as an intervention receipt lists it: what it is and how the last read left it. Never a text. */
+export type TriageReceiptEffect = {
+  index: number;
+  kind: TriageIntendedEffect['kind'];
+  label?: string;
+  componentId?: string;
+  status: TriageIntendedEffect['status'];
+  /** Whether the Factory sent a write for it (a `pending` one that was attempted may be on the Ticket, unconfirmed). */
+  attempted: boolean;
+  code?: string;
+  reference?: string;
+};
+/**
+ * Ticket #81 (spec #68 §10): the receipt of `triage cancel | release | complete`. `state`/`endCode`: the request after the command.
+ * `effects` (cancel of a request in `publishing`, and complete): `published` = confirmed on the Ticket; `discarded` = everything else,
+ * never to be written. `attempt`: the attempt the command acted on (cancel: the one it interrupted; its unit of Triage capacity is free
+ * only once its stop is confirmed). `release`: on what basis the capacity was freed. `impediment`: the ambiguous-authorship Impediment
+ * open after the command (complete).
+ */
+export type TriageInterventionReceipt = {
+  kind: 'durable';
+  request_id: string;
+  operation: 'triage-cancel' | 'triage-release' | 'triage-complete';
+  request: string;
+  triage_request_id: string | null;
+  outcome: 'accepted' | 'not-applied';
+  reason: string | null;
+  state: TriageRequestState | null;
+  endCode: string | null;
+  effects: { published: TriageReceiptEffect[]; discarded: TriageReceiptEffect[] } | null;
+  attempt: string | null;
+  release: { basis: 'stop-confirmed' | 'operator-attestation'; observed: string; author: string | null; at: string } | null;
+  impediment: string | null;
+  nextStep: string;
 };
 /**
  * Ticket #77 (spec #68 §8, §10): an effect of the publication is present at the origin and nobody can be named for it. The publication is
@@ -3167,6 +3221,8 @@ export type TriageAttemptView = {
   spentMs: number | null;
   capacity: 'investigating' | 'retained' | 'released';
   stop: { confirmed: boolean; code: string | null; observedAt: string | null } | null;
+  /** Ticket #81: the operator's attestation that freed the unit when the stop could not be observed (`triage release`). */
+  attestation: { author: string; reason: string; at: string } | null;
   release: string | null;
   skillPack: { id: string; version: string } | null;
   clones: { repository: string; commit: string; at: string }[];

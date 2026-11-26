@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Control, ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { answerInspection } from './inspection.js';
-import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies } from '../../contracts/index.js';
+import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies, triageAttemptPattern, triageReferencePattern } from '../../contracts/index.js';
 
 // The owner's local operator socket (spec §11.3): the SAME schema validation and Control accept/inspect path for every caller of the CLI.
 // Shared by the controller owner and (ticket 25) the qualification recipes that must receive real CLI commands.
@@ -102,7 +102,29 @@ const command = z.union([
   // Ticket 31: explicit history deletion plan and confirmation (Control revalidates eligibility and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') }),
-  // Spec #68 §10 (ticket #80): early removal of the details of one Triage request; #81 adds `triage-cancel|release|complete` here.
+  // Spec #68 §10 (ticket #81): the interventions on one Triage request, named by its id or its Ticket reference.
+  z.strictObject({
+    request_id: requestId,
+    operation: z.literal('triage-cancel'),
+    request: z.string().regex(triageReferencePattern),
+    origin: z.literal('local-cli'),
+  }),
+  z.strictObject({
+    request_id: requestId,
+    operation: z.literal('triage-release'),
+    request: z.string().regex(triageReferencePattern),
+    attempt: z.string().regex(triageAttemptPattern).max(64),
+    reason: z.string().trim().min(1).max(500),
+    origin: z.literal('local-cli'),
+  }),
+  z.strictObject({
+    request_id: requestId,
+    operation: z.literal('triage-complete'),
+    request: z.string().regex(triageReferencePattern),
+    impediment: z.uuid(),
+    origin: z.literal('local-cli'),
+  }),
+  // Spec #68 §10 (ticket #80): early removal of the details of one Triage request.
   z.strictObject({ request_id: requestId, operation: z.literal('triage-cleanup-plan'), triage_request_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({
     request_id: requestId,

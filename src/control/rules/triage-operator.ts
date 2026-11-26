@@ -156,25 +156,27 @@ function stopOf(end: NonNullable<TriageAttempt['end']>): NonNullable<TriageAttem
     observedAt: end.cessationObservedAt ?? end.at,
   };
 }
-type AttemptEndView = Pick<TriageAttemptView, 'endedAt' | 'code' | 'spentMs' | 'capacity' | 'stop' | 'toolCalls' | 'transcript'>;
+type AttemptEndView = Pick<TriageAttemptView, 'endedAt' | 'code' | 'spentMs' | 'capacity' | 'stop' | 'attestation' | 'toolCalls' | 'transcript'>;
 const openAttempt: AttemptEndView = {
   endedAt: null,
   code: null,
   spentMs: null,
   capacity: 'investigating',
   stop: null,
+  attestation: null,
   toolCalls: null,
   transcript: 'not-recorded',
 };
-/** How an attempt ended; an ended attempt whose stop is not confirmed still holds its unit of Triage capacity. */
+/** How an attempt ended; an ended attempt whose stop is neither confirmed nor attested by the operator still holds its unit of Triage capacity. */
 function attemptEnd(end: TriageAttempt['end']): AttemptEndView {
   if (!end) return openAttempt;
   return {
     endedAt: end.at,
     code: end.code,
     spentMs: end.spentMs ?? null,
-    capacity: end.cessation.cessationConfirmed ? 'released' : 'retained',
+    capacity: holdsTriageCapacity({ end }) ? 'retained' : 'released',
     stop: stopOf(end),
+    attestation: end.attestation ? { author: end.attestation.author, reason: end.attestation.reason, at: end.attestation.at } : null,
     toolCalls: end.toolCalls ?? null,
     transcript: end.transcript ? 'recorded' : 'not-recorded',
   };
