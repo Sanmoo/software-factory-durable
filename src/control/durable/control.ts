@@ -16,6 +16,8 @@ import type {
   PollingOptions,
   PollingView,
   TriagePorts,
+  TriageAuthorshipImpediment,
+  TriageRequest,
   TriageRequestsView,
   QuestionQueryView,
   RecoveryView,
@@ -262,7 +264,7 @@ async function triageRequestsView(session: Session, capacity: number | null): Pr
   return {
     kind: 'triage-requests',
     capacity: { configured: capacity, investigating: holding.filter(attempt => !attempt.end).length, retained: holding.filter(attempt => attempt.end).length },
-    impediments: requests.flatMap(triageImpediments),
+    impediments: requests.flatMap(request => [...triageImpediments(request), ...authorshipImpediments(request)]),
     requests,
     queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id),
   };
@@ -284,6 +286,11 @@ function triageInvestigations(
     repositoryId: repository => poller.repositoryId(repository),
   });
 }
+/** Ticket #77: the ambiguous-authorship Impediment of a request, open only while it is still `publishing`. */
+const authorshipImpediments = (request: TriageRequest): TriageAuthorshipImpediment[] =>
+  request.state === 'publishing' && request.publication?.impediment
+    ? [{ ...request.publication.impediment, scope: 'triage-request', triage_request_id: request.triage_request_id }]
+    : [];
 /** Ticket #77: the publication desk with the publisher of each tracker (ticket #78 adds Jira's); a desk that does nothing without polling. */
 function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
   if (!access || !polling) return { pass: async () => {} };

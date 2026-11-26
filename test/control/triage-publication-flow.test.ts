@@ -171,7 +171,13 @@ test('TR-20 (GitHub): an effect present without an attributable author stops the
   assert.deepEqual([request.state, statuses(request)], ['publishing', ['confirmed', 'ambiguous-authorship', 'pending']]);
   const impediment = request.publication!.impediment!;
   assert.deepEqual([impediment.code, impediment.effects], ['TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS', [1]]);
-  assert.match(impediment.nextStep, /triage complete/);
+  assert.ok(impediment.nextStep.includes(`factory triage complete ${request.triage_request_id} --impediment ${impediment.ref}`));
+  const listed = (await w.view()).impediments;
+  assert.deepEqual(
+    listed.map(item => [item.code, item.ref, item.triage_request_id]),
+    [['TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS', impediment.ref, request.triage_request_id]],
+    'the operator view lists it beside the retained-capacity Impediments',
+  );
   await w.poll();
   request = await only(w);
   assert.equal(request.publication!.impediment!.ref, impediment.ref, 'the same Impediment across passes');

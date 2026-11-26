@@ -2957,6 +2957,8 @@ export type TriagePublicationImpediment = {
   effects: number[];
   nextStep: string;
 };
+/** Ticket #77: an open ambiguous-authorship Impediment as the operator view lists it, beside the retained-capacity ones. */
+export type TriageAuthorshipImpediment = TriagePublicationImpediment & { scope: 'triage-request'; triage_request_id: string };
 /**
  * Ticket #77: the publication of one request, beside its per-effect situation in `intended`. `mode` is null until the first write is
  * committed (`informative`: `needs-triage` was withdrawn during the investigation, only one comment is published). `hold`: why the latest
@@ -3037,8 +3039,11 @@ export type TriageRequestsView = {
    * still open; `retained`: ended attempts whose stop is not confirmed. Both hold a unit; neither is a Slot.
    */
   capacity: { configured: number | null; investigating: number; retained: number };
-  /** Ticket #76: the open Impediments of the requests (retained capacity), derived from the attempt records. */
-  impediments: TriageImpediment[];
+  /**
+   * The open Impediments of the requests: retained capacity (ticket #76, derived from the attempt records) and ambiguous authorship of a
+   * publication effect (ticket #77, the `publication.impediment` of a request still `publishing`).
+   */
+  impediments: (TriageImpediment | TriageAuthorshipImpediment)[];
   /** Every request, in arrival order. */
   requests: TriageRequest[];
   /** Ids of the `queued` requests, first to be investigated first. */

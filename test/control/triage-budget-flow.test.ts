@@ -192,7 +192,7 @@ test('TR-09: an attempt ended with balance is retried only after its stop is con
   const held = await w.view();
   assert.deepEqual(held.capacity, { configured: 1, investigating: 0, retained: 1 });
   assert.deepEqual(
-    held.impediments.map(item => [item.code, item.ref, item.triage_request_id, item.observed]),
+    held.impediments.map(item => [item.code, item.ref, item.triage_request_id, 'observed' in item ? item.observed : null]),
     [['TRIAGE_CAPACITY_RETAINED', first.attempt, retained.triage_request_id, 'INVESTIGATION_CGROUP_POPULATED']],
   );
   const stops = () => w.environment.controls.calls().filter(item => item === `stop ${first.attempt}`).length;

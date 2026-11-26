@@ -41,9 +41,10 @@ export type TriagePublisher = {
   write(request: TriageRequest, group: readonly number[], comment: string): Promise<{ kind: 'accepted' } | { kind: 'failed' | 'unknown'; code: string }>;
 };
 
-const ambiguousNextStep =
-  'An effect of this publication is on the Ticket and the origin does not say who made it. Inspect the Ticket: `triage complete <id> --impediment <ref>` ' +
-  'takes it as the Factory’s and completes what is missing; `triage cancel <id>` ends the request with nothing more written.';
+const ambiguousNextStep = (triage_request_id: string, ref: string) =>
+  'An effect of this publication is on the Ticket and the origin does not say who made it; nothing more is written. Inspect the Ticket, then: ' +
+  `factory triage complete ${triage_request_id} --impediment ${ref} (takes it as the Factory’s and completes what is missing), or ` +
+  `factory triage cancel ${triage_request_id} (ends the request with nothing more written).`;
 const empty: TriagePublication = { mode: null, startedAt: null, impediment: null, hold: null };
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -92,12 +93,13 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
   /** The publication stops for the operator; the same ambiguous effects keep the same Impediment reference across passes. */
   async function impede(request: TriageRequest, step: PublicationStep, publication: TriagePublication, effects: number[]) {
     const known = publication.impediment && sameJson(publication.impediment.effects, effects) ? publication.impediment : null;
+    const ref = randomUUID();
     const impediment: TriagePublicationImpediment = known ?? {
-      ref: randomUUID(),
+      ref,
       code: 'TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS',
       since: new Date().toISOString(),
       effects,
-      nextStep: ambiguousNextStep,
+      nextStep: ambiguousNextStep(request.triage_request_id, ref),
     };
     const event = known ? undefined : { event: 'publication-impeded', code: impediment.code };
     await record(request, step.effects, { ...publication, hold: null, impediment }, event);
@@ -155,7 +157,7 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
   }
   /** Carries out the move. `true`: a unit was written and the Ticket must be read again; `false`: this pass can do no more. */
   async function act(turn: Turn, step: PublicationStep, expected: string, written: Set<number>): Promise<boolean> {
-    const { request, publisher, publication } = turn;
+    const { request, publication } = turn;
     const { next } = step;
     const waiting = { ...publication, impediment: null };
     if (next.action === 'end' || next.action === 'suspend') await leave(request, step, next);
