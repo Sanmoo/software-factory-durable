@@ -192,6 +192,63 @@ export async function updateTriageAttempt(session: Session, triage_request_id: s
     return found !== undefined;
   }, BACKGROUND_CONTEXT);
 }
+/**
+ * Ticket #76: the end of one attempt, in ONE commit: its `end`, the timeline (`attempt-ended` with the attempt's code, `capacity-retained`
+ * when the stop is not confirmed) and, when the request is still `investigating` (no Verdict moved it on), where it goes: `decide` reads
+ * the request with the ended attempt and answers `queued` (event `requeued`) or `failed`. A request already elsewhere (publishing,
+ * abandoned) keeps its state. An attempt that already has an end is left as it is (undefined).
+ */
+export async function endTriageAttempt(
+  session: Session,
+  triage_request_id: string,
+  attempt: string,
+  ended: (attempt: TriageAttempt) => NonNullable<TriageAttempt['end']>,
+  decide: (request: TriageRequest) => { to: 'queued' } | { to: 'failed'; code: string },
+): Promise<TriageRequest | undefined> {
+  return session.commit(async tx => {
+    const request = (await tx.doc(triageRequests, triage_request_id, null)).request;
+    const found = request?.attempts?.find(item => item.attempt === attempt);
+    if (!request || !found || found.end) return undefined;
+    const end = ended(found);
+    found.end = end;
+    request.timeline.push({ at: end.at, event: 'attempt-ended', code: end.code, attempt });
+    if (!end.cessation.cessationConfirmed) request.timeline.push({ at: end.at, event: 'capacity-retained', code: end.cessation.code, attempt });
+    if (request.state === 'investigating') {
+      const next = decide(copy(request));
+      applyTransition(
+        request,
+        next.to === 'queued' ? { from: [], to: 'queued', event: 'requeued' } : { from: [], to: 'failed', event: 'failed', code: next.code },
+        end.at,
+      );
+      if (request.end) {
+        const index = await tx.doc(triageIndex);
+        index.live = index.live.filter(id => id !== triage_request_id);
+      }
+    }
+    return copy(request);
+  }, BACKGROUND_CONTEXT);
+}
+/**
+ * Ticket #76: a later answer to the stop of an ENDED attempt whose cessation was not confirmed. Confirmed: the capacity is free
+ * (`capacity-released` in the timeline). Still unconfirmed: only the latest code and instant are kept. Nothing else of the request moves.
+ */
+export async function recordTriageCessation(
+  session: Session,
+  triage_request_id: string,
+  attempt: string,
+  cessation: NonNullable<TriageAttempt['end']>['cessation'],
+  at: string,
+): Promise<boolean> {
+  return session.commit(async tx => {
+    const request = (await tx.doc(triageRequests, triage_request_id, null)).request;
+    const end = request?.attempts?.find(item => item.attempt === attempt)?.end;
+    if (!request || !end || end.cessation.cessationConfirmed) return false;
+    end.cessation = cessation;
+    end.cessationObservedAt = at;
+    if (cessation.cessationConfirmed) request.timeline.push({ at, event: 'capacity-released', code: cessation.evidence, attempt });
+    return true;
+  }, BACKGROUND_CONTEXT);
+}
 /** Ticket #75: the text of the recorded Verdict of a request (undefined: none recorded, or already removed). */
 export async function readTriageVerdictText(session: Session, triage_request_id: string): Promise<string | undefined> {
   return (await session.snapshot(triageVerdicts, triage_request_id, BACKGROUND_CONTEXT))?.verdict?.text;

@@ -74,6 +74,11 @@ export type {
 // Spec #68 §6-§8 (ticket #75): the investigation of a request up to its recorded Verdict, for the publication and operator tickets.
 export { readTriageVerdictText, updateTriageAttempt } from './durable/triage-requests.js';
 export { afterAttemptWithoutVerdict, attemptEndCode, holdsTriageCapacity } from './rules/triage.js';
+// Spec #68 §5 (ticket #76): the budget of a request, the Triage capacity and the retained capacity (an Impediment derived from the attempts).
+export { triageAttemptsExhausted, triageBalance, triageImpediments, triageStarts, triageTimeExhausted } from './rules/triage.js';
+export type { TriageAttemptFacts, TriageBudget, TriageImpediment } from './rules/triage.js';
+export { endTriageAttempt, recordTriageCessation } from './durable/triage-requests.js';
+export type { TriageClock } from './types.js';
 export {
   intendedChanges,
   triageCandidates,

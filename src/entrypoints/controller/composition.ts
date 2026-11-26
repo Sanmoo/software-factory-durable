@@ -567,6 +567,8 @@ export async function composeProductionTriage(input: {
       environment: createInvestigationEnvironment({ root: investigationEnvironmentRoot(root), factoryRoot: root }),
       limits: { ...effective.triager.environment },
       investigationMinutes: effective.triager.investigationMinutes,
+      capacity: effective.triager.capacity,
+      attempts: effective.triager.attempts,
       triager: { activate: request => triager.activate(request) },
       clones: createInvestigationClones({ root, fetch: createRepositoryFetchCredentials({ github: input.github, repositories: effective.repositories }) }),
     },

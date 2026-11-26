@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
-import type { Control, TicketSource, TriagePorts, TriageRequest, TriageRequestsView } from '../../src/control/types.js';
+import type { Control, ExecutionPorts, TicketSource, TriageClock, TriagePorts, TriageRequest, TriageRequestsView } from '../../src/control/types.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { readTriageVerdictText } from '../../src/control/durable/triage-requests.js';
 import { createInvestigationClones, type InvestigationAgent } from '../../src/sandbox/index.js';
@@ -19,15 +19,21 @@ import { githubDoubles, manualClock, scope, type Remote } from './doubles.js';
 import { jiraDoubles, type JiraRemote } from './jira-doubles.js';
 
 export const repositoryCanary = 'ghs_' + 'TRIAGErepositoryCANARY';
-/** One scripted answer of the model: the tool calls of the turn, or its final text. It receives the request body the SDK sent. */
-export type ModelTurn = (body: string) => { name: string; arguments: unknown }[] | string | typeof hang;
+type ModelAnswer = { name: string; arguments: unknown }[] | string | typeof hang | typeof unavailable;
+/**
+ * One scripted answer of the model: the tool calls of the turn, or its final text. It receives the request body the SDK sent, and may
+ * answer later (a promise the test resolves).
+ */
+export type ModelTurn = (body: string) => ModelAnswer | Promise<ModelAnswer>;
 /** A model request that never answers: it ends only when the session aborts it. */
 export const hang = Symbol('hang');
+/** A model request the provider answers with an error. */
+export const unavailable = Symbol('unavailable');
 export const call = (name: string, input: unknown) => [{ name, arguments: input }];
 const sse = (choices: unknown[]) =>
   choices.map(choice => `data: ${JSON.stringify({ id: 'r', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [choice] })}\n\n`).join('') +
   'data: [DONE]\n\n';
-function answer(turn: Exclude<ReturnType<ModelTurn>, typeof hang>, request: number): Response {
+function answer(turn: Exclude<ModelAnswer, typeof hang | typeof unavailable>, request: number): Response {
   const choices =
     typeof turn === 'string'
       ? [
@@ -104,6 +110,40 @@ export function firstPrompt(body: string): string {
   return typeof content === 'string' ? content : (content as { text?: string }[]).map(part => part.text ?? '').join('');
 }
 
+/**
+ * The investigation clock of the tests (ticket #76): calendar time that only moves by `advance`, which also ends the sleeps then due. An
+ * investigation therefore never runs out of time by itself.
+ */
+export function investigationClock(start = Date.UTC(2026, 0, 1)) {
+  let now = start;
+  let sleeps: { due: number; wake(): void }[] = [];
+  const clock: TriageClock = {
+    now: () => now,
+    sleep: (ms, signal) =>
+      new Promise<void>(resolve => {
+        const sleep = { due: now + ms, wake: resolve };
+        sleeps.push(sleep);
+        signal.addEventListener(
+          'abort',
+          () => {
+            sleeps = sleeps.filter(item => item !== sleep);
+            resolve();
+          },
+          { once: true },
+        );
+      }),
+  };
+  return {
+    clock,
+    advance(ms: number) {
+      now += ms;
+      const due = sleeps.filter(sleep => sleep.due <= now);
+      sleeps = sleeps.filter(sleep => sleep.due > now);
+      for (const sleep of due) sleep.wake();
+    },
+  };
+}
+
 export async function triageWorld(
   t: { after(fn: () => Promise<void> | void): void },
   options: {
@@ -112,6 +152,10 @@ export async function triageWorld(
     sources: TicketSource[];
     script: ModelTurn[];
     ports?: Partial<TriagePorts>;
+    /** Execution ports of the Control (Works and Slots beside the Triage). */
+    execution?: ExecutionPorts;
+    /** The executable repositories (default: `acme/project`, `acme/other` and `acme/third`). */
+    repositories?: (typeof scope)[];
     /** Spec §7 (ticket #79): the registered MCP servers and Profiles, and the active ones. */
     mcp?: McpRegistration;
     /** Private files written under `<root>/credentials` before the Control starts (name -> content). */
@@ -145,7 +189,8 @@ export async function triageWorld(
     if (new URL(input instanceof Request ? input.url : input).hostname === '127.0.0.1') return originalFetch(input, init);
     const body = input instanceof Request ? await input.text() : String(init?.body);
     bodies.push(body);
-    const turn = script.shift()?.(body) ?? 'The scripted provider has no further turn.';
+    const turn = (await script.shift()?.(body)) ?? 'The scripted provider has no further turn.';
+    if (turn === unavailable) return new Response('{"error":{"message":"overloaded"}}', { status: 503, headers: { 'Content-Type': 'application/json' } });
     if (turn !== hang) return answer(turn, bodies.length);
     const signal = input instanceof Request ? input.signal : init?.signal;
     return new Promise<Response>((_resolve, reject) => {
@@ -193,10 +238,14 @@ export async function triageWorld(
     } as unknown as Parameters<typeof createInvestigationClones>[0]['fetch'],
     remoteUrl: () => `file://${upstream}`,
   });
+  const time = investigationClock();
   const ports: TriagePorts = {
     environment: options.environment?.(environment) ?? environment,
     limits: { memoryGiB: 2, processes: 512, commandSeconds: 120 },
     investigationMinutes: 15,
+    capacity: 1,
+    attempts: 2,
+    clock: time.clock,
     triager: { activate: request => triager.activate(request) },
     clones,
     ...options.ports,
@@ -205,7 +254,7 @@ export async function triageWorld(
   const github = githubDoubles(remote);
   const jira = jiraDoubles(options.jira ?? { cards: [] });
   const storagePath = join(dir, 'control.sqlite');
-  const repositories = [scope, { ...scope, repository: 'acme/other' }, { ...scope, repository: 'acme/third' }];
+  const repositories = options.repositories ?? [scope, { ...scope, repository: 'acme/other' }, { ...scope, repository: 'acme/third' }];
   let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   /** Starts a Control over the same storage and waits for its first complete polling iteration (the first investigation pass included). */
   async function start() {
@@ -216,6 +265,7 @@ export async function triageWorld(
       access: { tracker: github.tracker, repository: github.repository, repositories, sources: options.sources, trackers: { jira: jira.tracker } },
       polling: { intervalSeconds: 60, clock: time.clock },
       triage: ports,
+      ...(options.execution ? { execution: options.execution } : {}),
     });
     const stop = new AbortController();
     current = { control, stop, running: control.run(stop.signal), time };
@@ -232,7 +282,20 @@ export async function triageWorld(
     current!.time.advance();
     await current!.time.sleeping();
   };
-  const requests = async () => ((await current!.control.inspect({ kind: 'triage-requests' })) as TriageRequestsView).requests;
+  const view = async () => (await current!.control.inspect({ kind: 'triage-requests' })) as TriageRequestsView;
+  const requests = async () => (await view()).requests;
+  /** The request at `index` once it is in `state` and none of its attempts is open. */
+  const settled = (index: number, state: TriageRequest['state']) => {
+    let seen = 'nothing';
+    return until(
+      () => `request ${index} to be ${state} (last seen: ${seen}; ${bodies.length} model requests)`,
+      async (): Promise<TriageRequest | undefined> => {
+        const request = (await requests())[index];
+        seen = request ? `${request.state} ${request.attempts?.map(attempt => attempt.end?.code ?? 'open').join(',') ?? ''}` : 'no request';
+        return request?.state === state && request.attempts?.every(attempt => attempt.end) !== false ? request : undefined;
+      },
+    );
+  };
   /** The first request once its latest attempt is over (its end recorded), whatever became of it. */
   const investigated = (index = 0) =>
     until(`the attempt of request ${index} to end`, async (): Promise<TriageRequest | undefined> => {
@@ -273,6 +336,10 @@ export async function triageWorld(
     stop,
     poll,
     requests,
+    view,
+    settled,
+    time,
+    control: () => current!.control,
     investigated,
     verdictText,
     attemptFiles,
