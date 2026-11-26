@@ -38,7 +38,8 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
       file.path,
     );
   }
-  // The controller's GitHub client has exactly one write (the Question comment); no pulls/refs/contents writes.
+  // The controller's GitHub client writes to an ISSUE only: the comment (a Question, or the Verdict of a Triage publication) and the
+  // three other writes of a Triage publication (spec #68 §8), each pinned below. No pulls/refs/contents writes.
   // Line breaks, indentation and trailing commas are the formatter's, not what this gate asserts (sourceShape).
   const github = sourceShape(files.find(item => item.path === 'src/platform/github/index.ts')!.text);
   assert.equal((github.match(/JSON\.stringify\(\{ body \}\)/g) ?? []).length, 1, 'the only POST body is the issue comment');
@@ -46,6 +47,11 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // Spec #68 §8: the one PATCH is the `not_planned` closing of a Ticket issue by a Triage publication; never a pull request or a ref.
   assert.equal((github.match(/method: 'PATCH'/g) ?? []).length, 1, 'a single PATCH');
   assert.match(github, /input: JSON\.stringify\(\{ state: 'closed', state_reason: 'not_planned' \}\), method: 'PATCH'/, 'which closes an issue');
+  // Spec #68 §8: labels change by relative operation on one issue, never by replacing the set: ONE POST adds a label, ONE DELETE removes one.
+  assert.equal((github.match(/JSON\.stringify\(\{ labels:/g) ?? []).length, 1, 'a single label POST');
+  assert.match(github, /endpoint: `\$\{issue\}\/labels`, input: JSON\.stringify\(\{ labels: \[write\.label\] \}\)/, 'which adds one label to an issue');
+  assert.equal((github.match(/method: 'DELETE'/g) ?? []).length, 1, 'a single DELETE');
+  assert.match(github, /endpoint: `\$\{issue\}\/labels\/\$\{encodeURIComponent\(write\.label\)\}`, method: 'DELETE'/, 'which removes one label of an issue');
   // The CodeRepository contract stays read-only for the implementation publication.
   const repository = files.find(item => item.path === 'src/code-repository/index.ts')!.text;
   const contract = /export interface CodeRepository \{([\s\S]*?)\n\}/.exec(repository)![1]!;
