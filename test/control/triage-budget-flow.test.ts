@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
+import { openStore } from '../../src/control/durable/store.js';
+import { triageRequests } from '../../src/control/durable/triage-requests.js';
 import type { ControlStatus, ListView, SourceTriage, TicketSource } from '../../src/control/types.js';
 import { untilHolds } from '../runner/budget.js';
 import { budgetDoubles } from './budget-doubles.js';
@@ -270,4 +273,62 @@ test('TR-10 (Jira): the clock running out without a Verdict ends the request `fa
   assert.deepEqual(trackerWrites(w.jira.methods()), []);
   assert.deepEqual(item.labels, ['needs-triage']);
   assert.deepEqual((await w.view()).impediments, []);
+});
+
+/**
+ * What a killed controller leaves in the storage, written here over a stopped Control: the latest attempt of the request open again and
+ * the request `investigating`, with nothing of its end. (The real SIGKILL is triage-crash.test.ts.)
+ */
+async function asKilled(w: World, triage_request_id: string) {
+  const store = await openStore(w.storagePath);
+  try {
+    await store.session.commit(async tx => {
+      const request = (await tx.doc(triageRequests, triage_request_id, null)).request!;
+      request.attempts!.at(-1)!.end = null;
+      request.state = 'investigating';
+      request.timeline = request.timeline.filter(entry => entry.event === 'requested' || entry.event === 'attempt-started');
+    }, BACKGROUND_CONTEXT);
+  } finally {
+    await store.close();
+  }
+}
+
+test('TR-11 (clock): an attempt a dead Control left open is charged up to its latest recorded instant, not the time the Control was down', async t => {
+  const first = gated(() => call('request_clone', { repository: 'acme/project' }));
+  const w = await triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script: [first.turn, () => hang, conclude] });
+  await w.start();
+  await untilHolds('the session to ask the model', () => w.bodies.length === 1);
+  // Two minutes in, the session asks for a clone: the one instant the attempt's record gains after its start.
+  w.time.advance(minutes(2));
+  first.open();
+  await untilHolds('the clone to be delivered', () => w.bodies.length === 2);
+  w.time.advance(minutes(3));
+  const [open] = await w.requests();
+  await w.stop();
+  await asKilled(w, open!.triage_request_id);
+  // An hour with no Control at all.
+  w.time.advance(minutes(60));
+  await w.start();
+  const again = await w.settled(0, 'publishing');
+  const [interrupted, second] = again.attempts!;
+  assert.deepEqual([interrupted!.end?.code, interrupted!.end?.spentMs], ['INVESTIGATION_INTERRUPTED', minutes(2)]);
+  assert.equal(Date.parse(interrupted!.clones[0]!.at) - Date.parse(interrupted!.startedAt), minutes(2), 'the clone instant is of the investigation clock');
+  assert.equal(second!.end?.code, 'VERDICT_RECORDED', 'the downtime did not cost the request its second attempt');
+  assert.match(firstPrompt(w.bodies[2]!), /## Remaining investigation time\n\n13 minutes\n/);
+});
+
+test('TR-11 (clock): with no instant after its start in the records, the interrupted attempt is charged up to the instant the new Control ended it', async t => {
+  const w = await triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script: [() => hang, conclude] });
+  await w.start();
+  await untilHolds('the session to ask the model', () => w.bodies.length === 1);
+  w.time.advance(minutes(5));
+  const [open] = await w.requests();
+  await w.stop();
+  await asKilled(w, open!.triage_request_id);
+  w.time.advance(minutes(60));
+  await w.start();
+  const failed = await w.settled(0, 'failed');
+  // The records cannot tell the five minutes of investigation from the hour without a Control: the whole span is charged.
+  assert.deepEqual([failed.attempts![0]!.end?.code, failed.attempts![0]!.end?.spentMs], ['INVESTIGATION_INTERRUPTED', minutes(65)]);
+  assert.deepEqual([failed.end?.code, failed.attempts!.length, w.bodies.length], ['TRIAGE_INVESTIGATION_TIME_EXHAUSTED', 1, 1]);
 });

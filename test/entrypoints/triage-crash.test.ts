@@ -115,7 +115,10 @@ test(
       [first.attempt, first.end?.code, first.end?.cessation],
       [killed, 'INVESTIGATION_INTERRUPTED', { cessationConfirmed: true, evidence: 'unit-inactive' }],
     );
-    assert.equal(typeof first.end?.spentMs, 'number', 'the time of the interrupted attempt is counted');
+    // What it is charged: this session asked for no clone, so its record holds no instant after its start and the whole span up to the
+    // instant the new Control ended it is spent, the time without a Control included (`interruptedAttemptSpentMs`).
+    assert.deepEqual(first.clones, []);
+    assert.equal(first.end?.spentMs, Date.parse(first.end!.at) - Date.parse(first.startedAt), 'charged from its start to the end the new Control recorded');
     assert.notEqual(await activeState(unit!), 'active', 'the unit was really stopped');
 
     // Spent, with balance left: the request went back to the queue and a NEW session investigates it.

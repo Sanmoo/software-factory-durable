@@ -182,6 +182,18 @@ export function triageBalance(budget: TriageBudget, attempts: readonly TriageAtt
 }
 
 /**
+ * The investigation time charged to an attempt a dead Control left open (it is never reattached: the new Control ends it at `endedAt`).
+ * `recorded`: the instants its durable record gained while it ran (today: each clone delivered to its session). With one after the
+ * start, the attempt is charged up to the latest: what the records show it consumed, never the span no Control was running. With none
+ * the records bound nothing, and the whole span up to `endedAt` is charged, that downtime included.
+ */
+export function interruptedAttemptSpentMs(input: { startedAt: number; recorded: readonly number[]; endedAt: number }): number {
+  const latest = Math.max(input.startedAt, ...input.recorded);
+  const until = latest > input.startedAt ? Math.min(latest, input.endedAt) : input.endedAt;
+  return Math.max(0, until - input.startedAt);
+}
+
+/**
  * What becomes of a request still `investigating` when its latest attempt (the last of `attempts`) ended without a Verdict: back to the
  * queue for a new session when the end was transient and both attempts and time are left, `failed` otherwise, with the code of the axis
  * that ran out (the attempt keeps its own end code). Nothing of this is ever written to the Ticket.

@@ -6,6 +6,7 @@ import {
   latestLabelApplication,
   stateLabelConflict,
   suspendsAdmission,
+  interruptedAttemptSpentMs,
   triageBalance,
   triageImpediments,
   triageStarts,
@@ -203,6 +204,18 @@ test('TR-09/TR-11: a transient end is retried with balance; a session the profil
     to: 'failed',
     code: 'TRIAGE_ATTEMPTS_EXHAUSTED',
   });
+});
+
+test('TR-11: an attempt a dead Control left open is charged up to the latest instant its records show, never the time the Control was down', () => {
+  const minute = 60_000;
+  // The session asked for clones at minutes 2 and 4; the new Control ended the attempt at minute 70.
+  assert.equal(interruptedAttemptSpentMs({ startedAt: 0, recorded: [2 * minute, 4 * minute], endedAt: 70 * minute }), 4 * minute);
+  // No instant after the start in the records: nothing bounds what it consumed, so the whole span up to its end is charged.
+  assert.equal(interruptedAttemptSpentMs({ startedAt: 0, recorded: [], endedAt: 70 * minute }), 70 * minute);
+  assert.equal(interruptedAttemptSpentMs({ startedAt: 5 * minute, recorded: [5 * minute, minute], endedAt: 70 * minute }), 65 * minute);
+  // Never past the end, never negative.
+  assert.equal(interruptedAttemptSpentMs({ startedAt: 0, recorded: [90 * minute], endedAt: 70 * minute }), 70 * minute);
+  assert.equal(interruptedAttemptSpentMs({ startedAt: 10 * minute, recorded: [], endedAt: 9 * minute }), 0);
 });
 
 test('TR-07: free capacity goes to the queue in arrival order; a request whose earlier attempt is not confirmed stopped never starts', () => {

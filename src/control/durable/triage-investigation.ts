@@ -6,6 +6,7 @@ import {
   afterAttemptWithoutVerdict,
   attemptEndCode,
   holdsTriageCapacity,
+  interruptedAttemptSpentMs,
   triageBalance,
   triageAttemptsExhausted,
   triageStarts,
@@ -80,8 +81,16 @@ export function createTriageInvestigations(deps: {
   const budget = { investigationMs: ports.investigationMinutes * 60_000, attempts: ports.attempts };
   const stamp = () => new Date(clock.now()).toISOString();
 
-  /** Stops the attempt's environment, removes it once the stop is confirmed and records how the attempt ended. */
-  async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: AttemptEnd) {
+  /**
+   * Stops the attempt's environment, removes it once the stop is confirmed and records how the attempt ended. `spent`: the investigation
+   * time it is charged, from its record and the instant of this end (default: from its start to this end, the attempt of this process).
+   */
+  async function endAttempt(
+    triage_request_id: string,
+    record: InvestigationRecord,
+    end: AttemptEnd,
+    spent: (started: TriageAttempt, endedAt: number) => number = (started, endedAt) => Math.max(0, endedAt - Date.parse(started.startedAt)),
+  ) {
     const cessation = await ports.environment.stop(record).catch(() => unconfirmed);
     if (cessation.cessationConfirmed) await ports.environment.close(record).catch(() => {});
     // Without a Verdict the request leaves `investigating` in the same commit: back to the queue with balance, else `failed`.
@@ -96,11 +105,23 @@ export function createTriageInvestigations(deps: {
         cessation,
         transcript: end.transcript,
         toolCalls: end.toolCalls ?? null,
-        spentMs: Math.max(0, at - Date.parse(started.startedAt)),
+        spentMs: spent(started, at),
       }),
       request => afterAttemptWithoutVerdict(budget, request.attempts ?? []),
     );
   }
+  /**
+   * An attempt another process left open (spec §6: never reattached). It is charged what its record shows it consumed, not the span no
+   * Control was running; a record with no instant after the start bounds nothing and is charged up to this end (`interruptedAttemptSpentMs`).
+   */
+  const endInterrupted = (triage_request_id: string, attempt: TriageAttempt) =>
+    endAttempt(triage_request_id, attempt.environment, { code: 'INVESTIGATION_INTERRUPTED', transcript: null }, (started, endedAt) =>
+      interruptedAttemptSpentMs({
+        startedAt: Date.parse(started.startedAt),
+        recorded: started.clones.map(clone => Date.parse(clone.at)),
+        endedAt,
+      }),
+    );
 
   /** The stop of an ended attempt that was not confirmed is asked again; once confirmed its environment is removed and its unit is free. */
   async function confirmStop(triage_request_id: string, attempt: TriageAttempt) {
@@ -138,7 +159,7 @@ export function createTriageInvestigations(deps: {
     const clone = { path: mounted.path, commit: created.commit };
     state.cloned.set(candidate.repository, clone);
     await updateTriageAttempt(session, state.request.triage_request_id, state.attempt, attempt => {
-      attempt.clones.push({ repository: candidate.repository, commit: created.commit, at: new Date().toISOString() });
+      attempt.clones.push({ repository: candidate.repository, commit: created.commit, at: stamp() });
     });
     return { status: 'cloned', repository: candidate.repository, ...clone };
   }
@@ -160,7 +181,7 @@ export function createTriageInvestigations(deps: {
       request.verdict = {
         ...verdict,
         attempt: state.attempt,
-        recordedAt: new Date().toISOString(),
+        recordedAt: stamp(),
         textSha256: createHash('sha256').update(text).digest('hex'),
         textBytes: Buffer.byteLength(text),
       };
@@ -348,7 +369,7 @@ export function createTriageInvestigations(deps: {
         if (running.has(attempt.attempt) || attempt.end?.cessation.cessationConfirmed) continue;
         changed = true;
         if (attempt.end) await confirmStop(request.triage_request_id, attempt);
-        else await endAttempt(request.triage_request_id, attempt.environment, { code: 'INVESTIGATION_INTERRUPTED', transcript: null });
+        else await endInterrupted(request.triage_request_id, attempt);
       }
     return changed;
   }
