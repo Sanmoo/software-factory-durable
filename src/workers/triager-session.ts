@@ -18,9 +18,9 @@ import { sessionRefusal, thinkingLevelOf } from './worker-session.js';
 import type { ReviewerProfile } from './worker-start.js';
 
 /** Spec #68 §5: the model budget of ONE attempt of a Triager, fixed in the release. */
-export const triagerModelBudget = 'triager-v1';
+const triagerModelBudget = 'triager-v1';
 
-export type TriagerSessionOptions = {
+type TriagerSessionOptions = {
   profile: ReviewerProfile;
   /** The complete first prompt (the pack's activation template, already filled). Sent as it is: no template of the session expands it. */
   prompt: string;
@@ -37,7 +37,7 @@ export type TriagerSessionOptions = {
  * `concluded`: the Control accepted a Verdict in this session. `closedBy`: which Host count or failure closed a session that did not end
  * by itself (the attempt's distinct end codes are the Control's).
  */
-export type TriagerSessionResult = {
+type TriagerSessionResult = {
   status: 'completed' | 'interrupted';
   concluded: boolean;
   sessionFile: string | null;

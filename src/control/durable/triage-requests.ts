@@ -22,7 +22,7 @@ export const triageRequests = defineDocFamily<{ request: TriageRequest | null },
 });
 /** `order`: every request id by arrival; `live`: the ones not in a terminal state; `tickets`: request ids per Ticket key, oldest first. */
 type TriageIndex = { sequence: number; order: string[]; live: string[]; tickets: Record<string, string[]> };
-export const triageIndex = defineDoc<TriageIndex>({
+const triageIndex = defineDoc<TriageIndex>({
   kind: 'factory.triage-index',
   version: 1,
   scope: 'session',
@@ -47,7 +47,7 @@ type Transaction = Parameters<Parameters<Session['commit']>[0]>[0];
 /** A plain copy of a request read inside a commit (the transaction's draft is not a cloneable object and must not leave it). */
 const copy = (request: TriageRequest): TriageRequest => JSON.parse(JSON.stringify(request)) as TriageRequest;
 
-export type TriageRequestResult =
+type TriageRequestResult =
   | { kind: 'requested'; request: TriageRequest }
   /** The Ticket's latest request is not the one the caller evaluated (a concurrent creation): nothing was created. */
   | { kind: 'existing'; request: TriageRequest }
@@ -105,7 +105,7 @@ export async function requestTriage(
   }, BACKGROUND_CONTEXT);
 }
 
-export type TriageTransition = {
+type TriageTransition = {
   /** The states the caller evaluated the request in; any other current state leaves it unchanged (`not-applied`). */
   from: readonly TriageRequestState[];
   to: TriageRequestState;
@@ -125,7 +125,7 @@ function applyTransition(request: TriageRequest, change: TriageTransition, at: s
   request.timeline.push(entry);
   if (isTerminalTriageState(change.to)) request.end = { at, code: change.code ?? change.to.toUpperCase() };
 }
-export type TriageTransitionResult = { kind: 'applied'; request: TriageRequest } | { kind: 'not-applied'; state: TriageRequestState | null };
+type TriageTransitionResult = { kind: 'applied'; request: TriageRequest } | { kind: 'not-applied'; state: TriageRequestState | null };
 
 /**
  * The one way a request changes state, in ONE commit: the current state is revalidated against `from` and the transition table, the

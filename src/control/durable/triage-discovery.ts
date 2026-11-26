@@ -46,7 +46,7 @@ type Origin<T extends TicketRef> = {
   history(ticket: T): Promise<History>;
 };
 
-export const triageSourceKey = (source: TriageSourceRef) =>
+const triageSourceKey = (source: TriageSourceRef) =>
   source.tracker === 'jira' ? `jira:${encodeURIComponent(source.siteId)}:${encodeURIComponent(source.projectId)}` : `github:${source.repository.toLowerCase()}`;
 const refOf = (source: TicketSource): TriageSourceRef =>
   source.tracker === 'jira' ? { tracker: 'jira', siteId: source.siteId, projectId: source.projectId } : { tracker: 'github', repository: source.repository };

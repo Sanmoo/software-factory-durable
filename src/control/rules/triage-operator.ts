@@ -33,9 +33,9 @@ import {
   type TriageRequestState,
 } from './triage.js';
 
-export type TriageOpenImpediment = TriageImpediment | TriageAuthorshipImpediment;
+type TriageOpenImpediment = TriageImpediment | TriageAuthorshipImpediment;
 /** How the recorded instants (ISO 8601) are read and written; the caller's calendar, never an ambient one. */
-export type TriageCalendar = { ms(instant: string): number; instant(ms: number): string };
+type TriageCalendar = { ms(instant: string): number; instant(ms: number): string };
 /** What the views need beside the records: the limits of this Control (null: none composed), the instant and the queue order. */
 export type TriageViewFacts = { budget: TriageBudget | null; now: number; retentionDays: number; queue: readonly string[]; calendar: TriageCalendar };
 

@@ -49,72 +49,15 @@ export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluatio
 export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
 export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
 export type { JiraOriginTracker } from './types.js';
-// Spec #68 §4-§5 (ticket #71): the Triage request document, its guarded transitions and its pure rules, for the later tickets of the spec.
-export {
-  liveTriageRequests,
-  readTriageRequest,
-  readTriageRequests,
-  requestTriage,
-  ticketTriageRequests,
-  transitionTriageRequest,
-  triageQueue,
-} from './durable/triage-requests.js';
-export type { TriageRequestResult, TriageTransition, TriageTransitionResult } from './durable/triage-requests.js';
-export { isTerminalTriageState, terminalTriageStates, triageRequestStates, triageTransitionAllowed } from './rules/triage.js';
-export type { TriageRequestState, TriageRoles } from './rules/triage.js';
-export type {
-  SourceTriage,
-  TriageCandidateView,
-  TriageRequest,
-  TriageRequestsView,
-  TriageSourcePollView,
-  TriageSourceRef,
-  TriageTimelineEntry,
-} from './types.js';
-// Spec #68 §6-§8 (ticket #75): the investigation of a request up to its recorded Verdict, for the publication and operator tickets.
-export { readTriageVerdictText, updateTriageAttempt } from './durable/triage-requests.js';
-export { afterAttemptWithoutVerdict, attemptEndCode, holdsTriageCapacity } from './rules/triage.js';
-// Spec #68 §5 (ticket #76): the budget of a request, the Triage capacity and the retained capacity (an Impediment derived from the attempts).
-export { triageAttemptsExhausted, triageBalance, triageImpediments, triageStarts, triageTimeExhausted } from './rules/triage.js';
-export type { TriageAttemptFacts, TriageBudget, TriageImpediment } from './rules/triage.js';
-export { endTriageAttempt, recordTriageCessation } from './durable/triage-requests.js';
-export type { TriageClock } from './types.js';
+// Spec #68 (Triage): what the composition roots and the operator's side read of the Triage. The request document, its transitions and
+// the pure rules stay inside this module; nothing outside it moves a request.
+export type { SourceTriage, TriagePorts, TriageDetailPorts, TriageRequest, TriageRequestsView } from './types.js';
 // Spec #68 §11 (ticket #82): the Triage requests of a storage as an upgrade reads them (`inspectStorage(...).triage`).
-export { triageSettlement, triageUnsettled } from './rules/triage-settlement.js';
-export type { TriageSettlement, TriageSettlementFacts } from './rules/triage-settlement.js';
-export {
-  intendedChanges,
-  triageCandidates,
-  triageEffectStatuses,
-  triageOutcomes,
-  validateVerdict,
-  verdictCategories,
-  verdictTextMaxBytes,
-} from './rules/triage-verdict.js';
-export type { TriageEffectStatus, TriageIntendedChange, TriageIntendedEffect, TriageOutcome, TriageVerdict, VerdictCategory } from './rules/triage-verdict.js';
-export type { TriageActivationText } from './rules/triage-prompt.js';
-export type { TriageAttempt, TriagePorts, TriageVerdictRecord } from './types.js';
-// Spec #68 §8 (ticket #77): the publication of a recorded Verdict: its record on the request and the per-effect situation.
-export type { TriageAuthorshipImpediment, TriagePublication, TriagePublicationImpediment } from './types.js';
-export type { TriageEffectProgress } from './rules/triage-verdict.js';
-export type { PublicationMode } from './rules/triage-publication.js';
-// Spec #68 §10 (ticket #80): the operator views of the Triage requests (metadata only), the explicit transcript read and the detail store.
-export { resolveTriageRequest, triageDetailProtections, triageDetailsView, triageRequestImpediments, triageSummary } from './rules/triage-operator.js';
-export type {
-  TriageCleanupPlan,
-  TriageCleanupReceipt,
-  TriageAttestation,
-  TriageInterventionReceipt,
-  TriageReceiptEffect,
-  TriageDetailPorts,
-  TriageDetails,
-  TriageDetailView,
-  TriageStatusView,
-  TriageSummaryView,
-  TriagesView,
-  TriageTranscriptView,
-  TriageUsageView,
-} from './types.js';
+export { triageUnsettled } from './rules/triage-settlement.js';
+export type { TriageSettlement } from './rules/triage-settlement.js';
+// Spec #68 §10 (tickets #80, #81): the operator views of the Triage requests (metadata only), the explicit transcript read and the
+// receipt of the interventions.
+export type { TriageInterventionReceipt, TriageDetailView, TriageStatusView, TriagesView, TriageTranscriptView, TriageUsageView } from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

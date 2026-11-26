@@ -26,7 +26,7 @@ export type PublicationNext =
   | { action: 'impediment'; effects: number[] }
   | { action: 'end'; to: 'concluded' | 'abandoned'; code: string };
 export type PublicationStep = { effects: TriageIntendedEffect[]; mode: PublicationMode | null; next: PublicationNext };
-export type PublicationInput = {
+type PublicationInput = {
   roles: TriageRoles;
   caseSensitive: boolean;
   /** `null`: nothing was attempted yet (the re-read before the first write). */
@@ -255,7 +255,7 @@ export type TriageCommentInput = {
   route?: TriageCommentRoute;
 };
 /** `adds`: the publication writes the identified component with the label. `fallback`: `ready-for-agent` is applied as `needs-info`. */
-export type TriageCommentRoute = { admission: string; needsInfo: string } & (
+type TriageCommentRoute = { admission: string; needsInfo: string } & (
   { kind: 'adds'; componentId: string; repository: string } | ({ kind: 'fallback' } & RouteFallback)
 );
 /**

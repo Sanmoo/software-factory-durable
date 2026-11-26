@@ -8,7 +8,7 @@ import { triageAttemptPattern, triageReferencePattern } from '../contracts/index
 import type { Envelope } from '../protocol/index.js';
 
 type Payload = Envelope['payload'];
-export type TriageExchange = (root: string, kind: 'inspect' | 'accept', payload: Payload, id: string, runId: string | null) => Promise<Envelope>;
+type TriageExchange = (root: string, kind: 'inspect' | 'accept', payload: Payload, id: string, runId: string | null) => Promise<Envelope>;
 type Flags = Record<string, 'value' | 'flag'>;
 type Given = { positional: string[]; values: Map<string, string> };
 /** What one command line asks of the controller: a read-only view, or a change with its own identity. */
@@ -114,7 +114,7 @@ function completeFields(values: Map<string, string>): Payload | null {
   return impediment && uuid.test(impediment) ? { impediment } : null;
 }
 /** The subcommands of `factory triage`. A Ticket reference never collides with a name here: none of these is a valid reference. */
-export const triageSubcommands: Record<string, Subcommand> = {
+const triageSubcommands: Record<string, Subcommand> = {
   transcript: { usage: 'triage transcript <request id>', flags: { '--attempt': 'value', '--offset': 'value', '--verdict': 'flag' }, request: transcript },
   cleanup: { usage: 'triage cleanup <request id>', flags: { '--yes': 'flag' }, request: cleanup },
   'cleanup-confirm': { usage: 'triage cleanup-confirm <request id> <plan>', flags: {}, request: cleanupConfirm },

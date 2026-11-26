@@ -3,13 +3,13 @@
 import type { TriageRoles } from './triage.js';
 
 /** The four outcomes of a Triage (spec §8). `ready-for-agent` is published as the admission label of the destination. */
-export const triageOutcomes = ['ready-for-agent', 'needs-info', 'ready-for-human', 'wontfix'] as const;
+const triageOutcomes = ['ready-for-agent', 'needs-info', 'ready-for-human', 'wontfix'] as const;
 export type TriageOutcome = (typeof triageOutcomes)[number];
 /** Categories of a Verdict; the Control never turns them into labels. */
-export const verdictCategories = ['bug', 'enhancement'] as const;
+const verdictCategories = ['bug', 'enhancement'] as const;
 export type VerdictCategory = (typeof verdictCategories)[number];
 /** The structured Verdict as recorded. `component`: the Jira component the Triager identified (always null on a GitHub issue). */
-export type TriageVerdict = { outcome: TriageOutcome; category: VerdictCategory; text: string; component: string | null };
+type TriageVerdict = { outcome: TriageOutcome; category: VerdictCategory; text: string; component: string | null };
 
 /**
  * Bound of the Verdict text in UTF-8 bytes. It fits one protocol frame even fully escaped and stays under the comment limit of both
@@ -20,7 +20,7 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
 export type VerdictError = { code: string; message: string };
-export type VerdictValidation = { valid: true; verdict: TriageVerdict } | { valid: false; errors: VerdictError[] };
+type VerdictValidation = { valid: true; verdict: TriageVerdict } | { valid: false; errors: VerdictError[] };
 /** Where the Verdict lands: the tracker of the Ticket and, for a Card, the component IDs of its source's routes. */
 export type VerdictContext = { tracker: 'github' } | { tracker: 'jira'; components: readonly string[] };
 
@@ -85,14 +85,13 @@ export type TriageIntendedChange =
   | { kind: 'close'; reason: 'not_planned' }
   | { kind: 'add-component'; componentId: string };
 /** Situation of an intended change (spec §10). Recorded `pending` with the Verdict; only the publication moves it. */
-export const triageEffectStatuses = ['pending', 'confirmed', 'no-longer-allowed', 'ambiguous-authorship'] as const;
-export type TriageEffectStatus = (typeof triageEffectStatuses)[number];
+type TriageEffectStatus = 'pending' | 'confirmed' | 'no-longer-allowed' | 'ambiguous-authorship';
 /**
  * What the publication records on an intended change (ticket #77), all absent until it reaches it. `attempts`/`attemptedAt`: writes sent
  * for it, committed BEFORE each one (an effect never attempted and found present is somebody else's). `settledAt`: when it left `pending`.
  * `code`: why it is `no-longer-allowed`. `reference`: what confirmed it at the origin (the comment URL, or the id of the history event).
  */
-export type TriageEffectProgress = { attempts?: number; attemptedAt?: string; settledAt?: string; code?: string; reference?: string };
+type TriageEffectProgress = { attempts?: number; attemptedAt?: string; settledAt?: string; code?: string; reference?: string };
 export type TriageIntendedEffect = TriageIntendedChange & { status: TriageEffectStatus } & TriageEffectProgress;
 
 const outcomeLabel = (outcome: TriageOutcome, roles: TriageRoles) =>

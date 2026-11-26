@@ -5,8 +5,8 @@ import type { Diagnostic } from '../contracts/index.js';
  * Spec #68 §2 (installation validation): what the Host needs before a `triage` block turns on. The Investigation Environment is a
  * bubblewrap confinement inside a transient user systemd unit, and the Triager reads code with `git` and `rg`.
  */
-export const triagePrerequisites = ['linux', 'bwrap', 'unprivileged-namespaces', 'systemd-user', 'git', 'rg'] as const;
-export type TriagePrerequisite = (typeof triagePrerequisites)[number];
+const triagePrerequisites = ['linux', 'bwrap', 'unprivileged-namespaces', 'systemd-user', 'git', 'rg'] as const;
+type TriagePrerequisite = (typeof triagePrerequisites)[number];
 
 /** The prerequisites the Host lacks, in the order above (empty: the Host can triage). Injectable: tests never depend on the real Host. */
 export type TriageHostProbe = () => Promise<TriagePrerequisite[]>;

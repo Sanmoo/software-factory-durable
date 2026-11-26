@@ -20,7 +20,7 @@ export type TriagePromptTicket = {
   comments: readonly TriagePromptComment[];
 };
 export type TriagePromptBlockers = { kind: 'observed'; blockers: readonly { reference: string; url: string | null }[] } | { kind: 'unavailable'; code: string };
-export type TriageActivationInput = {
+type TriageActivationInput = {
   ticket: TriagePromptTicket;
   origin: string;
   candidates: readonly { repository: string; base: string; components: readonly string[] }[];

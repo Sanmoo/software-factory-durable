@@ -4,7 +4,7 @@
 /** The seven states of a Triage request (spec §5). There is no retry state: between attempts the request is `queued` again. */
 export const triageRequestStates = ['queued', 'investigating', 'suspended', 'publishing', 'concluded', 'abandoned', 'failed'] as const;
 export type TriageRequestState = (typeof triageRequestStates)[number];
-export const terminalTriageStates = ['concluded', 'abandoned', 'failed'] as const satisfies readonly TriageRequestState[];
+const terminalTriageStates = ['concluded', 'abandoned', 'failed'] as const satisfies readonly TriageRequestState[];
 export const isTerminalTriageState = (state: TriageRequestState) => (terminalTriageStates as readonly TriageRequestState[]).includes(state);
 
 const transitions: Record<TriageRequestState, readonly TriageRequestState[]> = {
@@ -51,7 +51,7 @@ export function latestLabelApplication(events: readonly TriageLabelEvent[], labe
   return found ? { eventId: found.eventId } : null;
 }
 
-export type TriageHoldCode =
+type TriageHoldCode =
   | 'TRIAGE_TICKET_NOT_OPEN'
   | 'TRIAGE_TICKET_LEFT_SOURCE'
   | 'TRIAGE_WORK_EXISTS'
@@ -59,7 +59,7 @@ export type TriageHoldCode =
   | 'TRIAGE_REAPPLICATION_REQUIRED'
   | 'TRIAGE_LABEL_HISTORY_UNAVAILABLE';
 /** Why a live request ended `abandoned` by discovery (the operator's cancellation and the publication add their own codes later). */
-export type TriageWithdrawalCode = 'NEEDS_TRIAGE_REMOVED' | 'TICKET_CLOSED' | 'WORK_EXISTS' | 'TICKET_LEFT_SOURCE' | 'TRIAGE_SOURCE_REMOVED';
+type TriageWithdrawalCode = 'NEEDS_TRIAGE_REMOVED' | 'TICKET_CLOSED' | 'WORK_EXISTS' | 'TICKET_LEFT_SOURCE' | 'TRIAGE_SOURCE_REMOVED';
 export type TriageDecision =
   | { action: 'none' }
   | { action: 'keep' }
@@ -162,7 +162,7 @@ export function attemptEndCode(completion: { status: 'failure'; code: string } |
 /** The two installation limits of one request (`triager.investigationMinutes`, `triager.attempts`); the third axis is the model's, per attempt. */
 export type TriageBudget = { investigationMs: number; attempts: number };
 /** What the rules read of an attempt record: the investigation time it spent and how its stop was answered (`end: null` = still open). */
-export type TriageAttemptFacts = {
+type TriageAttemptFacts = {
   end: { at: string; code: string; spentMs?: number; cessation: { cessationConfirmed: boolean; code?: string }; attestation?: unknown } | null;
 };
 /** The investigation clock ran out during the attempt, or no time is left for another one. */

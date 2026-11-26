@@ -20,7 +20,7 @@ export type TriageSubject = {
   roles: TriageRoles;
   verdictContext: VerdictContext;
 };
-export type TriageSubjectRead = { kind: 'observed'; subject: TriageSubject } | { kind: 'unavailable'; code: string };
+type TriageSubjectRead = { kind: 'observed'; subject: TriageSubject } | { kind: 'unavailable'; code: string };
 const unavailable = (code: string): TriageSubjectRead => ({ kind: 'unavailable', code });
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
