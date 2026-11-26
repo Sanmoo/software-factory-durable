@@ -114,6 +114,8 @@ type TriageTransition = {
   code?: string;
   /** Entering `suspended`: the state labels in conflict. */
   labels?: string[];
+  /** The instant of the change when the caller already holds it (the end of an attempt, on the investigation clock); default: now. */
+  at?: string;
 };
 /** The request after an allowed transition: state, timeline entry, `suspension` only while suspended, `end` once terminal. */
 function applyTransition(request: TriageRequest, change: TriageTransition, at: string) {
@@ -152,7 +154,7 @@ export async function transitionTriageRequestIn(
   const request = document.request;
   if (!request) return { kind: 'not-applied' as const, state: null };
   if (!change.from.includes(request.state) || !triageTransitionAllowed(request.state, change.to)) return { kind: 'not-applied' as const, state: request.state };
-  applyTransition(request, change, new Date().toISOString());
+  applyTransition(request, change, change.at ?? new Date().toISOString());
   if (request.end) {
     const index = await tx.doc(triageIndex);
     index.live = index.live.filter(id => id !== triage_request_id);
@@ -233,15 +235,9 @@ export async function endTriageAttempt(
     if (!end.cessation.cessationConfirmed) request.timeline.push({ at: end.at, event: 'capacity-retained', code: end.cessation.code, attempt });
     if (request.state === 'investigating') {
       const next = decide(copy(request));
-      applyTransition(
-        request,
-        next.to === 'queued' ? { from: [], to: 'queued', event: 'requeued' } : { from: [], to: 'failed', event: 'failed', code: next.code },
-        end.at,
-      );
-      if (request.end) {
-        const index = await tx.doc(triageIndex);
-        index.live = index.live.filter(id => id !== triage_request_id);
-      }
+      const from = ['investigating'] as const;
+      const change = next.to === 'queued' ? { to: 'queued' as const, event: 'requeued' } : { to: 'failed' as const, event: 'failed', code: next.code };
+      await transitionTriageRequestIn(tx, triage_request_id, { from, ...change, at: end.at });
     }
     return copy(request);
   }, BACKGROUND_CONTEXT);
