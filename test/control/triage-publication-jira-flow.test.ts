@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SourceTriage, TriageRequest } from '../../src/control/types.js';
 import type { JiraTriageWrite } from '../../src/issue-tracker/index.js';
-import { card, jiraSource, relabel, type JiraCard, type JiraRemote } from './jira-doubles.js';
+import { card, edit, jiraSource, relabel, type JiraCard, type JiraRemote } from './jira-doubles.js';
 import { call, trackerWrites, triageWorld } from './triage-investigation-fixture.js';
 
 // Spec #68 §8 (ticket #78): a recorded Verdict is published on its Jira Card. Real Control, SQLite and Triager session under a scripted
@@ -153,6 +153,39 @@ for (const fault of ['forbidden', 'rejected'] as const)
     assert.equal(comments(w).length, 1, 'never a second comment');
     assert.match(comments(w)[0]!.text!, /If Jira refuses that edit, the Factory applies `needs-info` instead of `factory-ready`/);
     assert.match(comments(w)[0]!.text!, /adds the component 10022, which routes to the repository `acme\/project`/);
+  });
+
+for (const [name, options, announced] of [
+  ['the Card already had its routed component', {}, false],
+  ['the edit was to add the identified component', { component: '10022', card: { components: ['10099'] } }, true],
+] as const)
+  test(`TR-17: the route is evaluated again at the edit: a divergent component added after the comment makes ready-for-agent fall to needs-info (${name})`, async t => {
+    // After the comment is out somebody adds 10021, which routes to acme/other, while the Card routes (or is about to route) to acme/project.
+    const { w, item } = await recorded(t, 'ready-for-agent', {
+      ...(options as Recorded),
+      remote: { afterTriageWrite: (write, found) => void (write.kind === 'comment' && edit(found, { components: ['10021'] }, { accountId: 'acc-stranger' })) },
+    });
+    const before = [...item.components!];
+    await w.poll();
+    const request = await only(w);
+    assert.deepEqual([request.state, request.end?.code, request.verdict?.outcome], ['concluded', 'VERDICT_PUBLISHED', 'needs-info']);
+    const fallback = request.verdict!.fallback!;
+    assert.deepEqual([fallback.from, fallback.code, fallback.afterComment], ['ready-for-agent', 'TRIAGE_ROUTE_DIVERGENT', true]);
+    assert.deepEqual(kinds(w), ['comment', 'edit +needs-info -needs-triage components:'], 'ready-for-agent is never applied to a Card without a single route');
+    assert.deepEqual(
+      [[...item.labels].sort(), item.components],
+      [
+        ['needs-info', 'squad-pagamentos'],
+        [...before, '10021'],
+      ],
+      'no component is added or removed',
+    );
+    assert.deepEqual(statuses(request), ['confirmed', 'confirmed', 'confirmed']);
+    assert.equal(comments(w).length, 1, 'the comment already published is recognised, never written twice');
+    assert.equal(/adds the component 10022/.test(comments(w)[0]!.text!), announced);
+    assert.ok(request.timeline.some(entry => entry.event === 'outcome-fallback' && entry.code === 'TRIAGE_ROUTE_DIVERGENT'));
+    await w.poll();
+    assert.equal(writes(w).length, 2);
   });
 
 test('TR-17: an edit that fails for a passing reason is sent again as it was, with the component', async t => {

@@ -108,12 +108,13 @@ export function createTriagePublications(deps: {
     const { verdict } = request;
     if (!verdict) return undefined;
     const labels = { admission: roles.admission, needsInfo: roles.needsInfo };
-    const { fallback, component } = verdict;
+    const { fallback } = verdict;
     const adds = (componentId: string, repository: string | null | undefined) =>
       repository ? { route: { ...labels, kind: 'adds' as const, componentId, repository } } : {};
-    if (fallback?.afterComment && component) {
-      const intended = intendedChanges({ outcome: fallback.from, component }, roles, request.ticket.tracker);
-      return { outcome: fallback.from, intended, ...adds(component, fallback.repository) };
+    if (fallback?.afterComment) {
+      const announced = fallback.announced ?? null;
+      const intended = intendedChanges({ outcome: fallback.from, component: announced }, roles, request.ticket.tracker);
+      return { outcome: fallback.from, intended, ...(announced ? adds(announced, publisher.route?.repositoryOf(request, announced)) : {}) };
     }
     if (fallback) {
       const { code, componentId, repository } = fallback;
@@ -144,15 +145,21 @@ export function createTriagePublications(deps: {
     return comment.kind === 'comment' ? comment.body : { code: 'TRIAGE_COMMENT_TOO_LARGE' };
   }
 
-  /** The outcome of a request still `publishing` falls to `needs-info` (spec §8, "Rota no Jira"), in ONE commit with its new effects. */
-  async function fallBack(turn: Turn, fallback: RouteFallback, written: { observed: string } | null) {
+  /**
+   * The outcome of a request still `publishing` falls to `needs-info` (spec §8, "Rota no Jira"), in ONE commit with its new effects.
+   * `written`: the comment is already out (`observed`: the tracker's refusal of the edit, when that is the reason); the component it
+   * announced is kept (`announced`), so that the one comment is still composed as it was sent.
+   */
+  async function fallBack(turn: Turn, fallback: RouteFallback, written: { observed?: string } | null) {
     const at = new Date().toISOString();
     const effects = intendedChanges({ outcome: 'needs-info', component: null }, turn.roles, turn.request.ticket.tracker);
     await updatePublishingRequest(session, turn.request.triage_request_id, current => {
       if (!current.verdict || !current.intended) return;
       const from = current.verdict.outcome;
+      const added = current.intended.find(effect => effect.kind === 'add-component');
+      const afterComment = written ? { announced: added?.componentId ?? null, ...written } : {};
       current.verdict.outcome = 'needs-info';
-      current.verdict.fallback = { from, ...fallback, at, afterComment: written !== null, ...(written ?? {}) };
+      current.verdict.fallback = { from, ...fallback, at, afterComment: written !== null, ...afterComment };
       // The comment already published stays as the read left it; the label effects are the new outcome's, not yet attempted.
       current.intended = written ? [...current.intended.slice(0, 1), ...effects.slice(1)] : effects;
       if (current.publication) current.publication.hold = null;
@@ -165,11 +172,40 @@ export function createTriagePublications(deps: {
       ? turn.publisher.route
       : undefined;
   /**
+   * The route port for the write that applies a `ready-for-agent` Verdict whose comment is already out (a Card's one edit). Spec §8
+   * "Rota no Jira" demands the single route when the outcome is applied, not only before the comment.
+   */
+  const routeAtEdit = (turn: Turn, step: PublicationStep) =>
+    step.next.action === 'write' &&
+    step.mode === 'verdict' &&
+    turn.publication.mode !== null &&
+    turn.request.verdict?.outcome === 'ready-for-agent' &&
+    !step.next.group.some(index => turn.intended[index]?.kind === 'comment')
+      ? turn.publisher.route
+      : undefined;
+  /**
+   * The same rule, asked again from a fresh read just before that edit: a Card that no longer routes to exactly one repository (a
+   * divergent component added since the comment) gets `needs-info` instead, and the comment already published stands as it was sent.
+   */
+  async function reroutedAtEdit(turn: Turn, port: NonNullable<TriagePublisher['route']>): Promise<'same' | 'changed' | 'held'> {
+    const route = await port.check(turn.request).catch(() => ({ kind: 'unavailable' as const, code: 'POLLING_QUERY_FAILED' }));
+    if (route.kind === 'unavailable') {
+      await held(turn.request, turn.intended, turn.publication, route.code);
+      return 'held';
+    }
+    if (route.kind !== 'fallback') return 'same';
+    const { code, componentId, repository } = route;
+    await fallBack(turn, { code, componentId, repository }, {});
+    return 'changed';
+  }
+  /**
    * Before the first write of a `ready-for-agent` Verdict where it needs a route: the effects follow a fresh read of the Ticket (the
    * component is written only when the Card has no routed one), or the outcome falls to `needs-info`. `changed`: read the request again.
    */
   async function routed(turn: Turn, step: PublicationStep): Promise<'same' | 'changed' | 'held'> {
     const { request, roles } = turn;
+    const late = routeAtEdit(turn, step);
+    if (late) return reroutedAtEdit(turn, late);
     const port = routeOf(turn, step);
     if (!port) return 'same';
     const route = await port.check(request).catch(() => ({ kind: 'unavailable' as const, code: 'POLLING_QUERY_FAILED' }));

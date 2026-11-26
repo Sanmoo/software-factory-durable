@@ -3059,8 +3059,10 @@ export type TriagePublication = {
 /**
  * Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. `fallback` (ticket #78, spec #68 §8 "Rota
  * no Jira"): the Triager recorded `from` and the publication applies `outcome` instead, because the Card does not route to exactly one
- * repository (`code`); `componentId` and `repository` are what the comment suggests. `afterComment`: Jira refused the edit that added
- * the component (`observed`: its code) when the comment was already published, so the one comment still names `from`.
+ * repository (`code`); `componentId` and `repository` are what the comment suggests. `afterComment`: the fallback came when the comment
+ * was already published, so the one comment still names `from` and the component it said the edit would add (`announced`, null:
+ * none). It comes from Jira refusing the edit that added the component (`observed`: its code), or from the route evaluated again
+ * just before that edit (a divergent component added since the comment).
  */
 export type TriageVerdictRecord = {
   fallback?: {
@@ -3070,6 +3072,7 @@ export type TriageVerdictRecord = {
     componentId: string | null;
     repository: string | null;
     afterComment: boolean;
+    announced?: string | null;
     observed?: string;
   };
   outcome: TriageOutcome;
