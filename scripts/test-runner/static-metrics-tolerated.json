@@ -1313,7 +1313,7 @@
   {
    "file": "src/entrypoints/cli.ts",
    "function": "main",
-   "complexity": 255,
+   "complexity": 254,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 255."
   },
   {

@@ -88,6 +88,14 @@ export const blockedRequestReference = (token: string, code: string) => `request
  */
 export const blockedStartCodePattern = /^(PREPARE|START)_[A-Z][A-Z0-9_]{0,95}$/;
 /**
+ * Spec #68 §10 (ticket #80): what `factory triage <...>` names: a Triage request id, or the reference of its Ticket (`owner/repo#number`
+ * or a Jira key), which stands for the Ticket's most recent request. One shape for the socket and the CLI.
+ */
+export const triageReferencePattern =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}#[1-9][0-9]{0,9}|[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9})$/;
+/** The reference of one Triager attempt (`t<sequence>-<ordinal>-<8 hex>`), as `factory triage` shows it. */
+export const triageAttemptPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/**
  * Ticket 50: explicit operator remedies applied together with a retry of a blocked start (`--remedy <name>`), each valid for exactly the
  * refusal codes Control maps it to. Ticket 47 adds its disk remedies for `START_PRESERVED_DISK_CHECK_REQUIRED` here.
  */

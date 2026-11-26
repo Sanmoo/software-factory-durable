@@ -102,6 +102,15 @@ const command = z.union([
   // Ticket 31: explicit history deletion plan and confirmation (Control revalidates eligibility and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') }),
+  // Spec #68 §10 (ticket #80): early removal of the details of one Triage request; #81 adds `triage-cancel|release|complete` here.
+  z.strictObject({ request_id: requestId, operation: z.literal('triage-cleanup-plan'), triage_request_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({
+    request_id: requestId,
+    operation: z.literal('triage-cleanup-confirm'),
+    triage_request_id: z.uuid(),
+    plan_id: z.uuid(),
+    origin: z.literal('local-cli'),
+  }),
 ]);
 /** Serves `control` on the private local socket `endpoint` for the `local-operator` CLI peer; a failed commit calls `onPersistenceFailure`. */
 export async function serveControl(endpoint: string, control: Control, runId: string, onPersistenceFailure: () => void) {
