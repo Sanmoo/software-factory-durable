@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  cardRoute,
   publicationStep,
   sameCommentText,
   triageComment,
@@ -8,7 +9,7 @@ import {
   type EffectFact,
   type PublicationFacts,
 } from '../../src/control/rules/triage-publication.js';
-import { boundTicketComments, githubTicketCommentsBound } from '../../src/control/rules/ticket-comments.js';
+import { boundTicketComments, ticketCommentsBound } from '../../src/control/rules/ticket-comments.js';
 import { intendedChanges, verdictTextMaxBytes, type TriageIntendedEffect } from '../../src/control/rules/triage-verdict.js';
 
 // Spec #68 §8 (ticket #77): pure rules of the publication of a recorded Verdict, common to both trackers. No I/O, no clock.
@@ -197,12 +198,72 @@ test('TR-25: a Verdict above the limit of the tracker is refused whole, never cu
   assert.deepEqual(large.kind === 'too-large' && [large.limit, large.characters > 33000], [32767, true]);
 });
 
-test('the largest Verdict comment a Triage publishes reaches the Builder of a GitHub issue whole, with later comments beside it', () => {
-  const published = comment({ text: 'x'.repeat(verdictTextMaxBytes) });
+test('TR-25 (Jira): a comment with more lines than the tracker reads back is refused whole, never cut', () => {
+  const text = 'a\n'.repeat(1900);
+  const large = comment({ text, limit: 32767, maxLines: 1900 });
+  assert.deepEqual(large.kind === 'too-large' && [large.maxLines, large.lines! > 1900], [1900, true]);
+  assert.equal(comment({ text, limit: 32767 }).kind, 'comment');
+});
+
+const jiraRoutes = [
+  { componentId: '10022', repository: 'acme/project' },
+  { componentId: '10023', repository: 'acme/project' },
+  { componentId: '10021', repository: 'acme/other' },
+  { componentId: '10030', repository: 'acme/unauthorized' },
+];
+const route = (component: string | null, cardComponents: string[] | null) =>
+  cardRoute({ component, cardComponents, routes: jiraRoutes, authorizedRepositories: ['acme/project', 'acme/other'] });
+
+test('TR-17: ready-for-agent stands only with a single route, and the component is added only to a Card without a routed one', () => {
+  assert.deepEqual(route('10022', ['10099']), { kind: 'routed', addComponent: true });
+  assert.deepEqual(route('10022', []), { kind: 'routed', addComponent: true });
+  assert.deepEqual(route(null, ['10022', '10099']), { kind: 'routed', addComponent: false });
+  assert.deepEqual(route('10023', ['10022']), { kind: 'routed', addComponent: false }, 'another component of the same repository changes nothing');
+});
+
+test('TR-17: divergent routes, no single component and unreadable components fall to needs-info with what there is to suggest', () => {
+  const suggested = { componentId: '10022', repository: 'acme/project' };
+  assert.deepEqual(route('10022', ['10021']), { kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', ...suggested });
+  assert.deepEqual(route('10022', ['10022', '10021']), { kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', ...suggested });
+  assert.deepEqual(route(null, ['10022', '10021']), { kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', componentId: null, repository: null });
+  assert.deepEqual(route('10022', null), { kind: 'fallback', code: 'TRIAGE_COMPONENTS_UNREADABLE', ...suggested });
+  assert.deepEqual(route(null, ['10099']), { kind: 'fallback', code: 'TRIAGE_COMPONENT_NOT_IDENTIFIED', componentId: null, repository: null });
+  assert.deepEqual(route('10030', []), { kind: 'fallback', code: 'TRIAGE_COMPONENT_NOT_ROUTED', componentId: '10030', repository: null });
+});
+
+test('TR-17: the comment of a Card says what happens to its route, and the suggestion when ready-for-agent is not applied', () => {
+  const labels = { admission: 'factory-ready', needsInfo: 'needs-info' };
+  const adds = comment({ route: { ...labels, kind: 'adds', componentId: '10022', repository: 'acme/project' } });
+  assert.ok(adds.kind === 'comment');
+  assert.match(
+    adds.kind === 'comment' ? adds.body : '',
+    /\*\*Route:\*\* .* adds the component 10022, which routes to the repository `acme\/project`\. If Jira refuses/,
+  );
+  const fallback = comment({ route: { ...labels, kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', componentId: '10022', repository: 'acme/project' } });
+  const body = fallback.kind === 'comment' ? fallback.body : '';
+  assert.match(body, /applies `needs-info` instead because the components of the Card, with the one the Triager identified, route to more than one repository/);
+  assert.match(body, /Suggested component: 10022, which routes to the repository `acme\/project`\./);
+  assert.match(body, /replaces `needs-info` with `factory-ready`/);
+  const informative = comment({ mode: 'informative', route: { ...labels, kind: 'adds', componentId: '10022', repository: 'acme/project' } });
+  assert.ok(informative.kind === 'comment' && !informative.body.includes('**Route:**'), 'a recommendation promises no edit');
+});
+
+test('the largest Verdict comment a Triage publishes reaches the Builder whole in both origins, with later comments beside it', () => {
+  const published = comment({
+    text: 'x'.repeat(verdictTextMaxBytes),
+    route: {
+      admission: 'factory-ready',
+      needsInfo: 'needs-info',
+      kind: 'fallback',
+      code: 'TRIAGE_ROUTE_DIVERGENT',
+      componentId: '10022',
+      repository: 'acme/project',
+    },
+  });
   assert.ok(published.kind === 'comment');
   if (published.kind !== 'comment') return;
   const fact = (id: string, body: string) => ({ id, author: 'a', association: 'FACTORY', createdAt: at, body });
-  const delivered = boundTicketComments([fact('1', published.body), fact('2', 'y'.repeat(4000))], githubTicketCommentsBound);
+  const delivered = boundTicketComments([fact('1', published.body), fact('2', 'y'.repeat(4000))], ticketCommentsBound);
   assert.deepEqual([delivered.omitted, delivered.comments.map(item => item.cut ?? false)], [0, [false, false]]);
 });
 

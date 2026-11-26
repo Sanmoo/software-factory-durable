@@ -114,10 +114,8 @@ test('TR-40: a most recent comment larger than the whole bound is shortened and 
   assert.ok(text.includes('inaccessible required source (blocker)'));
 });
 
-test('TR-40: the bound of the comments leaves room for the Card text in the same prompt', () => {
-  assert.equal(ticketCommentsBound(0), 8000);
-  assert.equal(ticketCommentsBound(8000), 4000);
-  assert.equal(ticketCommentsBound(40000), 2000);
+test('TR-40: one bound of the comments in both origins, large enough for a published Verdict', () => {
+  assert.equal(ticketCommentsBound, 32000);
 });
 
 const common = {

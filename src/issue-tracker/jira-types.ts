@@ -88,7 +88,31 @@ export type JiraBlockersObservation =
  * Spec #68 §4.6: one label change of a Card, from its changelog. `eventId` is the changelog entry's id (one entry may add and remove
  * several labels: they share it). `author: null` = Jira gave no author account.
  */
-export type JiraLabelEvent = { eventId: string; action: 'added' | 'removed'; label: string; at: string; author: JiraCommentAuthor | null };
+export type JiraLabelEvent = {
+  eventId: string;
+  action: 'added' | 'removed';
+  label: string;
+  at: string;
+  author: JiraCommentAuthor | null;
+  /** Spec #68 §8: the `historyMetadata.type` the caller of that edit supplied (a Triage publication sends its request's mark); absent = none. */
+  mark?: string;
+};
+/** Spec #68 §8: one component the changelog shows added to or removed from the Card, with who made the edit and its mark (as in {@link JiraLabelEvent}). */
+export type JiraComponentEvent = {
+  eventId: string;
+  action: 'added' | 'removed';
+  componentId: string;
+  at: string;
+  author: JiraCommentAuthor | null;
+  mark?: string;
+};
+/**
+ * Spec #68 §8: one write of a Triage publication on a Card. `comment`: an ordinary comment, one ADF paragraph per line. `edit`: ONE `PUT`
+ * of the issue with relative operations only (labels added and removed, components added, never a set replaced and never another field),
+ * carrying `mark` as `historyMetadata.type` so the changelog entry it makes can be told from an edit a person made with the same account.
+ */
+export type JiraTriageWrite =
+  { kind: 'comment'; lines: string[] } | { kind: 'edit'; mark: string; addLabels: string[]; removeLabels: string[]; addComponents: string[] };
 /** Every label change of a Card, oldest first, from a COMPLETE changelog read. A label the Card was created with has no entry. */
 export type JiraLabelHistoryObservation =
   | {
@@ -98,6 +122,8 @@ export type JiraLabelHistoryObservation =
       ticket: JiraTicketRef;
       completeness: 'complete';
       events: JiraLabelEvent[];
+      /** Every component change, in the same order (spec #68 §8: the authorship of a component the publication added). */
+      components: JiraComponentEvent[];
       limitations: string[];
     }
   | JiraUnavailable;

@@ -44,7 +44,7 @@ import type {
 } from '../sandbox/index.js';
 import type { TriageIntendedEffect, TriageOutcome, VerdictCategory, VerdictError } from './rules/triage-verdict.js';
 import type { TriageActivationText } from './rules/triage-prompt.js';
-import type { PublicationMode } from './rules/triage-publication.js';
+import type { PublicationMode, RouteFallback } from './rules/triage-publication.js';
 import type {
   ActivationDelivery,
   DeliveryResult,
@@ -2970,8 +2970,22 @@ export type TriagePublication = {
   impediment: TriagePublicationImpediment | null;
   hold: { code: string; at: string } | null;
 };
-/** Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. */
+/**
+ * Ticket #75: the recorded Verdict without its text. `attempt`: the attempt that recorded it. `fallback` (ticket #78, spec #68 §8 "Rota
+ * no Jira"): the Triager recorded `from` and the publication applies `outcome` instead, because the Card does not route to exactly one
+ * repository (`code`); `componentId` and `repository` are what the comment suggests. `afterComment`: Jira refused the edit that added
+ * the component (`observed`: its code) when the comment was already published, so the one comment still names `from`.
+ */
 export type TriageVerdictRecord = {
+  fallback?: {
+    from: TriageOutcome;
+    code: RouteFallback['code'];
+    at: string;
+    componentId: string | null;
+    repository: string | null;
+    afterComment: boolean;
+    observed?: string;
+  };
   outcome: TriageOutcome;
   category: VerdictCategory;
   component: string | null;

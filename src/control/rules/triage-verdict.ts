@@ -103,7 +103,11 @@ const outcomeLabel = (outcome: TriageOutcome, roles: TriageRoles) =>
  * `needs-triage`, then the `not_planned` closing (GitHub `wontfix` only) or the identified component (Jira `ready-for-agent` only). On a
  * Card the label and component entries travel in one `PUT`; whether the component is still needed is decided at publication.
  */
-export function intendedChanges(verdict: TriageVerdict, roles: TriageRoles, tracker: 'github' | 'jira'): TriageIntendedEffect[] {
+export function intendedChanges(
+  verdict: Pick<TriageVerdict, 'outcome' | 'component'> & Partial<TriageVerdict>,
+  roles: TriageRoles,
+  tracker: 'github' | 'jira',
+): TriageIntendedEffect[] {
   const changes: TriageIntendedChange[] = [
     { kind: 'comment' },
     { kind: 'add-label', label: outcomeLabel(verdict.outcome, roles) },

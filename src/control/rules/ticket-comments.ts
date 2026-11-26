@@ -60,17 +60,13 @@ export function jiraTicketComments(comments: readonly JiraCommentFact[]): Select
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 /** Bytes a comment costs besides its text (header line and fence). */
 const commentOverheadBytes = 200;
-const ticketTextBudgetBytes = 12000;
-/** Bound of the comments of one Ticket, given the bytes of the Ticket text that travels in the same prompt (0 for a GitHub issue). */
-export function ticketCommentsBound(ticketTextBytes: number): number {
-  return Math.min(8000, Math.max(2000, ticketTextBudgetBytes - ticketTextBytes));
-}
 /**
- * Ticket #77: bound of the comments of a GitHub issue. An issue's text does not travel in the prompt, and the bound has to hold the
- * largest Verdict comment a Triage publishes (a 24,000-byte Verdict text under its heading) whole, with room for later comments of people:
- * the Verdict is the only thing the Builder gets from the Triage, so it is never the part that is cut.
+ * Bound of the comments of one Ticket, in UTF-8 bytes, in both origins (tickets #77 and #78 raised it from 8,000, and from the 2,000 to
+ * 8,000 a Card had). It has to hold the largest Verdict comment a Triage publishes (a 24,000-byte Verdict text under its heading) whole,
+ * with room for later comments of people: the Verdict is the only thing the Builder gets from the Triage, so it is never the part that
+ * is cut. The Card's own text travels beside it under its own bound.
  */
-export const githubTicketCommentsBound = 32000;
+export const ticketCommentsBound = 32000;
 /** The longest beginning of `text` within `maxBytes`, cut between characters. */
 function beginning(text: string, maxBytes: number): string {
   let kept = '';

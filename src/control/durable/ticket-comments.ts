@@ -4,14 +4,7 @@ import type { WorkRecord } from './admission.js';
 import { readJiraContent } from './jira-evaluation.js';
 import type { TicketRef } from '../../issue-tracker/index.js';
 import type { TicketText } from '../rules/continuation.js';
-import {
-  boundTicketComments,
-  githubTicketCommentsBound,
-  githubTicketComments,
-  jiraTicketComments,
-  ticketCommentsBound,
-  type SelectedComment,
-} from '../rules/ticket-comments.js';
+import { boundTicketComments, githubTicketComments, jiraTicketComments, ticketCommentsBound, type SelectedComment } from '../rules/ticket-comments.js';
 
 // Spec #68 §9 (ticket #74): the Control reads the comments of the Ticket with its own adapters, selects and bounds them, and hands them to
 // the Builder with the request. The Builder never fetches comments: what is not delivered here is not part of the Ticket.
@@ -19,7 +12,6 @@ import {
 type Access = Pick<AccessDependencies, 'tracker' | 'trackers'>;
 type Unavailable = { kind: 'unavailable'; code: string };
 const failed = (code: string): Unavailable => ({ kind: 'unavailable', code });
-const bytes = (text: string | null | undefined) => new TextEncoder().encode(text ?? '').length;
 
 async function selectedComments(
   access: Access,
@@ -40,18 +32,13 @@ async function selectedComments(
 
 /**
  * The comments of a Ticket as its Builder receives them: GitHub, the Factory's own and those of authors with write access; Jira, every
- * comment of the Card. `ticketTextBytes`: bytes of the Ticket text travelling in the same prompt (the Card's summary and description).
+ * comment of the Card, under one bound that holds a published Verdict whole.
  * An unreadable listing is `unavailable`: a Work never starts on a guess about its Ticket.
  */
-export async function readTicketComments(
-  access: Access,
-  ticket: TicketRef,
-  ticketTextBytes: number,
-): Promise<{ kind: 'observed'; comments: TicketComments } | Unavailable> {
+export async function readTicketComments(access: Access, ticket: TicketRef): Promise<{ kind: 'observed'; comments: TicketComments } | Unavailable> {
   const read = await selectedComments(access, ticket);
   if (read.kind !== 'observed') return read;
-  const bound = ticket.tracker === 'github' ? githubTicketCommentsBound : ticketCommentsBound(ticketTextBytes);
-  const bounded = boundTicketComments(read.selected, bound);
+  const bounded = boundTicketComments(read.selected, ticketCommentsBound);
   const sha256 = createHash('sha256').update(JSON.stringify(bounded.comments)).digest('hex');
   return { kind: 'observed', comments: { ...bounded, observedAt: read.observedAt, sha256 } };
 }
@@ -67,10 +54,9 @@ const latestExecution = (work: Pick<WorkRecord, 'execution' | 'previousExecution
 async function ticketCommentsFor(
   access: Access,
   work: Pick<WorkRecord, 'ticket' | 'execution' | 'previousExecutions'>,
-  ticketTextBytes: number,
 ): Promise<{ kind: 'observed'; comments: TicketComments | undefined } | Unavailable> {
   const latest = latestExecution(work);
-  if (!latest) return readTicketComments(access, work.ticket, ticketTextBytes);
+  if (!latest) return readTicketComments(access, work.ticket);
   const carried = latest.request.ticketContent?.comments ?? latest.request.ticketComments;
   return { kind: 'observed', comments: carried ? structuredClone(carried) : undefined };
 }
@@ -85,13 +71,13 @@ export async function ticketOf(
   work: Pick<WorkRecord, 'ticket' | 'execution' | 'previousExecutions'>,
 ): Promise<{ kind: 'observed'; request: TicketFields } | { kind: 'unavailable'; reasons: string[] }> {
   if (work.ticket.tracker !== 'jira') {
-    const comments = await ticketCommentsFor(access, work, 0);
+    const comments = await ticketCommentsFor(access, work);
     if (comments.kind !== 'observed') return refused('TICKET_COMMENTS_UNAVAILABLE', comments);
     return { kind: 'observed', request: comments.comments ? { ticketComments: comments.comments } : {} };
   }
   const content = await readJiraContent(access, work.ticket);
   if (content.kind !== 'observed') return refused('TICKET_CONTENT_UNAVAILABLE', content);
-  const comments = await ticketCommentsFor(access, work, bytes(content.content.summary) + bytes(content.content.description));
+  const comments = await ticketCommentsFor(access, work);
   if (comments.kind !== 'observed') return refused('TICKET_COMMENTS_UNAVAILABLE', comments);
   return { kind: 'observed', request: { ticketContent: { ...content.content, ...(comments.comments ? { comments: comments.comments } : {}) } } };
 }

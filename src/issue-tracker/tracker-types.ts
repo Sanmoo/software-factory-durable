@@ -16,6 +16,7 @@ import type {
   JiraTicketObservation,
   JiraTicketRef,
   JiraTrackerScope,
+  JiraTriageWrite,
 } from './jira-types.js';
 
 /** Origin of GitHub Tickets: one configured repository plus its effective entry label (shape unchanged since v1). */
@@ -280,8 +281,7 @@ export type TrackerContracts = {
     result: JiraCommentResult;
     access: JiraAccessDiagnostic;
     labels: JiraLabelHistoryObservation;
-    /** Ticket #78 defines the writes of a Card (comment, then one `PUT` with labels and component). */
-    triageWrite: never;
+    triageWrite: JiraTriageWrite;
   };
 };
 

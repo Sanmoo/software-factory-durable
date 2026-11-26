@@ -1,6 +1,7 @@
 // Spec #68 §8 (ticket #77): pure rules of the publication of a recorded Verdict, common to both trackers. The Control re-reads the origin
 // before every write and passes the facts here; this decides the single next move. No I/O, clock, storage or tracker types.
 import { triageMarkerPrefix } from '../../contracts/index.js';
+import { routeTicket } from './jira-admission.js';
 import { stateLabelConflict, suspendsAdmission, type TriageRoles } from './triage.js';
 import type { TriageIntendedChange, TriageIntendedEffect, TriageOutcome, VerdictCategory } from './triage-verdict.js';
 
@@ -140,6 +141,47 @@ export function publicationStep(input: PublicationInput): PublicationStep {
   return { effects, mode, next: nextWrite(effects, input.groups, mode) };
 }
 
+/** Why a `ready-for-agent` Verdict of a Card is applied as `needs-info`, with what the comment suggests (spec §8, "Rota no Jira"). */
+export type RouteFallback = {
+  code:
+    | 'TRIAGE_ROUTE_DIVERGENT'
+    | 'TRIAGE_COMPONENTS_UNREADABLE'
+    | 'TRIAGE_COMPONENT_NOT_IDENTIFIED'
+    | 'TRIAGE_COMPONENT_NOT_ROUTED'
+    | 'TRIAGE_COMPONENT_NOT_WRITTEN';
+  componentId: string | null;
+  repository: string | null;
+};
+/** `routed`: the outcome stands; `addComponent`: the Card has no routed component and the identified one is written with the label. */
+export type CardRoute = { kind: 'routed'; addComponent: boolean } | ({ kind: 'fallback' } & RouteFallback);
+/**
+ * Whether a `ready-for-agent` Verdict may be applied to a Card, from a fresh read of its components. It needs exactly one destination:
+ * the one the Card's components already route to (nothing is added, and a component the Triager identified must agree with it), or the
+ * one of the single component the Triager identified, which the Factory then adds. Anything else falls to `needs-info`. A component
+ * is never removed, so divergent routes are never repaired here.
+ */
+export function cardRoute(input: {
+  /** The component the Triager identified, or null. */
+  component: string | null;
+  /** The Card's current component ids; null = not read completely. */
+  cardComponents: readonly string[] | null;
+  routes: readonly { componentId: string; repository: string }[];
+  authorizedRepositories: readonly string[];
+}): CardRoute {
+  const { component, routes, authorizedRepositories } = input;
+  const identified = component === null ? { kind: 'none' as const } : routeTicket({ components: [component], routes, authorizedRepositories });
+  const destination = identified.kind === 'single' ? identified.repository : null;
+  const fallback = (code: RouteFallback['code']): CardRoute => ({ kind: 'fallback', code, componentId: component, repository: destination });
+  const current = routeTicket({ components: input.cardComponents, routes, authorizedRepositories });
+  if (current.kind === 'unverifiable') return fallback('TRIAGE_COMPONENTS_UNREADABLE');
+  if (current.kind === 'divergent') return fallback('TRIAGE_ROUTE_DIVERGENT');
+  // The Card already has its destination: nothing is added, and a component identified for another repository is a divergence.
+  if (current.kind === 'single')
+    return component === null || destination === current.repository ? { kind: 'routed', addComponent: false } : fallback('TRIAGE_ROUTE_DIVERGENT');
+  if (component === null) return fallback('TRIAGE_COMPONENT_NOT_IDENTIFIED');
+  return destination ? { kind: 'routed', addComponent: true } : fallback('TRIAGE_COMPONENT_NOT_ROUTED');
+}
+
 /** First line of every comment a Triage publishes: how a later read recognises the comment of one request. */
 export const triageCommentMarker = (triage_request_id: string) => `<!-- ${triageMarkerPrefix}${triage_request_id} -->`;
 const normalized = (text: string) => text.replace(/\r\n?/g, '\n').trim();
@@ -158,6 +200,34 @@ function application(intended: readonly TriageIntendedChange[]): string {
     return change.kind === 'add-component' ? [`adds the component ${change.componentId}`] : [];
   });
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? 'changes nothing else');
+}
+const fallbackReason: Record<RouteFallback['code'], string> = {
+  TRIAGE_ROUTE_DIVERGENT: 'the components of the Card, with the one the Triager identified, route to more than one repository',
+  TRIAGE_COMPONENTS_UNREADABLE: 'the Factory could not read the components of the Card completely',
+  TRIAGE_COMPONENT_NOT_IDENTIFIED: 'the Card has no component that routes to a repository and the Triager identified no single one',
+  TRIAGE_COMPONENT_NOT_ROUTED: 'the component the Triager identified does not route to an authorized repository',
+  TRIAGE_COMPONENT_NOT_WRITTEN: 'Jira refused the edit that adds the component',
+};
+const suggestion = (route: Pick<RouteFallback, 'componentId' | 'repository'>) =>
+  route.componentId
+    ? `Suggested component: ${route.componentId}${route.repository ? `, which routes to the repository \`${route.repository}\`` : ''}.`
+    : 'The Triager suggested no component.';
+/** What the comment of a Card says of its route, beside the outcome (spec §8, "Rota no Jira"). */
+function routeLines(route: TriageCommentRoute | undefined): string[] {
+  if (!route) return [];
+  if (route.kind === 'adds')
+    return [
+      '',
+      `**Route:** the Card has no component that routes to a repository, so the same edit adds the component ${route.componentId}, which routes to ` +
+        `the repository \`${route.repository}\`. If Jira refuses that edit, the Factory applies \`${route.needsInfo}\` instead of ` +
+        `\`${route.admission}\`: a person then adds that component and replaces \`${route.needsInfo}\` with \`${route.admission}\`.`,
+    ];
+  return [
+    '',
+    `**Route:** the Triager concluded \`ready-for-agent\`, which needs the Card to route to exactly one repository. The Factory applies ` +
+      `\`${route.needsInfo}\` instead because ${fallbackReason[route.code]}. ${suggestion(route)} A person who agrees leaves exactly one ` +
+      `routed component on the Card and replaces \`${route.needsInfo}\` with \`${route.admission}\`.`,
+  ];
 }
 function outcomeLine(input: TriageCommentInput): string {
   const outcome = `\`${input.outcome}\` (category: \`${input.category}\`)`;
@@ -179,21 +249,37 @@ export type TriageCommentInput = {
   intended: readonly TriageIntendedChange[];
   /** Characters one comment of the tracker holds (60,000 on GitHub; 32,767 on Jira). */
   limit: number;
+  /** Lines one comment may have, where the tracker stores a block per line (Jira); absent = any. */
+  maxLines?: number;
+  /** A Card's route, when the outcome depends on it (never in the informative comment). */
+  route?: TriageCommentRoute;
 };
+/** `adds`: the publication writes the identified component with the label. `fallback`: `ready-for-agent` is applied as `needs-info`. */
+export type TriageCommentRoute = { admission: string; needsInfo: string } & (
+  { kind: 'adds'; componentId: string; repository: string } | ({ kind: 'fallback' } & RouteFallback)
+);
 /**
  * The one comment of a publication: the request's marker, the AI mark, the outcome and what the Factory does with it, then the Verdict
- * text whole (what was observed, what was inferred, the brief or the action). Above the tracker's limit it is refused: nothing is cut.
+ * text whole (what was observed, what was inferred, the brief or the action). Above the tracker's limit, in characters or in lines, it
+ * is refused: nothing is cut.
  */
-export function triageComment(input: TriageCommentInput): { kind: 'comment'; body: string } | { kind: 'too-large'; characters: number; limit: number } {
+export function triageComment(
+  input: TriageCommentInput,
+): { kind: 'comment'; body: string } | { kind: 'too-large'; characters: number; limit: number; lines?: number; maxLines?: number } {
   const body = [
     triageCommentMarker(input.triage_request_id),
     aiMark(input.mode === 'verdict' ? 'Triage Verdict' : 'Triage recommendation'),
     '',
     outcomeLine(input),
+    ...(input.mode === 'verdict' ? routeLines(input.route) : []),
     '',
     "**Verdict** (what was observed, what was inferred from it, and the brief or the action needed, in the Triager's words):",
     '',
     input.text,
   ].join('\n');
-  return body.length > input.limit ? { kind: 'too-large', characters: body.length, limit: input.limit } : { kind: 'comment', body };
+  if (body.length > input.limit) return { kind: 'too-large', characters: body.length, limit: input.limit };
+  const lines = body.split('\n').length;
+  if (input.maxLines !== undefined && lines > input.maxLines)
+    return { kind: 'too-large', characters: body.length, limit: input.limit, lines, maxLines: input.maxLines };
+  return { kind: 'comment', body };
 }

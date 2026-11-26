@@ -59,6 +59,7 @@ import { createTriageDiscovery } from './triage-discovery.js';
 import { createTriageInvestigations } from './triage-investigation.js';
 import { createTriagePublications } from './triage-publication.js';
 import { githubTriagePublisher } from './triage-publication-github.js';
+import { jiraTriagePublisher } from './triage-publication-jira.js';
 import { readTriageRequests } from './triage-requests.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
@@ -291,11 +292,11 @@ const authorshipImpediments = (request: TriageRequest): TriageAuthorshipImpedime
   request.state === 'publishing' && request.publication?.impediment
     ? [{ ...request.publication.impediment, scope: 'triage-request', triage_request_id: request.triage_request_id }]
     : [];
-/** Ticket #77: the publication desk with the publisher of each tracker (ticket #78 adds Jira's); a desk that does nothing without polling or without a source with Triage. */
+/** Tickets #77 and #78: the publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
 function triagePublications(access: AccessDependencies | undefined, session: Session, polling: boolean, stopped: () => boolean) {
   // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
   if (!access || !polling || !access.sources?.some(source => source.triage)) return { pass: async () => {} };
-  return createTriagePublications({ session, stopped, publishers: { github: githubTriagePublisher(access) } });
+  return createTriagePublications({ session, stopped, publishers: { github: githubTriagePublisher(access), jira: jiraTriagePublisher(access) } });
 }
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;

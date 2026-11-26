@@ -4,13 +4,16 @@ import type { TriagePublication, TriagePublicationImpediment, TriageRequest } fr
 import {
   publicationStep,
   triageComment,
+  type CardRoute,
   type PublicationFacts,
   type PublicationMode,
   type PublicationNext,
   type PublicationStep,
+  type RouteFallback,
+  type TriageCommentInput,
 } from '../rules/triage-publication.js';
 import type { TriageRoles } from '../rules/triage.js';
-import type { TriageIntendedEffect } from '../rules/triage-verdict.js';
+import { intendedChanges, type TriageIntendedEffect } from '../rules/triage-verdict.js';
 import { indexedWork } from './admission.js';
 import type { Session } from './store.js';
 import { liveTriageRequests, readTriageRequest, readTriageVerdictText, transitionTriageRequest, updatePublishingRequest } from './triage-requests.js';
@@ -21,13 +24,23 @@ import { liveTriageRequests, readTriageRequest, readTriageVerdictText, transitio
 // controller all recover the same way: read, recognise the Factory's own effects, write only what is missing. No model is ever called.
 
 /**
- * What one tracker gives the publication (GitHub here; ticket #78 adds the Card's). It reports facts and sends writes; every decision
- * is `publicationStep`'s.
+ * What one tracker gives the publication (an issue's in `triage-publication-github.ts`, a Card's in `triage-publication-jira.ts`). It
+ * reports facts and sends writes; every decision is a pure rule's (`publicationStep`, `cardRoute`).
  */
 export type TriagePublisher = {
   /** Characters one comment of the tracker holds; a larger comment is refused whole. */
   commentLimit: number;
+  /** Lines one comment may have, where the tracker stores a block per line; absent = any. */
+  commentMaxLines?: number;
   caseSensitive: boolean;
+  /**
+   * Only where `ready-for-agent` depends on a route (a Card, spec §8 "Rota no Jira"). `check`: the route from a fresh read of the
+   * Ticket, asked before the first write. `repositoryOf`: the repository a component routes to (null: none authorized).
+   */
+  route?: {
+    check(request: TriageRequest): Promise<CardRoute | { kind: 'unavailable'; code: string }>;
+    repositoryOf(request: TriageRequest, componentId: string): string | null;
+  };
   /** The state labels of the request's source; undefined while its `triage` block is not there or not available (nothing is published). */
   roles(request: TriageRequest): TriageRoles | undefined;
   /** The write units of the intended effects, in order: the indexes one request to the tracker carries. */
@@ -37,8 +50,15 @@ export type TriagePublisher = {
     request: TriageRequest,
     comment: string,
   ): Promise<{ kind: 'observed'; facts: Omit<PublicationFacts, 'hasWork'> } | { kind: 'unavailable'; code: string }>;
-  /** Sends one write unit. `accepted` proves nothing until a read shows the effect. */
-  write(request: TriageRequest, group: readonly number[], comment: string): Promise<{ kind: 'accepted' } | { kind: 'failed' | 'unknown'; code: string }>;
+  /**
+   * Sends one write unit. `accepted` proves nothing until a read shows the effect. `fallback`: the tracker refused the unit that would
+   * give the Ticket its route, nothing of it was applied, and the outcome falls to `needs-info`.
+   */
+  write(
+    request: TriageRequest,
+    group: readonly number[],
+    comment: string,
+  ): Promise<{ kind: 'accepted' } | { kind: 'failed' | 'unknown'; code: string; fallback?: RouteFallback }>;
 };
 
 const ambiguousNextStep = (triage_request_id: string, ref: string) =>
@@ -69,13 +89,94 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
   const held = (request: TriageRequest, effects: readonly TriageIntendedEffect[], publication: TriagePublication, code: string) =>
     record(request, effects, { ...publication, hold: publication.hold?.code === code ? publication.hold : { code, at: new Date().toISOString() } });
 
-  async function commentOf(request: TriageRequest, mode: PublicationMode, limit: number): Promise<string | { code: string }> {
+  /**
+   * What the comment says of the outcome. After a fallback that came when the comment was already published, it is still composed as it
+   * was sent (the Triager's outcome, with the component the edit would add): the one comment is recognised, never written twice.
+   */
+  function commentSubject(turn: Turn): Pick<TriageCommentInput, 'outcome' | 'intended' | 'route'> | undefined {
+    const { request, roles, publisher } = turn;
+    const { verdict } = request;
+    if (!verdict) return undefined;
+    const labels = { admission: roles.admission, needsInfo: roles.needsInfo };
+    const { fallback, component } = verdict;
+    const adds = (componentId: string, repository: string | null | undefined) =>
+      repository ? { route: { ...labels, kind: 'adds' as const, componentId, repository } } : {};
+    if (fallback?.afterComment && component) {
+      const intended = intendedChanges({ outcome: fallback.from, component }, roles, request.ticket.tracker);
+      return { outcome: fallback.from, intended, ...adds(component, fallback.repository) };
+    }
+    if (fallback) {
+      const { code, componentId, repository } = fallback;
+      return { outcome: verdict.outcome, intended: turn.intended, route: { ...labels, kind: 'fallback', code, componentId, repository } };
+    }
+    const added = turn.intended.find(effect => effect.kind === 'add-component');
+    return {
+      outcome: verdict.outcome,
+      intended: turn.intended,
+      ...(added ? adds(added.componentId, publisher.route?.repositoryOf(request, added.componentId)) : {}),
+    };
+  }
+  async function commentOf(turn: Turn, mode: PublicationMode): Promise<string | { code: string }> {
+    const { request, publisher } = turn;
     const text = await readTriageVerdictText(session, request.triage_request_id);
-    if (text === undefined || !request.verdict || !request.intended) return { code: 'TRIAGE_VERDICT_TEXT_MISSING' };
-    const { outcome, category } = request.verdict;
-    const comment = triageComment({ triage_request_id: request.triage_request_id, mode, outcome, category, text, intended: request.intended, limit });
+    const subject = commentSubject(turn);
+    if (text === undefined || !request.verdict || !subject) return { code: 'TRIAGE_VERDICT_TEXT_MISSING' };
+    const comment = triageComment({
+      triage_request_id: request.triage_request_id,
+      mode,
+      category: request.verdict.category,
+      text,
+      ...subject,
+      limit: publisher.commentLimit,
+      ...(publisher.commentMaxLines === undefined ? {} : { maxLines: publisher.commentMaxLines }),
+    });
     // Never cut: a comment the tracker cannot hold is not published at all, and the operator sees why.
     return comment.kind === 'comment' ? comment.body : { code: 'TRIAGE_COMMENT_TOO_LARGE' };
+  }
+
+  /** The outcome of a request still `publishing` falls to `needs-info` (spec §8, "Rota no Jira"), in ONE commit with its new effects. */
+  async function fallBack(turn: Turn, fallback: RouteFallback, written: { observed: string } | null) {
+    const at = new Date().toISOString();
+    const effects = intendedChanges({ outcome: 'needs-info', component: null }, turn.roles, turn.request.ticket.tracker);
+    await updatePublishingRequest(session, turn.request.triage_request_id, current => {
+      if (!current.verdict || !current.intended) return;
+      const from = current.verdict.outcome;
+      current.verdict.outcome = 'needs-info';
+      current.verdict.fallback = { from, ...fallback, at, afterComment: written !== null, ...(written ?? {}) };
+      // The comment already published stays as the read left it; the label effects are the new outcome's, not yet attempted.
+      current.intended = written ? [...current.intended.slice(0, 1), ...effects.slice(1)] : effects;
+      if (current.publication) current.publication.hold = null;
+      current.timeline.push({ at, event: 'outcome-fallback', code: fallback.code });
+    });
+  }
+  /** The route port of the tracker, only for the first write of a `ready-for-agent` Verdict (nothing was attempted yet). */
+  const routeOf = (turn: Turn, step: PublicationStep) =>
+    step.next.action === 'write' && step.mode === 'verdict' && turn.publication.mode === null && turn.request.verdict?.outcome === 'ready-for-agent'
+      ? turn.publisher.route
+      : undefined;
+  /**
+   * Before the first write of a `ready-for-agent` Verdict where it needs a route: the effects follow a fresh read of the Ticket (the
+   * component is written only when the Card has no routed one), or the outcome falls to `needs-info`. `changed`: read the request again.
+   */
+  async function routed(turn: Turn, step: PublicationStep): Promise<'same' | 'changed' | 'held'> {
+    const { request, roles } = turn;
+    const port = routeOf(turn, step);
+    if (!port) return 'same';
+    const route = await port.check(request).catch(() => ({ kind: 'unavailable' as const, code: 'POLLING_QUERY_FAILED' }));
+    if (route.kind === 'unavailable') {
+      await held(request, turn.intended, turn.publication, route.code);
+      return 'held';
+    }
+    if (route.kind === 'fallback') {
+      const { code, componentId, repository } = route;
+      await fallBack(turn, { code, componentId, repository }, null);
+      return 'changed';
+    }
+    const component = route.addComponent ? (request.verdict?.component ?? null) : null;
+    const effects = intendedChanges({ outcome: 'ready-for-agent', component }, roles, request.ticket.tracker);
+    if (sameJson(effects, turn.intended)) return 'same';
+    await record(request, effects, turn.publication);
+    return 'changed';
   }
 
   /** The request leaves `publishing`, with its effects as the last read left them, in ONE commit. */
@@ -109,13 +210,8 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
    * The attempt is committed BEFORE the write is sent (so an effect found later without it is never taken as the Factory's), then the
    * unit is written once. Whatever the tracker answers, only the next read confirms.
    */
-  async function write(
-    publisher: TriagePublisher,
-    request: TriageRequest,
-    step: PublicationStep,
-    next: Extract<PublicationNext, { action: 'write' }>,
-    comment: string,
-  ) {
+  async function write(turn: Turn, step: PublicationStep, next: Extract<PublicationNext, { action: 'write' }>, comment: string): Promise<'sent' | 'fell-back'> {
+    const { publisher, request } = turn;
     const at = new Date().toISOString();
     const effects = step.effects.map((effect, index) =>
       next.group.includes(index) ? { ...effect, attempts: (effect.attempts ?? 0) + 1, attemptedAt: at } : effect,
@@ -124,7 +220,12 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
     const publication: TriagePublication = { mode: next.mode, startedAt: started ?? at, impediment: null, hold: null };
     await record(request, effects, publication, started ? undefined : { event: 'publication-started', code: next.mode });
     const result = await publisher.write(request, next.group, comment).catch(() => ({ kind: 'unknown' as const, code: 'TRIAGE_WRITE_FAILED' }));
+    if (result.kind === 'failed' && result.fallback) {
+      await fallBack(turn, result.fallback, { observed: result.code });
+      return 'fell-back';
+    }
     if (result.kind !== 'accepted') await held({ ...request, intended: effects, publication }, effects, publication, result.code);
+    return 'sent';
   }
 
   type Turn = { request: TriageRequest; intended: TriageIntendedEffect[]; publisher: TriagePublisher; roles: TriageRoles; publication: TriagePublication };
@@ -170,28 +271,35 @@ export function createTriagePublications(deps: { session: Session; stopped(): bo
   }
   /** Sends the unit with the comment of its mode (the informative one is composed only when the publication starts in that mode). */
   async function send(turn: Turn, step: PublicationStep, next: Extract<PublicationNext, { action: 'write' }>, expected: string, written: Set<number>) {
-    const { request, publisher, publication } = turn;
-    const comment = next.mode === (publication.mode ?? 'verdict') ? expected : await commentOf(request, next.mode, publisher.commentLimit);
+    const { request, publication } = turn;
+    const comment = next.mode === (publication.mode ?? 'verdict') ? expected : await commentOf(turn, next.mode);
     if (typeof comment !== 'string') {
       await held(request, step.effects, publication, comment.code);
       return false;
     }
-    await write(publisher, request, step, next, comment);
-    for (const index of next.group) written.add(index);
+    // After a fallback the effects of the unit are new ones, not yet attempted: the same pass writes them.
+    if ((await write(turn, step, next, comment)) === 'sent') for (const index of next.group) written.add(index);
     return true;
   }
 
+  /** One fresh read of the request and its single next move. `true`: something changed and the request must be read again. */
+  async function advance(triage_request_id: string, ambiguousAsOwn: boolean, written: Set<number>): Promise<boolean> {
+    const turn = await turnOf(triage_request_id);
+    if (!turn) return false;
+    const expected = await commentOf(turn, turn.publication.mode ?? 'verdict');
+    if (typeof expected !== 'string') {
+      await held(turn.request, turn.intended, turn.publication, expected.code);
+      return false;
+    }
+    const step = await decide(turn, expected, ambiguousAsOwn);
+    if (!step) return false;
+    const route = await routed(turn, step);
+    return route === 'same' ? act(turn, step, expected, written) : route === 'changed';
+  }
   /** One request, until it leaves `publishing` or a pass can do no more: at most one write per unit and per pass. */
   async function publish(triage_request_id: string, options: { ambiguousAsOwn?: boolean } = {}) {
     const written = new Set<number>();
-    while (!deps.stopped()) {
-      const turn = await turnOf(triage_request_id);
-      if (!turn) return;
-      const expected = await commentOf(turn.request, turn.publication.mode ?? 'verdict', turn.publisher.commentLimit);
-      if (typeof expected !== 'string') return held(turn.request, turn.intended, turn.publication, expected.code);
-      const step = await decide(turn, expected, options.ambiguousAsOwn ?? false);
-      if (!step || !(await act(turn, step, expected, written))) return;
-    }
+    while (!deps.stopped() && (await advance(triage_request_id, options.ambiguousAsOwn ?? false, written)));
   }
 
   return {

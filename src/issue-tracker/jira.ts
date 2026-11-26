@@ -1,13 +1,14 @@
 // Jira Cloud adapter of the issue tracker (spec §1-§5), re-exported by the module's index.
 import { z } from 'zod';
 import { jiraInputOrder } from '../contracts/index.js';
-import type { IssueTracker } from './tracker-types.js';
+import type { IssueTracker, TriageWriteResult } from './tracker-types.js';
 import type {
   JiraBlockerReads,
   JiraCapabilityFact,
   JiraComment,
   JiraCommentListing,
   JiraComments,
+  JiraComponentEvent,
   JiraContentReads,
   JiraInputCursor,
   JiraInputsObservation,
@@ -15,12 +16,14 @@ import type {
   JiraRemoteLinks,
   JiraTicketRef,
   JiraTrackerScope,
+  JiraTriageWrite,
   JiraUnavailable,
   JiraVisibleComment,
+  JiraWriteNotApplied,
 } from './jira-types.js';
 import { jiraStatusCategories } from './jira-types.js';
 import { adfPlainText } from './jira-adf-text.js';
-import type { JiraRequest, JiraTransport } from './jira-http.js';
+import type { JiraRequest, JiraResponse, JiraTransport } from './jira-http.js';
 
 /**
  * Jira ticket 06: the inputs after `cursor` from a COMPLETE listing of the Card's comments (an incomplete one is returned as is: nothing
@@ -151,7 +154,20 @@ const jiraChangelogPageSchema = z.object({
         id: jiraId,
         author: z.object({ accountId: z.string().max(128).optional() }).optional(),
         created: z.string().min(1).max(64),
-        items: z.array(z.object({ field: z.string().max(255), fromString: z.string().nullable().optional(), toString: z.unknown().optional() })).max(1000),
+        items: z
+          .array(
+            z.object({
+              field: z.string().max(255),
+              fieldId: z.string().max(255).optional(),
+              from: z.unknown().optional(),
+              to: z.unknown().optional(),
+              fromString: z.string().nullable().optional(),
+              toString: z.unknown().optional(),
+            }),
+          )
+          .max(1000),
+        // Supplied by whoever made the edit; anything that is not a short `type` is read as no mark, never as an invalid changelog.
+        historyMetadata: z.unknown().optional(),
       }),
     )
     .max(5000),
@@ -165,9 +181,27 @@ function changelogPageOf(body: unknown, startAt: number) {
 }
 /** Jira writes the `labels` field of a changelog item as the space-separated set before and after (labels never contain spaces). */
 const labelSet = (text: unknown) => (typeof text === 'string' ? text.split(' ').filter(Boolean) : []);
-/** The label changes of one changelog entry: what its `labels` items added and removed. */
-function labelChanges(entry: z.infer<typeof jiraChangelogPageSchema>['values'][number]): JiraLabelEvent[] {
+type ChangelogEntry = z.infer<typeof jiraChangelogPageSchema>['values'][number];
+/** Who made one changelog entry and the mark its caller supplied (`historyMetadata.type`), when there is one. */
+function entryOrigin(entry: ChangelogEntry) {
   const author = entry.author?.accountId ? { tracker: 'jira' as const, accountId: entry.author.accountId } : null;
+  const mark = z.object({ type: z.string().min(1).max(255) }).safeParse(entry.historyMetadata);
+  return { at: entry.created, author, ...(mark.success ? { mark: mark.data.type } : {}) };
+}
+const componentIdOf = (value: unknown) => (typeof value === 'string' && jiraId.safeParse(value).success ? value : null);
+/** The component changes of one changelog entry: each `Component` item carries the id it removed (`from`) or added (`to`). */
+function componentChanges(entry: ChangelogEntry): JiraComponentEvent[] {
+  return entry.items
+    .filter(item => item.fieldId === 'components' || item.field === 'Component')
+    .flatMap(item => {
+      const removed = componentIdOf(item.from);
+      const added = componentIdOf(item.to);
+      return [...(removed ? [{ action: 'removed' as const, componentId: removed }] : []), ...(added ? [{ action: 'added' as const, componentId: added }] : [])];
+    })
+    .map(change => ({ eventId: entry.id, ...change, ...entryOrigin(entry) }));
+}
+/** The label changes of one changelog entry: what its `labels` items added and removed. */
+function labelChanges(entry: ChangelogEntry): JiraLabelEvent[] {
   return entry.items
     .filter(item => item.field === 'labels')
     .flatMap(item => {
@@ -179,8 +213,28 @@ function labelChanges(entry: z.infer<typeof jiraChangelogPageSchema>['values'][n
         ...after.filter(label => !before.includes(label)).map(label => ({ action: 'added' as const, label })),
       ];
     })
-    .map(change => ({ eventId: entry.id, ...change, at: entry.created, author }));
+    .map(change => ({ eventId: entry.id, ...change, ...entryOrigin(entry) }));
 }
+
+/** The relative operations of one Triage edit: each label and component is added or removed on its own, never as a replaced set. */
+function triageUpdate(write: Extract<JiraTriageWrite, { kind: 'edit' }>) {
+  const labels = [...write.addLabels.map(add => ({ add })), ...write.removeLabels.map(remove => ({ remove }))];
+  const components = write.addComponents.map(id => ({ add: { id } }));
+  return { ...(labels.length ? { labels } : {}), ...(components.length ? { components } : {}) };
+}
+type RefusedResponse = Extract<JiraResponse, { ok: false }>;
+/** A write Jira did not accept: a refusal that proves nothing was applied, or an outcome nobody knows (`doubt` says what follows). */
+function notApplied(response: RefusedResponse, doubt: string): JiraWriteNotApplied {
+  if (!commentNotCreated.has(response.code)) return { kind: 'unknown', observedAt: response.observedAt, code: response.code, nextStep: doubt };
+  const wait = response.waitSeconds !== undefined ? { waitSeconds: response.waitSeconds } : {};
+  return { kind: 'failed', observedAt: response.observedAt, code: response.code, ...wait, nextStep: response.nextStep };
+}
+const siteNotWritten = () => ({
+  kind: 'failed' as const,
+  observedAt: new Date().toISOString(),
+  code: 'JIRA_SITE_NOT_CONFIGURED',
+  nextStep: 'Only explicitly configured Jira sites are written; nothing was sent.',
+});
 
 /** Jira ticket 10: project permissions the Factory's account needs (reads; ordinary comments; remote links). */
 const jiraPermissions = [
@@ -485,6 +539,7 @@ export function createJiraTracker(options: {
         ticket,
         completeness: 'complete',
         events: [...entries.values()].flatMap(labelChanges),
+        components: [...entries.values()].flatMap(componentChanges),
         limitations: [visibleOnly, 'A label the Card was created with has no changelog entry.'],
       };
     },
@@ -545,34 +600,13 @@ export function createJiraTracker(options: {
     },
     async publishComment(ticket, comment) {
       const scope = site(ticket.siteId);
-      if (!scope)
-        return {
-          kind: 'failed',
-          observedAt: new Date().toISOString(),
-          code: 'JIRA_SITE_NOT_CONFIGURED',
-          nextStep: 'Only explicitly configured Jira sites are written; nothing was sent.',
-        };
+      if (!scope) return siteNotWritten();
       const response = await transportOf(scope).request({
         method: 'POST',
         path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}/comment`,
         body: { body: adfOf(comment.lines) },
       });
-      if (!response.ok) {
-        return commentNotCreated.has(response.code)
-          ? {
-              kind: 'failed',
-              observedAt: response.observedAt,
-              code: response.code,
-              ...(response.waitSeconds !== undefined ? { waitSeconds: response.waitSeconds } : {}),
-              nextStep: response.nextStep,
-            }
-          : {
-              kind: 'unknown',
-              observedAt: response.observedAt,
-              code: response.code,
-              nextStep: 'The comment may have been created; it is reconciled before any new POST.',
-            };
-      }
+      if (!response.ok) return notApplied(response, 'The comment may have been created; it is reconciled before any new POST.');
       const created = jiraCommentCreatedSchema.safeParse(response.body);
       if (!created.success)
         return {
@@ -589,6 +623,22 @@ export function createJiraTracker(options: {
         authorAccountId: created.data.author?.accountId ?? null,
         url: `${scope.url}/browse/${ticket.key}?focusedCommentId=${created.data.id}`,
       };
+    },
+    // Spec #68 §8: the comment of a Triage publication, or its one edit of the Card. Nothing but labels and components is ever named.
+    async writeTriage(ticket, write): Promise<TriageWriteResult> {
+      if (write.kind === 'comment') {
+        const posted = await tracker.publishComment(ticket, { lines: write.lines });
+        return posted.kind === 'published' ? { kind: 'accepted', observedAt: posted.observedAt } : posted;
+      }
+      const scope = site(ticket.siteId);
+      if (!scope) return siteNotWritten();
+      const response = await transportOf(scope).request({
+        method: 'PUT',
+        path: `/rest/api/3/issue/${encodeURIComponent(ticket.issueId)}`,
+        body: { update: triageUpdate(write), historyMetadata: { type: write.mark, description: 'Software Factory Triage' } },
+      });
+      if (!response.ok) return notApplied(response, 'The edit may have been applied; the Card is read before anything else is written.');
+      return { kind: 'accepted', observedAt: response.observedAt };
     },
     async listComments(ticket) {
       const comments = new Map<string, JiraVisibleComment>();
