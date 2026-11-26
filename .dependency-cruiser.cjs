@@ -69,6 +69,8 @@ module.exports = {
       ['sqlite', '^src/control/durable/', '(^|/)(node:sqlite|sqlite3|better-sqlite3)(/|$)'],
       ['durable', '^src/control/durable/', '(^|/)@earendil-works/pi-durable(/|$)'],
       ['coding-agent', '^src/workers/', '(^|/)@(mariozechner|earendil-works)/pi-coding-agent(/|$)'],
+      // Spec #68 §7: the MCP client of the Triager session.
+      ['mcp', '^src/workers/', '(^|/)@earendil-works/pi-mcp(/|$)'],
       ['gondolin', '^src/sandbox/', '(^|/)(@earendil-works/)?gondolin(/|$)'],
       ['github', '^src/(platform/github|issue-tracker|code-repository)/', '(^|/)(@octokit/|octokit(/|$))'],
       // Ownership of an SDK binds production code (src/); tests and fixtures may load the real SDK they exercise

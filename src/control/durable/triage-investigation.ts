@@ -46,6 +46,10 @@ type Running = {
   clones: string | null;
   cloned: Map<string, { path: string; commit: string }>;
 };
+/** What the session of an attempt left: its transcript and its calls per tool (absent when it never reported). */
+type AttemptEnd = { code: string; transcript: string | null; toolCalls?: Record<string, number> | null };
+const reportedBy = (completion: Awaited<Activation['completed']>): Omit<AttemptEnd, 'code'> =>
+  'transcript' in completion ? { transcript: completion.transcript, toolCalls: completion.toolCalls ?? null } : { transcript: null };
 const cloneName = (repository: string) => repository.replace('/', '__');
 /** How often a running attempt's environment is observed for an agent that ended without reporting. */
 const agentWatchMs = 2000;
@@ -73,7 +77,7 @@ export function createTriageInvestigations(deps: {
   const stamp = () => new Date(clock.now()).toISOString();
 
   /** Stops the attempt's environment, removes it once the stop is confirmed and records how the attempt ended. */
-  async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: { code: string; transcript: string | null }) {
+  async function endAttempt(triage_request_id: string, record: InvestigationRecord, end: AttemptEnd) {
     const cessation = await ports.environment.stop(record).catch(() => unconfirmed);
     if (cessation.cessationConfirmed) await ports.environment.close(record).catch(() => {});
     // Without a Verdict the request leaves `investigating` in the same commit: back to the queue with balance, else `failed`.
@@ -87,6 +91,7 @@ export function createTriageInvestigations(deps: {
         code: end.code,
         cessation,
         transcript: end.transcript,
+        toolCalls: end.toolCalls ?? null,
         spentMs: Math.max(0, at - Date.parse(started.startedAt)),
       }),
       request => afterAttemptWithoutVerdict(budget, request.attempts ?? []),
@@ -200,9 +205,9 @@ export function createTriageInvestigations(deps: {
 
   /** Opens the environment with the attempt's agent and records its invocation. A stopping controller or a spent clock opens none. */
   async function open(state: Running, intent: InvestigationRecord, activation: Activation, deadline: Deadline) {
-    const { skillPack } = activation;
+    const { skillPack, mcpProfiles = [] } = activation;
     const id = state.request.triage_request_id;
-    await updateTriageAttempt(session, id, state.attempt, attempt => void (attempt.skillPack = skillPack));
+    await updateTriageAttempt(session, id, state.attempt, attempt => void Object.assign(attempt, { skillPack, mcpProfiles }));
     // A controller that is stopping starts no environment: the attempt ends here, spent, with nothing to stop.
     if (deps.stopped()) return { status: 'failure', code: 'CONTROLLER_STOPPED' } as const;
     if (deadline.due()) return { status: 'failure', code: triageTimeExhausted } as const;
@@ -220,7 +225,7 @@ export function createTriageInvestigations(deps: {
     const completion = await Promise.race([activation.completed, agentGone(record)]);
     const recorded = (await readTriageRequest(session, state.request.triage_request_id))?.verdict?.attempt === state.attempt;
     const timedOut = deadline.due() ? triageTimeExhausted : attemptEndCode(completion);
-    return { code: recorded ? 'VERDICT_RECORDED' : timedOut, transcript: 'transcript' in completion ? completion.transcript : null };
+    return { code: recorded ? 'VERDICT_RECORDED' : timedOut, ...reportedBy(completion) };
   }
 
   /**
@@ -230,7 +235,7 @@ export function createTriageInvestigations(deps: {
   async function investigate(state: Running, intent: InvestigationRecord, remainingMs: number) {
     let record = intent;
     let activation: Activation | undefined;
-    let end = { code: 'TRIAGE_ATTEMPT_FAILED', transcript: null as string | null };
+    let end: AttemptEnd = { code: 'TRIAGE_ATTEMPT_FAILED', transcript: null };
     const deadline = investigationDeadline(remainingMs, () => ports.environment.stop(record).catch(() => unconfirmed));
     try {
       activation = await ports.triager.activate({

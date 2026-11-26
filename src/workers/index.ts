@@ -722,5 +722,5 @@ export { firstFactoryOAuthLogin } from './factory-oauth.js';
 
 // Spec #68 §7 (ticket #75): the Triager role. Host facade of one attempt and the agent the Investigation Environment runs.
 export { createTriager, runTriagerAgent, triagerAttemptDirectory, triagerToolNames } from './triager.js';
-export type { TriagerAttempt, TriagerCompletion, TriagerConfiguration, TriagerHost } from './triager.js';
+export type { McpRegistration, TriagerAttempt, TriagerCompletion, TriagerConfiguration, TriagerHost } from './triager.js';
 export { triagerActivationFields, type TriagerActivation } from './skill-pack.js';

@@ -5,9 +5,11 @@ import { z } from 'zod';
 import { connect, listen, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
 import type { InvestigationAgent, InvestigationShell } from '../sandbox/index.js';
 import { loadSkillPack, skillPacks, triagerActivationPrompt, type SkillPackId, type TriagerActivation } from './skill-pack.js';
+import { activeMcpSources, triagerMcpSchema, type McpRegistration } from './triager-mcp.js';
 import type { TriagerHost } from './triager-tools.js';
 import type { ReviewerProfile } from './worker-start.js';
 
+export type { McpRegistration } from './triager-mcp.js';
 export type { TriagerHost } from './triager-tools.js';
 export { triagerToolNames } from './triager-tools.js';
 
@@ -24,12 +26,14 @@ const bootstrapSchema = z.object({
   factoryRoot: z.string().min(1),
   prompt: z.string().min(1),
   profile: z.record(z.string(), z.unknown()),
+  mcp: triagerMcpSchema.optional(),
 });
 const sessionResult = z.strictObject({
   status: z.enum(['completed', 'interrupted']),
   concluded: z.boolean(),
   sessionFile: z.string().nullable(),
   sessionTools: z.array(z.string()),
+  toolCalls: z.record(z.string().max(128), z.number().int().nonnegative()),
   closedBy: z.enum(['requests', 'tools', 'provider']).nullable(),
 });
 const completionSchema = z.union([sessionResult, z.strictObject({ status: z.literal('failure'), code: z.string().regex(/^[A-Z][A-Z0-9_]{2,63}$/) })]);
@@ -41,6 +45,8 @@ export type TriagerCompletion =
       concluded: boolean;
       transcript: string | null;
       sessionTools: string[];
+      /** Calls per session tool, by name (an MCP tool is `mcp__<server>__<tool>`). */
+      toolCalls: Record<string, number>;
       closedBy: 'requests' | 'tools' | 'provider' | null;
     }
   /** The agent could not run a session, or its channel ended before it reported one. */
@@ -50,6 +56,8 @@ export type TriagerAttempt = {
   agent: InvestigationAgent;
   /** The pack whose `triage` skill this attempt runs (operator metadata). */
   skillPack: { id: string; version: string; manifestSha256: string };
+  /** Ids of the MCP Profiles active in this attempt (operator metadata). */
+  mcpProfiles: string[];
   completed: Promise<TriagerCompletion>;
   /** Closes the attempt's endpoint. A session still running loses its channel and ends without a Verdict. */
   close(): Promise<void>;
@@ -59,6 +67,8 @@ export type TriagerConfiguration = {
   root: string;
   profile: Profile;
   skillPack: SkillPackId;
+  /** Spec §7: the registered MCP servers and Profiles and the active ones (none: the sessions have no MCP tool). */
+  mcp?: McpRegistration;
   /** The agent start for a bootstrap file: the fixed Triager entrypoint in production. */
   agent(bootstrap: string): InvestigationAgent;
 };
@@ -78,6 +88,7 @@ export function createTriager(configuration: TriagerConfiguration) {
       if (!attemptName.test(request.attempt) || request.attempt.length > 64) throw new Error('TRIAGER_ATTEMPT_INVALID');
       const pack = await loadSkillPack(skillPacks[configuration.skillPack].directory, configuration.skillPack);
       const prompt = await triagerActivationPrompt(pack, request.activation);
+      const mcp = configuration.mcp?.active.length ? activeMcpSources(configuration.root, configuration.mcp) : undefined;
       const directory = triagerAttemptDirectory(configuration.root, request.attempt);
       for (const path of [join(configuration.root, 'triage'), join(configuration.root, 'triage', 'a'), directory, join(directory, 'profile', 'sessions')])
         await privateDirectory(path);
@@ -118,12 +129,15 @@ export function createTriager(configuration: TriagerConfiguration) {
           factoryRoot: configuration.root,
           prompt,
           profile: { ...configuration.profile, directory: join(directory, 'profile') },
+          // Where the agent finds each server and its token FILE: the token itself is read by the agent, never copied here.
+          ...(mcp ? { mcp } : {}),
         }),
         { mode: 0o600, flag: 'wx' },
       );
       return {
         agent: configuration.agent(bootstrap),
         skillPack: { id: pack.id, version: pack.version, manifestSha256: pack.manifestSha256 },
+        mcpProfiles: [...(configuration.mcp?.active ?? [])],
         completed,
         async close() {
           await server.close().catch(() => {});
@@ -176,6 +190,7 @@ export async function runTriagerAgent(
         host: hostOf(ask),
         signal,
         factoryRoot: bootstrap.factoryRoot,
+        mcp: bootstrap.mcp,
       });
     } catch (error) {
       // Allowlisted codes only: never an exception text, provider output or a path.
