@@ -12,6 +12,7 @@ As fronteiras são verificadas, não confiadas: um import cruzado que o mapa nã
 - Uma aresta nova entre módulos é uma decisão de arquitetura: proponha a mudança no mapa com o motivo, nunca um relaxamento oportunista de regra.
 - Colaboradores de `control` entram por `import type`; implementações são compostas pelos entrypoints. Se uma regra pura precisa de um efeito, injete o dado ou a função, não o módulo.
 - O CLI compõe validação de Sandbox, Protocol, Records e contratos, e só tipos de Control; `setup` é a exceção declarada que alcança Workers para o primeiro login OAuth.
+- O agente de uma tentativa do Triager (`src/entrypoints/triager.ts`) é uma raiz de composição própria, o papel `triager`: roda a sessão de Workers com o shell do Investigation Environment de Sandbox e não alcança Control. O que o Host precisa para esse ambiente é sondado por Sandbox, não por um entrypoint.
 - Fixtures de arquitetura afirmam a regra e os caminhos que falham, não só um código de saída não-zero.
 - Abra um ADR quando a decisão for difícil de reverter, surpreendente sem contexto e fruto de um trade-off real.
 

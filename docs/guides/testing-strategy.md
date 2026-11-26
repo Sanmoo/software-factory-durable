@@ -9,7 +9,7 @@ Os testes fixam o comportamento observado da fábrica: um teste de regressão re
 ## Níveis
 
 - **Unit**: exercita um módulo pela interface pública, sem I/O em runtime e sem substituir nada que a fábrica possui; fixa as regras de domínio (`src/control/rules`, `src/contracts`) e as regras puras do runner. Os arquivos de nível unit estão declarados em [test/levels.json](../../test/levels.json); o cruise de Context boundaries recusa um teste declarado unit que alcance I/O (built-ins de arquivo, processo ou rede, os pacotes de I/O, um import não resolvido), e o achado sai sob o quality gate Unit tests.
-- **Integration**: todo outro arquivo de teste. Dirige um contexto contra processos, sistema de arquivos e armazenamento reais; só sistemas de terceiros são dublês na fronteira: o GitHub pelo `gh` local de `test/entrypoints/github-world-fixture.ts` e provedores de modelo roteirizados.
+- **Integration**: todo outro arquivo de teste. Dirige um contexto contra processos, sistema de arquivos e armazenamento reais; só sistemas de terceiros são dublês na fronteira: o GitHub pelo `gh` local de `test/entrypoints/github-world-fixture.ts`, o Jira pelo mundo HTTP de `test/entrypoints/jira-http-world.ts` atrás do transporte real do adapter, a fonte MCP local de `test/control/mcp-source-fixture.ts` e provedores de modelo roteirizados. Os fluxos de Control usam os dublês de tracker de `test/control/doubles.ts` e `test/control/jira-doubles.ts`.
 - As receitas reais `*-qualification` ficam fora dos níveis e dos Entry Points.
 
 Um comportamento novo é testado no nível mais baixo que o prova. Um teste unit não ganha I/O para "testar de verdade": vira integration e sai de `test/levels.json`. Uma falha de arquivo é reportada sob o quality gate do seu nível.
@@ -27,7 +27,8 @@ Ambiente: rode os Entry Points com um `TMPDIR` curto (o `/tmp` padrão serve). O
 ## Julgamento
 
 - Comportamento já presente é fixado por um teste de regressão antes de mudar. Esse teste não audita se a regra de negócio está certa; evidência forte de erro óbvio vira uma decisão localizada do operador.
-- Dublês só para sistemas de terceiros na fronteira: o `gh` local de `test/entrypoints/github-world-fixture.ts` e provedores de modelo roteirizados. Não substitua um módulo da própria fábrica por um dublê num teste que prova a integração dele.
+- Dublês só para sistemas de terceiros na fronteira (os listados em Níveis). Não substitua um módulo da própria fábrica por um dublê num teste que prova a integração dele.
+- Exceção declarada ([spec #68 §13](https://github.com/Sanmoo/software-factory-durable/issues/68)): os fluxos de Control sobre a Triagem recebem o Investigation Environment em processo de `test/sandbox/investigation-in-process.ts`, uma implementação da porta da própria fábrica sem bubblewrap nem systemd. Ela não confina nada e não prova o mecanismo: o ambiente real tem seu cenário em `test/sandbox/investigation-environment.test.ts` e nos arquivos `slow` que sobem a unit de verdade. O Triager desses fluxos é o worker real sob provedor roteirizado, nunca um Triager falso.
 - Prefira uma regra pura testada sem I/O a um cenário com processo real; um cenário real por mecanismo basta.
 
 ## Manifesto `test/tiers.json`
@@ -35,12 +36,15 @@ Ambiente: rode os Entry Points com um `TMPDIR` curto (o `/tmp` padrão serve). O
 Lista **apenas exceções** de tempo e paralelismo. Arquivo sem entrada é paralelo; o nível (unit ou integration) vem de [test/levels.json](../../test/levels.json).
 
 ```json
-{ "schemaVersion": 1, "files": {
-  "test/x/y.test.ts": { "slow": true, "reason": "por que é lento, medido" },
-  "test/x/z.test.ts": { "serial": true, "reason": "qual estado compartilhado impede paralelo" },
-  "test/x/v.test.ts": { "full": true, "reason": "por que é caro demais para o gate de integração" },
-  "test/x/w.test.ts": { "quarantine": "ticket NN", "reason": "o flake observado" }
-} }
+{
+  "schemaVersion": 1,
+  "files": {
+    "test/x/y.test.ts": { "slow": true, "reason": "por que é lento, medido" },
+    "test/x/z.test.ts": { "serial": true, "reason": "qual estado compartilhado impede paralelo" },
+    "test/x/v.test.ts": { "full": true, "reason": "por que é caro demais para o gate de integração" },
+    "test/x/w.test.ts": { "quarantine": "ticket NN", "reason": "o flake observado" }
+  }
+}
 ```
 
 - `slow`: fica fora de um `fast` filtrado, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
