@@ -147,6 +147,14 @@ test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by met
   assert.equal(open!.ticket, 'acme/project#9');
   assert.equal(view.triage.total.tokens!.total, measured!.total.tokens!.total + (open!.total.tokens?.total ?? 0));
   assert.deepEqual([view.works, view.total.tokens, view.total.activities], [[], null, 0], 'nothing of a Triage is counted as a Work');
+  // The total is of every Triage of the installation, whatever page of requests is shown beside it.
+  const later = (await cli('usage', '--cursor', '1', '--limit', '1')).json as UsageView & { triage: TriageUsageView };
+  assert.deepEqual(
+    later.triage.requests.map(item => item.ticket),
+    ['acme/project#9'],
+  );
+  assert.deepEqual(later.triage.total, view.triage.total, 'the page shown does not change the total');
+  assert.ok(later.triage.total.tokens!.total >= measured!.total.tokens!.total);
   for (const bad of [
     ['triage'],
     ['triage', 'not a reference'],

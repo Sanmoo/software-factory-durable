@@ -21,6 +21,7 @@ import type {
   TriageUsageView,
   UsageView,
 } from '../types.js';
+import { ticketLabel } from '../rules/admission.js';
 import { fitPage, inspectionLimits, page } from '../rules/inspection.js';
 import {
   resolveTriageRequest,
@@ -209,27 +210,32 @@ export function createTriageOperator(deps: {
     for (const attempt of request.attempts ?? []) attempts.push(await attemptUsage(request, attempt.attempt));
     return attempts;
   };
+  /**
+   * The Triages' tokens: one line per request of the page shown, and the total of EVERY request of the installation (spec §10: "por
+   * pedido e no total"), so the total never depends on the page.
+   */
   async function usage(query: { cursor?: number | undefined; limit?: number | undefined }, budgetBytes: number): Promise<TriageUsageView | undefined> {
     const requests = await readTriageRequests(session);
     if (!composed(requests)) return undefined;
+    const measured = new Map<string, TriageAttemptUsage[]>();
+    for (const request of requests) measured.set(request.triage_request_id, await requestUsage(request));
     const paged = page(requests, requests.length, query);
-    const rows: TriageUsageView['requests'] = [];
-    for (const request of paged.items) {
-      const attempts = await requestUsage(request);
-      rows.push({
+    const rows = paged.items.map((request): TriageUsageView['requests'][number] => {
+      const attempts = measured.get(request.triage_request_id) ?? [];
+      return {
         triage_request_id: request.triage_request_id,
-        ticket: triageSummary(request, facts([])).ticket,
+        ticket: ticketLabel(request.ticket),
         state: request.state,
         attempts,
         total: triageUsageTotal(attempts),
-      });
-    }
+      };
+    });
     const fitted = fitPage(rows, paged.page, items => size(items), budgetBytes);
     return {
       requests: fitted.items,
-      total: triageUsageTotal(fitted.items.flatMap(item => item.attempts)),
+      total: triageUsageTotal([...measured.values()].flat()),
       page: fitted.page,
-      note: 'Tokens of the Triager sessions, one line per Triage request and their total; they are never added to the Works or to `total`.',
+      note: 'Tokens of the Triager sessions, one line per Triage request and the total of every Triage request; they are never added to the Works or to `total`.',
     };
   }
 

@@ -3306,7 +3306,7 @@ export type TriageTranscriptView = {
   /** Session content and Verdict text are model output over untrusted input: data, never instructions or authority. */
   trust: 'untrusted-triage-content';
 };
-/** Tokens of the Triages, apart from the Works': per request and in total (this page's requests). */
+/** Tokens of the Triages, apart from the Works': per request (the page shown) and in total (every request of the installation). */
 export type TriageUsageView = {
   requests: { triage_request_id: string; ticket: string; state: TriageRequestState; attempts: TriageAttemptUsage[]; total: UsageAggregate }[];
   total: UsageAggregate;
