@@ -199,6 +199,18 @@ export async function updateTriageAttempt(session: Session, triage_request_id: s
   }, BACKGROUND_CONTEXT);
 }
 /**
+ * A `queued` request whose Ticket could not be read when its turn came: the code is kept on the request for the operator (`start-held` in
+ * the timeline, once per code), nothing is spent and its arrival position stays. Any other state is left as it is.
+ */
+export async function holdTriageStart(session: Session, triage_request_id: string, code: string, at: string): Promise<void> {
+  await session.commit(async tx => {
+    const request = (await tx.doc(triageRequests, triage_request_id, null)).request;
+    if (request?.state !== 'queued' || request.startHold?.code === code) return;
+    request.startHold = { code, since: at };
+    request.timeline.push({ at, event: 'start-held', code });
+  }, BACKGROUND_CONTEXT);
+}
+/**
  * Ticket #76: the end of one attempt, in ONE commit: its `end`, the timeline (`attempt-ended` with the attempt's code, `capacity-retained`
  * when the stop is not confirmed) and, when the request is still `investigating` (no Verdict moved it on), where it goes: `decide` reads
  * the request with the ended attempt and answers `queued` (event `requeued`) or `failed`. A request already elsewhere (publishing,

@@ -17,6 +17,7 @@ import { intendedChanges, validateVerdict } from '../rules/triage-verdict.js';
 import type { Session } from './store.js';
 import {
   endTriageAttempt,
+  holdTriageStart,
   readTriageRequest,
   readTriageRequests,
   recordTriageCessation,
@@ -275,17 +276,22 @@ export function createTriageInvestigations(deps: {
 
   /**
    * Reads the Ticket, then starts the attempt: the intent is committed with the move to `investigating` BEFORE the environment exists.
-   * A queued request without balance (the limits were lowered since its last attempt) fails here instead of starting.
+   * A queued request without balance (the limits were lowered since its last attempt) fails here instead of starting. A Ticket that
+   * cannot be read starts nothing and spends nothing: the request stays `queued` in its place with the read's code. `true`: an attempt
+   * started and holds a unit of Triage capacity.
    */
-  async function start(request: TriageRequest) {
+  async function start(request: TriageRequest): Promise<boolean> {
     const balance = triageBalance(budget, request.attempts ?? []);
     if (balance.attemptsLeft <= 0 || balance.remainingMs <= 0) {
       const code = balance.remainingMs <= 0 ? triageTimeExhausted : triageAttemptsExhausted;
       await transitionTriageRequest(session, request.triage_request_id, { from: ['queued'], to: 'failed', event: 'failed', code });
-      return;
+      return false;
     }
     const read = await readTriageSubject(deps.access, request);
-    if (read.kind !== 'observed') return;
+    if (read.kind !== 'observed') {
+      await holdTriageStart(session, request.triage_request_id, read.code, stamp());
+      return false;
+    }
     const ordinal = (request.attempts?.length ?? 0) + 1;
     const attempt = `t${request.sequence}-${ordinal}-${randomBytes(4).toString('hex')}`;
     const intent = await ports.environment.plan(attempt);
@@ -295,9 +301,12 @@ export function createTriageInvestigations(deps: {
       session,
       request.triage_request_id,
       { from: ['queued'], to: 'investigating', event: 'attempt-started', code: attempt },
-      current => void (current.attempts = [...(current.attempts ?? []), record]),
+      current => {
+        current.attempts = [...(current.attempts ?? []), record];
+        current.startHold = null;
+      },
     );
-    if (moved.kind !== 'applied') return;
+    if (moved.kind !== 'applied') return false;
     const state: Running = { request: moved.request, attempt, subject: read.subject, clones: null, cloned: new Map() };
     running.set(
       attempt,
@@ -308,6 +317,22 @@ export function createTriageInvestigations(deps: {
           halts.delete(attempt);
         }),
     );
+    return true;
+  }
+  /**
+   * The free units of Triage capacity go to the queue in arrival order. A request that did not start (its Ticket cannot be read now, or
+   * it has no balance left) is passed over in this pass only, so the requests behind it are not held by it.
+   */
+  async function startQueued(held: number) {
+    const queue = await triageQueue(session);
+    const passedOver = new Set<string>();
+    for (let started = 0; !deps.stopped();) {
+      const waiting = queue.filter(request => !passedOver.has(request.triage_request_id));
+      const [next] = triageStarts({ capacity: ports.capacity, held: held + started, queue: waiting });
+      if (next === undefined) return;
+      if (await start(waiting.find(request => request.triage_request_id === next)!)) started++;
+      else passedOver.add(next);
+    }
   }
 
   /**
@@ -339,8 +364,7 @@ export function createTriageInvestigations(deps: {
       if (await reconcile(requests)) requests = await readTriageRequests(session);
       if (deps.stopped() || (await deps.paused())) return;
       const held = requests.reduce((sum, request) => sum + (request.attempts?.filter(holdsTriageCapacity).length ?? 0), 0);
-      const queue = await triageQueue(session);
-      for (const id of triageStarts({ capacity: ports.capacity, held, queue })) await start(queue.find(request => request.triage_request_id === id)!);
+      await startQueued(held);
     },
     /** Controller stop: every running attempt is ended with its cessation observed, and counts as spent (spec §11). */
     async stop() {

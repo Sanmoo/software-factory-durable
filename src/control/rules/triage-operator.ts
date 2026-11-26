@@ -86,7 +86,14 @@ function queuedStep(request: TriageRequest, facts: TriageViewFacts) {
   const position = facts.queue.indexOf(request.triage_request_id) + 1;
   const used = attemptsOf(request).length;
   const again = used ? ` Its next attempt is a new session (${used} attempt(s) spent, the balance is kept).` : '';
-  return `In the single queue${position ? ` (position ${position})` : ''}; it starts when a unit of Triage capacity is free.${again} Nothing to do.`;
+  const queued = `In the single queue${position ? ` (position ${position})` : ''}`;
+  const hold = request.startHold;
+  if (hold)
+    return (
+      `${queued}, not started: its Ticket could not be read (${hold.code}, since ${hold.since}). Nothing is spent, it keeps its place and the read is ` +
+      `tried again at every poll, while later requests go on.${again} If the code persists, check the Ticket and the source's access.`
+    );
+  return `${queued}; it starts when a unit of Triage capacity is free.${again} Nothing to do.`;
 }
 function publishingStep(request: TriageRequest) {
   const hold = request.publication?.hold;

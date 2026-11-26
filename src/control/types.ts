@@ -2935,6 +2935,11 @@ export type TriageRequest = {
   timeline: TriageTimelineEntry[];
   /** Ticket #75: every activation of the Triager of this request, oldest first. Absent = none started (nothing spent). */
   attempts?: TriageAttempt[];
+  /**
+   * Why the latest pass could not start an attempt of this `queued` request: its Ticket could not be read (`code`: the read's own code).
+   * It spends nothing and keeps the request's place; the queue goes on with the next request. Null or absent: no such obstacle.
+   */
+  startHold?: { code: string; since: string } | null;
   /** Ticket #75: the accepted Verdict, metadata only (its text is the `factory.triage-verdict` document). Set on entering `publishing`. */
   verdict?: TriageVerdictRecord;
   /** Ticket #75: what the Control intends to write on the Ticket for the Verdict, in writing order; recorded WITH the Verdict. */

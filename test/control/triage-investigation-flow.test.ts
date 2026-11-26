@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { SourceTriage, TicketSource } from '../../src/control/types.js';
+import type { SourceTriage, TicketSource, TriageDetailView } from '../../src/control/types.js';
 import { applyLabel, comment, factoryAppId, remoteIssue, type RemoteIssue } from './doubles.js';
 import { untilHolds } from '../runner/budget.js';
 import { card, jiraSource, relabel } from './jira-doubles.js';
@@ -359,4 +359,38 @@ test('an agent that ends without ever reporting ends its attempt: the environmen
   assert.deepEqual([request.state, request.end?.code, request.attempts![0]!.end?.code], ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', 'TRIAGER_AGENT_EXITED']);
   assert.equal(request.attempts![0]!.end?.cessation.cessationConfirmed, true);
   assert.equal(w.bodies.length, 0);
+});
+
+test('spec #68 §5 (single queue): a Ticket that cannot be read does not hold the queue, spends nothing, keeps its place, and the operator sees its code', async t => {
+  const unreadable = triageIssue(7, { textUnreadable: { code: 'GITHUB_RATE_LIMITED' } });
+  const w = await triageWorld(t, {
+    github: { issues: [unreadable, triageIssue(9), triageIssue(11), triageIssue(13)], pulls: {} },
+    sources: [githubSource],
+    script: Array.from({ length: 4 }, () => () => call('concluir_triagem', verdict)),
+  });
+  await w.start();
+  // The head of the queue cannot be read: the next request in arrival order is investigated instead.
+  await w.settled(1, 'publishing');
+  const [held] = await w.requests();
+  assert.deepEqual([held!.state, held!.attempts, held!.sequence], ['queued', undefined, 1], 'nothing spent, same place in the queue');
+  assert.deepEqual(held!.startHold?.code, 'GITHUB_RATE_LIMITED');
+  assert.deepEqual(
+    held!.timeline.map(entry => (entry.code ? `${entry.event} ${entry.code}` : entry.event)),
+    ['requested', 'start-held GITHUB_RATE_LIMITED'],
+  );
+  const shown = (await w.control().inspect({ kind: 'triage', request: held!.triage_request_id })) as TriageDetailView;
+  assert.match(shown.request.nextStep, /GITHUB_RATE_LIMITED/, 'the operator reads the code');
+  assert.deepEqual([shown.request.attempts.used, shown.request.investigation.spentMs], [0, 0]);
+  // Still unreadable at the next pass: recorded once, not at every pass, and the queue goes on behind it.
+  await w.poll();
+  await w.settled(2, 'publishing');
+  assert.equal((await w.requests())[0]!.timeline.length, 2);
+  // Readable again: it is the oldest queued request, so it starts before the later one.
+  delete unreadable.textUnreadable;
+  await w.poll();
+  const started = await w.settled(0, 'publishing');
+  assert.deepEqual([started.attempts!.length, started.startHold ?? null], [1, null]);
+  assert.equal((await w.requests())[3]!.attempts, undefined, 'arrival order decides among the readable requests');
+  await w.poll();
+  await w.settled(3, 'publishing');
 });

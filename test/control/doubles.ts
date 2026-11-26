@@ -48,6 +48,8 @@ export type RemoteIssue = {
   /** Spec #68 ticket #75: the issue text as `readTicketText` reports it (absent = an issue without it). */
   title?: string | null;
   body?: string | null;
+  /** The text of THIS issue cannot be read (`readTicketText` answers unavailable with this), while every other read of it works. */
+  textUnreadable?: Unavailable;
 };
 export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
@@ -289,6 +291,7 @@ export function githubDoubles(remote: Remote) {
         () => {
           const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
           if (remote.readFailure || !found) return failure(ref.repository, remote.readFailure ?? { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
+          if (found.textUnreadable) return failure(ref.repository, found.textUnreadable);
           return {
             kind: 'observed' as const,
             source: 'github-rest' as const,
