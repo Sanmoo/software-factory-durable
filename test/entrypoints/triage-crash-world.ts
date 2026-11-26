@@ -2,8 +2,7 @@
 // that takes the storage over. Real Control and SQLite, the REAL Investigation Environment (a transient unit of the user manager, with
 // bubblewrap for its commands) and the production Triager agent inside it; doubled only at the third-party boundary: the tracker and the
 // model provider (a local HTTP server of the test, reached by the agent from outside the confinement).
-import { openControl } from '../../src/control/index.js';
-import type { SourceTriage, TicketSource, TriageRequestsView } from '../../src/control/types.js';
+import { openControl, type SourceTriage, type TicketSource, type TriageRequestsView } from '../../src/control/index.js';
 import { triagerAgentStart } from '../../src/entrypoints/controller/composition.js';
 import { createInvestigationClones, createInvestigationEnvironment, investigationEnvironmentRoot } from '../../src/sandbox/index.js';
 import { createTriager } from '../../src/workers/index.js';

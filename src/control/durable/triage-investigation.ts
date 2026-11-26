@@ -50,6 +50,10 @@ const cloneName = (repository: string) => repository.replace('/', '__');
 /** How often a running attempt's environment is observed for an agent that ended without reporting. */
 const agentWatchMs = 2000;
 const unconfirmed: InvestigationStop = { cessationConfirmed: false, code: 'INVESTIGATION_MANAGER_UNAVAILABLE' };
+const notInvestigating = {
+  status: 'refused' as const,
+  errors: [{ code: 'TRIAGE_REQUEST_NOT_INVESTIGATING', message: 'This Triage request is no longer being investigated; nothing was recorded. Stop here.' }],
+};
 const systemClock: TriageClock = { now: () => Date.now(), sleep: (ms, signal) => delay(ms, undefined, { ref: false, signal }).catch(() => {}) };
 
 export function createTriageInvestigations(deps: {
@@ -139,10 +143,11 @@ export function createTriageInvestigations(deps: {
     if (!checked.valid) return { status: 'refused', errors: checked.errors };
     const { text, ...verdict } = checked.verdict;
     const id = state.request.triage_request_id;
+    // Only the session of the request's open attempt records: an earlier attempt of a request investigated again never does (its
+    // channel is closed before its attempt ends, so this is a second barrier, not the only one).
+    const open = (await readTriageRequest(session, id))?.attempts?.at(-1);
+    if (open?.attempt !== state.attempt || open.end) return notInvestigating;
     const moved = await transitionTriageRequest(session, id, { from: ['investigating'], to: 'publishing', event: 'verdict-recorded' }, async (request, tx) => {
-      // Only the session of the request's open attempt records: an earlier attempt of a request investigated again never does.
-      const open = request.attempts?.at(-1);
-      if (open?.attempt !== state.attempt || open.end) throw new Error('TRIAGE_ATTEMPT_NOT_OPEN');
       request.verdict = {
         ...verdict,
         attempt: state.attempt,
@@ -152,12 +157,8 @@ export function createTriageInvestigations(deps: {
       };
       request.intended = intendedChanges(checked.verdict, state.subject.roles, state.request.ticket.tracker);
       (await tx.doc(triageVerdicts, id, null)).verdict = { triage_request_id: id, text };
-    }).catch(() => undefined);
-    if (moved?.kind === 'applied') return { status: 'recorded' };
-    return {
-      status: 'refused',
-      errors: [{ code: 'TRIAGE_REQUEST_NOT_INVESTIGATING', message: 'This Triage request is no longer being investigated; nothing was recorded. Stop here.' }],
-    };
+    });
+    return moved.kind === 'applied' ? { status: 'recorded' } : notInvestigating;
   }
 
   /**
