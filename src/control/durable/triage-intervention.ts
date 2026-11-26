@@ -119,7 +119,7 @@ function receipt(
     effects: null,
     attempt: null,
     release: null,
-    nextStep: reason ? nextStepOf(reason, id) : nextStepOf('', id),
+    nextStep: nextStepOf(reason ?? '', id),
     ...more,
   };
 }

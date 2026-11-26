@@ -248,9 +248,8 @@ export async function withdrawActivityCredentials(
   return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
 }
 
-/** The Jira adapter when this owner polls: the Jira desks need both (no adapter composed, or no polling: no Jira desk). */
 /** Spec #68 (ticket #71): the Triage rounds as `status` shows them: no candidate list, only how many Tickets wait for a person. */
-const triageStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
+const triageRoundsStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
   polling.triage
     ? {
         triage: polling.triage.map(({ candidates, ...source }) => ({
@@ -325,6 +324,7 @@ function triagePublications(
   const paused = async () => (await readInstallation(session)).paused;
   return createTriagePublications({ session, stopped, paused, publishers: { github: githubTriagePublisher(access), jira: jiraTriagePublisher(access) } });
 }
+/** The Jira adapter when this owner polls: the Jira desks need both (no adapter composed, or no polling: no Jira desk). */
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;
 
@@ -1061,7 +1061,7 @@ export async function openControl(options: {
           ...polling,
           repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
           ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}),
-          ...triageStatus(polling),
+          ...triageRoundsStatus(polling),
         },
         persistence: store.persistence,
         recovery,

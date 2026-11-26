@@ -113,7 +113,6 @@ const stateSteps: Record<TriageRequestState, (request: TriageRequest, facts: Tri
     `Ended without a Verdict (${request.end?.code ?? 'FAILED'}); nothing was written to the Ticket and this is not an Impediment. ${reapply(request)}`,
 };
 
-/** One request as the lists show it. */
 /** Attempts and investigation time, used and left; what is left is unknown (null) to a Control without Triage limits. */
 function balanceOf(request: TriageRequest, facts: TriageViewFacts): Pick<TriageSummaryView, 'attempts' | 'investigation'> {
   const used = attemptsOf(request).length;
@@ -126,6 +125,7 @@ function balanceOf(request: TriageRequest, facts: TriageViewFacts): Pick<TriageS
 }
 const endOf = (request: TriageRequest): Pick<TriageSummaryView, 'endCode' | 'endedAt'> =>
   request.end ? { endCode: request.end.code, endedAt: request.end.at } : { endCode: null, endedAt: null };
+/** One request as the lists show it. */
 export function triageSummary(request: TriageRequest, facts: TriageViewFacts): TriageSummaryView {
   const impediments = triageRequestImpediments(request);
   return {
