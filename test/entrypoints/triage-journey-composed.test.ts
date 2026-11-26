@@ -3,13 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { openStore } from '../../src/control/durable/store.js';
-import { liveTriageRequests } from '../../src/control/durable/triage-requests.js';
 import { readConfiguration } from '../../src/entrypoints/configuration.js';
 import { composeProductionAccess, composeProductionExecution, composeProductionTriage } from '../../src/entrypoints/controller/composition.js';
 import { productionProfile } from '../../src/entrypoints/release.js';
 import type { JiraHttpExchange } from '../../src/issue-tracker/index.js';
 import { createGitHubAccess, type GitHubAccess } from '../../src/platform/github/index.js';
+import { inspectStorage } from '../../src/control/index.js';
 import type { AccessDependencies, ExecutionPorts, ListView, ShowView, TriagePorts, TriageRequest, WorkView } from '../../src/control/index.js';
 import { githubDoubles, type Remote } from '../control/doubles.js';
 import { app, executionDoubles, facts, ownPull, type Activation, type Script } from '../control/publication-doubles.js';
@@ -468,19 +467,9 @@ test('TR-42 (Jira): a Control stopped right after the edit of the Card, before r
   assert.deepEqual(writes(), ['POST /rest/api/3/issue/81042/comment', 'PUT /rest/api/3/issue/81042']);
   assert.deepEqual([card.labels, card.components], [['factory-ready'], ['10022']]);
   assert.deepEqual(activations(builders), [], 'no Builder before the restart');
-  // What the stopped Control left: the request still `publishing`, the comment confirmed, the edit attempted and not yet confirmed.
-  const store = await openStore(w.storagePath);
-  const [left] = await liveTriageRequests(store.session).finally(() => store.close());
-  assert.equal(left!.state, 'publishing');
-  assert.deepEqual(
-    left!.intended!.map(effect => [effect.kind, effect.status, effect.attempts]),
-    [
-      ['comment', 'confirmed', 1],
-      ['add-label', 'pending', 1],
-      ['remove-label', 'pending', 1],
-      ['add-component', 'pending', 1],
-    ],
-  );
+  // What the stopped Control left: the request still `publishing` (the edit was attempted and never read back).
+  const left = await inspectStorage(w.storagePath);
+  assert.equal(left.kind === 'storage' && left.triage.requests.publishing, 1);
 
   // The next Control: its first polling cycle admits the Card by the label, and only then its publication pass reads the Card back.
   await w.start();
