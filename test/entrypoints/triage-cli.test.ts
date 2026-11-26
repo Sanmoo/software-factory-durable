@@ -340,3 +340,36 @@ test('TR-46: while a removal of the details is intended and not yet carried out,
   await w.poll();
   assert.deepEqual([(await part(false)).state, (await part(true)).state, (await part(true)).text], ['expired', 'expired', null]);
 });
+
+test('TR-46: the details of a request that is not terminal are protected: the retention never takes them and an early removal is refused', async t => {
+  const time = investigationClock(Date.now());
+  const w = await triageWorld(t, {
+    github: { issues: [triageIssue(7)], pulls: {} },
+    sources: [source],
+    script: [() => conclude()],
+    ports: { clock: time.clock },
+  });
+  await w.start();
+  // Paused with its Verdict recorded: the request waits in `publishing`, with no Impediment.
+  const request = await w.investigated(0);
+  await w.control().accept({ request_id: 'pause-1', operation: 'pause', origin: 'local-cli' });
+  const cli = await operator(t, w);
+  const id = request.triage_request_id;
+  const shown = async () => ((await cli('triage', id)).json as TriageDetailView).request;
+  assert.deepEqual([(await shown()).state, (await shown()).impediments], ['publishing', []]);
+  // Far beyond the term of the details of a terminal request.
+  time.advance(90 * 86_400_000);
+  await w.poll();
+  const details = (await shown()).details;
+  assert.deepEqual([details.state, details.protections, details.dueAt, details.removedAt], ['protected', ['TRIAGE_REQUEST_NOT_TERMINAL'], null, null]);
+  const refused = await cli('triage', 'cleanup', id, '--yes', '--request-id', 'early-live');
+  assert.deepEqual(
+    [refused.code, (refused.json as { outcome: string }).outcome, (refused.json as { reason: string }).reason],
+    [2, 'not-applied', 'TRIAGE_REQUEST_NOT_TERMINAL'],
+  );
+  const transcript = (await cli('triage', 'transcript', id)).json as TriageTranscriptView;
+  const verdict = (await cli('triage', 'transcript', id, '--verdict')).json as TriageTranscriptView;
+  assert.ok(transcript.text?.length, 'the session is still there');
+  assert.deepEqual([verdict.state, verdict.text?.includes(verdictCanary)], ['complete', true], 'and so is the Verdict text');
+  assert.ok(!events((await shown()).timeline).some(event => event.startsWith('details-')), 'no removal was ever intended');
+});

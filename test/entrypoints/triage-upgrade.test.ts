@@ -44,7 +44,7 @@ const blocked = (result: UpgradeReport) => result.checks.filter(item => item.sta
 const triageOf = (result: UpgradeReport) => (result.storage as unknown as { triage: unknown }).triage;
 const triageCheck = (result: UpgradeReport) => result.checks.find(item => item.id === 'upgrade:triage')!;
 const settled = { investigating: 0, retained: 0 };
-/** Nothing of a Ticket, a Verdict or a session may appear in what an upgrade reports. */
+/** TR-45: nothing of a Ticket, a Verdict or a session may appear in what an upgrade reports (`check`, `apply` and `status`). */
 function assertMetadataOnly(result: UpgradeReport) {
   const printed = JSON.stringify(result);
   for (const content of ['SEGREDO-DO-PARECER', 'TITULO-DO-TICKET', 'CORPO-DO-TICKET', 'Observado']) assert.ok(!printed.includes(content), content);

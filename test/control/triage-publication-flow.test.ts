@@ -240,3 +240,33 @@ test('a label conflict on the re-read before the first write suspends the reques
   assert.ok(request.timeline.some(entry => entry.event === 'publication-resumed'));
   assert.deepEqual([request.attempts!.length, w.bodies.length], [1, 1], 'the recorded Verdict is published as it is: no new investigation');
 });
+
+for (const [name, remote, polls, written] of [
+  ['its recorded Verdict is never published', {}, 0, []],
+  ['the rest of a publication under way is never written', { triageWrites: [undefined, 'failed'] }, 1, ['comment', 'add-label:needs-info']],
+] as const)
+  test(`TR-51: a request in publishing when the triage block of its source is removed is abandoned and ${name}`, async t => {
+    const issue = triageIssue();
+    const sources: TicketSource[] = [source];
+    const w = await triageWorld(t, {
+      github: { issues: [issue], pulls: {}, ...(remote as Partial<Remote>) },
+      sources,
+      script: [() => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text })],
+    });
+    await w.start();
+    assert.equal((await w.investigated()).state, 'publishing');
+    for (let poll = 0; poll < polls; poll++) await w.poll();
+    const before = await only(w);
+    assert.deepEqual([before.state, kinds(w)], ['publishing', written]);
+    const labels = names(issue);
+    await w.stop();
+    // The operator's emergency brake (spec §10): the source keeps its Works, its `triage` block is gone.
+    sources.splice(0, 1, { tracker: 'github', repository: 'acme/project', discover: true });
+    await w.start();
+    await w.poll();
+    const after = await only(w);
+    assert.deepEqual([after.state, after.end?.code], ['abandoned', 'TRIAGE_SOURCE_REMOVED']);
+    assert.deepEqual([kinds(w), names(issue), comments(w).length], [written, labels, written.length ? 1 : 0], 'nothing was published without authorization');
+    assert.deepEqual(statuses(after), statuses(before), 'the effects stay as the last read left them');
+    assert.equal(w.bodies.length, 1);
+  });

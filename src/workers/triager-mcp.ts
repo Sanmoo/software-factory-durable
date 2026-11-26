@@ -108,8 +108,11 @@ function failure(error: unknown, timeoutMs: number): Error {
 type Source = TriagerMcp['sources'][number];
 type Limits = Pick<TriagerMcp, 'requestTimeoutMs' | 'startupTimeoutMs'>;
 
-/** One server: its connection (made again when it was lost, at most once per call) and the single gate every call to it goes through. */
-function sourceClient(source: Source, token: string | null | Error, limits: Limits, signal: AbortSignal) {
+/**
+ * One server: its connection (made again when it was lost, at most once per call) and the single gate every call to it goes through.
+ * Exported for its own test only: the session never names a tool outside the profile, so the gate is driven directly there.
+ */
+export function sourceClient(source: Source, token: string | null | Error, limits: Limits, signal: AbortSignal) {
   let client: McpClient | undefined;
   const selected = (name: string) => source.tools === 'all' || source.tools.includes(name);
   async function connected() {

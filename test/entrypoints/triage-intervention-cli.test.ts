@@ -15,20 +15,35 @@ import { applyLabel, closeIssue, remoteIssue, removeLabel, type Remote, type Rem
 import { card, jiraSource, relabel } from '../control/jira-doubles.js';
 import { call, hang, trackerWrites, triageWorld } from '../control/triage-investigation-fixture.js';
 import { until } from '../runner/budget.js';
-import { operator, type CliResult } from './triage-cli-fixture.js';
+import { operator as cliOperator, type CliResult } from './triage-cli-fixture.js';
 
 // Spec #68 §10 (ticket #81): the operator's interventions on a Triage request, through the REAL CLI process over the controller socket.
 // The Control is the real one (SQLite, Triager session under a scripted provider, the in-process Investigation Environment, whose
 // observations the test sets); the trackers are the doubles.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const source: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
+const bodyCanary = 'CANARY-ticket-body-41d7';
+const verdictCanary = 'CANARY-verdict-text-b06e';
 function triageIssue(number: number): RemoteIssue {
-  const issue = remoteIssue(number, { labels: [], title: 'Total errado', body: 'O total ignora o cupom.' });
+  const issue = remoteIssue(number, { labels: [], title: 'Total errado', body: `O total ignora o cupom. ${bodyCanary}` });
   applyLabel(issue, 'needs-triage');
   return issue;
 }
-const conclude = () => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text: 'Observado: o total ignora o cupom.' });
+const conclude = () => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text: `Observado: o total ignora o cupom. ${verdictCanary}` });
 type World = Awaited<ReturnType<typeof triageWorld>>;
+/**
+ * TR-45: the real CLI of every test of this file. Whatever a command prints (the receipts of `cancel`, `release` and `complete`, accepted
+ * or not, and the views read beside them) is metadata: the Ticket text and the Verdict text are in none of it.
+ */
+async function operator(t: Parameters<typeof cliOperator>[0], w: World): ReturnType<typeof cliOperator> {
+  const cli = await cliOperator(t, w);
+  return async (...args) => {
+    const result = await cli(...args);
+    for (const canary of [bodyCanary, verdictCanary])
+      assert.ok(!(result.stdout + result.stderr).includes(canary), `TR-45: ${canary} in the output of \`factory ${args.join(' ')}\``);
+    return result;
+  };
+}
 type Receipt = TriageInterventionReceipt;
 const receiptOf = (result: CliResult) => result.json as Receipt;
 const summary = (result: CliResult) => {
@@ -289,6 +304,53 @@ test('TR-49: `triage release` of a request already terminal frees the unit on a 
   assert.deepEqual((await listed(cli)).capacity, { configured: 1, investigating: 0, retained: 0 });
 });
 
+test('TR-49: `triage release` of a request already terminal with no observation possible records the attestation and frees the unit, with no change of state', async t => {
+  const w = await triageWorld(t, {
+    github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
+    sources: [source],
+    script: [() => 'I could not decide.', () => conclude()],
+    ports: { attempts: 1 },
+  });
+  w.environment.controls.withholdStopConfirmation();
+  await w.start();
+  const failed = await w.settled(0, 'failed');
+  const attempt = failed.attempts![0]!.attempt;
+  const cli = await operator(t, w);
+  assert.deepEqual((await listed(cli)).capacity, { configured: 1, investigating: 0, retained: 1 });
+  // The manager does not answer: the Factory can observe nothing of the attempt of the request that already failed.
+  w.environment.controls.managerAnswers(false);
+  const attested = await cli('triage', 'release', failed.triage_request_id, '--attempt', attempt, '--reason', 'host rebuilt, the unit cannot exist');
+  assert.deepEqual(summary(attested), [0, 'accepted', null, 'failed', 'TRIAGE_ATTEMPTS_EXHAUSTED'], attested.stdout + attested.stderr);
+  const how = receiptOf(attested).release!;
+  assert.deepEqual([how.basis, how.observed, how.author], ['operator-attestation', 'INVESTIGATION_MANAGER_UNAVAILABLE', 'local-operator']);
+  const detail = await detailOf(cli, failed.triage_request_id);
+  assert.deepEqual(
+    [detail.request.state, detail.request.endCode, detail.request.attempts.used],
+    ['failed', 'TRIAGE_ATTEMPTS_EXHAUSTED', 1],
+    'still failed, the attempt still spent',
+  );
+  const [record] = detail.request.attemptRecords;
+  assert.deepEqual(
+    [record!.capacity, record!.stop!.confirmed, record!.attestation],
+    ['released', false, { author: 'local-operator', reason: 'host rebuilt, the unit cannot exist', at: how.at }],
+  );
+  assert.deepEqual(detail.request.timeline.at(-1), {
+    at: how.at,
+    event: 'capacity-released',
+    code: 'OPERATOR_ATTESTATION',
+    attempt,
+    author: 'local-operator',
+    reason: 'host rebuilt, the unit cannot exist',
+  });
+  assert.deepEqual([detail.impediments, (await listed(cli)).capacity], [[], { configured: 1, investigating: 0, retained: 0 }]);
+  // The unit the attestation freed goes to the next request of the queue.
+  w.environment.controls.managerAnswers(true);
+  w.environment.controls.releaseStopConfirmation();
+  await w.poll();
+  assert.equal((await w.settled(1, 'publishing')).attempts!.length, 1);
+  assert.deepEqual(triageWrites(w), []);
+});
+
 test('TR-50 (GitHub): `triage complete` revalidates the exact Impediment, is refused with its own code while paused, then takes the ambiguous effect as the Factory’s and concludes', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   const complete = (...flags: string[]) => cli('triage', 'complete', id, ...flags);
@@ -458,4 +520,77 @@ test('TR-50 (Jira): `triage complete` takes the edit of ambiguous authorship as 
   });
   assert.equal(writes(), 2, 'the comment and the one edit: nothing is written again');
   assert.deepEqual([...item.labels].sort(), ['needs-info', 'squad-pagamentos']);
+});
+
+/**
+ * A Jira world stopped at the ambiguous-authorship Impediment with the Card's one edit still to write: the comment the Factory created
+ * was changed afterwards, so it carries the request's marker under the Factory's account with a text the Factory did not send.
+ */
+async function impededCard(t: Parameters<typeof triageWorld>[0]) {
+  const item = card('81017', 'PAG-42', { labels: ['squad-pagamentos'], components: ['10022', '10099'], statusCategory: 'indeterminate' });
+  relabel(item, { add: ['needs-triage'] });
+  let changeComment = () => {};
+  const w = await triageWorld(t, {
+    jira: { cards: [item], afterTriageWrite: write => void (write.kind === 'comment' && changeComment()) },
+    sources: [jiraSource({ triage })],
+    script: [() => conclude()],
+  });
+  changeComment = () => {
+    const published = w.jira.comments['81017']!.at(-1)!;
+    published.text = `${published.text}\nEdited by somebody else.`;
+  };
+  await w.start();
+  assert.equal((await w.investigated(0)).state, 'publishing');
+  await w.poll();
+  const [request] = (await w.requests()) as [TriageRequest];
+  const impediment = request.publication!.impediment!;
+  const edits = () => w.jira.calls.filter(call => call.method === 'writeTriage').map(call => (call.args as { write: { kind: string } }).write.kind);
+  assert.deepEqual([impediment.code, impediment.effects, edits()], ['TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS', [0], ['comment']]);
+  return { w, item, ref: impediment.ref, id: request.triage_request_id, edits, cli: await operator(t, w) };
+}
+const discardedEdit = {
+  published: [['comment', 'confirmed']],
+  discarded: [
+    ['add-label', 'no-longer-allowed', false],
+    ['remove-label', 'no-longer-allowed', false],
+  ],
+};
+
+test('TR-50 (Jira): `triage complete` on a Card that was closed is accepted and ends abandoned with the discarded edit in the receipt', async t => {
+  const { item, ref, edits, cli } = await impededCard(t);
+  item.statusCategory = 'done';
+  const done = await cli('triage', 'complete', 'PAG-42', '--impediment', ref);
+  assert.deepEqual(summary(done), [0, 'accepted', null, 'abandoned', 'TICKET_CLOSED'], done.stdout + done.stderr);
+  assert.deepEqual(effectLines(receiptOf(done).effects), discardedEdit);
+  assert.deepEqual([edits(), [...item.labels].sort()], [['comment'], ['needs-triage', 'squad-pagamentos']], 'nothing is written to a closed Card');
+});
+
+test('TR-50 (Jira): `triage complete` on a Card that got a Work is accepted and ends abandoned with the discarded edit in the receipt', async t => {
+  const { w, item, id, ref, edits, cli } = await impededCard(t);
+  // A person withdraws needs-triage and applies the admission label: the normal admission creates the Work of the routed Card.
+  relabel(item, { remove: ['needs-triage'], add: ['factory-ready'] });
+  await w.poll();
+  assert.equal(((await cli('list')).json as { works: unknown[] }).works.length, 1, 'the Card has a Work');
+  assert.equal((await w.requests())[0]!.publication!.impediment!.ref, ref, 'the publication is still stopped by the same Impediment');
+  const done = await cli('triage', 'complete', id, '--impediment', ref);
+  assert.deepEqual(summary(done), [0, 'accepted', null, 'abandoned', 'NEEDS_TRIAGE_REMOVED'], done.stdout + done.stderr);
+  assert.deepEqual(effectLines(receiptOf(done).effects), discardedEdit);
+  assert.deepEqual([edits(), [...item.labels].sort()], [['comment'], ['factory-ready', 'squad-pagamentos']], 'nothing more is written');
+});
+
+test('TR-50 (Jira): a state-label conflict refuses `triage complete`, writes nothing to the Card and keeps the Impediment', async t => {
+  const { item, id, ref, edits, cli } = await impededCard(t);
+  relabel(item, { add: ['wontfix'] });
+  const refused = await cli('triage', 'complete', 'PAG-42', '--impediment', ref);
+  assert.deepEqual(summary(refused), [2, 'not-applied', 'TRIAGE_LABELS_CHANGED', 'publishing', null], refused.stdout + refused.stderr);
+  assert.equal(receiptOf(refused).impediment, ref, 'the Impediment stays');
+  assert.match(receiptOf(refused).nextStep, /factory triage cancel/);
+  assert.deepEqual([edits(), [...item.labels].sort()], [['comment'], ['needs-triage', 'squad-pagamentos', 'wontfix']]);
+  const detail = await detailOf(cli, id);
+  assert.deepEqual([detail.request.state, detail.request.impediments], ['publishing', [ref]]);
+  assert.deepEqual(
+    detail.request.effects.map(effect => effect.status),
+    ['ambiguous-authorship', 'pending', 'pending'],
+    'nothing was taken as the Factory’s',
+  );
 });

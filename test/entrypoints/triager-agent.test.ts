@@ -78,6 +78,18 @@ test(
   'the production Triager agent runs one session inside the attempt unit: a clone read through the confinement, then the Verdict',
   { timeout: remainingMs() },
   async t => {
+    // TR-35 through the real unit: the process that starts the attempt (the Control's, here the test's) holds a tracker token and an
+    // MCP token in its environment, as a Host does. Neither may reach the agent's start, the confined shell, the model or the transcript.
+    const held = {
+      GH_TOKEN: 'ghs_' + 'TRIAGERtrackerCANARY',
+      JIRA_API_TOKEN: 'jira-' + 'TRIAGERtrackerCANARY',
+      FACTORY_MCP_TOKEN: 'mcp-' + 'TRIAGERsourceCANARY',
+    };
+    Object.assign(process.env, held);
+    t.after(() => {
+      for (const name of Object.keys(held)) delete process.env[name];
+    });
+    const secrets = [canary, ...Object.values(held)];
     const factoryRoot = await mkdtemp(join(tmpdir(), 'ftr-'));
     const upstream = join(factoryRoot, 'upstream');
     await mkdir(upstream);
@@ -90,7 +102,12 @@ test(
       () => ({ name: 'request_clone', arguments: { repository: 'acme/project' } }),
       results => {
         const path = /Read it at (\S+) \(read-only\)/.exec(results.at(-1)!)![1]!;
-        return { name: 'bash', arguments: { command: `cat ${path}/cart.js; git -C ${path} log --format=%s; env; touch ${path}/new; echo rc=$?` } };
+        return {
+          name: 'bash',
+          arguments: {
+            command: `cat ${path}/cart.js; git -C ${path} log --format=%s; env; tr '\\0' '\\n' < /proc/self/environ; touch ${path}/new; echo rc=$?`,
+          },
+        };
       },
       () => ({ name: 'concluir_triagem', arguments: verdict }),
     ]);
@@ -184,12 +201,17 @@ test(
     assert.match(shell!, /items\.reduce/, 'the clone is read inside the confinement');
     assert.match(shell!, /cart: sum the prices/);
     assert.match(shell!, /Read-only file system[\s\S]*rc=1/, 'and cannot be written');
+    assert.match(shell!, /^PATH=/m, 'the shell really printed its environment');
     assert.doesNotMatch(shell!, /TOKEN|CANARY|synthetic-key/, 'no credential variable in the shell');
+    for (const secret of secrets) {
+      assert.ok(!JSON.stringify(activation.agent).includes(secret), 'TR-35: the start of the agent carries no token');
+      assert.ok(!model.bodies.join('\n').includes(secret), 'TR-35: no model request carries a token');
+    }
     // The transcript stays in the attempt's private directory of the installation, and the stop of the unit is confirmed.
     assert.ok('transcript' in completion && completion.transcript);
     const transcript = await readFile(join(factoryRoot, completion.transcript), 'utf8');
     assert.match(transcript, /concluir_triagem/);
-    assert.ok(!transcript.includes(canary));
+    for (const secret of secrets) assert.ok(!transcript.includes(secret), 'TR-35: the transcript carries no token');
     assert.deepEqual(await environment.stop(opened.record), { cessationConfirmed: true, evidence: 'unit-inactive' });
     assert.deepEqual(await environment.close(opened.record), { cessationConfirmed: true, evidence: 'unit-inactive' });
   },
