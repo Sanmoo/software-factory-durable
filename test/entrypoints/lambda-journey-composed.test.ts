@@ -535,6 +535,9 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   assert.equal(await readFile(join(evidence, 'spec', 'v1', 'ticket.json'), 'utf8'), '{"body":"Add docs/FACTORY_SMOKE.md"}');
 
   // Remove (V2-02, partial): nothing is left running; the host runtime of the boot goes, the removal is recorded, branch and PR are untouched.
+  // The Control is still running: the pass that published goes on reading the PR, its checks and the Ticket. Remove is judged once that
+  // pass ended and the poller sleeps on the manual clock, or one of those reads lands in the window and is taken for a request of Remove.
+  await time.sleeping();
   const before = await world.trace();
   const cleanup = { workId: published.work_id, workDisposition: 'delivered' as const, confirmed: true as const, evidencePreserved: true as const };
   assert.deepEqual(await ports.cleanup!.preserve({ workId: published.work_id, environment: environment as never }), { status: 'absent' });
