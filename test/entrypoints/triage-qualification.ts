@@ -84,8 +84,8 @@ export const triageLabels = { needsTriage: 'needs-triage', needsInfo: 'needs-inf
 const mcp = { server: 'q68-fonte', profile: 'q68-investigar', tool: 'buscar_erros', tokenFile: 'credentials/q68-mcp-token' } as const;
 const files = { appKey: 'credentials/app.pem', jiraToken: 'credentials/jira-token' } as const;
 export const rubric = {
-  path: 'docs/evidence/68-triage-qualification-rubric.json',
-  approval: 'docs/evidence/68-triage-qualification-rubric.approval.json',
+  path: 'scripts/agent-checks/triage-qualification-rubric.json',
+  approval: 'scripts/agent-checks/triage-qualification-rubric.approval.json',
 } as const;
 export const humanStepMinutes = 60;
 const pollSeconds = 60;
@@ -868,7 +868,8 @@ export function plan() {
     ],
     retention: {
       sources: `${observations} (results, storages, transcripts under ${root}/triage) stays until the operator decides; finalizeProof writes the sanitized evidence to ${observations}/evidence`,
-      main: 'docs/evidence/68-*: the saved results without transcripts and the matrix with the observed statuses, by pull request',
+      tracker:
+        'the saved results without transcripts and the observed status of each oracle go in a comment on issue #84 or in the pull request; nothing is versioned in the repository',
       cleanup: 'issues, Cards and the fixture repository are closed or deleted by the operator; the recipe removes nothing',
     },
     setup: setupScript(),
