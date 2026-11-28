@@ -42,7 +42,6 @@
     "test/entrypoints/upgrade-configuration-triage.test.ts": { "slow": true, "reason": "Three installation roots, each with a real Control storage holding a published Question, then upgrade apply and rollback over synthetic release trees. ~2.5 s alone." },
     "test/runner/fresh-tree.test.ts": { "full": true, "reason": "Nightly only: 143 s in the ci lane is too expensive for the per-integration gate (supervisor, 2026-11-15); the ordering rule is covered in fast by runner.test.ts. Detached temp worktree of HEAD plus a 273 MB node_modules copy, then the whole ci static stage (tsc, prepare-sdk, tsc, ESLint, dependency-cruiser) in it. ~40 s alone, 143 s in the ci lane at load ~15 (2026-11-15)." },
     "test/entrypoints/forget31-recipe-storage.test.ts": { "slow": true, "reason": "Ticket 31 recipe core: four real owner runs (public openControl, 1 s polling) each waiting for its boot sweep and two polling rounds; 23 s at load 21 (2026-11-15), ~6 s per run." },
-    "test/entrypoints/retention30-recipe-storage.test.ts": { "slow": true, "reason": "Ticket 30 recipe core on the real-data shape (88 Records captures, more than one 50-item removal batch) through two real owner runs; 3.6 s alone (2026-11-15)." },
-    "test/entrypoints/triage-qualification-witness.test.ts": { "slow": true, "reason": "#84: one composed flow over the gh fixture (Triage under a scripted provider, publication, discovery of the label, Builder activation into the recipe witness). 7 s alone." }
+    "test/entrypoints/retention30-recipe-storage.test.ts": { "slow": true, "reason": "Ticket 30 recipe core on the real-data shape (88 Records captures, more than one 50-item removal batch) through two real owner runs; 3.6 s alone (2026-11-15)." }
   }
 }

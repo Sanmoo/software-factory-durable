@@ -5,7 +5,7 @@ import { createIssueTracker, type TicketRef } from '../../src/issue-tracker/inde
 import { githubWorld, issue, worldScope, type World } from './github-world-fixture.js';
 
 // Spec #68 §8 (ticket #77; TR-15): the writes of a Triage publication on a GitHub issue. I-local: real IssueTracker adapter, issuer and
-// gh transport over the local world; NOT evidence of the real GitHub boundary (that is the `triage-qualification` recipe, TQ-05).
+// gh transport over the local world; NOT evidence of the real GitHub boundary (TQ-05 of the spec, still to be observed).
 async function compose(t: Parameters<typeof githubWorld>[0], world: World) {
   const fixture = await githubWorld(t, world);
   const github = createGitHubAccess({ root: fixture.root, executable: fixture.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
