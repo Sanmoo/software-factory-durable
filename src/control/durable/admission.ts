@@ -31,8 +31,8 @@ export type StorageMigration = { upgradeId: string; migration: string; from: num
 type Installation = {
   paused: boolean;
   history: History[];
-  /** Storage format identity (ticket 33; 3 since the Jira origin) and the record of every migration applied. */
-  storage: { format: 3; migrations: StorageMigration[] };
+  /** Storage format identity (ticket 33; 3 since the Jira origin, 4 since Triage) and the record of every migration applied. */
+  storage: { format: 4; migrations: StorageMigration[] };
   /** Storage format 2 (ticket 33): `current` is the run that has not recorded its end (alive, or crashed); `last` the latest recorded end. */
   lifecycle: { current: ControllerRun | null; last: ControllerRunEnd | null };
 };
@@ -44,21 +44,24 @@ const installationOneToTwo = (value: Record<string, unknown>) => ({
 });
 /** factory-storage-2-to-3 (Jira ticket 02): only the format identity changes; pause, history, migration records and lifecycle are kept. */
 const installationTwoToThree = (value: Record<string, unknown>) => ({ ...value, storage: { ...(value.storage as Record<string, unknown>), format: 3 } });
+/** factory-storage-3-to-4: only the format identity changes; no Triage request is created. */
+const installationThreeToFour = (value: Record<string, unknown>) => ({ ...value, storage: { ...(value.storage as Record<string, unknown>), format: 4 } });
 /**
- * Version 3 = storage format 3 (Jira ticket 02; version 2 = format 2, ticket 33). Older storages are NEVER migrated lazily: the operational open
- * refuses them (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration commits this conversion, all at once. A format-1
- * installation passes through exactly the 1→2 conversion first.
+ * Version 4 = storage format 4 (Triage; version 3 = format 3, Jira ticket 02; version 2 = format 2, ticket 33). Older storages are
+ * NEVER migrated lazily: the operational open refuses them (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration
+ * commits this conversion, all at once. An older installation passes through exactly the conversions of its path, in order.
  */
 export const installation = defineDoc<Installation>({
   kind: 'factory.installation',
-  version: 3,
+  version: 4,
   scope: 'session',
-  initial: () => ({ paused: false, history: [], storage: { format: 3, migrations: [] }, lifecycle: { current: null, last: null } }),
+  initial: () => ({ paused: false, history: [], storage: { format: 4, migrations: [] }, lifecycle: { current: null, last: null } }),
   checkpointWhen: () => true,
   migrate: (value, fromVersion) => {
-    if (fromVersion !== 1 && fromVersion !== 2) throw new Error('STORAGE_FORMAT_UNSUPPORTED');
+    if (fromVersion !== 1 && fromVersion !== 2 && fromVersion !== 3) throw new Error('STORAGE_FORMAT_UNSUPPORTED');
     const two = fromVersion === 1 ? installationOneToTwo(value as Record<string, unknown>) : (value as Record<string, unknown>);
-    return installationTwoToThree(two) as unknown as Installation;
+    const three = fromVersion === 3 ? two : installationTwoToThree(two);
+    return installationThreeToFour(three) as unknown as Installation;
   },
 });
 /** Identified ingresses (CLI request ids, `github-comment-<id>` for comments, `jira-comment-<site>-<issue>-<comment>` for Jira Card comments) with

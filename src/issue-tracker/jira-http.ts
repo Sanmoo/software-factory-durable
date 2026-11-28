@@ -175,9 +175,11 @@ function statusFailure(result: HttpAnswer, now: () => Date): JiraResponse | null
   return null;
 }
 
-/** A 2xx answer: bounded JSON that never echoes the credential, or a failure. */
+/** A 2xx answer: bounded JSON that never echoes the credential (or an empty 204), or a failure. */
 function answerOf(result: HttpAnswer, credential: { token: string; authorization: string }, now: () => Date): JiraResponse {
   const { status } = result;
+  // No Content (the answer of an issue edit): there is no body to verify, and none is invented.
+  if (status === 204 && result.body === '') return { ok: true, status, body: null, observedAt: now().toISOString() };
   if (!/^application\/json(?:;|$)/i.test(result.headers['content-type'] ?? '') || Buffer.byteLength(result.body) > maxResponseBytes)
     return failure(now, 'JIRA_RESPONSE_INVALID', { status });
   // An answer that echoes the credential is never handed on (it could reach an observation, a log or a comment).

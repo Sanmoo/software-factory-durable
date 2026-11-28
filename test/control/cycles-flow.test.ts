@@ -232,7 +232,7 @@ test('AC2/AC3/AC7 (flow): cancel during a command withdraws credentials first, t
   // GitHub was only read: no comment, PR or branch change by the cancellation.
   assert.deepEqual(
     [...new Set(h.github.calls.map(call => call.method))].filter(
-      method => !['listCandidates', 'readTicket', 'readDependencyGraph', 'readInputs', 'findPublication'].includes(method),
+      method => !['listCandidates', 'readTicket', 'readDependencyGraph', 'readInputs', 'readTicketComments', 'findPublication'].includes(method),
     ),
     [],
   );

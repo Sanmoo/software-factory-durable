@@ -153,6 +153,19 @@ import type { RemoveResult } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
+// The Investigation Environment of a Triage attempt, behind its own port (never `sandbox.adapter`).
+export * from './investigation/index.js';
+export type { InvestigationCloneRequest, InvestigationCloneResult } from './checkout.js';
+/** Where the installation keeps the directories of its Investigation Environments (one per attempt), for the Control and for the agent. */
+export const investigationEnvironmentRoot = (factoryRoot: string) => join(factoryRoot, 'triage', 'e');
+/**
+ * The clones a Triager asks for, made from the Factory-exclusive bare cache shared with the Works' checkouts (same lock and
+ * reconciliation). `remoteUrl` is the tests' local upstream.
+ */
+export function createInvestigationClones(options: Parameters<typeof createCheckouts>[0]) {
+  const checkouts = createCheckouts(options);
+  return { create: (request: Parameters<typeof checkouts.investigationClone>[0]) => checkouts.investigationClone(request) };
+}
 // Release build (ticket 32) only: the pinned private Gondolin profile prepared/verified inside a release tree; never at runtime.
 export { prepareReleaseGondolinSdk, verifyDevelopmentGondolinSdk as verifyGondolinSdk, gondolinSdkProfile } from './gondolin-sdk-profile.js';
 // Ticket 47 build tool (operator/supervisor only, never at runtime): a NEW guest asset version whose root ext4 has a journal.

@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory, TicketSource } from '../../control/index.js';
+import type {
+  AccessDependencies,
+  ConfiguredRepository,
+  DetailPorts,
+  ExecutionPorts,
+  RuntimeInventory,
+  TicketSource,
+  TriageDetailPorts,
+  TriagePorts,
+} from '../../control/index.js';
 import {
   createIssueTracker,
   createJiraHttpTransport,
@@ -9,17 +18,28 @@ import {
   type JiraHttpResult,
   type JiraTransport,
 } from '../../issue-tracker/index.js';
-import type { TicketSourceConfiguration } from '../configuration.js';
+import {
+  triageSources,
+  type McpProfileConfiguration,
+  type McpServerConfiguration,
+  type TicketSourceConfiguration,
+  type TriageAvailability,
+  type TriagerConfiguration,
+} from '../configuration.js';
 import { readJiraToken } from './jira-credential.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import {
+  createInvestigationClones,
+  createInvestigationEnvironment,
   createPreparationVm,
   createSandbox,
+  investigationEnvironmentRoot,
   inventoryRuntime,
   reconcileInterruptedCaches,
   reconcileLambdaRuntime,
   selectSandboxAdapter,
   type GuestAssetPin,
+  type InvestigationAgent,
   type GuestTransport,
   type LambdaBootClock,
   type LambdaImageWait,
@@ -29,6 +49,7 @@ import {
 } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   forgetWorkRecords,
   inspectWorkRecords,
@@ -39,7 +60,7 @@ import {
   removeRecordsDetail,
 } from '../../records/index.js';
 import { readConfinedFile, readSessionFile, sessionRefOfInvocation, workerRuntimeDirectory } from '../../platform/host/index.js';
-import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
+import { createTriager, createTriagerDetails, createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope, type WorkerThinkingLevel } from '../../contracts/index.js';
 import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
@@ -155,6 +176,8 @@ export function composeProductionAccess(input: {
     dependencyRepositories: readonly { repository: string; installationId: number }[];
     operators: (string | { login: string; id?: number })[];
     ticketSources?: readonly TicketSourceConfiguration[];
+    /** Whether Triage is on in this installation (absent = off: schemas 1 and 2, and callers predating Triage). */
+    triage?: TriageAvailability;
   };
   /**
    * Production: the host HTTPS REST v3 transport of each Jira site (ticket 03). Tests substitute the whole transport, or only its raw
@@ -170,10 +193,16 @@ export function composeProductionAccess(input: {
   }));
   const configured =
     effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
+  // The `triage` block of a source, on only where `triageSources` says so. A block the Host cannot serve stays on the
+  // source as not available: its requests are kept and `needs-triage` still suspends admission, but nothing is created or investigated.
+  const triageOn = new Set<unknown>(triageSources({ triage: input.effective.triage ?? { status: 'off' }, ticketSources: configured }));
+  const triageOf = (source: (typeof configured)[number]) =>
+    'triage' in source && source.triage ? { triage: { ...source.triage, available: triageOn.has(source) } } : {};
   const sources: TicketSource[] = configured.map(source =>
     source.tracker === 'github'
-      ? { tracker: 'github', repository: source.repository, discover: source.discover }
+      ? { tracker: 'github', repository: source.repository, discover: source.discover, ...triageOf(source) }
       : {
+          ...triageOf(source),
           tracker: 'jira',
           siteId: source.siteId,
           url: source.url,
@@ -190,7 +219,16 @@ export function composeProductionAccess(input: {
   const transport = input.jira?.transport ?? ((site: JiraSiteAccess) => createJiraHttpTransport(site, send ? { send } : {}));
   const jira = jiraSources.length
     ? createJiraTracker({
-        scopes: jiraSources.map(source => ({ tracker: 'jira', siteId: source.siteId, url: source.url, projectId: source.projectId, label: source.label })),
+        // Each source lists by its entry label and, with a `triage` block, by its needs-triage label too.
+        scopes: jiraSources.flatMap(source =>
+          [source.label, ...('triage' in source && source.triage ? [source.triage.needsTriage] : [])].map(label => ({
+            tracker: 'jira' as const,
+            siteId: source.siteId,
+            url: source.url,
+            projectId: source.projectId,
+            label,
+          })),
+        ),
         transport: scope => {
           // One account per site (validated by the configuration): its first source names the e-mail and token file.
           const account = jiraSources.find(source => source.siteId === scope.siteId)!;
@@ -467,6 +505,81 @@ export async function composeProductionExecution(input: ProductionInput): Promis
         Role,
         { id: string; auth: string; providerId: string; modelId: string; api: string; thinkingLevel: WorkerThinkingLevel; systemPromptSha256: string }
       >,
+    },
+  };
+}
+
+/**
+ * How the Investigation Environment starts the agent of one attempt: the fixed `triager` entrypoint of this
+ * release under the running Node, with the attempt's bootstrap file as its only argument. `env` is its WHOLE environment and travels on a
+ * command line, so nothing secret is in it (the model credential is read from the installation's own store).
+ */
+export function triagerAgentStart(bootstrap: string): InvestigationAgent {
+  return {
+    executable: process.execPath,
+    argv: [fileURLToPath(new URL('../triager.js', import.meta.url)), bootstrap],
+    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' },
+  };
+}
+
+/**
+ * The session files of the Triager attempts of this installation, composed whether or not Triage is on now,
+ * so that the transcripts of earlier requests are still read on purpose, measured and removed when their retention ends.
+ */
+export const composeTriageDetails = (root: string): TriageDetailPorts => createTriagerDetails(root);
+/**
+ * Production composition of the Triage ports, only where Triage is on. The Triager is the release's single
+ * worker profile at the configured reasoning level, activated with the same pack as the Builder; its agent is the fixed `triager`
+ * entrypoint, started by the Investigation Environment with a closed environment and the attempt's bootstrap file as its only argument.
+ * The candidates are cloned from the bare cache the Works use, with the Host's read credential. A `triager` role that is not exactly the
+ * release profile refuses the composition, like any other role. The registered MCP servers and Profiles go to the Triager with
+ * the active ones; the agent of each attempt reads a server's token from its file, so no token passes through here.
+ */
+export async function composeProductionTriage(input: {
+  root: string;
+  /** The verified running release, recorded on every attempt it starts. */
+  release: string;
+  effective: {
+    triage: TriageAvailability;
+    triager: TriagerConfiguration;
+    mcpServers: readonly McpServerConfiguration[];
+    mcpProfiles: readonly McpProfileConfiguration[];
+    models: { triager?: { provider: string; model: string; thinkingLevel?: WorkerThinkingLevel | undefined } | undefined };
+    repositories: readonly GitHubScope[];
+  };
+  github: GitHubAccess;
+}): Promise<{ status: 'off' } | { status: 'composed'; ports: TriagePorts } | { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: ['triager'] }> {
+  const { effective, root } = input;
+  const model = effective.models.triager;
+  if (effective.triage.status !== 'on' || !model) return { status: 'off' };
+  if (model.provider !== productionProfile.model.providerId || model.model !== productionProfile.model.modelId)
+    return { status: 'refused', code: 'WORKER_PROFILE_UNSUPPORTED', roles: ['triager'] };
+  const triager = createTriager({
+    root,
+    skillPack: await productionSkillPack(),
+    mcp: { servers: effective.mcpServers, profiles: effective.mcpProfiles, active: effective.triager.mcpProfiles },
+    profile: {
+      id: productionProfile.sdkProfileId,
+      systemPrompt: productionProfile.prompts.triager,
+      auth: productionProfile.model.auth,
+      providerId: productionProfile.model.providerId,
+      modelId: productionProfile.model.modelId,
+      api: productionProfile.model.api,
+      thinkingLevel: model.thinkingLevel ?? productionProfile.model.thinkingLevel.default,
+    },
+    agent: triagerAgentStart,
+  });
+  return {
+    status: 'composed',
+    ports: {
+      release: input.release,
+      environment: createInvestigationEnvironment({ root: investigationEnvironmentRoot(root), factoryRoot: root }),
+      limits: { ...effective.triager.environment },
+      investigationMinutes: effective.triager.investigationMinutes,
+      capacity: effective.triager.capacity,
+      attempts: effective.triager.attempts,
+      triager: { activate: request => triager.activate(request) },
+      clones: createInvestigationClones({ root, fetch: createRepositoryFetchCredentials({ github: input.github, repositories: effective.repositories }) }),
     },
   };
 }

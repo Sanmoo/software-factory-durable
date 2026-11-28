@@ -33,6 +33,9 @@ const permissions = {
   'repository-fetch': { metadata: 'read', contents: 'read' },
   // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
   'question-publish': { metadata: 'read', issues: 'write' },
+  // One write of a Triage publication on its Ticket issue (a label added or removed by relative operation, or the
+  // `not_planned` closing), each under its own single-use grant. Never a replacement of the label set, the body or any other field.
+  'triage-publish': { metadata: 'read', issues: 'write' },
   // Ticket 15 required-checks explanation (spec §9.2), GET only: the own PR (Pull requests R), base branch tip/protection summary and
   // comparison (Contents R), classic required status checks (Administration R), check-runs (Checks R), commit statuses (Statuses R).
   'checks-read': { metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' },
@@ -153,10 +156,16 @@ export interface GitHubAccess {
   /** Ticket 14: the App's bot user (`<slug>[bot]` from GET /app, its user id read with an installation token of `scope`); null when unknown. */
   appIdentity(scope: GitHubScope): Promise<{ login: string; id: number } | null>;
   /**
-   * The ONLY write: one POST of an issue comment under a fresh reduced `question-publish` grant (issues:write, this repository only).
+   * The Question write: one POST of an issue comment under a fresh reduced `question-publish` grant (issues:write, this repository only).
    * Never retried. `unknown` (transport loss, 5xx, unexpected success payload) means the comment may exist: discover it before posting again.
    */
   comment(scope: GitHubScope, issueNumber: number, body: string): Promise<GitHubWrite>;
+  /**
+   * One write of a Triage publication on an issue: its comment, one label added or removed by relative operation (never the
+   * whole set), or the `not_planned` closing. Same guarantees as `comment`: a fresh single-use grant, never retried, `unknown` when the
+   * write may have been applied.
+   */
+  triageWrite(scope: GitHubScope, issueNumber: number, write: GitHubTriageWrite): Promise<GitHubWrite>;
   /**
    * Ticket 16: ONE GraphQL draft/ready mutation of one pull request node of `scope` (markPullRequestReadyForReview / convertPullRequestToDraft)
    * under a fresh single-use `readiness-write` grant used for nothing else and revoked right after. Never retried. `unknown` (transport loss,
@@ -200,6 +209,21 @@ export type GitHubCleanup<T> =
     };
 /** `revocation`: outcome of the self-revocation (DELETE /installation/token) of the single-use grant after the POST attempt. */
 export type TokenRevocation = RevocationResult['kind'] | 'not-issued';
+/** What the caller reads beside a write that was refused locally, answered with an unexpected status, or lost. */
+const writeSteps = {
+  comment: {
+    invalid: 'Comment rejected locally; nothing was sent.',
+    unexpected: 'The comment may exist; discover it by its marker before any new publication.',
+    unknown: 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.',
+  },
+  change: {
+    invalid: 'Write rejected locally; nothing was sent.',
+    unexpected: 'The change may have been applied; read the issue again before any new write.',
+    unknown: 'The outcome of the write is unknown: the change may have been applied. Read the issue again before any new write.',
+  },
+};
+export type GitHubTriageWrite =
+  { kind: 'comment'; body: string } | { kind: 'add-label'; label: string } | { kind: 'remove-label'; label: string } | { kind: 'close'; reason: 'not_planned' };
 export type GitHubWrite =
   | { ok: true; observedAt: string; repositoryId: number; value: unknown; revocation: TokenRevocation }
   | { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: TokenRevocation };
@@ -350,7 +374,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     endpoint: string,
     repositoryId?: number,
     input?: string,
-    method?: 'DELETE',
+    method?: 'DELETE' | 'PATCH',
   ): Promise<{ body: unknown; status: number; next?: string }> {
     if (!endpoint.startsWith('/') || endpoint.startsWith('//') || /[\r\n#\\]/.test(endpoint)) throw new AccessFailure('INVALID_ENDPOINT');
     return parseResponse(scope, await ghExec(directory, token, method ?? (input === undefined ? 'GET' : 'POST'), endpoint, input), endpoint, repositoryId);
@@ -361,7 +385,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
   function ghExec(
     directory: string,
     token: string,
-    method: 'GET' | 'DELETE' | 'POST',
+    method: 'GET' | 'DELETE' | 'POST' | 'PATCH',
     endpoint: string,
     input?: string,
   ): Promise<{ stdout: string; failed: boolean }> {
@@ -735,6 +759,103 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     }
   }
 
+  /**
+   * One closed write on an issue under a fresh single-use grant (issues:write, this repository only), revoked right after whatever the
+   * outcome. Never retried. `unknown` (transport loss, 5xx, unexpected success status) means the write may have been applied.
+   */
+  async function issueWrite(
+    scope: GitHubScope,
+    issueNumber: number,
+    valid: boolean,
+    request: {
+      purpose: 'question-publish' | 'triage-publish';
+      endpoint: string;
+      /** JSON body, already serialized. */
+      input?: string;
+      method?: 'DELETE' | 'PATCH';
+      status: number;
+      invalid: string;
+      what: 'comment' | 'change';
+    },
+  ): Promise<GitHubWrite> {
+    let directory: string | undefined;
+    const observedAt = new Date().toISOString();
+    const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
+    const window = rateWindows.get(scope.installationId) ?? 0;
+    if (window > Date.now())
+      return sanitized({
+        ok: false as const,
+        outcome: 'known-failure' as const,
+        observedAt,
+        code: 'GITHUB_RATE_LIMITED',
+        waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)),
+        nextStep: 'Rate-limit window still open; nothing was sent.',
+        revocation: 'not-issued' as const,
+      });
+    if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0 || !valid) {
+      return { ok: false, outcome: 'known-failure', observedAt, code: request.invalid, nextStep: writeSteps[request.what].invalid, revocation: 'not-issued' };
+    }
+    let grant: Grant;
+    // Issuance failures happen BEFORE the request: the write certainly was not applied.
+    try {
+      grant = await issue(scope, request.purpose);
+    } catch (error) {
+      const typed = failure(error);
+      return sanitized({
+        ok: false as const,
+        outcome: 'known-failure' as const,
+        observedAt,
+        ...typed,
+        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code,
+        revocation: 'not-issued' as const,
+      });
+    }
+    let sent = false;
+    let revocation: TokenRevocation = 'unknown';
+    // Single-use grant: revoke it right after the write attempt, whatever its outcome (204 = revoked; anything else is reported, never claimed).
+    // Same self-revocation path as the Builder grants (distinct revoked/already-invalid/failed/unknown outcomes).
+    const revoke = async () => {
+      revocation = (await revokeToken(grant.token)).kind;
+    };
+    const steps = writeSteps[request.what];
+    try {
+      directory = await mkdtemp(join(options.root, 'run', 'github-'));
+      await verifyRepository(scope, session(scope, directory, grant));
+      sent = true;
+      const response = await gh(scope, directory, grant.token, request.endpoint, grant.repositoryId, request.input, request.method);
+      await revoke();
+      if (response.status !== request.status)
+        return sanitized({
+          ok: false as const,
+          outcome: 'unknown' as const,
+          observedAt,
+          code: 'GITHUB_WRITE_UNEXPECTED_STATUS',
+          nextStep: steps.unexpected,
+          revocation,
+        });
+      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: response.body, revocation });
+    } catch (error) {
+      if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
+      await revoke();
+      const typed = failure(error);
+      // Known: refused before sending, or GitHub answered 4xx (nothing changed). Unknown: transport loss, 5xx, unparseable success.
+      const known =
+        !sent ||
+        (error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
+      return sanitized({
+        ok: false as const,
+        outcome: known ? ('known-failure' as const) : ('unknown' as const),
+        observedAt,
+        ...typed,
+        code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_WRITE_FAILED' : typed.code,
+        nextStep: known ? typed.nextStep : steps.unknown,
+        revocation,
+      });
+    } finally {
+      if (directory) await rm(directory, { recursive: true, force: true });
+    }
+  }
+
   /** The single GraphQL call site of the controller's pull request mutations (tickets 16/25): draft/ready flag or reopen of ONE own pull request
    * node, fresh single-use grant per mutation, revoked right after, never retried. */
   async function pullMutation(
@@ -920,99 +1041,36 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       });
       return read.ok ? read.value : null;
     },
-    async comment(scope, issueNumber, body) {
-      let directory: string | undefined;
-      const observedAt = new Date().toISOString();
-      const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
-      const window = rateWindows.get(scope.installationId) ?? 0;
-      if (window > Date.now())
-        return sanitized({
-          ok: false as const,
-          outcome: 'known-failure' as const,
-          observedAt,
-          code: 'GITHUB_RATE_LIMITED',
-          waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)),
-          nextStep: 'Rate-limit window still open; nothing was sent.',
-          revocation: 'not-issued' as const,
+    comment(scope, issueNumber, body) {
+      const valid = typeof body === 'string' && Boolean(body) && body.length <= 60000;
+      return issueWrite(scope, issueNumber, valid, {
+        purpose: 'question-publish',
+        endpoint: `/repos/${scope.repository}/issues/${issueNumber}/comments`,
+        input: JSON.stringify({ body }),
+        status: 201,
+        invalid: 'INVALID_COMMENT',
+        what: 'comment' as const,
+      });
+    },
+    triageWrite(scope, issueNumber, write) {
+      const issue = `/repos/${scope.repository}/issues/${issueNumber}`;
+      const base = { purpose: 'triage-publish' as const, status: 200, invalid: 'INVALID_TRIAGE_WRITE', what: 'change' as const };
+      if (write.kind === 'comment') return this.comment(scope, issueNumber, write.body);
+      if (write.kind === 'close')
+        return issueWrite(scope, issueNumber, write.reason === 'not_planned', {
+          ...base,
+          endpoint: issue,
+          input: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }),
+          method: 'PATCH',
         });
-      if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0 || typeof body !== 'string' || !body || body.length > 60000) {
-        return {
-          ok: false,
-          outcome: 'known-failure',
-          observedAt,
-          code: 'INVALID_COMMENT',
-          nextStep: 'Comment rejected locally; nothing was sent.',
-          revocation: 'not-issued',
-        };
-      }
-      let grant: Grant;
-      // Issuance failures happen BEFORE the POST: the comment certainly was not created.
-      try {
-        grant = await issue(scope, 'question-publish');
-      } catch (error) {
-        const typed = failure(error);
-        return sanitized({
-          ok: false as const,
-          outcome: 'known-failure' as const,
-          observedAt,
-          ...typed,
-          code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code,
-          revocation: 'not-issued' as const,
-        });
-      }
-      let sent = false;
-      let revocation: TokenRevocation = 'unknown';
-      // Single-use grant: revoke it right after the write attempt, whatever its outcome (204 = revoked; anything else is reported, never claimed).
-      // Same self-revocation path as the Builder grants (distinct revoked/already-invalid/failed/unknown outcomes).
-      const revoke = async () => {
-        revocation = (await revokeToken(grant.token)).kind;
-      };
-      try {
-        directory = await mkdtemp(join(options.root, 'run', 'github-'));
-        await verifyRepository(scope, session(scope, directory, grant));
-        sent = true;
-        const response = await gh(
-          scope,
-          directory,
-          grant.token,
-          `/repos/${scope.repository}/issues/${issueNumber}/comments`,
-          grant.repositoryId,
-          JSON.stringify({ body }),
-        );
-        await revoke();
-        if (response.status !== 201)
-          return sanitized({
-            ok: false as const,
-            outcome: 'unknown' as const,
-            observedAt,
-            code: 'GITHUB_WRITE_UNEXPECTED_STATUS',
-            nextStep: 'The comment may exist; discover it by its marker before any new publication.',
-            revocation,
-          });
-        return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: response.body, revocation });
-      } catch (error) {
-        if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
-        await revoke();
-        const typed = failure(error);
-        // Known: refused before sending, or GitHub answered 4xx (nothing created). Unknown: transport loss, 5xx, unparseable success.
-        const known =
-          !sent ||
-          (error instanceof AccessFailure &&
-            (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
-        return sanitized({
-          ok: false as const,
-          outcome: known ? ('known-failure' as const) : ('unknown' as const),
-          observedAt,
-          ...typed,
-          code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_WRITE_FAILED' : typed.code,
-          nextStep: known
-            ? typed.nextStep
-            : 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.',
-          revocation,
-        });
-      } finally {
-        if (directory) await rm(directory, { recursive: true, force: true });
-      }
+      const valid = typeof write.label === 'string' && /^[^\u0000-\u001f\u007f]{1,256}$/.test(write.label);
+      if (write.kind === 'add-label')
+        return issueWrite(scope, issueNumber, valid, { ...base, endpoint: `${issue}/labels`, input: JSON.stringify({ labels: [write.label] }) });
+      return issueWrite(scope, issueNumber, valid && write.kind === 'remove-label', {
+        ...base,
+        endpoint: `${issue}/labels/${encodeURIComponent(write.label)}`,
+        method: 'DELETE',
+      });
     },
     setDraft(scope, pullRequest, draft, clientMutationId) {
       return pullMutation(

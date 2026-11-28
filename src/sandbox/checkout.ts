@@ -21,6 +21,13 @@ export type CheckoutResult = { status: 'success'; checkout: CheckoutView } | { s
 
 const repositoryName = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const branchName = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
+const cloneName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const validCacheRequest = (request: CacheRequest) =>
+  repositoryName.test(request.repository) &&
+  !request.repository.split('/').some(part => part === '.' || part === '..') &&
+  Number.isSafeInteger(request.repositoryId) &&
+  request.repositoryId > 0 &&
+  branchName.test(request.base);
 const metadataSchema = z.strictObject({
   version: z.literal(1),
   path: z.literal('/workspace/checkout'),
@@ -36,6 +43,13 @@ const metadataSchema = z.strictObject({
   // Outcome kind of the self-revocation of the one-fetch host credential (absent in metadata written before ticket 20).
   fetchCredentialRevocation: z.enum(['revoked', 'already-invalid', 'failed', 'unknown', 'impossible', 'not-attempted']).optional(),
 });
+
+/** What a mutation of the bare cache needs to know of a repository: its identity, its fetch grant and the branch fetched. */
+type CacheRequest = Pick<CheckoutRequest, 'repository' | 'repositoryId' | 'installationId' | 'base'>;
+type FetchedBase = { cache: string; home: string; gitLock: string; baseCommit: string; fetchCredentialRevocation: string };
+/** A per-attempt copy of one candidate repository for a Triager, created under the attempt's clones directory. */
+export type InvestigationCloneRequest = CacheRequest & { directory: string; name: string };
+export type InvestigationCloneResult = { status: 'success'; path: string; commit: string } | { status: 'failure' | 'indeterminate'; code: string };
 
 class CheckoutFailure extends Error {
   constructor(
@@ -176,7 +190,11 @@ export function createCheckouts(options: {
     });
   }
 
-  async function first(environment: string, request: CheckoutRequest, home: string): Promise<CheckoutView> {
+  /**
+   * One guarded mutation of a repository's bare cache: single-use fetch credential, cross-process lock, `mutating` state, fetch of the
+   * base, then `materialize` (the local clone made from the cache) before the cache is idle again.
+   */
+  async function first<T>(request: CacheRequest, home: string, materialize: (fetched: FetchedBase) => Promise<T>): Promise<T> {
     const cacheRoot = join(options.root, 'cache', 'git');
     const cache = join(cacheRoot, `${request.repositoryId}.git`);
     // Credential first: a known issuance failure leaves the cache untouched (no 'mutating' state).
@@ -217,7 +235,7 @@ export function createCheckouts(options: {
         await rename(temporary, statePath);
       };
       await state('mutating');
-      const view = await mutate(environment, request, home, cache, cacheRoot, token, revokeFetch);
+      const view = await materialize(await fetchBase(request, home, cache, cacheRoot, token, revokeFetch));
       await state('idle');
       return view;
     } finally {
@@ -226,15 +244,14 @@ export function createCheckouts(options: {
     }
   }
 
-  async function mutate(
-    environment: string,
-    request: CheckoutRequest,
+  async function fetchBase(
+    request: CacheRequest,
     home: string,
     cache: string,
     cacheRoot: string,
     token: string,
     revokeFetch: () => Promise<string>,
-  ): Promise<CheckoutView> {
+  ): Promise<FetchedBase> {
     if (!(await exists(cache)))
       await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home, undefined, 600000, join(cacheRoot, `${request.repositoryId}.git.lock`));
     const gitLock = join(cacheRoot, `${request.repositoryId}.git.lock`);
@@ -254,6 +271,11 @@ export function createCheckouts(options: {
     }
     const fetchCredentialRevocation = await revokeFetch();
     const baseCommit = await run(['rev-parse', '--verify', `refs/heads/${request.base}^{commit}`], cache, home, undefined, 600000, gitLock);
+    return { cache, home, gitLock, baseCommit, fetchCredentialRevocation };
+  }
+
+  async function workCheckout(environment: string, request: CheckoutRequest, fetched: FetchedBase): Promise<CheckoutView> {
+    const { cache, home, gitLock, baseCommit, fetchCredentialRevocation } = fetched;
     const checkout = join(environment, 'workspace', 'checkout');
     // cwd is the Factory-owned home, never the workspace: no repository discovery above the new checkout. Only this never-booted,
     // Factory-created clone is touched by host git, and only now (never on continuation).
@@ -302,17 +324,62 @@ export function createCheckouts(options: {
     };
   }
 
+  /** Per repository, one cache mutation at a time in this owner; each gets its own throwaway git home. */
+  function sequenced<T>(repositoryId: number, mutation: (home: string) => Promise<T>): Promise<T> {
+    const previous = chains.get(repositoryId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(async () => {
+        await privateDirectory(join(options.root, 'cache'));
+        await privateDirectory(join(options.root, 'cache', 'git'));
+        const home = await mkdtemp(join(options.root, 'cache', 'git-home-'));
+        try {
+          return await mutation(home);
+        } finally {
+          await rm(home, { recursive: true, force: true });
+        }
+      });
+    chains.set(repositoryId, current);
+    return current;
+  }
+
+  /** The Triager's copy: the fetched branch checked out with its history, no hardlink or alternate into the cache, and NO remote at all. */
+  async function investigationClone(request: InvestigationCloneRequest, fetched: FetchedBase) {
+    const { cache, home, gitLock, baseCommit } = fetched;
+    const target = join(request.directory, request.name);
+    const git = (args: string[]) => run(args, home, home, undefined, 600000, gitLock);
+    await git(['clone', '--quiet', '--no-hardlinks', '--template=', '--single-branch', '--branch', request.base, '--', cache, target]);
+    await git(['-C', target, 'remote', 'remove', 'origin']);
+    if (
+      (await exists(join(target, '.git', 'objects', 'info', 'alternates'))) ||
+      (await git(['-C', target, 'remote'])) !== '' ||
+      (await git(['-C', target, 'rev-parse', 'HEAD'])) !== baseCommit ||
+      (await readdir(join(target, '.git', 'hooks')).catch(() => [])).length
+    )
+      throw new CheckoutFailure('indeterminate', 'CHECKOUT_VERIFICATION_FAILED');
+    return { status: 'success' as const, path: target, commit: baseCommit };
+  }
+
   return {
+    /**
+     * Fetches the repository's base into the Factory-exclusive bare cache with the Host's read credential and creates
+     * `<directory>/<name>` from it. The credential is used by the one fetch and never reaches the copy, which keeps no remote.
+     */
+    async investigationClone(request: InvestigationCloneRequest): Promise<InvestigationCloneResult> {
+      if (!validCacheRequest(request) || !cloneName.test(request.name)) return { status: 'failure', code: 'CHECKOUT_REQUEST_INVALID' };
+      try {
+        // Refused before the cache is touched: a name is one copy of one attempt, never refreshed in place.
+        if (await exists(join(request.directory, request.name))) return { status: 'failure', code: 'INVESTIGATION_CLONE_EXISTS' };
+        return await sequenced(request.repositoryId, home => first(request, home, fetched => investigationClone(request, fetched)));
+      } catch (error) {
+        return error instanceof CheckoutFailure
+          ? { status: error.status, code: error.code }
+          : { status: 'indeterminate', code: 'CHECKOUT_PREPARATION_UNAVAILABLE' };
+      }
+    },
     /** `environment` is the prepared environment directory (adapter-owned); only `workspace/checkout` is guest-visible. */
     async prepare(environment: string, request: CheckoutRequest): Promise<CheckoutResult> {
-      if (
-        !repositoryName.test(request.repository) ||
-        request.repository.split('/').some(part => part === '.' || part === '..') ||
-        !Number.isSafeInteger(request.repositoryId) ||
-        request.repositoryId <= 0 ||
-        !branchName.test(request.base) ||
-        !branchName.test(request.branch)
-      ) {
+      if (!validCacheRequest(request) || !branchName.test(request.branch)) {
         return { status: 'failure', code: 'CHECKOUT_REQUEST_INVALID' };
       }
       try {
@@ -355,21 +422,8 @@ export function createCheckouts(options: {
         if (await exists(join(environment, 'workspace', 'checkout'))) return { status: 'indeterminate', code: 'CHECKOUT_PREPARATION_INCOMPLETE' };
         // Host git may only create the checkout before ANY guest could have written the workspace (spec §7.3).
         if ((await readdir(environment)).some(name => name.startsWith('boot-'))) return { status: 'failure', code: 'CHECKOUT_REQUIRES_UNBOOTED_ENVIRONMENT' };
-        const previous = chains.get(request.repositoryId) ?? Promise.resolve();
-        const current = previous
-          .catch(() => {})
-          .then(async () => {
-            await privateDirectory(join(options.root, 'cache'));
-            await privateDirectory(join(options.root, 'cache', 'git'));
-            const home = await mkdtemp(join(options.root, 'cache', 'git-home-'));
-            try {
-              return await first(environment, request, home);
-            } finally {
-              await rm(home, { recursive: true, force: true });
-            }
-          });
-        chains.set(request.repositoryId, current);
-        return { status: 'success', checkout: await current };
+        const checkout = await sequenced(request.repositoryId, home => first(request, home, fetched => workCheckout(environment, request, fetched)));
+        return { status: 'success', checkout };
       } catch (error) {
         return error instanceof CheckoutFailure
           ? { status: error.status, code: error.code }

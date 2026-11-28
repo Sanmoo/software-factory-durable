@@ -5,6 +5,7 @@ export {
   currentFormat as controlStorageFormat,
   supportedMigrations as controlStorageMigrations,
   durableSchemaVersion,
+  knownFormats as controlStorageFormats,
   migrationPath as controlStorageMigrationPath,
   migrationPathId as controlStorageMigrationPathId,
 } from './durable/format.js';
@@ -48,6 +49,15 @@ export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluatio
 export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
 export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
 export type { JiraOriginTracker } from './types.js';
+// Triage: what the composition roots and the operator's side read of the Triage. The request document, its transitions and
+// the pure rules stay inside this module; nothing outside it moves a request.
+export type { SourceTriage, TriagePorts, TriageDetailPorts, TriageRequest, TriageRequestsView } from './types.js';
+// The Triage requests of a storage as an upgrade reads them (`inspectStorage(...).triage`).
+export { triageUnsettled } from './rules/triage-settlement.js';
+export type { TriageSettlement } from './rules/triage-settlement.js';
+// The operator views of the Triage requests (metadata only), the explicit transcript read and the
+// receipt of the interventions.
+export type { TriageInterventionReceipt, TriageDetailView, TriageStatusView, TriagesView, TriageTranscriptView, TriageUsageView } from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).
 export { noticeJiraImpediments, recordJiraImpediment, readJiraNotices } from './durable/jira-impediments.js';
 export type { JiraNoticeRound, JiraNoticesView } from './durable/jira-impediments.js';

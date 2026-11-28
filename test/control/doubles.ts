@@ -8,7 +8,12 @@ import type {
   GitHubTrackerScope as TrackerScope,
   DependencyNode,
   DependencyProblem,
+  ClosureEvent,
+  LabelEvent,
+  LabelHistoryObservation,
   TrackerComment,
+  TriageWrite,
+  TriageWriteResult,
 } from '../../src/issue-tracker/index.js';
 import type {
   BranchComparison,
@@ -36,6 +41,15 @@ export type RemoteIssue = {
   reread?: Partial<TicketRef>;
   stateReason?: string | null;
   /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[];
+  /** The issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
+  labelEvents?: LabelEvent[];
+  /** The closings and reopenings of the issue as its timeline reports them (`closeIssue` keeps it with `state`). */
+  closures?: ClosureEvent[];
+  /** The issue text as `readTicketText` reports it (absent = an issue without it). */
+  title?: string | null;
+  body?: string | null;
+  /** The text of THIS issue cannot be read (`readTicketText` answers unavailable with this), while every other read of it works. */
+  textUnreadable?: Unavailable;
 };
 export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
@@ -50,6 +64,8 @@ export type Remote = {
   baseProtection?: { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
   listFailure?: Unavailable;
   readFailure?: Unavailable;
+  /** readLabelHistory answers unavailable while set. */
+  labelHistoryFailure?: Unavailable;
   publicationFailure?: Unavailable;
   /** Per-Ticket incomplete association (e.g. timeline unavailable). */
   incompleteAssociation?: Record<number, Unavailable>;
@@ -64,6 +80,18 @@ export type Remote = {
   graphThrows?: boolean;
   /** Issue comments by issue number (ascending ids). postComment appends App-bot comments here. */
   comments?: Record<number, TrackerComment[]>;
+  /** GitHub's `author_association` by author login (absent = NONE), as readTicketComments reports it. */
+  associations?: Record<string, string>;
+  /** Number of next readTicketComments calls that are incomplete (unavailable). */
+  incompleteTicketComments?: number;
+  /**
+   * Consumed one per writeTriage (absent = applied and accepted): `unknown-applied`/`unknown-not-applied` answer an
+   * unknown outcome; `failed` applies nothing; `retained` is accepted by the API and never applied; `anonymous` is applied with a history
+   * event that names no author.
+   */
+  triageWrites?: (TriageWriteFault | undefined)[];
+  /** Called after each writeTriage reached the remote, before its answer: what somebody else does to the Ticket between two writes. */
+  afterTriageWrite?: (write: TriageWrite, issue: RemoteIssue) => void;
   /** Consumed one per postComment: unknown outcome (created or not) or known failure; absent = published. */
   postOutcomes?: ('unknown-created' | 'unknown-not-created' | 'failed')[];
   /** Number of next findQuestion calls that are incomplete (unavailable). */
@@ -143,6 +171,31 @@ export function ticket(number: number, overrides: Partial<TicketRef> = {}): Tick
 }
 export function remoteIssue(number: number, overrides: Partial<RemoteIssue> = {}): RemoteIssue {
   return { ref: ticket(number), state: 'open', labels: [{ id: 55, name: 'ready-for-agent' }], ...overrides };
+}
+export type TriageWriteFault = 'unknown-applied' | 'unknown-not-applied' | 'failed' | 'retained' | 'anonymous';
+/** The account the Factory App writes as. */
+export const factoryBot = { id: 41898282, login: 'factory-app[bot]', type: 'Bot' };
+let labelEventSequence = 90000;
+/** Who a timeline event names: a change by the Factory App's bot is performed through the App. */
+const eventAuthor = (actor: LabelEvent['actor']) => {
+  const own = actor?.id === factoryBot.id;
+  return { eventId: String(++labelEventSequence), at: new Date().toISOString(), actor, viaApp: own ? factoryAppId : null, ownApp: own };
+};
+const labelEvent = (action: LabelEvent['action'], label: string, actor: LabelEvent['actor']): LabelEvent => ({ action, label, ...eventAuthor(actor) });
+/** The issue is closed (state and timeline together), by a person unless another actor is given. */
+export function closeIssue(issue: RemoteIssue, actor: ClosureEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }, stateReason = 'completed') {
+  issue.state = 'closed';
+  issue.stateReason = stateReason;
+  issue.closures = [...(issue.closures ?? []), { action: 'closed', ...eventAuthor(actor) }];
+}
+/** A person applies a label to the issue (label set and timeline together), as any account allowed to label would. */
+export function applyLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
+  if (!issue.labels.some(label => label.name === name)) issue.labels = [...issue.labels, { id: 500 + issue.labels.length, name }];
+  issue.labelEvents = [...(issue.labelEvents ?? []), labelEvent('added', name, actor)];
+}
+export function removeLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
+  issue.labels = issue.labels.filter(label => label.name !== name);
+  issue.labelEvents = [...(issue.labelEvents ?? []), labelEvent('removed', name, actor)];
 }
 export function foreignPull(number: number, overrides: Partial<PullRequestCandidate> = {}): PullRequestCandidate {
   return {
@@ -231,6 +284,45 @@ export function githubDoubles(remote: Remote) {
           pullRequest: found.pullRequest ?? false,
         };
       }),
+    // Title and body of the issue, for the Triager's first prompt.
+    readTicketText: ref =>
+      track(
+        'readTicketText',
+        () => {
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (remote.readFailure || !found) return failure(ref.repository, remote.readFailure ?? { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
+          if (found.textUnreadable) return failure(ref.repository, found.textUnreadable);
+          return {
+            kind: 'observed' as const,
+            source: 'github-rest' as const,
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete' as const,
+            title: found.title ?? null,
+            body: found.body ?? null,
+          };
+        },
+        ref.number,
+      ),
+    readLabelHistory: ref =>
+      track(
+        'readLabelHistory',
+        (): LabelHistoryObservation => {
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (remote.labelHistoryFailure || !found) return failure(ref.repository, remote.labelHistoryFailure ?? { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
+          return {
+            kind: 'observed',
+            source: 'github-rest',
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete',
+            events: structuredClone(found.labelEvents ?? []),
+            closures: structuredClone(found.closures ?? []),
+            limitations: [],
+          };
+        },
+        ref.number,
+      ),
     // Reachable native graph over remote.issues (same repository), each node once; problems are injected per root Ticket.
     readDependencyGraph: ref =>
       track(
@@ -278,6 +370,55 @@ export function githubDoubles(remote: Remote) {
           };
         },
         ref,
+      ),
+    // One write of a Triage publication, applied to the remote as GitHub would (by the App's bot), unless a fault says otherwise.
+    writeTriage: (ref, write) =>
+      track(
+        'writeTriage',
+        (): TriageWriteResult => {
+          const fault = remote.triageWrites?.shift();
+          const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
+          if (!found || fault === 'failed') return { kind: 'failed', observedAt: observedAt(), code: 'GITHUB_ACCESS_DENIED', nextStep: 'synthetic' };
+          const actor = fault === 'anonymous' ? null : factoryBot;
+          let created: TrackerComment | undefined;
+          if (fault !== 'retained' && fault !== 'unknown-not-applied') {
+            if (write.kind === 'comment') {
+              created = comment(write.body, factoryBot, ref.number, factoryAppId);
+              (remote.comments ??= {})[ref.number] = [...(remote.comments?.[ref.number] ?? []), created];
+            } else if (write.kind === 'add-label') applyLabel(found, write.label, actor);
+            else if (write.kind === 'remove-label') removeLabel(found, write.label, actor);
+            else closeIssue(found, actor, write.reason);
+            remote.afterTriageWrite?.(write, found);
+          }
+          if (fault?.startsWith('unknown')) return { kind: 'unknown', observedAt: observedAt(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' };
+          return { kind: 'accepted', observedAt: observedAt(), ...(created ? { comment: { commentId: created.commentId, url: created.url } } : {}) };
+        },
+        { number: ref.number, write },
+      ),
+    // Every comment of the Ticket issue with the author's association and whether the Factory App performed it.
+    readTicketComments: ref =>
+      track(
+        'readTicketComments',
+        () => {
+          if (remote.incompleteTicketComments) {
+            remote.incompleteTicketComments--;
+            return failure(ref.repository, { code: 'GITHUB_QUERY_FAILED' });
+          }
+          return {
+            kind: 'observed' as const,
+            source: 'github-rest' as const,
+            observedAt: observedAt(),
+            ticket: ref,
+            completeness: 'complete' as const,
+            comments: structuredClone(remote.comments?.[ref.number] ?? []).map(item => ({
+              ...item,
+              authorAssociation: remote.associations?.[item.author.login] ?? 'NONE',
+              ownApp: item.viaApp === factoryAppId && item.author.type === 'Bot',
+            })),
+            limitations: ['synthetic'],
+          };
+        },
+        { number: ref.number },
       ),
     readInputs: (ref, cursor) =>
       track(

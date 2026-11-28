@@ -4,7 +4,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -64,6 +64,8 @@ export type WorldComment = {
   created_at?: string;
   updated_at?: string;
   performed_via_github_app?: { id: number } | null;
+  /** GitHub's association of the author with the repository (absent in the payload when not given). */
+  author_association?: string;
   html_url?: string;
 };
 /** Ticket 44: the `.factory/environment.yaml` every fixture repository serves unless `environmentFiles` says otherwise. */
@@ -76,6 +78,8 @@ export type World = {
   comments?: WorldComment[];
   /** POST /issues/{n}/comments: answer with this status; `created` decides whether the comment was created anyway (ambiguous 5xx). */
   postFault?: { status: number; created: boolean; headers?: Record<string, string> };
+  /** The label and closing writes answer with this status; `applied` decides whether the change happened anyway. */
+  triageFault?: { status: number; applied: boolean };
   /** Status of DELETE /installation/token (default 204). */
   revokeFault?: number;
   pulls: WorldPull[];
@@ -188,6 +192,8 @@ export type TraceEntry = {
   credential: 'app-jwt' | 'installation';
   permissions?: Record<string, string>;
   body?: string;
+  /** The JSON body of a label or closing write. */
+  request?: object;
   sequence?: number;
   grant?: number;
 };
@@ -300,6 +306,8 @@ process.exit(result.status ?? 1);
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ ...trace, status: 404 }) + '\\n');
   process.exit(1);
   }
+  // The writes of a Triage publication (a label added or removed by relative operation, the closing of an issue).
+  const triageWrite = (method === 'POST' && /^\\/issues\\/\\d+\\/labels$/.test(rest)) || (method === 'DELETE' && /^\\/issues\\/\\d+\\/labels\\/[^/]+$/.test(rest)) || (method === 'PATCH' && /^\\/issues\\/\\d+$/.test(rest));
   const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
   const shape = i => {
   const r = repoByName(i.repository ?? 'acme/project');
@@ -390,7 +398,7 @@ process.exit(result.status ?? 1);
   else if (granted.contents !== 'write') { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
   else if (refs[branch] !== update.beforeOid) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'UNPROCESSABLE', message: 'A ref was not at its expected beforeOid' }] }; }
   else { delete refs[branch]; if (marker) world.factoryRefs = refs; else world.refs = refs; saveWorld(world); body = { data: { updateRefs: { clientMutationId: null } } }; }
-  } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
+  } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)) && !triageWrite)) process.exit(16);
   else if (!repo) process.exit(11);
   else if (rest === '') body = { id: repo.id, node_id: 'R_' + repo.id, full_name: repo.name, default_branch: 'main', owner: { login: repo.name.split('/')[0] } };
   else if (rest === '/issues') {
@@ -424,6 +432,28 @@ process.exit(result.status ?? 1);
   trace.body = request.body;
   if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }
   else { status = 201; body = { ...comment, html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + comment.id }; }
+  } else if (triageWrite) {
+  const known = lines(issuedFile).find(entry => entry.token === token);
+  const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
+  let request;
+  if (method !== 'DELETE') { if (args[args.indexOf('--input') + 1] !== '-') process.exit(19); let input = ''; for await (const data of process.stdin) input += data; request = JSON.parse(input); trace.request = request; }
+  const fault = world.triageFault;
+  const name = method === 'DELETE' ? decodeURIComponent(url.pathname.split('/labels/')[1]) : undefined;
+  const event = extra => ({ id: 70000 + (found.timeline ?? []).length + 1, created_at: new Date().toISOString(), actor: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 }, ...extra });
+  if (known?.permissions?.issues !== 'write') { status = 403; body = { message: 'Resource not accessible by integration' }; }
+  else if (!found || (name !== undefined && !found.labels.some(l => l.name.toLowerCase() === name.toLowerCase()))) { status = 404; body = { message: 'Not Found' }; }
+  else {
+    if (method === 'POST' && (Object.keys(request).join() !== 'labels' || request.labels.length !== 1 || typeof request.labels[0] !== 'string')) process.exit(20);
+    if (method === 'PATCH' && (Object.keys(request).sort().join() !== 'state,state_reason' || request.state !== 'closed' || request.state_reason !== 'not_planned')) process.exit(20);
+    if (!fault || fault.applied) {
+      if (method === 'POST') { if (!found.labels.some(l => l.name.toLowerCase() === request.labels[0].toLowerCase())) found.labels = [...found.labels, { id: 800 + found.labels.length, name: request.labels[0] }]; found.timeline = [...(found.timeline ?? []), event({ event: 'labeled', label: { name: request.labels[0] } })]; }
+      else if (method === 'DELETE') { found.labels = found.labels.filter(l => l.name.toLowerCase() !== name.toLowerCase()); found.timeline = [...(found.timeline ?? []), event({ event: 'unlabeled', label: { name } })]; }
+      else { found.state = 'closed'; found.state_reason = 'not_planned'; found.timeline = [...(found.timeline ?? []), event({ event: 'closed' })]; }
+      saveWorld(world);
+    }
+    if (fault) { status = fault.status; body = { message: 'synthetic' }; }
+    else body = method === 'PATCH' ? shape(found) : found.labels;
+  }
   } else if ((rest === '/git/refs' || rest === '/pulls') && method === 'POST') {
   // Ticket 14: the Builder's direct publication (push = ref creation, PR creation) with ITS delivered grant; permissions are enforced.
   if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
@@ -556,7 +586,7 @@ process.exit(result.status ?? 1);
   await writeFile(
     join(root, 'flock'),
     `#!${process.execPath}
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 const args=process.argv.slice(2); args.splice(7,0,'--import',${JSON.stringify(preload)});
 const child=spawn('/usr/bin/flock',args,{stdio:'inherit'});
 process.on('SIGTERM',()=>child.kill('SIGTERM')); process.on('SIGINT',()=>child.kill('SIGINT'));
@@ -637,4 +667,32 @@ async function underWorldLock(lock: string, critical: () => void): Promise<void>
     holder.stdin.end();
     await exited;
   }
+}
+
+/** One write of a Builder through the world's `gh`, with the grant delivered to it (a ref or a pull request of its publication): the HTTP status. */
+export function builderGh(executable: string, token: string, endpoint: string, body: object): Promise<number> {
+  return new Promise(resolve => {
+    const child = execFile(
+      executable,
+      [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'POST',
+        '--include',
+        '-H',
+        'Accept: application/vnd.github+json',
+        '-H',
+        'X-GitHub-Api-Version: 2026-03-10',
+        '--input',
+        '-',
+        '--',
+        endpoint,
+      ],
+      { env: { PATH: process.env.PATH ?? '', GH_TOKEN: token }, encoding: 'utf8' },
+      (_error, stdout) => resolve(Number(/^HTTP\/[\d.]+ (\d{3})/.exec(stdout)?.[1] ?? 0)),
+    );
+    child.stdin?.end(JSON.stringify(body));
+  });
 }

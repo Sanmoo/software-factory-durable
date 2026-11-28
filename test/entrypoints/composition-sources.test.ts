@@ -178,3 +178,75 @@ test('the Jira token file is refused when it is not a private regular file of th
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// The `triage` block reaches the Control only through `triageSources(effective)`.
+const v3 = `schemaVersion: 3\n${header.replace(
+  '  spec: {provider: example, model: spec-model}\n',
+  '  spec: {provider: example, model: spec-model}\n  triager: {provider: example, model: triager-model}\n',
+)}ticketSources:
+  - {tracker: github, repository: equipe/payments-api, discover: true, triage: {}}
+  - {tracker: github, repository: equipe/checkout-web, discover: true}
+  - tracker: jira
+    discover: true
+    siteId: site-A
+    url: https://equipe.atlassian.net
+    email: fabrica@example.org
+    tokenFile: credentials/jira-token
+    projectId: '10010'
+    label: factory-ready
+    routes:
+      - {componentId: '10022', repository: equipe/payments-api}
+    triage: {needsTriage: triar}
+`;
+async function triageInstallation(missing: ('rg' | 'bwrap')[]) {
+  const root = await mkdtemp(join(tmpdir(), 'factory-composition-triage-'));
+  await chmod(root, 0o700);
+  await mkdir(join(root, 'credentials'), { mode: 0o700 });
+  await writeFile(join(root, 'credentials', 'jira-token'), `${sentinel}\n`, { mode: 0o600 });
+  await writeFile(join(root, 'config.yaml'), v3);
+  const configuration = (await readConfiguration(root, undefined, { triageHost: async () => missing })).configuration;
+  assert.equal(configuration.valid, true, JSON.stringify(configuration));
+  if (!configuration.valid) throw new Error('unreachable');
+  return { root, effective: configuration.effective };
+}
+
+test('a source with the triage block carries its labels to the Control; one without it carries none', async () => {
+  const { root, effective } = await triageInstallation([]);
+  try {
+    const jira = recordingJira();
+    const access = composeProductionAccess({ root, github: recordingGitHub().github, effective, jira: { transport: jira.transport } });
+    assert.deepEqual(
+      access.sources!.map(source => source.triage ?? null),
+      [
+        { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true },
+        null,
+        { needsTriage: 'triar', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true },
+      ],
+    );
+    // The Jira adapter lists the source's needs-triage label as a configured listing of the same site and project.
+    const listing = await access.trackers!.jira!.listCandidates({
+      tracker: 'jira',
+      siteId: 'site-A',
+      url: 'https://equipe.atlassian.net',
+      projectId: '10010',
+      label: 'triar',
+    });
+    assert.equal(listing.kind === 'unavailable' && listing.code, 'SYNTHETIC_UNAVAILABLE', 'the request reached the site');
+    assert.match(JSON.stringify(jira.requests[0]!.request.body), /labels = \\"triar\\"/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a Host lacking a Triage prerequisite keeps the block on the source, marked not available', async () => {
+  const { root, effective } = await triageInstallation(['rg']);
+  try {
+    const access = composeProductionAccess({ root, github: recordingGitHub().github, effective, jira: { transport: recordingJira().transport } });
+    assert.deepEqual(
+      access.sources!.map(source => source.triage?.available ?? null),
+      [false, null, false],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

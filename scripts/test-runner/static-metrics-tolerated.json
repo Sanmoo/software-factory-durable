@@ -257,7 +257,7 @@
   {
    "file": "src/control/durable/dispatch.ts",
    "function": "createDispatcher > activationPlan",
-   "complexity": 120,
+   "complexity": 117,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 124."
   },
   {
@@ -275,7 +275,7 @@
   {
    "file": "src/control/durable/dispatch.ts",
    "function": "createDispatcher > dispatchOne",
-   "complexity": 90,
+   "complexity": 88,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 91."
   },
   {
@@ -347,7 +347,7 @@
   {
    "file": "src/control/durable/dispatch.ts",
    "function": "createDispatcher > reconciliationPlan",
-   "complexity": 30,
+   "complexity": 29,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 30."
   },
   {
@@ -1313,7 +1313,7 @@
   {
    "file": "src/entrypoints/cli.ts",
    "function": "main",
-   "complexity": 255,
+   "complexity": 254,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 255."
   },
   {
@@ -1349,7 +1349,7 @@
   {
    "file": "src/entrypoints/controller/owner.ts",
    "function": "own",
-   "complexity": 25,
+   "complexity": 20,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 26."
   },
   {
@@ -1486,9 +1486,9 @@
   },
   {
    "file": "src/platform/github/index.ts",
-   "function": "createGitHubAccess > comment",
-   "complexity": 25,
-   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25."
+   "function": "createGitHubAccess > issueWrite",
+   "complexity": 23,
+   "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 25 em `comment`; a função passou a se chamar `issueWrite` (a mesma escrita serve também as da Triagem) e baixou para 23."
   },
   {
    "file": "src/platform/github/index.ts",
@@ -1769,7 +1769,7 @@
   {
    "file": "src/sandbox/checkout.ts",
    "function": "createCheckouts > prepare",
-   "complexity": 21,
+   "complexity": 16,
    "decision": "Tolerada por decisão do mantenedor (plano de adoção aprovado em 2026-11-22, S6): complexidade anterior à adoção, medida em 21."
   },
   {

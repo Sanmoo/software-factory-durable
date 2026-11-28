@@ -16,7 +16,9 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * v10 = ticket 44: v9 plus the repository's declared environment (`.factory/environment.yaml`) already installed: never reinstalled or
  * swapped, extras the Ticket needs installed and recorded; v11 = ticket 56: v10 plus each documented gate run exactly, alone, as the last
  * command before the handoff, never inside a compound command); v12 = Jira ticket 04: v11 plus a Jira Card as Ticket from the controller's
- * `Ticket content` section (no Jira access, no `gh issue view`) and the Card reference instead of `Closes #N`). */
+ * `Ticket content` section (no Jira access, no `gh issue view`) and the Card reference instead of `Closes #N`; v13 = Triage:
+ * v12 plus a role on every skill and prompt, the Triager's `triage` skill, support document and activation prompt template, and the
+ * Builder reading the Ticket comments with the precedence between people and the Verdict). */
 const pack = <T extends string>(id: T) =>
   Object.freeze({
     id,
@@ -39,19 +41,22 @@ const relative = z
   .string()
   .regex(/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
   .refine(path => !path.split('/').some(part => part === '..' || part === '.'));
+/** Roles a pack entry can belong to. A manifest published before the roles (v1 to v12) declares none: everything in it is the Builder's. */
+export const skillPackRoles = ['builder', 'triager'] as const;
+export type SkillPackRole = (typeof skillPackRoles)[number];
+const entryRole = z.enum(skillPackRoles).default('builder');
+const entryName = z.string().regex(/^[a-z][a-z0-9-]*$/);
+const entryDescription = z.string().min(1).max(1024);
 const manifestSchema = z.object({
   id: z.enum(skillPackIds),
   version: z.string(),
   guestDirectory: z.string(),
-  skills: z
-    .array(
-      z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024), modelInvocation: z.boolean() }),
-    )
-    .min(1),
-  prompts: z.array(z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024) })).min(1),
+  skills: z.array(z.strictObject({ name: entryName, path: relative, description: entryDescription, modelInvocation: z.boolean(), role: entryRole })).min(1),
+  prompts: z.array(z.strictObject({ name: entryName, path: relative, description: entryDescription, role: entryRole })).min(1),
   credits: relative,
   licenses: z.array(z.object({ license: z.string() })).min(1),
-  /** Session protocols the pack's texts define (a pack without `continuation` cannot continue a preserved session). */
+  /** Session protocols the pack's texts define (a pack without `continuation` cannot continue a preserved session). `continuation` is the
+   * Builder protocol only: no other role continues a session. */
   capabilities: z.strictObject({ continuation: z.boolean().optional() }).optional(),
   files: z
     .array(
@@ -69,8 +74,10 @@ export type LoadedSkillPack = {
   id: SkillPackId;
   version: string;
   manifestSha256: string;
+  /** Host directory of the verified copy this pack was loaded from. */
+  directory: string;
   manifest: SkillPackManifest;
-  prompts: { name: string; description: string; content: string; path: string }[];
+  prompts: { name: string; description: string; content: string; path: string; role: SkillPackRole }[];
 };
 
 const strip = (text: string) => text.replace(/^---\n[\s\S]*?\n---\n+/, '');
@@ -86,11 +93,32 @@ async function listFiles(directory: string, prefix = ''): Promise<string[]> {
   return result;
 }
 
-/** Exact guest paths of the files of a pack version as seeded (`<guestDirectory>/<manifest path>`, manifest included), from the verified Host copy. */
-export async function skillPackGuestFiles(id: SkillPackId): Promise<string[]> {
+/** Pack paths an entry owns: a skill owns its whole directory (support documents included), a prompt owns its file. */
+const owns = (entry: { path: string }, path: string) =>
+  path === entry.path || (entry.path.endsWith('/SKILL.md') && path.startsWith(entry.path.slice(0, -'SKILL.md'.length)));
+
+/**
+ * What a session of `role` loads from a verified pack: the skills and prompts the manifest gives that role and the pack files they own.
+ * A role the manifest never names (a Reviewer) gets nothing; an entry of another role is never offered to the session.
+ */
+export function skillPackForRole(pack: LoadedSkillPack, role: string) {
+  const skills = pack.manifest.skills.filter(skill => skill.role === role);
+  const prompts = pack.prompts.filter(prompt => prompt.role === role);
+  const entries = [...skills, ...prompts];
+  const files = pack.manifest.files.map(file => file.path).filter(path => entries.some(entry => owns(entry, path)));
+  return { skills, prompts, files: files.sort() };
+}
+
+/**
+ * Exact guest paths of the files of a pack version a session of `role` may read, as seeded (`<guestDirectory>/<manifest path>`), from the
+ * verified Host copy: the manifest and every file no entry of another role owns (the role's own files plus the shared credits and licenses).
+ */
+export async function skillPackGuestFiles(id: SkillPackId, role: SkillPackRole = 'builder'): Promise<string[]> {
   const pack = await loadSkillPack(skillPacks[id].directory);
   if (pack.id !== id) throw new Error('WORKER_SKILL_PACK_DRIFT');
-  return ['manifest.json', ...pack.manifest.files.map(file => file.path)].map(path => `${skillPacks[id].guestDirectory}/${path}`);
+  const foreign = [...pack.manifest.skills, ...pack.manifest.prompts].filter(entry => entry.role !== role);
+  const readable = pack.manifest.files.map(file => file.path).filter(path => !foreign.some(entry => owns(entry, path)));
+  return ['manifest.json', ...readable].map(path => `${skillPacks[id].guestDirectory}/${path}`);
 }
 
 /** Verifies the exact file set and every hash against the manifest before anything is offered to the SDK; drift refuses the start. */
@@ -118,10 +146,11 @@ export async function loadSkillPack(directory: string = builderSkillPack.directo
         name: prompt.name,
         description: prompt.description,
         path: prompt.path,
+        role: prompt.role,
         content: strip(await readFile(join(directory, prompt.path), 'utf8')),
       })),
     );
-    return { id: manifest.id, version: manifest.version, manifestSha256: createHash('sha256').update(bytes).digest('hex'), manifest, prompts };
+    return { id: manifest.id, version: manifest.version, manifestSha256: createHash('sha256').update(bytes).digest('hex'), directory, manifest, prompts };
   } catch {
     throw new Error('WORKER_SKILL_PACK_DRIFT');
   }
@@ -131,4 +160,26 @@ export async function loadSkillPack(directory: string = builderSkillPack.directo
 export async function skillPackContinues(id: SkillPackId): Promise<boolean> {
   const loaded = await loadSkillPack(skillPacks[id].directory, id);
   return loaded.manifest.capabilities?.continuation === true;
+}
+
+/** What the Control injects into the first prompt of a Triager; everything else in that prompt is text of the pack. */
+export const triagerActivationFields = ['ticket', 'origin', 'candidateRepositories', 'openBlockers', 'builderReach', 'remainingInvestigationTime'] as const;
+export type TriagerActivation = Readonly<Record<(typeof triagerActivationFields)[number], string>>;
+
+/**
+ * First prompt of a Triager from the pack's `triage` template: the injected values, plus the `triage` skill and its support documents inline,
+ * because the shell of a Triager reaches no pack file. One pass over the template: an injected value is data and is never expanded again.
+ */
+export async function triagerActivationPrompt(pack: LoadedSkillPack, activation: TriagerActivation): Promise<string> {
+  const { skills, prompts, files } = skillPackForRole(pack, 'triager');
+  const [skill, template] = [skills.find(entry => entry.name === 'triage'), prompts.find(entry => entry.name === 'triage')];
+  if (!skill || !template) throw new Error('WORKER_SKILL_PACK_ROLE_UNAVAILABLE');
+  const text = async (path: string) => strip(await readFile(join(pack.directory, path), 'utf8')).trim();
+  const support = await Promise.all(files.filter(path => path !== skill.path && owns(skill, path)).map(text));
+  const values: Record<string, string> = { ...activation, skill: await text(skill.path), support: support.join('\n\n') };
+  return template.content.replace(/\{\{([a-zA-Z]+)\}\}/g, (placeholder, name: string) => {
+    const value = values[name];
+    if (typeof value !== 'string') throw new Error(`WORKER_SKILL_PACK_PROMPT_INCOMPLETE: ${placeholder}`);
+    return value;
+  });
 }

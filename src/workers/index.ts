@@ -423,7 +423,7 @@ export function createWorkers(configuration?: Configuration) {
         // The Host (not the worker or model) derives the exact readable pack paths from the verified manifest of THIS version.
         ...(invocation.skillPack === undefined || invocation.context.role !== 'builder'
           ? {}
-          : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack) }),
+          : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack, 'builder') }),
         ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }),
         ...(invocation.builderBudget === undefined ? {} : { builderBudget: { ...invocation.builderBudget } }),
         ...(invocation.deadlineMs === undefined ? {} : { deadlineMs: invocation.deadlineMs }),
@@ -719,3 +719,10 @@ export async function runWorkerProcess(bootstrap: unknown, signal: AbortSignal, 
 
 // Narrow standalone installation prerequisite; no arbitrary auth routing/CRUD.
 export { firstFactoryOAuthLogin } from './factory-oauth.js';
+
+// The Triager role. Host facade of one attempt and the agent the Investigation Environment runs.
+export { createTriager, runTriagerAgent, triagerAttemptDirectory, triagerToolNames } from './triager.js';
+// The session files the attempts leave, for the transcript command, usage and retention.
+export { createTriagerDetails } from './triager-details.js';
+export type { McpRegistration, TriagerCompletion, TriagerConfiguration, TriagerHost } from './triager.js';
+export { triagerActivationFields, type TriagerActivation } from './skill-pack.js';

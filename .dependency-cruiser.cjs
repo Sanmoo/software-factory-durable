@@ -14,16 +14,20 @@ const allowed = {
   control: ['contracts', 'issue-tracker', 'code-repository', 'sandbox', 'workers', 'records'],
 };
 
-const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
+const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter|triager)(\\.ts$|/)|^test/(entrypoints|architecture|runner)/|^scripts/(test-runner|agent-checks)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
 
 const compositions = {
   cli: ['contracts', 'protocol', 'records', 'sandbox', 'control', 'workers'],
   controller: zones,
   worker: ['contracts', 'workers', 'protocol', 'records'],
   adapter: ['contracts', 'sandbox', 'protocol', 'records'],
+  // Spec #68 §6: the agent of a Triager attempt runs the Workers session with the shell of the Sandbox's Investigation Environment.
+  triager: ['contracts', 'workers', 'sandbox', 'protocol', 'records'],
 };
 const entrypoint = role =>
-  role === 'cli' ? '^src/entrypoints/(cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$' : `^src/entrypoints/${role}(\\.ts$|/)`;
+  role === 'cli'
+    ? '^src/entrypoints/(cli|triage-cli|setup|doctor|image-cleanup|configuration|release|release-build)\\.ts$'
+    : `^src/entrypoints/${role}(\\.ts$|/)`;
 
 module.exports = {
   forbidden: [
@@ -41,7 +45,7 @@ module.exports = {
     {
       name: 'cli-workers-setup-only',
       severity: 'error',
-      from: { path: '^src/entrypoints/(cli|doctor|image-cleanup|configuration|release|release-build)\\.ts$' },
+      from: { path: '^src/entrypoints/(cli|triage-cli|doctor|image-cleanup|configuration|release|release-build)\\.ts$' },
       to: { path: '^src/workers/' },
     },
     { name: 'cli-control-types-only', severity: 'error', from: { path: entrypoint('cli') }, to: { path: '^src/control/', dependencyTypesNot: ['type-only'] } },
@@ -65,6 +69,8 @@ module.exports = {
       ['sqlite', '^src/control/durable/', '(^|/)(node:sqlite|sqlite3|better-sqlite3)(/|$)'],
       ['durable', '^src/control/durable/', '(^|/)@earendil-works/pi-durable(/|$)'],
       ['coding-agent', '^src/workers/', '(^|/)@(mariozechner|earendil-works)/pi-coding-agent(/|$)'],
+      // Spec #68 §7: the MCP client of the Triager session.
+      ['mcp', '^src/workers/', '(^|/)@earendil-works/pi-mcp(/|$)'],
       ['gondolin', '^src/sandbox/', '(^|/)(@earendil-works/)?gondolin(/|$)'],
       ['github', '^src/(platform/github|issue-tracker|code-repository)/', '(^|/)(@octokit/|octokit(/|$))'],
       // Ownership of an SDK binds production code (src/); tests and fixtures may load the real SDK they exercise

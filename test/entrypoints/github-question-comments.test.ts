@@ -143,3 +143,43 @@ test('review 4: a comment listing beyond the page cap is incomplete (unavailable
   const pages = (await world.trace()).filter(entry => entry.endpoint.includes('/issues/3/comments')).length;
   assert.ok(pages <= 10, `at most 10 pages per read (${pages})`);
 });
+
+// The comments of the Ticket as facts for the Control, which decides what the Builder receives.
+test('adapter: readTicketComments reports every comment with author_association and whether this App performed it, unfiltered', async t => {
+  const world = await compose(t, {
+    pageSize: 2,
+    issues: [issue(3)],
+    pulls: [],
+    comments: [
+      { id: 40, issue: 3, body: 'owner text', user: { id: 1, login: 'Sanmoo', type: 'User' }, author_association: 'OWNER' },
+      { id: 41, issue: 3, body: 'outsider text', user: { id: 9, login: 'visitor', type: 'User' }, author_association: 'NONE' },
+      { id: 42, issue: 3, body: 'verdict', user: { id: 7, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 } },
+      { id: 43, issue: 3, body: 'other app', user: { id: 8, login: 'other[bot]', type: 'Bot' }, performed_via_github_app: { id: 99 } },
+      // A person acting through this App's id is not the Factory's bot.
+      { id: 44, issue: 3, body: 'via app as user', user: { id: 9, login: 'visitor', type: 'User' }, performed_via_github_app: { id: 1 } },
+      { id: 45, issue: 4, body: 'another issue', user: { id: 1, login: 'Sanmoo', type: 'User' }, author_association: 'OWNER' },
+    ],
+  });
+  const read = await world.tracker.readTicketComments!(ticket);
+  assert.equal(read.kind, 'observed');
+  if (read.kind !== 'observed') return;
+  assert.deepEqual(
+    read.comments.map(comment => [comment.commentId, comment.author.login, comment.authorAssociation, comment.ownApp, comment.body]),
+    [
+      [40, 'Sanmoo', 'OWNER', false, 'owner text'],
+      [41, 'visitor', 'NONE', false, 'outsider text'],
+      [42, 'factory-app[bot]', 'NONE', true, 'verdict'],
+      [43, 'other[bot]', 'NONE', false, 'other app'],
+      [44, 'visitor', 'NONE', false, 'via app as user'],
+    ],
+  );
+  assert.ok(
+    (await world.trace()).every(entry => entry.method === 'GET' || entry.endpoint.includes('access_tokens')),
+    'a read, never a write',
+  );
+  const foreign = await world.tracker.readTicketComments!({ ...ticket, repository: 'other/repo' });
+  assert.equal(foreign.kind === 'unavailable' ? foreign.code : '', 'REPOSITORY_NOT_CONFIGURED');
+  const failing = await compose(t, { issues: [issue(3)], pulls: [], faults: { '/issues/3/comments': { status: 502 } } });
+  const unavailable = await failing.tracker.readTicketComments!(ticket);
+  assert.deepEqual([unavailable.kind, 'comments' in unavailable], ['unavailable', false]);
+});

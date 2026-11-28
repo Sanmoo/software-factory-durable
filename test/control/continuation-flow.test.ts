@@ -294,10 +294,13 @@ test('AC1: after an answer the compatible recorded session is CONTINUED with `co
       { repository: 'acme/project', installationId: 2, workflows: false },
     ],
   );
-  // The Control never reads the Ticket's documents/links to resume (no collector): only tracking, authorization, dependencies and Questions.
+  // The Control never reads the Ticket's documents/links to resume (no collector): only tracking, authorization, dependencies, Questions and
+  // the comments of the Ticket, once, with the first Execution.
   assert.ok(
     h.github.calls.every(call =>
-      ['findQuestion', 'listCandidates', 'postComment', 'readDependencyGraph', 'readInputs', 'readTicket', 'findPublication'].includes(call.method),
+      ['findQuestion', 'listCandidates', 'postComment', 'readDependencyGraph', 'readInputs', 'readTicket', 'readTicketComments', 'findPublication'].includes(
+        call.method,
+      ),
     ),
   );
   // The continued session's new identity is what a further resumption would continue.

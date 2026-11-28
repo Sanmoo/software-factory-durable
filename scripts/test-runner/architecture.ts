@@ -36,7 +36,7 @@ export function readCruise(output: string): { violations: Violation[]; graph: Gr
 
 /** Node built-ins and packages through which a module performs I/O (the Unit tests level performs none). */
 const ioBuiltin = /^(node:)?(fs|fs\/promises|child_process|net|http|https|http2|dgram|tls|worker_threads|cluster|sqlite|dns|readline|inspector)$/;
-const ioPackage = /^node_modules\/@earendil-works\/(pi-durable|gondolin|chord|pi-coding-agent)\//;
+const ioPackage = /^node_modules\/@earendil-works\/(pi-durable|gondolin|chord|pi-coding-agent|pi-mcp)\//;
 
 /**
  * The declared unit tests that reach runtime I/O, directly or through a project module they load. Type-only imports load

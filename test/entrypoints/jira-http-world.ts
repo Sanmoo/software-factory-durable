@@ -1,12 +1,18 @@
 // Jira ticket 10: one Jira Cloud site as raw HTTP, behind the production host transport (`composeProductionAccess({ jira: { send } })`).
 // It models only what the Factory's Jira adapter uses (enhanced JQL search, issue re-reads, link type catalogue, comments, account, remote
-// links). Every exchange is recorded, unexpected ones included (answered 404), so a test can assert the absence of any other write
+// links; the one issue edit of a Triage publication and the changelog it leaves). Every exchange is recorded, unexpected ones included (answered 404), so a test can assert the absence of any other write
 // (status, assignee, resolution). Synthetic IDs only: it is not a Jira tenant and proves nothing about real permissions or audiences.
+import { createServer, request as httpRequest } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { JiraHttpExchange, JiraHttpResult } from '../../src/issue-tracker/index.js';
 
 export const jiraOrigin = 'https://equipe.atlassian.net';
 export type HttpCard = { id: string; key: string; projectId: string; labels: string[]; components: string[]; summary: string; description?: string };
 export type HttpComment = { id: string; accountId: string; text: string; created: string; updated: string };
+type ChangelogItem = { field: string; fieldId: string; from: string | null; fromString: string | null; to: string | null; toString: string | null };
+/** One changelog entry as Jira lists it; `author` and `historyMetadata` are absent when the edit carried none. */
+export type HttpChange = { id: string; author?: { accountId: string }; created: string; items: ChangelogItem[]; historyMetadata?: unknown };
+type IssueUpdate = { labels?: { add?: string; remove?: string }[]; components?: { add?: { id: string } }[] };
 
 const adf = (text: string) => ({
   type: 'doc',
@@ -23,8 +29,37 @@ export function jiraHttpWorld(cards: HttpCard[]) {
   const unexpected: string[] = [];
   const comments: Record<string, HttpComment[]> = {};
   const links: Record<string, Record<string, { id: number; url: string; title: string }>> = {};
+  const changelog: Record<string, HttpChange[]> = {};
+  /** HTTP statuses of the next issue edits (`PUT`), one each; a refused edit changes nothing. Absent = applied, `204`. */
+  const editFaults: number[] = [];
   let commentSequence = 10040;
   let linkSequence = 20000;
+  let changeSequence = 60000;
+  /** One edit of a Card's labels and components by relative operations, with the changelog entry Jira would keep for it. */
+  const edit = (card: HttpCard, update: IssueUpdate, origin: { accountId?: string; historyMetadata?: unknown } = { accountId: 'acc-person' }) => {
+    const before = [...card.labels];
+    for (const operation of update.labels ?? []) {
+      if (operation.add && !card.labels.includes(operation.add)) card.labels.push(operation.add);
+      if (operation.remove) card.labels = card.labels.filter(label => label !== operation.remove);
+    }
+    const items: ChangelogItem[] = [];
+    if (before.join(' ') !== card.labels.join(' '))
+      items.push({ field: 'labels', fieldId: 'labels', from: null, fromString: before.join(' '), to: null, toString: card.labels.join(' ') });
+    for (const operation of update.components ?? []) {
+      const id = operation.add?.id;
+      if (!id || card.components.includes(id)) continue;
+      card.components.push(id);
+      items.push({ field: 'Component', fieldId: 'components', from: null, fromString: null, to: id, toString: `c${id}` });
+    }
+    if (!items.length) return;
+    (changelog[card.id] ??= []).push({
+      id: String((changeSequence += 1)),
+      ...(origin.accountId ? { author: { accountId: origin.accountId } } : {}),
+      created: new Date().toISOString(),
+      items,
+      ...(origin.historyMetadata === undefined ? {} : { historyMetadata: origin.historyMetadata }),
+    });
+  };
   const json = (body: unknown, status = 200): JiraHttpResult => ({
     kind: 'response',
     status,
@@ -52,8 +87,28 @@ export function jiraHttpWorld(cards: HttpCard[]) {
     if (exchange.method === 'GET' && path === '/rest/api/3/mypermissions' && url.searchParams.get('projectId') === '10010') {
       return json({ permissions: Object.fromEntries((url.searchParams.get('permissions') ?? '').split(',').map(key => [key, { key, havePermission: true }])) });
     }
-    const issue = /^\/rest\/api\/3\/issue\/(\d+)(\/comment|\/remotelink)?$/.exec(path);
+    const issue = /^\/rest\/api\/3\/issue\/(\d+)(\/comment|\/remotelink|\/changelog)?$/.exec(path);
     const card = issue ? find(issue[1]!) : undefined;
+    if (issue && card && !issue[2] && exchange.method === 'PUT') {
+      const fault = editFaults.shift();
+      if (fault) return json({ errorMessages: ['synthetic refusal'] }, fault);
+      // Only what a Triage publication may name: any other key (fields, transition, a set replaced) is a write the Factory never makes.
+      const update = (body.update ?? {}) as IssueUpdate & Record<string, unknown>;
+      const allowed =
+        Object.keys(body).every(key => key === 'update' || key === 'historyMetadata') &&
+        Object.keys(update).every(key => key === 'labels' || key === 'components');
+      if (!allowed) {
+        unexpected.push(`${exchange.method} ${exchange.url} ${exchange.body}`);
+        return json({ errorMessages: ['synthetic: not modelled'] }, 400);
+      }
+      edit(card, update, { accountId: 'acc-factory', historyMetadata: body.historyMetadata });
+      return { kind: 'response', status: 204, headers: {}, body: '' };
+    }
+    if (issue && card && issue[2] === '/changelog' && exchange.method === 'GET') {
+      const all = changelog[card.id] ?? [];
+      const startAt = Number(url.searchParams.get('startAt') ?? 0);
+      return json({ startAt, maxResults: 100, total: all.length, values: all.slice(startAt, startAt + 100) });
+    }
     if (issue && card && !issue[2] && exchange.method === 'GET') {
       const fields = url.searchParams.get('fields');
       if (fields === 'summary,description')
@@ -105,5 +160,52 @@ export function jiraHttpWorld(cards: HttpCard[]) {
   };
   const posted = (issueId: string) => (comments[issueId] ?? []).filter(item => item.text.startsWith('[Software Factory · ')).map(item => item.text);
   const requests = () => exchanges.map(exchange => `${exchange.method} ${new URL(exchange.url).pathname}`);
-  return { send, exchanges, unexpected, comments, links, write, posted, requests };
+  return { send, exchanges, unexpected, comments, links, changelog, editFaults, edit, write, posted, requests };
+}
+
+/**
+ * The world as a local HTTP server on port 0, with its state. The production transport keeps the origin,
+ * the credential and the failure handling; its raw exchange (`send`) travels a real socket to this server instead of TLS to the
+ * configured site, and the server answers as the site would (the request is handed to the world under the site's origin).
+ */
+export async function jiraHttpServer(world: Pick<ReturnType<typeof jiraHttpWorld>, 'send'>) {
+  const server = createServer((incoming, outgoing) => {
+    const chunks: Buffer[] = [];
+    incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+    incoming.on('end', () => {
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(incoming.headers)) if (typeof value === 'string') headers[name] = value;
+      const body = Buffer.concat(chunks).toString('utf8');
+      void world
+        .send({ method: incoming.method as JiraHttpExchange['method'], url: `${jiraOrigin}${incoming.url}`, headers, ...(body ? { body } : {}) })
+        .then(result => {
+          if (result.kind === 'failed') return void outgoing.destroy();
+          outgoing.writeHead(result.status, result.headers);
+          outgoing.end(result.body);
+        });
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  /** The raw exchange of the transport, sent to the local server: same method, path, query, headers and body. */
+  const send = (exchange: JiraHttpExchange): Promise<JiraHttpResult> =>
+    new Promise(resolve => {
+      const url = new URL(exchange.url);
+      const outgoing = httpRequest(
+        { host: '127.0.0.1', port, method: exchange.method, path: `${url.pathname}${url.search}`, headers: exchange.headers, agent: false },
+        response => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('error', () => resolve({ kind: 'failed', reason: 'network' }));
+          response.on('end', () => {
+            const headers: Record<string, string> = {};
+            for (const [name, value] of Object.entries(response.headers)) if (typeof value === 'string') headers[name.toLowerCase()] = value;
+            resolve({ kind: 'response', status: response.statusCode ?? 0, headers, body: Buffer.concat(chunks).toString('utf8') });
+          });
+        },
+      );
+      outgoing.on('error', () => resolve({ kind: 'failed', reason: 'network' }));
+      outgoing.end(exchange.body);
+    });
+  return { port, send, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
 }

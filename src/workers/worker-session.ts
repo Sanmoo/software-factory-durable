@@ -16,7 +16,7 @@ import {
   type Skill,
   type ToolDefinition,
 } from '#factory-pi';
-import { loadSkillPack, skillPacks } from './skill-pack.js';
+import { loadSkillPack, skillPackForRole, skillPacks } from './skill-pack.js';
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
 import { reviewerRead } from './read.js';
@@ -77,7 +77,7 @@ async function reopenSession(sessionsDirectory: string, expected: { file: string
 }
 
 /** #48: the reasoning level of this profile's sessions: the role's configured level, or the release default (maximum) when absent. */
-const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
+export const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
   ('thinkingLevel' in profile ? profile.thinkingLevel : undefined) ?? defaultWorkerThinkingLevel;
 
 /**
@@ -85,7 +85,7 @@ const thinkingLevelOf = (profile: ReviewerProfile): WorkerThinkingLevel =>
  * profile's reasoning level. The SDK clamps silently when a model lacks a level, so a clamp refuses the session instead of running it with
  * another level. A legacy fixture model keeps the nearest level it declares.
  */
-function sessionRefusal(
+export function sessionRefusal(
   session: { model?: { provider: string; id: string } | undefined; thinkingLevel: string },
   profile: ReviewerProfile,
   oauth: boolean,
@@ -127,9 +127,11 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, ...deadline]) : invocation.signal;
   if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > limits.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
   // Explicit Factory resources only: the verified pack (guest-readable copies under /artifacts) or nothing; never a personal profile.
-  const selected = invocation.skillPack !== undefined && invocation.context.role === 'builder' ? skillPacks[invocation.skillPack] : undefined;
-  const pack = selected ? await loadSkillPack(selected.directory, selected.id) : undefined;
-  if (pack && pack.id !== selected!.id) throw new Error('WORKER_SKILL_PACK_DRIFT');
+  // One pack serves every role: the session is offered only the skills and prompts its manifest gives this role.
+  const selected = invocation.skillPack !== undefined ? skillPacks[invocation.skillPack] : undefined;
+  const loaded = selected ? await loadSkillPack(selected.directory, selected.id) : undefined;
+  if (loaded && loaded.id !== selected!.id) throw new Error('WORKER_SKILL_PACK_DRIFT');
+  const pack = loaded ? skillPackForRole(loaded, invocation.context.role) : undefined;
   const builderSkillPack = selected ?? skillPacks['factory-skills-v2'];
   const source = (path: string) =>
     createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, {
@@ -138,7 +140,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
       origin: 'package',
     });
   const skills: Skill[] = pack
-    ? pack.manifest.skills.map(skill => ({
+    ? pack.skills.map(skill => ({
         name: skill.name,
         description: skill.description,
         filePath: `${builderSkillPack.guestDirectory}/${skill.path}`,

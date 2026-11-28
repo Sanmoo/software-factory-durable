@@ -1,3 +1,4 @@
+import type { TriageImpediment, TriageRequestState } from './rules/triage.js';
 import type {
   AccessDiagnostic,
   BootUsage,
@@ -25,7 +26,25 @@ import type {
   SandboxCapabilities,
   StartRetryRemedy,
 } from '../contracts/index.js';
-import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
+import type {
+  CheckoutRequest,
+  EnvironmentRef,
+  PreparedWork,
+  RemoveResult,
+  StartResult,
+  StopResult,
+  BootRef,
+  InvestigationAgent,
+  InvestigationCloneRequest,
+  InvestigationCloneResult,
+  InvestigationEnvironmentPort,
+  InvestigationLimits,
+  InvestigationRecord,
+  InvestigationStop,
+} from '../sandbox/index.js';
+import type { TriageIntendedEffect, TriageOutcome, VerdictCategory, VerdictError } from './rules/triage-verdict.js';
+import type { TriageActivationText } from './rules/triage-prompt.js';
+import type { PublicationMode, RouteFallback } from './rules/triage-publication.js';
 import type {
   ActivationDelivery,
   DeliveryResult,
@@ -56,6 +75,7 @@ import type { CodeRepository } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
+import type { BoundedComments } from './rules/ticket-comments.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
 /** `dependencyResults`: preflight of repositories accessible only for dependency reads (no issue/relation is created). */
@@ -100,7 +120,7 @@ export type JiraOriginTracker = IssueTracker<'jira'> & JiraRemoteLinks & JiraBlo
  * conversation. A Jira source routes components (by ID) to executable repositories; no credential is carried here.
  */
 export type TicketSource =
-  | { tracker: 'github'; repository: string; discover: boolean }
+  | { tracker: 'github'; repository: string; discover: boolean; triage?: SourceTriage }
   | {
       tracker: 'jira';
       siteId: string;
@@ -108,10 +128,17 @@ export type TicketSource =
       projectId: string;
       label: string;
       discover: boolean;
+      triage?: SourceTriage;
       routes: { componentId: string; repository: string }[];
       /** The operator's blocking meaning of custom or ambiguous link types, by link type ID (spec §3.2); the same on every source of a site. */
       linkTypes?: { id: string; blocks: 'inward' | 'outward' | 'none' }[];
     };
+/**
+ * The `triage` block of a source, with its four label names (the `ready-for-agent` role is always the admission
+ * label of the destination). Absent = the source has no Triage and behaves as before. `available: false` = the block is configured but the
+ * Host lacks a Triage prerequisite: no request is created or moved, none is abandoned, and `needs-triage` still suspends admission.
+ */
+export type SourceTriage = { needsTriage: string; needsInfo: string; readyForHuman: string; wontfix: string; available: boolean };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
@@ -146,6 +173,17 @@ export type ControlInput =
    * `cleanup-confirm` confirms that plan, which is revalidated now and again per item at execution (an old plan never removes what became needed). */
   | { request_id: string; operation: 'cleanup-plan'; work_id: string; select: ExplicitCleanupSelection[]; origin: 'local-cli' }
   | { request_id: string; operation: 'cleanup-confirm'; work_id: string; plan_id: string; origin: 'local-cli' }
+  /** Early removal of the local details (transcripts, Verdict text) of ONE terminal Triage request: a plan of
+   * losses (no effect), then its confirmation, revalidated then and again at execution. Metadata and the published link are kept. */
+  | { request_id: string; operation: 'triage-cleanup-plan'; triage_request_id: string; origin: 'local-cli' }
+  | { request_id: string; operation: 'triage-cleanup-confirm'; triage_request_id: string; plan_id: string; origin: 'local-cli' }
+  /** The operator's interventions on ONE Triage request, named by its id or by its Ticket reference. `triage-cancel`
+   * ends it in any live state with nothing written to the Ticket; `triage-release` frees the capacity an ended attempt retains (exact
+   * attempt reference; the Factory observes again first); `triage-complete` takes the ambiguous effects of the exact Impediment as the
+   * Factory's and completes the publication. */
+  | { request_id: string; operation: 'triage-cancel'; request: string; origin: 'local-cli' }
+  | { request_id: string; operation: 'triage-release'; request: string; attempt: string; reason: string; origin: 'local-cli' }
+  | { request_id: string; operation: 'triage-complete'; request: string; impediment: string; origin: 'local-cli' }
   /** Ticket 31 (spec §12.4 `forget`): explicit deletion of the history of ONE ended Work. `forget-plan` records the plan of losses (no effect);
    * `forget-confirm` confirms it; it is revalidated now and again just before the deletion, which keeps only the minimal cycle memory. */
   | { request_id: string; operation: 'forget-plan'; work_id: string; origin: 'local-cli' }
@@ -231,6 +269,12 @@ export type ControlReceipt =
       reason: string | null;
       plan: ExplicitCleanupPlan | null;
     }
+  /** `accepted`: the plan was recorded (nothing removed) or confirmed (executed after the receipt); `not-applied`: refused with
+   * `reason`, nothing changed. */
+  | TriageCleanupReceipt
+  /** `accepted`: the intervention was applied as the receipt says; `not-applied`: refused, or the request had already moved on
+   * by itself, with `reason`; nothing changed. */
+  | TriageInterventionReceipt
   /** Ticket 31. `forget-plan`: `accepted` = plan of losses recorded (nothing deleted), `not-applied` = refused with `reason` (the plan names every refusal);
    * `forget-confirm`: `accepted` = confirmed after revalidation, executed after the ACK (result in `factory show`: the Work, or its minimal memory once
    * forgotten); `already-satisfied` = already confirmed/forgotten; `not-applied` = refused, nothing changed. */
@@ -276,6 +320,13 @@ export type ControlQuery =
   /** Ticket 29: `cursor`/`limit` page the Works (admission order) and the page is fitted to one frame; neither = the full list. */
   | { kind: 'list'; cursor?: number | undefined; limit?: number | undefined }
   | { kind: 'question'; question_id: string }
+  /** Every Triage request in arrival order, metadata only. The operator views are built over it. */
+  | { kind: 'triage-requests' }
+  /** The operator views of the Triage requests, metadata only. `request`: a request id or a Ticket reference. */
+  | { kind: 'triages'; cursor?: number | undefined; limit?: number | undefined }
+  | { kind: 'triage'; request: string }
+  /** The ONLY query that returns content of a Triage: one page of an attempt's session transcript, or the Verdict text. */
+  | { kind: 'triage-transcript'; triage_request_id: string; attempt?: string | undefined; offset?: number | undefined; verdict?: boolean | undefined }
   /** Ticket 29: `cursor`/`limit` page `chain.executions` of a big Work (the full view is returned when it fits one frame). */
   | { kind: 'show'; work_id: string; cursor?: number | undefined; limit?: number | undefined }
   /** Ticket 29: paginated/filtered history, logs listing, one log page and consumption (read-only). */
@@ -583,6 +634,8 @@ export type ExecutionView = {
     promptSha256: string | null;
     /** Jira ticket 04: the Card's text read by the controller at dispatch (the Builder has no Jira access); data for the Builder, never instructions. */
     ticketContent?: TicketContent;
+    /** The selected comments of a GitHub issue (the Builder reads the issue itself; a Jira Card carries them in `ticketContent`). */
+    ticketComments?: TicketComments;
     skillPack: { name: string; manifestSha256: string } | null;
     /** Ticket 44: identity of the environment base this Execution's environment was created from (declaration hash + resolved manifest). */
     environment?: EnvironmentBaseIdentity | null;
@@ -1242,6 +1295,8 @@ export type PollingView = {
   repositories: RepositoryPollView[];
   /** Jira ticket 04: the configured Jira sources (absent when there is none). */
   sources?: JiraSourcePollView[];
+  /** The sources carrying a `triage` block (absent when there is none). */
+  triage?: TriageSourcePollView[];
 };
 
 /**
@@ -1599,6 +1654,11 @@ export type ReadinessView = {
   stages: { internal: 'ready' | 'not-ready' | 'unknown'; flag: 'draft' | 'ready' | 'unknown'; humanReview: 'human-stage'; delivery: 'not-delivered' };
   nextStep: string;
 };
+/**
+ * The comments of a Ticket selected and bounded for the Builder, read ONCE with the Work's first Execution (they compose
+ * version v1 of the Ticket) and carried unchanged by every later Execution; a comment written later is never read into it.
+ */
+export type TicketComments = BoundedComments & { observedAt: string; sha256: string };
 /** Jira ticket 04: a Jira Card's summary and description (ADF as plain text, bounded: `truncated` says so) as read at dispatch. */
 export type TicketContent = {
   source: 'jira-rest';
@@ -1609,6 +1669,8 @@ export type TicketContent = {
   description: string | null;
   truncated: boolean;
   sha256: string;
+  /** Every comment of the Card (absent on a Work whose first Execution predates it). */
+  comments?: TicketComments;
 };
 /**
  * Jira ticket 04: evidence of a Jira Work's admission (spec §3.5): the Card re-read by ID immediately before the commit, with the source
@@ -2078,6 +2140,8 @@ export type ControlStatus = {
   jiraNotices?: JiraNoticeStatus;
   /** Jira ticket 08 (absent while no Jira link was intended): the Works' links on their Cards not yet confirmed, with their diagnostic. */
   jiraLinks?: JiraLinkStatus;
+  /** The Triage section (absent while no Triage capacity is composed and no request exists). */
+  triage?: TriageStatusView;
   controller_run_id: string;
   paused: boolean;
   dispatch: 'closed' | 'open';
@@ -2148,6 +2212,11 @@ export interface Control {
     | ListView
     | ShowView
     | QuestionQueryView
+    | TriageRequestsView
+    | TriagesView
+    | TriageDetailView
+    | TriageTranscriptView
+    | { kind: 'triage-not-found'; request: string; nextStep: string }
     | HistoryView
     | LogsView
     | LogPageView
@@ -2439,6 +2508,8 @@ export type UsageView = {
   resources: { state: 'unavailable'; code: 'ADAPTER_RESOURCE_METRICS_NOT_OBSERVED'; note: string };
   /** v2 ticket 14: installation scope only, and only when the sandbox reports builds. */
   environmentBuilds?: EnvironmentBuildsView;
+  /** Installation scope only. The Triages' tokens, never summed into `works` or `total`. */
+  triage?: TriageUsageView;
   limitations: string[];
 };
 /** One external/derived observation behind the view, with its instant, freshness and completeness (spec §12.1). */
@@ -2821,3 +2892,462 @@ export type JiraLinkIntent = {
 };
 /** Status view: links not yet confirmed (their diagnostic is the operator's view) and how many are confirmed. */
 export type JiraLinkStatus = { pending: JiraLinkIntent[]; confirmed: number };
+
+// ---- The Triage request, from `needs-triage` up to `queued` ----
+/** The source a Triage request was discovered in; a request whose source loses its `triage` block is abandoned. */
+export type TriageSourceRef = { tracker: 'github'; repository: string } | { tracker: 'jira'; siteId: string; projectId: string };
+/** One stamped fact of a request's life, metadata only (never Ticket text, tool arguments or the Verdict). */
+export type TriageTimelineEntry = {
+  at: string;
+  event: string;
+  code?: string;
+  labels?: string[];
+  /** The attempt the fact is about. */ attempt?: string;
+  /** Who attested the fact and why, when it is the operator's word and not an observation (`triage release`). */
+  author?: string;
+  reason?: string;
+};
+/**
+ * Durable record of one request of Triage of a Ticket (`factory.triage-request` v1), kept even if no Work ever exists. Metadata only. Discovery
+ * writes it up to `queued`, `suspended` and `abandoned`; the investigation and the publication add their own optional fields (attempts, budget,
+ * Verdict, publication effects) and move it through `transitionTriageRequest`.
+ */
+export type TriageRequest = {
+  triage_request_id: string;
+  /** Arrival order in the single installation-wide queue (FIFO among `queued` requests); kept across a suspension. */
+  sequence: number;
+  /** 1 for the Ticket's first request; earlier requests of the same Ticket are `previous`, oldest first. */
+  ordinal: number;
+  previous: string[];
+  ticket: TicketRef;
+  source: TriageSourceRef;
+  state: TriageRequestState;
+  /**
+   * What authorized it: `needs-triage` present on a fresh read by ID. `application` is the latest application of the label in the origin's
+   * history then (GitHub timeline event, Jira changelog entry; `null`: the history shows none), which a later request must differ from.
+   */
+  authorization: { label: string; observedAt: string; application: { eventId: string } | null };
+  /** Set while `suspended`: the state labels in conflict with `needs-triage`. */
+  suspension: { code: 'TRIAGE_LABEL_CONFLICT'; labels: string[]; since: string } | null;
+  /** Set in a terminal state: when and why. */
+  end: { at: string; code: string } | null;
+  requestedAt: string;
+  timeline: TriageTimelineEntry[];
+  /** Every activation of the Triager of this request, oldest first. Absent = none started (nothing spent). */
+  attempts?: TriageAttempt[];
+  /**
+   * Why the latest pass could not start an attempt of this `queued` request: its Ticket could not be read (`code`: the read's own code).
+   * It spends nothing and keeps the request's place; the queue goes on with the next request. Null or absent: no such obstacle.
+   */
+  startHold?: { code: string; since: string } | null;
+  /** The accepted Verdict, metadata only (its text is the `factory.triage-verdict` document). Set on entering `publishing`. */
+  verdict?: TriageVerdictRecord;
+  /** What the Control intends to write on the Ticket for the Verdict, in writing order; recorded WITH the Verdict. */
+  intended?: TriageIntendedEffect[];
+  /** How the publication of the recorded Verdict stands. Absent = no pass has reached the request yet. */
+  publication?: TriagePublication;
+  /** What became of the local details (transcripts, Verdict text). Absent = kept, nothing planned. */
+  details?: TriageDetails;
+};
+/**
+ * One attempt of a request, from the commit that moves it to `investigating` (`environment` holds the intent, recorded before
+ * the Investigation Environment starts, then the invocation) to `end`. An attempt holds Triage capacity until `end` carries a confirmed
+ * cessation (`holdsTriageCapacity`), whatever the state of its request.
+ */
+export type TriageAttempt = {
+  /** Reference of the attempt, never reused; names the environment's unit and the attempt's private directory. */
+  attempt: string;
+  ordinal: number;
+  startedAt: string;
+  environment: InvestigationRecord;
+  /**
+   * The release whose controller ran the attempt (`TriagePorts.release`), recorded at its start. Absent in an
+   * older record.
+   */
+  release?: string;
+  /** The pack whose `triage` skill the attempt ran (null until the Triager was activated). */
+  skillPack: { id: string; version: string; manifestSha256: string } | null;
+  /** Candidate repositories cloned for this attempt, with the commit read. */
+  clones: { repository: string; commit: string; at: string }[];
+  /** Ids of the MCP Profiles active in the attempt (absent until the Triager was activated, and in older records). */
+  mcpProfiles?: string[];
+  /**
+   * How the attempt ended: `code` (`VERDICT_RECORDED` or why there is none), what the environment answered to the stop, and the session
+   * transcript relative to the installation root (null: none was written). `cessation` unconfirmed = the capacity is still held.
+   * `cessation` is the LATEST answer (the stop is asked again at every reconciliation and start until it is confirmed);
+   * `cessationObservedAt` is when that answer was last obtained (absent: at `at`). `spentMs` is the investigation time the attempt took
+   * from the request's clock, from its start to this end (absent in an older record: nothing counted).
+   * `toolCalls`: calls per session tool as the session reported them, an MCP tool as `mcp__<server>__<tool>`; null when the
+   * session ended without reporting. Names and counts only: never arguments or results.
+   */
+  end: {
+    at: string;
+    code: string;
+    cessation: InvestigationStop;
+    transcript: string | null;
+    spentMs?: number;
+    cessationObservedAt?: string;
+    toolCalls?: Record<string, number> | null;
+    /**
+     * `triage release`: the operator attested that the attempt is over when the Factory could observe nothing (`observed`: what
+     * the environment answered then). It frees the unit of Triage capacity; `cessation` stays what the environment last answered.
+     */
+    attestation?: TriageAttestation;
+  } | null;
+};
+export type TriageAttestation = { author: 'local-operator'; reason: string; at: string; observed: string; request_id: string };
+/** One intended effect as an intervention receipt lists it: what it is and how the last read left it. Never a text. */
+export type TriageReceiptEffect = {
+  index: number;
+  kind: TriageIntendedEffect['kind'];
+  label?: string;
+  componentId?: string;
+  status: TriageIntendedEffect['status'];
+  /** Whether the Factory sent a write for it (a `pending` one that was attempted may be on the Ticket, unconfirmed). */
+  attempted: boolean;
+  code?: string;
+  reference?: string;
+};
+/**
+ * The receipt of `triage cancel | release | complete`. `state`/`endCode`: the request after the command.
+ * `effects` (cancel of a request in `publishing`, and complete): `published` = confirmed on the Ticket; `discarded` = everything else,
+ * never to be written. `attempt`: the attempt the command acted on (cancel: the one it interrupted; its unit of Triage capacity is free
+ * only once its stop is confirmed). `release`: on what basis the capacity was freed. `impediment`: the ambiguous-authorship Impediment
+ * open after the command (complete).
+ */
+export type TriageInterventionReceipt = {
+  kind: 'durable';
+  request_id: string;
+  operation: 'triage-cancel' | 'triage-release' | 'triage-complete';
+  request: string;
+  triage_request_id: string | null;
+  outcome: 'accepted' | 'not-applied';
+  reason: string | null;
+  state: TriageRequestState | null;
+  endCode: string | null;
+  effects: { published: TriageReceiptEffect[]; discarded: TriageReceiptEffect[] } | null;
+  attempt: string | null;
+  release: { basis: 'stop-confirmed' | 'operator-attestation'; observed: string; author: string | null; at: string } | null;
+  impediment: string | null;
+  nextStep: string;
+};
+/**
+ * An effect of the publication is present at the origin and nobody can be named for it. The publication is
+ * stopped until the operator decides (`triage complete <id> --impediment <ref>` takes the effects as the Factory's; `triage cancel`).
+ */
+export type TriagePublicationImpediment = {
+  ref: string;
+  code: 'TRIAGE_EFFECT_AUTHORSHIP_AMBIGUOUS';
+  since: string;
+  /** Indexes of the `ambiguous-authorship` effects in `intended`. */
+  effects: number[];
+  nextStep: string;
+};
+/** An open ambiguous-authorship Impediment as the operator view lists it, beside the retained-capacity ones. */
+export type TriageAuthorshipImpediment = TriagePublicationImpediment & { scope: 'triage-request'; triage_request_id: string };
+/**
+ * The publication of one request, beside its per-effect situation in `intended`. `mode` is null until the first write is
+ * committed (`informative`: `needs-triage` was withdrawn during the investigation, only one comment is published). `hold`: why the latest
+ * pass could not go on (origin unreadable, write refused or of unknown outcome, effect not read back yet); it is retried on every pass.
+ */
+export type TriagePublication = {
+  mode: PublicationMode | null;
+  startedAt: string | null;
+  impediment: TriagePublicationImpediment | null;
+  hold: { code: string; at: string } | null;
+};
+/**
+ * The recorded Verdict without its text. `attempt`: the attempt that recorded it. `fallback`:
+ * the Triager recorded `from` and the publication applies `outcome` instead, because the Card does not route to exactly one
+ * repository (`code`); `componentId` and `repository` are what the comment suggests. `afterComment`: the fallback came when the comment
+ * was already published, so the one comment still names `from` and the component it said the edit would add (`announced`, null:
+ * none). It comes from Jira refusing the edit that added the component (`observed`: its code), or from the route evaluated again
+ * just before that edit (a divergent component added since the comment).
+ */
+export type TriageVerdictRecord = {
+  fallback?: {
+    from: TriageOutcome;
+    code: RouteFallback['code'];
+    at: string;
+    componentId: string | null;
+    repository: string | null;
+    afterComment: boolean;
+    announced?: string | null;
+    observed?: string;
+  };
+  outcome: TriageOutcome;
+  category: VerdictCategory;
+  component: string | null;
+  attempt: string;
+  recordedAt: string;
+  textSha256: string;
+  textBytes: number;
+};
+/**
+ * What composes one Triager attempt. The Control records the environment's intent before `open`, validates
+ * every clone request and Verdict itself, and never hands a credential to any of these.
+ */
+export type TriagePorts = {
+  /** The identity of the running release, recorded on every attempt it starts beside the pack the Triager reports. */
+  release: string;
+  /** The Investigation Environment of the Host (never `sandbox.adapter`). */
+  environment: InvestigationEnvironmentPort;
+  /** `triager.environment` of the configuration. */
+  limits: InvestigationLimits;
+  /** `triager.investigationMinutes`: the investigation clock of one request, spent only while an attempt of it runs. */
+  investigationMinutes: number;
+  /** `triager.capacity`: the Triage capacity, the most attempts that may hold a unit at once (never a Slot). */
+  capacity: number;
+  /** `triager.attempts`: the attempts of one request. */
+  attempts: number;
+  /** Calendar clock of the investigation time (default the system's); tests substitute it. `sleep` ends early on abort. */
+  clock?: TriageClock;
+  /** How often a running attempt's environment is observed for an agent that ended without reporting (default 2000 ms). */
+  agentWatchMs?: number;
+  triager: {
+    /** Prepares the Host side of one attempt's session and names the agent the environment starts. Always a new session. */
+    activate(request: {
+      attempt: string;
+      activation: TriageActivationText;
+      host: {
+        requestClone(
+          repository: string,
+        ): Promise<{ status: 'cloned'; repository: string; path: string; commit: string } | { status: 'refused'; code: string; message: string }>;
+        conclude(verdict: Record<string, unknown>): Promise<{ status: 'recorded' } | { status: 'refused'; errors: VerdictError[] }>;
+      };
+    }): Promise<{
+      agent: InvestigationAgent;
+      skillPack: { id: string; version: string; manifestSha256: string };
+      /** Ids of the MCP Profiles active in the attempt. */
+      mcpProfiles?: string[];
+      completed: Promise<
+        | {
+            status: 'completed' | 'interrupted';
+            concluded: boolean;
+            transcript: string | null;
+            closedBy: 'requests' | 'tools' | 'provider' | null;
+            toolCalls?: Record<string, number>;
+          }
+        | { status: 'failure'; code: string }
+      >;
+      close(): Promise<void>;
+    }>;
+  };
+  /** A candidate's copy from the bare cache, created under the attempt's clones directory (the read credential stays on the Host). */
+  clones: { create(request: InvestigationCloneRequest): Promise<InvestigationCloneResult> };
+};
+// ---- What the operator sees of the Triage requests ----
+/** The local details of the attempts of Triage requests: the session files under the installation root. Never called for metadata. */
+export type TriageDetailPorts = {
+  /** The session files an attempt left (whether or not its end recorded one). */
+  inventory(attempt: string): Promise<{ state: 'listed'; sessions: number; bytes: number } | { state: 'absent' } | { state: 'unavailable'; code: string }>;
+  /** One page of the attempt's session transcript, by byte offset, cut at a character boundary. */
+  read(input: {
+    attempt: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ state: 'read'; text: string; nextOffset: number; bytes: number } | { state: 'absent' } | { state: 'unavailable'; code: string }>;
+  /** Model usage of the attempt's session as the SDK recorded it. */
+  usage(attempt: string): Promise<UsageObservation>;
+  /** Removes the attempt's private directory (bootstrap, session files). `absent`: already gone. */
+  remove(attempt: string): Promise<{ state: 'removed' | 'absent' } | { state: 'failed'; code: string }>;
+};
+/** Tokens of one attempt, measured from its session; kept with the removal intent so the totals outlive the retention. */
+export type TriageAttemptUsage = {
+  attempt: string;
+  measurement: UsageMeasurement;
+  code: string | null;
+  entries: number;
+  tokens: TokenUsage | null;
+  cost: CostEstimate | null;
+};
+export type TriageCleanupItem = { kind: 'transcript'; attempt: string; sessions: number; bytes: number } | { kind: 'verdict-text'; bytes: number };
+/** A plan of losses of an early removal; only the latest one of a request is kept. */
+export type TriageCleanupPlan = {
+  planId: string;
+  request_id: string;
+  createdAt: string;
+  state: 'planned' | 'confirmed' | 'executed';
+  items: TriageCleanupItem[];
+  kept: string[];
+  nextStep: string;
+};
+/**
+ * `removal`: the intent recorded BEFORE anything is removed (`removedAt` null until every part is gone; `code`: why the latest try did
+ * not finish). `usage`: measured with the intent. Once removed, the transcripts and the Verdict text are gone; metadata and link stay.
+ */
+export type TriageDetails = {
+  removal: { origin: 'retention' | 'explicit'; intendedAt: string; removedAt: string | null; code?: string } | null;
+  plan: TriageCleanupPlan | null;
+  usage?: TriageAttemptUsage[];
+};
+export type TriageCleanupReceipt = {
+  kind: 'durable';
+  request_id: string;
+  operation: 'triage-cleanup-plan' | 'triage-cleanup-confirm';
+  triage_request_id: string;
+  outcome: 'accepted' | 'already-satisfied' | 'not-applied';
+  reason: string | null;
+  plan: TriageCleanupPlan | null;
+};
+/** How the local details of a request stand: kept while `protected` or `retained`, due for the sweep when `eligible`. */
+export type TriageDetailsView = {
+  state: 'protected' | 'retained' | 'eligible' | 'removing' | 'expired' | 'removed';
+  dueAt: string | null;
+  protections: string[];
+  removedAt: string | null;
+  plan: TriageCleanupPlan | null;
+};
+/** One request as the lists show it. Metadata only: never Ticket text, tool arguments or results, or the Verdict text. */
+export type TriageSummaryView = {
+  triage_request_id: string;
+  ticket: string;
+  url: string;
+  ordinal: number;
+  state: TriageRequestState;
+  outcome: TriageOutcome | null;
+  endCode: string | null;
+  requestedAt: string;
+  endedAt: string | null;
+  lastEventAt: string;
+  /** `total`/`remainingMs` null: this Control has no Triage limits composed. */
+  attempts: { used: number; total: number | null };
+  investigation: { spentMs: number; remainingMs: number | null };
+  capacity: 'none' | 'investigating' | 'retained';
+  /** `published`: the comment is on the Ticket (`link`); `recorded`: accepted and not (or never) published. */
+  verdict: { state: 'none' | 'recorded' | 'published'; link: string | null };
+  /** References of the open Impediments of the request (none: nothing needs the operator). */
+  impediments: string[];
+  nextStep: string;
+};
+export type TriageAttemptView = {
+  attempt: string;
+  ordinal: number;
+  startedAt: string;
+  endedAt: string | null;
+  code: string | null;
+  spentMs: number | null;
+  capacity: 'investigating' | 'retained' | 'released';
+  stop: { confirmed: boolean; code: string | null; observedAt: string | null } | null;
+  /** The operator's attestation that freed the unit when the stop could not be observed (`triage release`). */
+  attestation: { author: string; reason: string; at: string } | null;
+  release: string | null;
+  skillPack: { id: string; version: string } | null;
+  clones: { repository: string; commit: string; at: string }[];
+  /** `active`: the Profiles of the attempt; `calls`: calls per MCP server, from the per-tool counts (a Profile with no call was not used). */
+  mcp: { active: string[] | null; calls: Record<string, number> };
+  toolCalls: Record<string, number> | null;
+  /** Whether a session transcript is recorded for the attempt; its content is read only by `factory triage transcript`. */
+  transcript: 'recorded' | 'not-recorded';
+};
+export type TriageDetailView = {
+  kind: 'triage';
+  request: TriageSummaryView & {
+    source: TriageSourceRef;
+    authorization: { label: string; observedAt: string };
+    suspension: TriageRequest['suspension'];
+    verdictRecord: {
+      outcome: TriageOutcome;
+      category: VerdictCategory;
+      component: string | null;
+      attempt: string;
+      recordedAt: string;
+      textBytes: number;
+    } | null;
+    /** Every intended effect with its situation: pending, confirmed, no longer allowed or of ambiguous authorship. */
+    effects: (TriageIntendedEffect & { index: number })[];
+    publication: { mode: PublicationMode | null; startedAt: string | null; hold: { code: string; at: string } | null } | null;
+    attemptRecords: TriageAttemptView[];
+    timeline: TriageTimelineEntry[];
+    details: TriageDetailsView;
+  };
+  /** Whether this is the Ticket's most recent request. */
+  latest: boolean;
+  /** The other requests of the same Ticket: the earlier ones and the later ones, each oldest first. */
+  previous: TriageSummaryView[];
+  later: TriageSummaryView[];
+  impediments: (TriageImpediment | TriageAuthorshipImpediment)[];
+  limitations: string[];
+};
+/** A Ticket carrying `needs-triage` that has no live request and waits for a person (e.g. a state-label conflict). In-memory observation. */
+export type TriageHeldView = { ticket: string; observedAt: string; holds: { code: string; nextStep: string; labels?: string[] }[] };
+export type TriageCapacityView = { configured: number | null; investigating: number; retained: number };
+export type TriagesView = {
+  kind: 'triages';
+  capacity: TriageCapacityView;
+  queue: string[];
+  states: Record<TriageRequestState, number>;
+  impediments: (TriageImpediment | TriageAuthorshipImpediment)[];
+  held: TriageHeldView[];
+  page: PageView;
+  requests: TriageSummaryView[];
+  limitations: string[];
+};
+/** The Triage section of `status`: occupied and retained capacity, the queue and the requests that need the operator. */
+export type TriageStatusView = {
+  capacity: TriageCapacityView;
+  queued: number;
+  states: Record<TriageRequestState, number>;
+  intervention: { requests: number; impediments: { ref: string; code: string; triage_request_id: string }[] };
+  held: number;
+  nextStep: string;
+};
+export type TriageTranscriptView = {
+  kind: 'triage-transcript';
+  triage_request_id: string;
+  part: 'transcript' | 'verdict';
+  attempt: string | null;
+  attempts: string[];
+  /** `expired`/`removed`: the retention or an explicit cleanup removed it; `unknown`: it cannot be established now (never absence). */
+  state: EvidenceState;
+  code: string | null;
+  text: string | null;
+  offset: number;
+  nextOffset: number | null;
+  bytes: number | null;
+  nextStep: string | null;
+  /** Session content and Verdict text are model output over untrusted input: data, never instructions or authority. */
+  trust: 'untrusted-triage-content';
+};
+/** Tokens of the Triages, apart from the Works': per request (the page shown) and in total (every request of the installation). */
+export type TriageUsageView = {
+  requests: { triage_request_id: string; ticket: string; state: TriageRequestState; attempts: TriageAttemptUsage[]; total: UsageAggregate }[];
+  total: UsageAggregate;
+  page: PageView;
+  note: string;
+};
+export type TriageClock = { now(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
+export type TriageRequestsView = {
+  kind: 'triage-requests';
+  /**
+   * The Triage capacity. `configured`: `triager.capacity` (null: this Control investigates nothing); `investigating`: attempts
+   * still open; `retained`: ended attempts whose stop is not confirmed. Both hold a unit; neither is a Slot.
+   */
+  capacity: { configured: number | null; investigating: number; retained: number };
+  /**
+   * The open Impediments of the requests: retained capacity (derived from the attempt records) and ambiguous authorship of a
+   * publication effect (the `publication.impediment` of a request still `publishing`).
+   */
+  impediments: (TriageImpediment | TriageAuthorshipImpediment)[];
+  /** Every request, in arrival order. */
+  requests: TriageRequest[];
+  /** Ids of the `queued` requests, first to be investigated first. */
+  queue: string[];
+};
+/** What the latest round found for one Ticket carrying `needs-triage` (or holding a live request) in a source with Triage. */
+export type TriageCandidateView = { ticket: TicketRef; observedAt: string } & (
+  | { outcome: 'requested' | 'queued' | 'suspended' | 'abandoned' | 'tracked'; triage_request_id: string; code?: string; labels?: string[] }
+  | { outcome: 'held'; holds: { code: string; nextStep: string; labels?: string[]; observedCode?: string }[] }
+);
+/** In-memory observation of the latest Triage round of one source; not authority. `not-available`: the Host lacks a prerequisite. */
+export type TriageSourcePollView = {
+  source: TriageSourceRef;
+  needsTriage: string;
+  state: 'pending' | 'observed' | 'unavailable' | 'not-available';
+  observedAt: string | null;
+  code?: string;
+  nextStep?: string;
+  /** `null` when the round did not list. In `status` only the count of held Tickets is kept. */
+  candidates: TriageCandidateView[] | null;
+  held?: number;
+};

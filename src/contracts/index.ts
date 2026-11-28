@@ -73,6 +73,8 @@ export interface RepositoryFetchCredentials {
 export const questionMarkerPrefix = 'software-factory:question:';
 /** Ticket 23: stable correlation marker of the controller's reply to a `/factory` command: `<!-- software-factory:reply:<reply-id> -->`. */
 export const replyMarkerPrefix = 'software-factory:reply:';
+/** Stable correlation marker of a published Verdict: first line `<!-- software-factory:triage:<triage-request-id> -->`. */
+export const triageMarkerPrefix = 'software-factory:triage:';
 /**
  * Ticket 41: the reference of a Builder request found in Records but not readable intact (it blocks the recovery, ticket 27), shown by
  * `factory show` and named EXACTLY by `factory resume <work> --override-blocked-recovery <reference>`. One shape for Control, socket and CLI.
@@ -85,6 +87,14 @@ export const blockedRequestReference = (token: string, code: string) => `request
  * `factory show` and named EXACTLY by `factory resume <work> --retry-blocked-start <code>`. One shape for Control, socket and CLI.
  */
 export const blockedStartCodePattern = /^(PREPARE|START)_[A-Z][A-Z0-9_]{0,95}$/;
+/**
+ * What `factory triage <...>` names: a Triage request id, or the reference of its Ticket (`owner/repo#number`
+ * or a Jira key), which stands for the Ticket's most recent request. One shape for the socket and the CLI.
+ */
+export const triageReferencePattern =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}#[1-9][0-9]{0,9}|[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9})$/;
+/** The reference of one Triager attempt (`t<sequence>-<ordinal>-<8 hex>`), as `factory triage` shows it. */
+export const triageAttemptPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
  * Ticket 50: explicit operator remedies applied together with a retry of a blocked start (`--remedy <name>`), each valid for exactly the
  * refusal codes Control maps it to. Ticket 47 adds its disk remedies for `START_PRESERVED_DISK_CHECK_REQUIRED` here.
@@ -102,6 +112,8 @@ export const builderBudgetMaximumFactor = 2;
 /** Ticket 51 (operator decision 2026-11-19, pilot 35): the fixed reviewer budget of ONE opinion (`reviewer-v1`). Ticket 59: one source for the
  * worker limits, the release record and the owner's secret-sync bound. */
 export const reviewerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
+/** The fixed model budget of ONE attempt of a Triager (`triager-v1`); the definitive values come from the real qualification. */
+export const triagerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
 /**
  * #48 (operator decisions 2026-11-22): every agent session (Builder, Standards, Spec) requires model reasoning. The levels a role may be
  * configured with (`models.<role>.thinkingLevel`) are the reasoning levels of the release's single model (gpt-6-luna); there is no `off`.
@@ -281,7 +293,7 @@ export const reviewVerdictFormat =
   'Paths are guest paths: /workspace/checkout/... or /artifacts/....';
 
 /**
- * Versioned Factory Builder skill packs shipped with this release. A published pack is never edited: a change appends a new id (the pack
+ * Versioned Factory skill packs shipped with this release (from v13 on one pack serves every role: its manifest names the role of each skill and prompt). A published pack is never edited: a change appends a new id (the pack
  * decides its own guest paths and, in its manifest, which session protocols it supports). Consumers derive their enum/registry from this
  * list, so renumbering or adding a version is a data change here plus the pack directory.
  */
@@ -298,6 +310,7 @@ export const factorySkillPackIds = [
   'factory-skills-v10',
   'factory-skills-v11',
   'factory-skills-v12',
+  'factory-skills-v13',
 ] as const;
 export type FactorySkillPackId = (typeof factorySkillPackIds)[number];
 
@@ -318,12 +331,14 @@ export function jiraInputOrder(a: { createdAt: string; commentId: string }, b: {
   return a.commentId.length - b.commentId.length || (a.commentId < b.commentId ? -1 : a.commentId > b.commentId ? 1 : 0);
 }
 
+// Format 4 (installation v4) marks every storage that may hold Triage requests, so a release that knows no Triage refuses it.
+// The Triage request document kinds are declared in `documents` below (format 4 only); a later Triage ticket adds its kinds next to them.
 export const controlStorageCompatibility = Object.freeze({
-  format: 3,
-  migratesFrom: Object.freeze([1, 2]),
-  migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3']),
+  format: 4,
+  migratesFrom: Object.freeze([1, 2, 3]),
+  migrations: Object.freeze(['factory-storage-1-to-2', 'factory-storage-2-to-3', 'factory-storage-3-to-4']),
   documents: Object.freeze({
-    'factory.installation': 3,
+    'factory.installation': 4,
     'factory.request': 1,
     'factory.ticket-index': 1,
     'factory.work': 1,
@@ -334,6 +349,11 @@ export const controlStorageCompatibility = Object.freeze({
     'factory.jira-comment': 1,
     // Jira ticket 08: the Work's remote link on its Card (latest desired state + confirmation), independent of comments and of Work cleanup.
     'factory.jira-link': 1,
+    // One document per Triage request. Format 4 only; the migration creates none.
+    'factory.triage-request': 1,
+    // Arrival sequence, live requests and the requests of each Ticket.
+    'factory.triage-index': 1,
+    'factory.triage-verdict': 1,
   }),
 });
 

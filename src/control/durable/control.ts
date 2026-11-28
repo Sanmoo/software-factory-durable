@@ -15,6 +15,10 @@ import type {
   ListView,
   PollingOptions,
   PollingView,
+  TriagePorts,
+  TriageDetailPorts,
+  TriageSourcePollView,
+  TriageRequestsView,
   QuestionQueryView,
   RecoveryView,
   RuntimeInventory,
@@ -24,7 +28,7 @@ import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredential
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { createChecksTracker } from './checks.js';
 import { acceptReadinessAuthorization, createReadinessDesk } from './readiness.js';
-import { openStore } from './store.js';
+import { openStore, type Session } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
 import {
@@ -50,6 +54,15 @@ import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { ticketKey } from '../rules/admission.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
+import { triageCapacity, triageRequestImpediments } from '../rules/triage-operator.js';
+import { createTriageOperator } from './triage-operator.js';
+import { createTriageDiscovery } from './triage-discovery.js';
+import { createTriageInvestigations, type TriageInvestigations } from './triage-investigation.js';
+import { createTriageInterventions } from './triage-intervention.js';
+import { createTriagePublications, type TriagePublications } from './triage-publication.js';
+import { githubTriagePublisher } from './triage-publication-github.js';
+import { jiraTriagePublisher } from './triage-publication-jira.js';
+import { readTriageRequests } from './triage-requests.js';
 import { createQuestionDesk } from './question-desk.js';
 import { jiraNoticeStatus, noticeJiraImpediments } from './jira-impediments.js';
 import { jiraConversationOwners, prepareJiraQuestions } from './jira-questions.js';
@@ -72,7 +85,7 @@ import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDe
 import { createRetentionDesk } from './retention-desk.js';
 import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './retention.js';
 import { planCleanup } from '../rules/delivery.js';
-import { retentionProtections, type PlanFacts } from '../rules/retention.js';
+import { defaultRetentionDays, retentionProtections, type PlanFacts } from '../rules/retention.js';
 import { createRepairDesk } from './repair.js';
 import { acceptRepairRequest, createFeedbackDesk } from './feedback.js';
 import { queueOrder } from '../rules/repair.js';
@@ -235,6 +248,82 @@ export async function withdrawActivityCredentials(
   return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
 }
 
+/** The Triage rounds as `status` shows them: no candidate list, only how many Tickets wait for a person. */
+const triageRoundsStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
+  polling.triage
+    ? {
+        triage: polling.triage.map(({ candidates, ...source }) => ({
+          ...source,
+          candidates: null,
+          held: candidates?.filter(candidate => candidate.outcome === 'held').length ?? 0,
+        })),
+      }
+    : {};
+/** Every Triage request in arrival order and the queue, metadata only. */
+async function triageRequestsView(session: Session, capacity: number | null): Promise<TriageRequestsView> {
+  const requests = await readTriageRequests(session);
+  return {
+    kind: 'triage-requests',
+    capacity: triageCapacity(requests, capacity),
+    impediments: requests.flatMap(triageRequestImpediments),
+    requests,
+    queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id),
+  };
+}
+/** The investigation desk when the Triage ports, the access and the polling are all composed; a desk that does nothing otherwise. */
+function triageInvestigations(
+  options: { triage?: TriagePorts | undefined; access?: AccessDependencies | undefined },
+  session: Session,
+  poller: { repositoryId(repository: string): number | undefined } | undefined,
+  stopped: () => boolean,
+): Pick<TriageInvestigations, 'pass' | 'stop'> & Partial<Pick<TriageInvestigations, 'interrupt'>> {
+  if (!options.triage || !options.access || !poller) return { pass: async () => {}, stop: async () => {} };
+  return createTriageInvestigations({
+    session,
+    access: options.access,
+    ports: options.triage,
+    paused: async () => (await readInstallation(session)).paused,
+    stopped,
+    repositoryId: repository => poller.repositoryId(repository),
+  });
+}
+/**
+ * The operator's views of the Triage requests and the retention of their local details. The limits are the
+ * Triage ports' when this Control investigates; the details follow the retention term of the Work details, on the same calendar.
+ */
+function triageOperator(
+  options: { triage?: TriagePorts | undefined; triageDetails?: TriageDetailPorts | undefined; execution?: ExecutionPorts | undefined },
+  session: Session,
+  polled: () => TriageSourcePollView[],
+  stopped: () => boolean,
+  desks: { investigations: Partial<Pick<TriageInvestigations, 'interrupt'>>; publications: Partial<Pick<TriagePublications, 'complete' | 'exclusive'>> },
+) {
+  const { triage } = options;
+  const now = triage?.clock ? () => triage.clock!.now() : (retentionClock(options).now ?? Date.now);
+  return createTriageOperator({
+    session,
+    limits: triage ? { capacity: triage.capacity, attempts: triage.attempts, investigationMinutes: triage.investigationMinutes } : null,
+    details: options.triageDetails,
+    retentionDays: options.execution?.cleanup?.retentionDays ?? defaultRetentionDays,
+    now,
+    polled,
+    stopped,
+    // The operator's interventions, over the desks this Control composed (a command says so when its desk is not there).
+    interventions: createTriageInterventions({ session, now, interrupt: desks.investigations.interrupt, publications: desks.publications, ports: triage }),
+  });
+}
+/** The publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
+function triagePublications(
+  access: AccessDependencies | undefined,
+  session: Session,
+  polling: boolean,
+  stopped: () => boolean,
+): Pick<TriagePublications, 'pass'> & Partial<TriagePublications> {
+  // Without a `triage` block in some source no request is live (the sweep abandons them), so the pass has nothing to read.
+  if (!access || !polling || !access.sources?.some(source => source.triage)) return { pass: async () => {} };
+  const paused = async () => (await readInstallation(session)).paused;
+  return createTriagePublications({ session, stopped, paused, publishers: { github: githubTriagePublisher(access), jira: jiraTriagePublisher(access) } });
+}
 /** The Jira adapter when this owner polls: the Jira desks need both (no adapter composed, or no polling: no Jira desk). */
 const pollingJira = (options: { access?: AccessDependencies | undefined; polling?: PollingOptions | undefined }) =>
   options.polling ? options.access?.trackers?.jira : undefined;
@@ -261,6 +350,11 @@ export async function openControl(options: {
   polling?: PollingOptions;
   /** Execution boundaries (sandbox lifecycle, Workers activation, Builder credentials). Absent: dispatch stays closed (EXECUTION_NOT_ENABLED). */
   execution?: ExecutionPorts;
+  /** What composes a Triager attempt. Absent: Triage requests are created and queued, never investigated. */
+  triage?: TriagePorts;
+  /** The session files of the Triager attempts, for the explicit transcript command, usage and retention.
+   * Absent: the requests are still shown (metadata), no transcript is read and no detail is removed. */
+  triageDetails?: TriageDetailPorts;
 }): Promise<Control> {
   // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
   let dispatchReason: DispatchReason | null = 'RECONCILIATION_REQUIRED';
@@ -354,6 +448,7 @@ export async function openControl(options: {
           ownCycles: issueIds => ownCycles(state, issueIds),
           record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
           recordEnvironment: (work_id, observation) => recordEnvironment(state, work_id, observation),
+          triage: createTriageDiscovery({ session: state, access: options.access }),
           // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
           // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
           afterCycle: async () => {
@@ -419,8 +514,24 @@ export async function openControl(options: {
           limits: configuredRepository,
         })
       : undefined;
+  // Queued Triage requests are investigated by a Triager when the Triage ports are composed.
+  const investigations = triageInvestigations(options, state, poller, () => stopped);
+  // A recorded Verdict is published on its Ticket, whether or not this run can investigate (a release that
+  // restarts with requests in `publishing` completes them).
+  const publications = triagePublications(options.access, state, poller !== undefined, () => stopped);
   // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
+  // The operator views of the requests and the retention of their transcripts and Verdict texts.
+  const operator = triageOperator(
+    options,
+    state,
+    () => pollingView().triage ?? [],
+    () => stopped,
+    { investigations, publications },
+  );
   const afterTick = async () => {
+    await investigations.pass().catch(() => {});
+    await publications.pass().catch(() => {});
+    await operator.sweep().catch(() => {});
     await checks?.pass(tracking.signal).catch(() => {});
     await readiness?.pass(tracking.signal).catch(() => {});
     // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
@@ -950,6 +1061,7 @@ export async function openControl(options: {
           ...polling,
           repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo),
           ...(polling.sources ? { sources: polling.sources.map(({ candidates: _candidates, ...source }) => source) } : {}),
+          ...triageRoundsStatus(polling),
         },
         persistence: store.persistence,
         recovery,
@@ -1039,6 +1151,7 @@ export async function openControl(options: {
         await polling.catch(() => {});
         // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
         const uncertain = (await dispatcher?.stop())?.uncertain ?? 0;
+        await investigations.stop();
         await desk?.idle();
         // Ticket 33 + 26: ONE outcome (single source) for the run result and its durable end: clean only for a requested stop whose own
         // activities ticket 26's dispatcher stop confirmed ceased and persisted; otherwise `uncertain`. The intention to stop never makes an
@@ -1054,6 +1167,7 @@ export async function openControl(options: {
         stopped = true;
         await polling.catch(() => {});
         await dispatcher?.stop().catch(() => {});
+        await investigations.stop().catch(() => {});
         await desk?.idle().catch(() => {});
         await state.close(BACKGROUND_CONTEXT).catch(() => {});
         return { kind: 'failed' };
@@ -1065,5 +1179,12 @@ export async function openControl(options: {
     correction: (work_id, reason) => openCorrection(state, work_id, reason, configuredRepository),
     recovery: (work_id, reason) => requestOperationalRecovery(state, work_id, reason, configuredRepository),
   });
+  // Triage requests are read beside the Work views, never through them.
+  const inspectWorks = control.inspect;
+  const inspectRecords: Control['inspect'] = query =>
+    query.kind === 'triage-requests' ? triageRequestsView(state, options.triage?.capacity ?? null) : inspectWorks(query);
+  control.inspect = query => operator.inspect(query, inspectRecords);
+  const acceptWorks = control.accept;
+  control.accept = input => operator.accept(input, acceptWorks);
   return control;
 }

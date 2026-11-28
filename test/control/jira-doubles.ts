@@ -2,11 +2,15 @@
 // included (a Proxy records any method not modelled and answers unavailable), so a test can assert absence of comments/writes.
 import {
   jiraInputsOf,
+  type JiraComponentEvent,
+  type JiraLabelEvent,
   type JiraLink,
   type JiraLinkType,
   type JiraStatusCategory,
   type JiraTicketRef,
+  type JiraTriageWrite,
   type JiraVisibleComment,
+  type TriageWriteResult,
 } from '../../src/issue-tracker/index.js';
 import type { JiraOriginTracker, TicketSource } from '../../src/control/types.js';
 
@@ -22,13 +26,29 @@ export type JiraCard = {
   statusCategory: JiraStatusCategory;
   summary: string | null;
   description?: string | null;
+  /** The Card's label changes as its changelog reports them (`relabel` keeps it with `labels`). */
+  labelEvents?: JiraLabelEvent[];
+  /** The Card's component changes as its changelog reports them. */
+  componentEvents?: JiraComponentEvent[];
 };
+/**
+ * How one writeTriage goes wrong. `unknown-applied`/`unknown-not-applied`: no answer, applied or not. `failed`: a
+ * passing refusal (rate limit), nothing applied. `forbidden`/`rejected`: Jira's 403/400, nothing applied. `retained`: accepted and never
+ * applied. `anonymous`: applied, and the changelog names no author. `unmarked`: applied by the Factory's account without the request's mark.
+ */
+export type JiraTriageFault = 'unknown-applied' | 'unknown-not-applied' | 'failed' | 'forbidden' | 'rejected' | 'retained' | 'anonymous' | 'unmarked';
 export type JiraRemote = {
   cards: JiraCard[];
   /** What the listing returns (refs as listed then); absent = the cards carrying the label now. */
   listed?: JiraTicketRef[];
   catalogue?: JiraLinkType[];
   listFailure?: { code: string; waitSeconds?: number };
+  /** readLabelHistory answers unavailable with this code while set. */
+  labelHistoryFailure?: string;
+  /** Consumed one per writeTriage (absent = applied and accepted). */
+  triageWrites?: (JiraTriageFault | undefined)[];
+  /** Called after each writeTriage reached the site, before its answer: what somebody else does to the Card between two writes. */
+  afterTriageWrite?: (write: JiraTriageWrite, card: JiraCard) => void;
   /** Per issue id: the re-read fails with this code. */
   readFailures?: Record<string, string>;
   /** Called after the listing, before any re-read (models an edit between discovery and admission). */
@@ -70,6 +90,39 @@ export const card = (issueId: string, key: string, overrides: Partial<JiraCard> 
   summary: `Summary ${key}`,
   ...overrides,
 });
+let changelogSequence = 60000;
+/** A person edits the Card's labels (label set and changelog together), in one changelog entry. */
+export function relabel(item: JiraCard, change: { add?: string[]; remove?: string[] }, accountId = 'acc-stranger') {
+  edit(item, change, { accountId });
+}
+/**
+ * One edit of a Card's labels and components, in one changelog entry. `accountId: null`: the changelog names no author; `mark`: what the
+ * caller sent as `historyMetadata`.
+ */
+export function edit(
+  item: JiraCard,
+  change: { add?: string[]; remove?: string[]; components?: string[] },
+  origin: { accountId: string | null; mark?: string },
+) {
+  const eventId = String((changelogSequence += 1));
+  const at = new Date().toISOString();
+  const author = origin.accountId === null ? null : { tracker: 'jira' as const, accountId: origin.accountId };
+  const mark = origin.mark === undefined ? {} : { mark: origin.mark };
+  const components = (change.components ?? []).filter(id => !item.components?.includes(id));
+  if (components.length) item.components = [...(item.components ?? []), ...components];
+  item.componentEvents = [
+    ...(item.componentEvents ?? []),
+    ...components.map(componentId => ({ eventId, action: 'added' as const, componentId, at, author, ...mark })),
+  ];
+  const removed = (change.remove ?? []).filter(label => item.labels.includes(label));
+  const added = (change.add ?? []).filter(label => !item.labels.includes(label));
+  item.labels = [...item.labels.filter(label => !removed.includes(label)), ...added];
+  item.labelEvents = [
+    ...(item.labelEvents ?? []),
+    ...removed.map(label => ({ eventId, action: 'removed' as const, label, at, author, ...mark })),
+    ...added.map(label => ({ eventId, action: 'added' as const, label, at, author, ...mark })),
+  ];
+}
 export const refOf = (item: Pick<JiraCard, 'issueId' | 'key'>): JiraTicketRef => ({
   tracker: 'jira',
   siteId: site.siteId,
@@ -137,6 +190,21 @@ export function jiraDoubles(remote: JiraRemote) {
         links: found.links ? structuredClone(found.links) : null,
       };
     },
+    readLabelHistory: async ticket => {
+      calls.push({ method: 'readLabelHistory', args: ticket.issueId });
+      const found = find(ticket.issueId);
+      if (remote.labelHistoryFailure || !found) return unavailable(remote.labelHistoryFailure ?? 'JIRA_NOT_FOUND');
+      return {
+        kind: 'observed',
+        source: 'jira-rest',
+        observedAt: observedAt(),
+        ticket,
+        completeness: 'complete',
+        events: structuredClone(found.labelEvents ?? []),
+        components: structuredClone(found.componentEvents ?? []),
+        limitations: [],
+      };
+    },
     readTicketContent: async ticket => {
       calls.push({ method: 'readTicketContent', args: ticket.issueId });
       const found = find(ticket.issueId);
@@ -188,6 +256,37 @@ export function jiraDoubles(remote: JiraRemote) {
         authorAccountId: 'acc-factory',
         url: `${ticket.url}?focusedCommentId=${commentId}`,
       };
+    },
+    // The comment or the one edit of a Triage publication, applied as the Factory's account would.
+    writeTriage: async (ticket, write): Promise<TriageWriteResult> => {
+      calls.push({ method: 'writeTriage', args: { issueId: ticket.issueId, write } });
+      const fault = remote.triageWrites?.shift();
+      const found = find(ticket.issueId);
+      const refused = { failed: 'JIRA_RATE_LIMITED', forbidden: 'JIRA_FORBIDDEN', rejected: 'JIRA_REQUEST_REJECTED' }[fault as string];
+      if (!found || refused) return { kind: 'failed', observedAt: observedAt(), code: refused ?? 'JIRA_NOT_FOUND', nextStep: 'synthetic' };
+      if (fault !== 'unknown-not-applied' && fault !== 'retained') {
+        if (write.kind === 'comment') {
+          const at = observedAt();
+          const text = write.lines.join('\n');
+          (comments[ticket.issueId] ??= []).push({
+            commentId: String((commentSequence += 1)),
+            authorAccountId: 'acc-factory',
+            text,
+            createdAt: at,
+            updatedAt: at,
+            restricted: false,
+          });
+        } else {
+          const origin = {
+            accountId: fault === 'anonymous' ? null : 'acc-factory',
+            ...(fault === 'anonymous' || fault === 'unmarked' ? {} : { mark: write.mark }),
+          };
+          edit(found, { add: write.addLabels, remove: write.removeLabels, components: write.addComponents }, origin);
+        }
+        remote.afterTriageWrite?.(write, found);
+      }
+      if (fault?.startsWith('unknown')) return { kind: 'unknown', observedAt: observedAt(), code: 'JIRA_TIMEOUT', nextStep: 'synthetic' };
+      return { kind: 'accepted', observedAt: observedAt() };
     },
     listComments: async ticket => {
       calls.push({ method: 'listComments', args: ticket.issueId });

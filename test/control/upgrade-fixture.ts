@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { createSession, defineDoc, defineDocFamily, type Cursor, type DocumentRecord, type JsonObject } from '@earendil-works/pi-durable';
@@ -172,25 +173,61 @@ async function documentsOf(storage: SqliteStorage) {
   return result;
 }
 
-/** The installation document as an older format writes it: format 1 keeps only pause/history; format 2 adds its storage identity and lifecycle. */
-function olderInstallation(value: JsonObject, format: 1 | 2): JsonObject {
+/** Every stored document of the storage at `path` (kind, key, version and value), read through the public Pi Durable API. */
+export async function storedDocuments(path: string) {
+  const storage = await SqliteStorage.open(await openNodeSqliteDatabase(path));
+  try {
+    return await documentsOf(storage);
+  } finally {
+    await storage.close(BACKGROUND_CONTEXT);
+  }
+}
+
+/**
+ * The stored bytes of every document that is not the installation: its row and each of its revisions exactly as SQLite holds them (TEXT
+ * columns, not re-serialized). Read straight from the Pi Durable tables because "byte for byte" is a claim about what is stored, which a
+ * parsed value cannot show.
+ */
+export function storedBytesExceptInstallation(path: string) {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    // Pi Durable stores the kind as a JSON string; the installation is told apart after parsing, never by a hand-written encoding.
+    const rows = database
+      .prepare('SELECT * FROM documents ORDER BY id')
+      .all()
+      .map(row => ({ ...row, id: row.id as number, kind: JSON.parse(row.kind as string) as string }))
+      .filter(row => row.kind !== 'factory.installation');
+    const kept = new Set(rows.map(row => row.id));
+    const revisions = database
+      .prepare('SELECT * FROM document_revisions ORDER BY document_id, seq')
+      .all()
+      .map(row => ({ ...row }))
+      .filter(row => kept.has(row.document_id as number));
+    return { rows, revisions };
+  } finally {
+    database.close();
+  }
+}
+
+/** The installation document as an older format writes it: format 1 keeps only pause/history; formats 2 and 3 add their storage identity and lifecycle. */
+function olderInstallation(value: JsonObject, format: 1 | 2 | 3): JsonObject {
   if (format === 1) return { paused: value.paused, history: value.history } as JsonObject;
   const storage = value.storage as JsonObject | undefined;
   return {
     paused: value.paused,
     history: value.history,
-    storage: { format: 2, migrations: (storage?.migrations ?? []) as JsonObject[] },
+    storage: { format, migrations: (storage?.migrations ?? []) as JsonObject[] },
     lifecycle: (value.lifecycle ?? { current: null, last: null }) as JsonObject,
   } as JsonObject;
 }
 
 /**
- * Copies `source` (any format) into a NEW storage at `target` as an OLDER format (1 or 2), through the public Pi Durable API with the
- * definitions of that format (every kind except the installation is v1 in formats 1 to 3). `extra` adds documents of the given kind/version
+ * Copies `source` (any format) into a NEW storage at `target` as an OLDER format (1, 2 or 3), through the public Pi Durable API with the
+ * definitions of that format (every kind except the installation is v1 in formats 1 to 4). `extra` adds documents of the given kind/version
  * (used to build incompatible storages); `patch` rewrites the value of a copied kind (e.g. a forgotten Work in the Ticket index). Test fixture only.
  */
 export async function writeOlderFormat(
-  format: 1 | 2,
+  format: 1 | 2 | 3,
   source: string,
   target: string,
   options: {
@@ -248,6 +285,9 @@ export const writeFormatOne = (
 /** `source` re-expressed as a format-2 storage (the format of every release before the Jira origin). */
 export const writeFormatTwo = (source: string, target: string, options: Parameters<typeof writeOlderFormat>[3] = {}) =>
   writeOlderFormat(2, source, target, options);
+/** `source` re-expressed as a format-3 storage (the format of every release that knows the Jira origin and no Triage). */
+export const writeFormatThree = (source: string, target: string, options: Parameters<typeof writeOlderFormat>[3] = {}) =>
+  writeOlderFormat(3, source, target, options);
 
 /** Ticket 33 + 26: the owner is stopped while its Builder still runs and the boot stop cannot be confirmed: the run ends `uncertain`. */
 export async function storageStoppedWithLiveActivity(storagePath: string) {
