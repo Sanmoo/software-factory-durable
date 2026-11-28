@@ -13,7 +13,7 @@ import {
 import { builderBudgetMaximumFactor, builderBudgetV1, defaultWorkerThinkingLevel, workerThinkingLevels, type Diagnostic } from '../contracts/index.js';
 
 /**
- * Whether Triage is on in this installation (spec #68 §2): `off` when no Ticket source carries a `triage` block (every schema 1 or 2
+ * Whether Triage is on in this installation: `off` when no Ticket source carries a `triage` block (every schema 1 or 2
  * config.yaml), `unavailable` when a source asks for it and the Host lacks a prerequisite of the Investigation Environment (the
  * Sandbox module probes the Host), `on` otherwise.
  */
@@ -131,7 +131,7 @@ const dependencyRepository = z.strictObject({
 export const configurationSchemaVersion = 1;
 /**
  * Every config.yaml schema version this release validates: 1 (repositories are the GitHub Ticket sources), 2 (`ticketSources`) and
- * 3 (spec #68 §2: Triage, with `models.triager`, the `triage` block of a source, `triager`, `mcpServers` and `mcpProfiles`).
+ * 3 (Triage, with `models.triager`, the `triage` block of a source, `triager`, `mcpServers` and `mcpProfiles`).
  */
 export const configurationSchemaVersions = [1, 2, 3] as const;
 const common = {
@@ -241,7 +241,7 @@ function sourceIssues(value: { repositories: { repository: string }[]; ticketSou
 }
 type SourceV2 = z.infer<typeof githubSource> | z.infer<typeof jiraSource>;
 
-// v3 (spec #68 §2): Triage. Everything below exists only in a schema 3 config.yaml; schemas 1 and 2 keep refusing these sections.
+// v3: Triage. Everything below exists only in a schema 3 config.yaml; schemas 1 and 2 keep refusing these sections.
 const unique = (values: string[]) => new Set(values).size === values.length;
 const byId = (values: { id: string }[]) => unique(values.map(value => value.id));
 /**
@@ -359,7 +359,7 @@ const fieldOf = (input: unknown, key: string): unknown =>
   input && typeof input === 'object' && key in input ? (input as Record<string, unknown>)[key] : undefined;
 
 /** `guestAssets`: the pin of a verified release (trusted composition data), never read from the YAML. */
-/** `triageHost` (spec #68 §2): what the Host lacks to triage; the real PATH and user systemd by default, a double in tests. */
+/** `triageHost`: what the Host lacks to triage; the real PATH and user systemd by default, a double in tests. */
 /** `lambdaService` (v2 ticket 02): how a Lambda installation's AWS account is reached; the `aws` CLI by default, a double in tests.
  * `lambdaHostTool`: whether a host tool of the Lambda channel can be run; the real PATH by default, a double in tests. */
 export async function readConfiguration(
@@ -419,7 +419,7 @@ export async function readConfiguration(
     };
   }
   const effective = normalized(parsed.data);
-  // Spec #68 §2: a `triage` block only turns on where the Host can run the Investigation Environment; the diagnostic says what is missing.
+  // A `triage` block only turns on where the Host can run the Investigation Environment; the diagnostic says what is missing.
   const triage = await triageAvailability(effective.ticketSources.filter(source => source.triage).length, triageHost ?? createInvestigationHostProbe());
   return {
     checks: [...sandbox.checks, ...triageDiagnostics(triage)],

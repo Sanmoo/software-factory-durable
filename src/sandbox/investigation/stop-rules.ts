@@ -20,7 +20,7 @@ function sameInvocation(record: InvestigationRecord, manager: Exclude<StopFacts[
 }
 
 /**
- * Spec #68 §6: the stop is confirmed with the unit inactive in the same invocation and its cgroup empty; a different Host boot also
+ * The stop is confirmed with the unit inactive in the same invocation and its cgroup empty; a different Host boot also
  * confirms. An unanswering manager or a divergent invocation never confirms: the Triage capacity stays held.
  */
 export function stopConfirmation(record: InvestigationRecord, facts: StopFacts): InvestigationStop {

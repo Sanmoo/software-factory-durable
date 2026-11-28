@@ -44,10 +44,10 @@ const installationOneToTwo = (value: Record<string, unknown>) => ({
 });
 /** factory-storage-2-to-3 (Jira ticket 02): only the format identity changes; pause, history, migration records and lifecycle are kept. */
 const installationTwoToThree = (value: Record<string, unknown>) => ({ ...value, storage: { ...(value.storage as Record<string, unknown>), format: 3 } });
-/** factory-storage-3-to-4 (Triage ticket #70): only the format identity changes; no Triage request is created. */
+/** factory-storage-3-to-4: only the format identity changes; no Triage request is created. */
 const installationThreeToFour = (value: Record<string, unknown>) => ({ ...value, storage: { ...(value.storage as Record<string, unknown>), format: 4 } });
 /**
- * Version 4 = storage format 4 (Triage ticket #70; version 3 = format 3, Jira ticket 02; version 2 = format 2, ticket 33). Older storages are
+ * Version 4 = storage format 4 (Triage; version 3 = format 3, Jira ticket 02; version 2 = format 2, ticket 33). Older storages are
  * NEVER migrated lazily: the operational open refuses them (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration
  * commits this conversion, all at once. An older installation passes through exactly the conversions of its path, in order.
  */

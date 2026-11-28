@@ -8,7 +8,7 @@ import { isTerminalTriageState, triageTransitionAllowed, type TriageLabelApplica
 import { ticketIndex } from './admission.js';
 import type { Session } from './store.js';
 
-// Spec #68 §4-§5 (ticket #71): the durable Triage request. One document per request (`factory.triage-request`), even if no Work ever
+// The durable Triage request. One document per request (`factory.triage-request`), even if no Work ever
 // exists, plus the installation index of arrival order, live requests and the requests of each Ticket (`factory.triage-index`). Every
 // change is one Session commit; nothing here reads or writes a tracker.
 
@@ -31,8 +31,8 @@ const triageIndex = defineDoc<TriageIndex>({
 });
 
 /**
- * Ticket #75: the text of a recorded Verdict, apart from the request so that the request stays metadata and the text can expire alone
- * (spec #68 §10). Written in the commit that moves the request to `publishing`; `null` = no Verdict, or its text was removed.
+ * The text of a recorded Verdict, apart from the request so that the request stays metadata and the text can expire alone.
+ * Written in the commit that moves the request to `publishing`; `null` = no Verdict, or its text was removed.
  */
 export const triageVerdicts = defineDocFamily<{ verdict: { triage_request_id: string; text: string } | null }, null>({
   kind: 'factory.triage-verdict',
@@ -132,7 +132,7 @@ type TriageTransitionResult = { kind: 'applied'; request: TriageRequest } | { ki
 /**
  * The one way a request changes state, in ONE commit: the current state is revalidated against `from` and the transition table, the
  * timeline, `suspension`, `end` and the live index follow, and `also` lets the caller write its own fields of the request in the same
- * commit (attempts, budget, Verdict, effects: later tickets of spec #68). Fields this function does not own are left as they are, so a
+ * commit (attempts, budget, Verdict, effects). Fields this function does not own are left as they are, so a
  * request that leaves `suspended` keeps whatever it had spent.
  */
 export async function transitionTriageRequest(
@@ -143,7 +143,7 @@ export async function transitionTriageRequest(
 ): Promise<TriageTransitionResult> {
   return session.commit(tx => transitionTriageRequestIn(tx, triage_request_id, change, also), BACKGROUND_CONTEXT);
 }
-/** Ticket #81: the same transition inside a commit the caller already holds (an operator command decides and records its receipt in it). */
+/** The same transition inside a commit the caller already holds (an operator command decides and records its receipt in it). */
 export async function transitionTriageRequestIn(
   tx: Transaction,
   triage_request_id: string,
@@ -192,7 +192,7 @@ export async function ticketTriageRequests(session: Session, ticket: TicketRef):
   return readMany(session, (await session.snapshot(triageIndex, BACKGROUND_CONTEXT))?.tickets[ticketKey(ticket)] ?? []);
 }
 
-/** Ticket #75: changes one attempt of a request in its own commit, whatever the request's state (an attempt outlives an abandoned request). */
+/** Changes one attempt of a request in its own commit, whatever the request's state (an attempt outlives an abandoned request). */
 export async function updateTriageAttempt(session: Session, triage_request_id: string, attempt: string, change: (attempt: TriageAttempt) => void) {
   return session.commit(async tx => {
     const found = (await tx.doc(triageRequests, triage_request_id, null)).request?.attempts?.find(item => item.attempt === attempt);
@@ -213,7 +213,7 @@ export async function holdTriageStart(session: Session, triage_request_id: strin
   }, BACKGROUND_CONTEXT);
 }
 /**
- * Ticket #76: the end of one attempt, in ONE commit: its `end`, the timeline (`attempt-ended` with the attempt's code, `capacity-retained`
+ * The end of one attempt, in ONE commit: its `end`, the timeline (`attempt-ended` with the attempt's code, `capacity-retained`
  * when the stop is not confirmed) and, when the request is still `investigating` (no Verdict moved it on), where it goes: `decide` reads
  * the request with the ended attempt and answers `queued` (event `requeued`) or `failed`. A request already elsewhere (publishing,
  * abandoned) keeps its state. An attempt that already has an end is left as it is (undefined).
@@ -243,7 +243,7 @@ export async function endTriageAttempt(
   }, BACKGROUND_CONTEXT);
 }
 /**
- * Ticket #76: a later answer to the stop of an ENDED attempt whose cessation was not confirmed. Confirmed: the capacity is free
+ * A later answer to the stop of an ENDED attempt whose cessation was not confirmed. Confirmed: the capacity is free
  * (`capacity-released` in the timeline). Still unconfirmed: only the latest code and instant are kept. Nothing else of the request moves.
  * `false`: the attempt is not ended, or its stop is already confirmed.
  */
@@ -260,19 +260,19 @@ export async function recordTriageCessation(
     if (!request || !end || end.cessation.cessationConfirmed) return false;
     end.cessation = cessation;
     end.cessationObservedAt = at;
-    // A unit the operator's attestation already freed (ticket #81) is not released twice: the confirmation is recorded as what it is.
+    // A unit the operator's attestation already freed is not released twice: the confirmation is recorded as what it is.
     if (cessation.cessationConfirmed)
       request.timeline.push({ at, event: end.attestation ? 'stop-confirmed' : 'capacity-released', code: cessation.evidence, attempt });
     return true;
   }, BACKGROUND_CONTEXT);
 }
-/** Ticket #75: the text of the recorded Verdict of a request (undefined: none recorded, or already removed). */
+/** The text of the recorded Verdict of a request (undefined: none recorded, or already removed). */
 export async function readTriageVerdictText(session: Session, triage_request_id: string): Promise<string | undefined> {
   return (await session.snapshot(triageVerdicts, triage_request_id, BACKGROUND_CONTEXT))?.verdict?.text;
 }
 
 /**
- * Ticket #77: changes a request that is still `publishing`, in its own commit (the effects' situation, the publication record). A request
+ * Changes a request that is still `publishing`, in its own commit (the effects' situation, the publication record). A request
  * that left `publishing` meanwhile is left as it is (`false`).
  */
 export async function updatePublishingRequest(session: Session, triage_request_id: string, change: (request: TriageRequest) => void): Promise<boolean> {

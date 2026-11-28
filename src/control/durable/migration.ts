@@ -15,7 +15,7 @@ const applied = (inspection: StorageInspection, upgradeId: string) =>
   inspection.kind === 'storage' && (inspection.installation?.migrations ?? []).some(item => (item as { upgradeId?: unknown }).upgradeId === upgradeId);
 
 /**
- * Ticket 33 (spec §11.4 step 4), Jira ticket 02 (spec §6.2-6.3) and Triage ticket #70 (spec #68 §11): the supported migration path from the
+ * Ticket 33 (spec §11.4 step 4), Jira ticket 02 (spec §6.2-6.3) and Triage: the supported migration path from the
  * detected format to the current one (3→4, 2→3 then 3→4, or 1→2 first), executed only when the upgrade explicitly requests it, as ONE Session commit with one record per step (all or
  * nothing: an interruption leaves the older format untouched, or the current format complete with this upgrade's records). Idempotent per
  * `upgradeId`, so an interrupted upgrade can complete it. Afterwards the preserved documents (ids, index/cycles, FIFO sequence, Questions and

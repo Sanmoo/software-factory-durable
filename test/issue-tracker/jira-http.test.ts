@@ -119,7 +119,7 @@ test('a credential that cannot be read sends nothing and is reported without its
   assert.equal(exchanges.length, 0);
 });
 
-// Spec #68 ticket #78: an issue edit answers No Content.
+// An issue edit answers No Content.
 test('an empty 204 is a known success without a body; a 204 that carries one is still verified as JSON', async () => {
   const empty = site(() => ({ kind: 'response', status: 204, headers: {}, body: '' }));
   assert.deepEqual(await empty.transport.request({ method: 'PUT', path: '/rest/api/3/issue/81017', body: { update: {} } }), {

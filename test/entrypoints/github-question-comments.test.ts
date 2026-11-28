@@ -144,8 +144,8 @@ test('review 4: a comment listing beyond the page cap is incomplete (unavailable
   assert.ok(pages <= 10, `at most 10 pages per read (${pages})`);
 });
 
-// Spec #68 §9 (ticket #74): the comments of the Ticket as facts for the Control, which decides what the Builder receives.
-test('TR-39 (adapter): readTicketComments reports every comment with author_association and whether this App performed it, unfiltered', async t => {
+// The comments of the Ticket as facts for the Control, which decides what the Builder receives.
+test('adapter: readTicketComments reports every comment with author_association and whether this App performed it, unfiltered', async t => {
   const world = await compose(t, {
     pageSize: 2,
     issues: [issue(3)],

@@ -18,7 +18,7 @@ const refusalMessages: Record<'WORKER_PROFILE_UNSUPPORTED' | 'SANDBOX_CONFIGURAT
 
 type Effective = Parameters<typeof composeProductionExecution>[0]['effective'] & Parameters<typeof composeProductionTriage>[0]['effective'];
 /**
- * The ports of a distributed release: the execution and, where a source asks for Triage and the Host can serve it (spec #68 §2), the
+ * The ports of a distributed release: the execution and, where a source asks for Triage and the Host can serve it, the
  * Triage. A development checkout carries no release and composes neither. Any refusal refuses the start: nothing is partially applied.
  */
 async function composePorts(

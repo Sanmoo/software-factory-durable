@@ -78,7 +78,7 @@ export async function doctor(
           ...Object.entries(configuration.effective.models).flatMap(([role, model]) =>
             model.credentialFile ? [[`models.${role}`, join(canonicalRoot, model.credentialFile)]] : [],
           ),
-          // Spec #68 §2 (ticket #79): the token of a registered MCP server, read only by the agent of a Triager attempt.
+          // The token of a registered MCP server, read only by the agent of a Triager attempt.
           ...configuration.effective.mcpServers.flatMap(server =>
             server.tokenFile ? [[`mcpServers.${server.id}`, join(canonicalRoot, server.tokenFile)]] : [],
           ),

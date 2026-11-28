@@ -17,7 +17,7 @@ import { call, hang, trackerWrites, triageWorld } from '../control/triage-invest
 import { until } from '../runner/budget.js';
 import { operator as cliOperator, type CliResult } from './triage-cli-fixture.js';
 
-// Spec #68 §10 (ticket #81): the operator's interventions on a Triage request, through the REAL CLI process over the controller socket.
+// The operator's interventions on a Triage request, through the REAL CLI process over the controller socket.
 // The Control is the real one (SQLite, Triager session under a scripted provider, the in-process Investigation Environment, whose
 // observations the test sets); the trackers are the doubles.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
@@ -32,7 +32,7 @@ function triageIssue(number: number): RemoteIssue {
 const conclude = () => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text: `Observado: o total ignora o cupom. ${verdictCanary}` });
 type World = Awaited<ReturnType<typeof triageWorld>>;
 /**
- * TR-45: the real CLI of every test of this file. Whatever a command prints (the receipts of `cancel`, `release` and `complete`, accepted
+ * The real CLI of every test of this file. Whatever a command prints (the receipts of `cancel`, `release` and `complete`, accepted
  * or not, and the views read beside them) is metadata: the Ticket text and the Verdict text are in none of it.
  */
 async function operator(t: Parameters<typeof cliOperator>[0], w: World): ReturnType<typeof cliOperator> {
@@ -40,7 +40,7 @@ async function operator(t: Parameters<typeof cliOperator>[0], w: World): ReturnT
   return async (...args) => {
     const result = await cli(...args);
     for (const canary of [bodyCanary, verdictCanary])
-      assert.ok(!(result.stdout + result.stderr).includes(canary), `TR-45: ${canary} in the output of \`factory ${args.join(' ')}\``);
+      assert.ok(!(result.stdout + result.stderr).includes(canary), `${canary} in the output of \`factory ${args.join(' ')}\``);
     return result;
   };
 }
@@ -60,7 +60,7 @@ const pause = (w: World, operation: 'pause' | 'unpause') => w.control().accept({
 const listed = async (cli: Awaited<ReturnType<typeof operator>>) => (await cli('triages')).json as TriagesView;
 const detailOf = async (cli: Awaited<ReturnType<typeof operator>>, id: string) => (await cli('triage', id)).json as TriageDetailView;
 
-test('TR-48: `triage cancel` ends a queued, a suspended and an investigating request as abandoned with CANCELLED_BY_OPERATOR, writes nothing to the Ticket, and frees the capacity only once the stop is confirmed', async t => {
+test('`triage cancel` ends a queued, a suspended and an investigating request as abandoned with CANCELLED_BY_OPERATOR, writes nothing to the Ticket, and frees the capacity only once the stop is confirmed', async t => {
   const issues = [triageIssue(7), triageIssue(9), triageIssue(10)];
   const w = await triageWorld(t, { github: { issues, pulls: {} }, sources: [source], script: [() => hang, () => hang] });
   await w.start();
@@ -69,7 +69,7 @@ test('TR-48: `triage cancel` ends a queued, a suspended and an investigating req
   await w.poll();
   const [first, second, third] = (await w.requests()) as [TriageRequest, TriageRequest, TriageRequest];
   assert.deepEqual([first.state, second.state, third.state], ['investigating', 'queued', 'suspended']);
-  // TR-54 (§10 "Instalação pausada"): a paused installation still cancels.
+  // A paused installation still cancels.
   await pause(w, 'pause');
   const cli = await operator(t, w);
 
@@ -173,7 +173,7 @@ async function impeded(t: Parameters<typeof triageWorld>[0], remote: Partial<Rem
   return { w, issue, request, ref: impediment.ref, id: request.triage_request_id, cli: await operator(t, w) };
 }
 
-test('TR-48: `triage cancel` of a request in publishing writes nothing more and its receipt lists the effects published and discarded', async t => {
+test('`triage cancel` of a request in publishing writes nothing more and its receipt lists the effects published and discarded', async t => {
   const { w, issue, id, cli } = await impeded(t);
   await pause(w, 'pause');
   const cancelled = await cli('triage', 'cancel', id, '--request-id', 'cancel-publishing');
@@ -199,7 +199,7 @@ test('TR-48: `triage cancel` of a request in publishing writes nothing more and 
   assert.equal((await w.requests()).length, 1);
 });
 
-test('TR-49: `triage release` demands the exact attempt, refuses against a Triager observed alive, and with no observation possible records the attestation with author, reason and instant', async t => {
+test('`triage release` demands the exact attempt, refuses against a Triager observed alive, and with no observation possible records the attestation with author, reason and instant', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },
     sources: [source],
@@ -275,7 +275,7 @@ test('TR-49: `triage release` demands the exact attempt, refuses against a Triag
   assert.deepEqual([next!.attempts!.length, next!.attempts![1]!.end!.code], [2, 'VERDICT_RECORDED']);
 });
 
-test('TR-49: `triage release` of a request already terminal frees the unit on a confirmed stop, with no attestation and no change of state', async t => {
+test('`triage release` of a request already terminal frees the unit on a confirmed stop, with no attestation and no change of state', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },
     sources: [source],
@@ -304,7 +304,7 @@ test('TR-49: `triage release` of a request already terminal frees the unit on a 
   assert.deepEqual((await listed(cli)).capacity, { configured: 1, investigating: 0, retained: 0 });
 });
 
-test('TR-49: `triage release` of a request already terminal with no observation possible records the attestation and frees the unit, with no change of state', async t => {
+test('`triage release` of a request already terminal with no observation possible records the attestation and frees the unit, with no change of state', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
     sources: [source],
@@ -351,7 +351,7 @@ test('TR-49: `triage release` of a request already terminal with no observation 
   assert.deepEqual(triageWrites(w), []);
 });
 
-test('TR-50 (GitHub): `triage complete` revalidates the exact Impediment, is refused with its own code while paused, then takes the ambiguous effect as the Factory’s and concludes', async t => {
+test('GitHub: `triage complete` revalidates the exact Impediment, is refused with its own code while paused, then takes the ambiguous effect as the Factory’s and concludes', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   const complete = (...flags: string[]) => cli('triage', 'complete', id, ...flags);
   const stale = await complete('--impediment', randomUUID());
@@ -390,7 +390,7 @@ test('TR-50 (GitHub): `triage complete` revalidates the exact Impediment, is ref
   for (const bad of [[], ['--impediment', 'not-a-reference']]) assert.equal((await complete(...bad)).code, 2, bad.join(' '));
 });
 
-test('TR-50 (GitHub): `triage complete` on a Ticket that closed is accepted and ends abandoned with the discarded effects in the receipt', async t => {
+test('GitHub: `triage complete` on a Ticket that closed is accepted and ends abandoned with the discarded effects in the receipt', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   closeIssue(issue);
   const done = await cli('triage', 'complete', 'acme/project#7', '--impediment', ref);
@@ -413,7 +413,7 @@ test('TR-50 (GitHub): `triage complete` on a Ticket that closed is accepted and 
   );
 });
 
-test('TR-50 (GitHub): `triage complete` on a Ticket that got a Work is accepted and ends abandoned with the discarded effect in the receipt', async t => {
+test('GitHub: `triage complete` on a Ticket that got a Work is accepted and ends abandoned with the discarded effect in the receipt', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   // A person withdraws needs-triage and applies the admission label: the normal admission creates the Work.
   removeLabel(issue, 'needs-triage');
@@ -441,7 +441,7 @@ test('TR-50 (GitHub): `triage complete` on a Ticket that got a Work is accepted 
   );
 });
 
-test('TR-50 (GitHub): a state-label conflict refuses `triage complete`, writes nothing and keeps the Impediment', async t => {
+test('GitHub: a state-label conflict refuses `triage complete`, writes nothing and keeps the Impediment', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   applyLabel(issue, 'wontfix');
   const refused = await cli('triage', 'complete', id, '--impediment', ref);
@@ -464,7 +464,7 @@ test('TR-50 (GitHub): a state-label conflict refuses `triage complete`, writes n
   );
 });
 
-test('TR-50 (GitHub): a tracker that changed since the Impediment was shown refuses `triage complete` before any write; the Impediment is kept', async t => {
+test('GitHub: a tracker that changed since the Impediment was shown refuses `triage complete` before any write; the Impediment is kept', async t => {
   const { w, issue, id, ref, cli } = await impeded(t);
   // Somebody removed the label whose author was ambiguous: the Impediment the operator read no longer describes the Ticket.
   removeLabel(issue, 'needs-info');
@@ -485,7 +485,7 @@ test('TR-50 (GitHub): a tracker that changed since the Impediment was shown refu
   assert.ok(!(await detailOf(cli, id)).request.impediments.includes(ref), 'the pass, not the refused command, replaced the stale Impediment');
 });
 
-test('TR-50 (Jira): `triage complete` takes the edit of ambiguous authorship as the Factory’s and concludes the Card’s request; paused, it is refused', async t => {
+test('Jira: `triage complete` takes the edit of ambiguous authorship as the Factory’s and concludes the Card’s request; paused, it is refused', async t => {
   const item = card('81017', 'PAG-42', { labels: ['squad-pagamentos'], components: ['10022', '10099'], statusCategory: 'indeterminate' });
   relabel(item, { add: ['needs-triage'] });
   const w = await triageWorld(t, {
@@ -556,7 +556,7 @@ const discardedEdit = {
   ],
 };
 
-test('TR-50 (Jira): `triage complete` on a Card that was closed is accepted and ends abandoned with the discarded edit in the receipt', async t => {
+test('Jira: `triage complete` on a Card that was closed is accepted and ends abandoned with the discarded edit in the receipt', async t => {
   const { item, ref, edits, cli } = await impededCard(t);
   item.statusCategory = 'done';
   const done = await cli('triage', 'complete', 'PAG-42', '--impediment', ref);
@@ -565,7 +565,7 @@ test('TR-50 (Jira): `triage complete` on a Card that was closed is accepted and 
   assert.deepEqual([edits(), [...item.labels].sort()], [['comment'], ['needs-triage', 'squad-pagamentos']], 'nothing is written to a closed Card');
 });
 
-test('TR-50 (Jira): `triage complete` on a Card that got a Work is accepted and ends abandoned with the discarded edit in the receipt', async t => {
+test('Jira: `triage complete` on a Card that got a Work is accepted and ends abandoned with the discarded edit in the receipt', async t => {
   const { w, item, id, ref, edits, cli } = await impededCard(t);
   // A person withdraws needs-triage and applies the admission label: the normal admission creates the Work of the routed Card.
   relabel(item, { remove: ['needs-triage'], add: ['factory-ready'] });
@@ -578,7 +578,7 @@ test('TR-50 (Jira): `triage complete` on a Card that got a Work is accepted and 
   assert.deepEqual([edits(), [...item.labels].sort()], [['comment'], ['factory-ready', 'squad-pagamentos']], 'nothing more is written');
 });
 
-test('TR-50 (Jira): a state-label conflict refuses `triage complete`, writes nothing to the Card and keeps the Impediment', async t => {
+test('Jira: a state-label conflict refuses `triage complete`, writes nothing to the Card and keeps the Impediment', async t => {
   const { item, id, ref, edits, cli } = await impededCard(t);
   relabel(item, { add: ['wontfix'] });
   const refused = await cli('triage', 'complete', 'PAG-42', '--impediment', ref);

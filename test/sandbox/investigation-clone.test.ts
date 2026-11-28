@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createInvestigationClones } from '../../src/sandbox/index.js';
 
-// Spec #68 §6 (ticket #75, TR-30): the copy of a candidate repository a Triager asks for. Real git over a local file:// upstream; GitHub and
+// The copy of a candidate repository a Triager asks for. Real git over a local file:// upstream; GitHub and
 // its credential are doubles. Proves what the Host creates, not the read-only mount (test/sandbox/investigation-environment.test.ts).
 const canary = 'ghs_' + 'TR30cloneCANARY';
 const git = (cwd: string, ...args: string[]) =>
@@ -68,7 +68,7 @@ const request = (directory: string, name = 'acme__project') => ({
   base: 'main',
 });
 
-test('TR-30: a requested clone is the default branch with its history, fetched through the bare cache, with no remote and no credential', async t => {
+test('a requested clone is the default branch with its history, fetched through the bare cache, with no remote and no credential', async t => {
   const w = await world(t);
   const result = await w.clones.create(request(w.directory));
   const head = git(w.upstream, 'rev-parse', 'main');
@@ -88,7 +88,7 @@ test('TR-30: a requested clone is the default branch with its history, fetched t
   }
 });
 
-test('TR-30: a second attempt gets its own copy from the same cache; a name already taken or an invalid request is refused', async t => {
+test('a second attempt gets its own copy from the same cache; a name already taken or an invalid request is refused', async t => {
   const w = await world(t);
   assert.equal((await w.clones.create(request(w.directory))).status, 'success');
   assert.deepEqual(await w.clones.create(request(w.directory)), { status: 'failure', code: 'INVESTIGATION_CLONE_EXISTS' });

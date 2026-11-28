@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 
 /**
- * Spec #68 §2 (installation validation): what the Host needs before an Investigation Environment can exist on it. The environment is a
+ * Installation validation: what the Host needs before an Investigation Environment can exist on it. The environment is a
  * bubblewrap confinement inside a transient user systemd unit, and the Triager reads code in it with `git` and `rg`.
  */
 const investigationPrerequisites = ['linux', 'bwrap', 'unprivileged-namespaces', 'systemd-user', 'git', 'rg'] as const;

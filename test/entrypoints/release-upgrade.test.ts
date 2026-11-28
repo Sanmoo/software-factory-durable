@@ -128,7 +128,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
   assert.doesNotMatch(await readFile(join(root, 'data', 'control.sqlite'), 'latin1'), /synthetic-never-read/);
 });
 
-test('TR-52: the built release migrates format 3 to 4 by `upgrade apply --migrate factory-storage-3-to-4`; every other document stays byte for byte, the rollback is refused and a release that knows no Triage refuses the storage', async t => {
+test('the built release migrates format 3 to 4 by `upgrade apply --migrate factory-storage-3-to-4`; every other document stays byte for byte, the rollback is refused and a release that knows no Triage refuses the storage', async t => {
   // Previous release: knows the Jira origin and no Triage (storage format 3, configuration 1 and 2); a synthetic tree with a real manifest.
   const root = await installationRoot(t, 'root-triage');
   const previous = await fakeRelease(root, 'jira-1', {

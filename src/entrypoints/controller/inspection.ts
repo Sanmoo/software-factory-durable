@@ -42,7 +42,7 @@ export const inspectionQuery = z.discriminatedUnion('kind', [
     limit: z.number().int().min(1).max(16384).optional(),
   }),
   z.strictObject({ kind: z.literal('usage'), work_id: z.uuid().optional(), ...page }),
-  // Spec #68 §10 (ticket #80): the Triage requests (metadata) and, by name only, one page of a transcript or the Verdict text.
+  // The Triage requests (metadata) and, by name only, one page of a transcript or the Verdict text.
   z.strictObject({ kind: z.literal('triages'), ...page }),
   z.strictObject({ kind: z.literal('triage'), request: z.string().regex(triageReferencePattern) }),
   z.strictObject({

@@ -1,4 +1,4 @@
-// Spec #68 §8 (ticket #77): pure rules of the publication of a recorded Verdict, common to both trackers. The Control re-reads the origin
+// Pure rules of the publication of a recorded Verdict, common to both trackers. The Control re-reads the origin
 // before every write and passes the facts here; this decides the single next move. No I/O, clock, storage or tracker types.
 import { triageMarkerPrefix } from '../../contracts/index.js';
 import { routeTicket } from './jira-admission.js';
@@ -57,7 +57,7 @@ function nextWrite(effects: readonly TriageIntendedEffect[], groups: Publication
   return { action: 'wait' };
 }
 
-/** The re-read before the first write (spec §8, "Publicação" 1 and the withdrawal of `needs-triage` during the investigation). */
+/** The re-read before the first write (with the withdrawal of `needs-triage` during the investigation). */
 function begin(input: PublicationInput): PublicationStep {
   const { facts, roles, caseSensitive, at } = input;
   if (!facts.open) return ended(input.intended, null, 'TICKET_CLOSED', at);
@@ -103,7 +103,7 @@ function labelsChanged(input: PublicationInput, effects: readonly TriageIntended
   if (stateLabelConflict(input.roles, input.facts.labels, input.caseSensitive).some(label => !own.some(item => same(item, label)))) return true;
   return added.some(effect => effect.status === 'confirmed' && !input.facts.labels.some(label => same(label, effect.label)));
 }
-/** Why the effects still to write are no longer allowed: a change of the Ticket the publication did not make (spec §8, items 6 and 8). */
+/** Why the effects still to write are no longer allowed: a change of the Ticket the publication did not make. */
 function intervention(input: PublicationInput, mode: PublicationMode, effects: readonly TriageIntendedEffect[], seen: readonly Sighting[]): string | null {
   const foreign = seen.indexOf('foreign');
   if (foreign >= 0) return foreignCode[effects[foreign]!.kind];
@@ -141,7 +141,7 @@ export function publicationStep(input: PublicationInput): PublicationStep {
   return { effects, mode, next: nextWrite(effects, input.groups, mode) };
 }
 
-/** Why a `ready-for-agent` Verdict of a Card is applied as `needs-info`, with what the comment suggests (spec §8, "Rota no Jira"). */
+/** Why a `ready-for-agent` Verdict of a Card is applied as `needs-info`, with what the comment suggests. */
 export type RouteFallback = {
   code:
     | 'TRIAGE_ROUTE_DIVERGENT'
@@ -212,7 +212,7 @@ const suggestion = (route: Pick<RouteFallback, 'componentId' | 'repository'>) =>
   route.componentId
     ? `Suggested component: ${route.componentId}${route.repository ? `, which routes to the repository \`${route.repository}\`` : ''}.`
     : 'The Triager suggested no component.';
-/** What the comment of a Card says of its route, beside the outcome (spec §8, "Rota no Jira"). */
+/** What the comment of a Card says of its route, beside the outcome. */
 function routeLines(route: TriageCommentRoute | undefined): string[] {
   if (!route) return [];
   if (route.kind === 'adds')

@@ -109,7 +109,7 @@ type StorageSummary = {
   preserved: unknown;
   stateDigest: string | null;
   activity: unknown;
-  /** Spec #68 §11: the Triage requests by situation, the Triage capacity held and the attempts holding it. Metadata only. */
+  /** The Triage requests by situation, the Triage capacity held and the attempts holding it. Metadata only. */
   triage: TriageSettlement | null;
   lifecycle: unknown;
   migrations: unknown[];
@@ -272,7 +272,7 @@ async function environmentsCheck(root: string, targetAssets: UpgradeTarget['gues
 }
 
 /**
- * Spec #68 §11 (ticket #82): the Triage requests of the storage. An investigation under way, a stop not confirmed and a retained unit of
+ * The Triage requests of the storage. An investigation under way, a stop not confirmed and a retained unit of
  * Triage capacity block, as an unsettled Execution and a held Slot do, until a reconciling boot settles them. A queued request and a
  * recorded Verdict whose publication is incomplete are information: the new release takes them up from the same records.
  */

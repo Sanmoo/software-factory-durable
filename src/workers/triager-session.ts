@@ -17,7 +17,7 @@ import { triagerTools, type TriagerHost } from './triager-tools.js';
 import { sessionRefusal, thinkingLevelOf } from './worker-session.js';
 import type { ReviewerProfile } from './worker-start.js';
 
-/** Spec #68 §5: the model budget of ONE attempt of a Triager, fixed in the release. */
+/** The model budget of ONE attempt of a Triager, fixed in the release. */
 const triagerModelBudget = 'triager-v1';
 
 type TriagerSessionOptions = {
@@ -113,7 +113,7 @@ async function openRuntime(options: TriagerSessionOptions, secrets: string[], si
 type Qualification = Pick<ReturnType<typeof qualifyOAuth>, 'check' | 'tool' | 'failed' | 'exhausted' | 'providerFailed'>;
 
 /**
- * Spec #68 §5 (ticket #76): the two counts of `triager-v1` for a profile with its own key, which has no OAuth qualification to hold them.
+ * The two counts of `triager-v1` for a profile with its own key, which has no OAuth qualification to hold them.
  * One request or tool call past its count closes the session, and a model request that ends in error while the Host did not abort is the
  * provider's failure. Host facts only; the byte bounds and the model pinning of the release profile stay with `qualifyOAuth`.
  */
@@ -209,7 +209,7 @@ function resultOf(state: Conversation, aborted: boolean, qualification: Qualific
 /** The conversation itself: the first prompt, then whatever the model does with its tools until it concludes, stops or is closed. */
 async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, secrets: string[], signal: AbortSignal, qualification: Qualification) {
   const state: Conversation = { concluded: false, interrupted: false, abort() {} };
-  // After the accepted Verdict the investigation is over (spec §7): the request itself is refused, not merely aborted later.
+  // After the accepted Verdict the investigation is over: the request itself is refused, not merely aborted later.
   const stream = runtime.streamSimple.bind(runtime);
   runtime.streamSimple = (...args: Parameters<typeof stream>) => {
     if (state.concluded) throw new Error('TRIAGE_CONCLUDED');
@@ -217,7 +217,7 @@ async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, s
   };
   qualification.check();
   const toolCalls: Record<string, number> = {};
-  // The client of the active MCP Profiles lives in this process, configured by the attempt's bootstrap alone (spec §7).
+  // The client of the active MCP Profiles lives in this process, configured by the attempt's bootstrap alone.
   const mcp = await openTriagerMcp(options.mcp, signal);
   secrets.push(...mcp.secrets);
   const tools = triagerTools(
@@ -263,7 +263,7 @@ async function converse(options: TriagerSessionOptions, runtime: ModelRuntime, s
 }
 
 /**
- * Spec #68 §7: one session of the `triager` role. Its tools are the shell and read bound to the attempt's Investigation Environment, the
+ * One session of the `triager` role. Its tools are the shell and read bound to the attempt's Investigation Environment, the
  * clone request, the tools of the active MCP Profiles and `concluir_triagem`; there is no tracker write and no `ask_user`. An accepted Verdict ends it: no further model
  * request or tool call starts. Never continued: every attempt is a new session.
  */

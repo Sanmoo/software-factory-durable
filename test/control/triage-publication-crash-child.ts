@@ -1,4 +1,4 @@
-// Child controller of triage-publication-crash.test.ts (spec #68 TR-22): a real Control + Pi Durable/SQLite over a storage whose Triage
+// Child controller of triage-publication-crash.test.ts: a real Control + Pi Durable/SQLite over a storage whose Triage
 // request is already `publishing`. Its first tracker write (the Verdict comment) reaches the doubled GitHub, whose state is persisted to
 // `github.json` FIRST, as GitHub would keep it; the answer is never returned, so nothing of the result is recorded. It prints CUT and
 // waits to be SIGKILLed.

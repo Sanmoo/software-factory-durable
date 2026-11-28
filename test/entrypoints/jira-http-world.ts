@@ -1,6 +1,6 @@
 // Jira ticket 10: one Jira Cloud site as raw HTTP, behind the production host transport (`composeProductionAccess({ jira: { send } })`).
 // It models only what the Factory's Jira adapter uses (enhanced JQL search, issue re-reads, link type catalogue, comments, account, remote
-// links; spec #68 ticket #78: the one issue edit of a Triage publication and the changelog it leaves). Every exchange is recorded, unexpected ones included (answered 404), so a test can assert the absence of any other write
+// links; the one issue edit of a Triage publication and the changelog it leaves). Every exchange is recorded, unexpected ones included (answered 404), so a test can assert the absence of any other write
 // (status, assignee, resolution). Synthetic IDs only: it is not a Jira tenant and proves nothing about real permissions or audiences.
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -164,7 +164,7 @@ export function jiraHttpWorld(cards: HttpCard[]) {
 }
 
 /**
- * Spec #68 §13 (ticket #83): the world as a local HTTP server on port 0, with its state. The production transport keeps the origin,
+ * The world as a local HTTP server on port 0, with its state. The production transport keeps the origin,
  * the credential and the failure handling; its raw exchange (`send`) travels a real socket to this server instead of TLS to the
  * configured site, and the server answers as the site would (the request is handed to the world under the site's origin).
  */

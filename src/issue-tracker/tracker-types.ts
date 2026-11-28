@@ -137,7 +137,7 @@ export type InputsObservation =
     }
   | TrackerUnavailable;
 /**
- * One comment of the Ticket issue as a fact for whoever composes the Ticket text (spec #68 §9). `authorAssociation`: GitHub's
+ * One comment of the Ticket issue as a fact for whoever composes the Ticket text. `authorAssociation`: GitHub's
  * `author_association` as sent (`NONE` when absent); `ownApp`: performed by THIS installation's App as its bot. Never filtered here.
  */
 export type TicketCommentFact = TrackerComment & { authorAssociation: string; ownApp: boolean };
@@ -153,7 +153,7 @@ export type TicketCommentsObservation =
       limitations: string[];
     }
   | TrackerUnavailable;
-/** Spec #68 §7: title and body of the Ticket issue as written at the origin: untrusted text for whoever composes a prompt, never interpreted here. */
+/** Title and body of the Ticket issue as written at the origin: untrusted text for whoever composes a prompt, never interpreted here. */
 export type TicketTextObservation =
   | {
       kind: 'observed';
@@ -192,7 +192,7 @@ export type CommentResult = (
 ) & { revocation?: TokenRevocation };
 
 /**
- * Spec #68 §4.6: one label change of a GitHub issue, from its timeline. `actor` and `viaApp` are who made it (the App id when performed
+ * One label change of a GitHub issue, from its timeline. `actor` and `viaApp` are who made it (the App id when performed
  * through a GitHub App), evidence for the Control; `null` when GitHub reports none. Never interpreted here.
  */
 export type LabelEvent = {
@@ -202,10 +202,10 @@ export type LabelEvent = {
   at: string;
   actor: CommentAuthorRef | null;
   viaApp: number | null;
-  /** Performed by THIS installation's App as its bot (spec #68 §8: how the Control recognises a label change of its own). */
+  /** Performed by THIS installation's App as its bot (how the Control recognises a label change of its own). */
   ownApp: boolean;
 };
-/** Spec #68 §8: one closing or reopening of a GitHub issue, from its timeline, with who made it (as in {@link LabelEvent}). */
+/** One closing or reopening of a GitHub issue, from its timeline, with who made it (as in {@link LabelEvent}). */
 export type ClosureEvent = {
   eventId: string;
   action: 'closed' | 'reopened';
@@ -223,14 +223,14 @@ export type LabelHistoryObservation =
       ticket: GitHubTicketRef;
       completeness: 'complete';
       events: LabelEvent[];
-      /** Every closing and reopening of the issue, in the same order (spec #68 §8: the authorship of a `not_planned` closing). */
+      /** Every closing and reopening of the issue, in the same order (the authorship of a `not_planned` closing). */
       closures: ClosureEvent[];
       limitations: string[];
     }
   | TrackerUnavailable;
 
 /**
- * Spec #68 §8: one write of a Triage publication on a GitHub issue. The comment body is sent as given (the Control composes it with the
+ * One write of a Triage publication on a GitHub issue. The comment body is sent as given (the Control composes it with the
  * request's marker); labels change by relative operation, never by replacing the set; the closing is always `not_planned`.
  */
 export type TriageWrite =
@@ -295,7 +295,7 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
   readTicket(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['observation']>;
   /** GitHub: native blocked_by graph. Jira: visible "is blocked by" neighbours. Neither substitutes for the other. */
   readDependencyGraph(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['blockers']>;
-  /** Spec #68 §4.6: the Ticket's label changes (GitHub timeline, Jira changelog): the origin's evidence of a withdrawal and re-application. */
+  /** The Ticket's label changes (GitHub timeline, Jira changelog): the origin's evidence of a withdrawal and re-application. */
   readLabelHistory?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['labels']>;
   readInputs(ticket: TrackerContracts[P]['ticket'], cursor: TrackerContracts[P]['cursor'] | null): Promise<TrackerContracts[P]['inputs']>;
   findQuestion(ticket: TrackerContracts[P]['ticket'], questionId: string): Promise<TrackerContracts[P]['search']>;
@@ -303,15 +303,15 @@ export interface IssueTracker<P extends TrackerKind = 'github'> {
   /** Ticket 23: comments of THIS installation's App carrying the reply marker; several candidates are reported, never chosen. */
   findReply?(ticket: TrackerContracts[P]['ticket'], replyId: string): Promise<TrackerContracts[P]['search']>;
   /**
-   * Spec #68 §9: every comment of the Ticket with what the origin says of its author, for whoever composes the Ticket text. GitHub only
+   * Every comment of the Ticket with what the origin says of its author, for whoever composes the Ticket text. GitHub only
    * (the Jira adapter serves it by `JiraComments.listComments`); a tracker without it delivers no Ticket text and no Work starts on it.
    */
   readTicketComments?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['comments']>;
   /**
-   * Spec #68 §8: one write of a Triage publication. The adapter sends it and reports what the origin answered; it never decides an
+   * One write of a Triage publication. The adapter sends it and reports what the origin answered; it never decides an
    * outcome, and a write it accepted is confirmed only by a later read.
    */
   writeTriage?(ticket: TrackerContracts[P]['ticket'], write: TrackerContracts[P]['triageWrite']): Promise<TriageWriteResult>;
-  /** Spec #68 §7: title and body of a GitHub Ticket for the Triager's first prompt (a Card's text is `JiraContentReads.readTicketContent`). */
+  /** Title and body of a GitHub Ticket for the Triager's first prompt (a Card's text is `JiraContentReads.readTicketContent`). */
   readTicketText?(ticket: TrackerContracts[P]['ticket']): Promise<TrackerContracts[P]['text']>;
 }

@@ -2,7 +2,7 @@ import type { ToolDefinition } from '#factory-pi';
 import type { InvestigationShell } from '../sandbox/index.js';
 
 /**
- * What a Triager session asks of the Control (spec #68 §6-§7). Both answers are data for the session: a refusal is returned to the model,
+ * What a Triager session asks of the Control. Both answers are data for the session: a refusal is returned to the model,
  * which corrects its call or goes on without the clone.
  */
 export type TriagerHost = {
@@ -151,7 +151,7 @@ function conclude(hooks: Hooks): ToolDefinition {
 }
 
 const withheldOutput = 'TOOL_OUTPUT_WITHHELD: the output carried a Factory credential and was not delivered.';
-/** A tool of an MCP Profile (spec §7): what its source answers, result or error, never carries a credential of the Factory to the model. */
+/** A tool of an MCP Profile: what its source answers, result or error, never carries a credential of the Factory to the model. */
 function external(hooks: Hooks, tool: ToolDefinition): ToolDefinition {
   return {
     ...tool,
@@ -165,7 +165,7 @@ function external(hooks: Hooks, tool: ToolDefinition): ToolDefinition {
   };
 }
 
-/** The whole tool set of a Triager session: its own four tools and `mcp`, the tools of the active MCP Profiles (spec §7). */
+/** The whole tool set of a Triager session: its own four tools and `mcp`, the tools of the active MCP Profiles. */
 export function triagerTools(hooks: Hooks, mcp: ToolDefinition[] = []): ToolDefinition[] {
   return [bash(hooks), read(hooks), requestClone(hooks), conclude(hooks), ...mcp.map(tool => external(hooks, tool))].map(tool => ({
     ...tool,

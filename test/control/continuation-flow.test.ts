@@ -295,7 +295,7 @@ test('AC1: after an answer the compatible recorded session is CONTINUED with `co
     ],
   );
   // The Control never reads the Ticket's documents/links to resume (no collector): only tracking, authorization, dependencies, Questions and
-  // (spec #68 ticket #74) the comments of the Ticket, once, with the first Execution.
+  // the comments of the Ticket, once, with the first Execution.
   assert.ok(
     h.github.calls.every(call =>
       ['findQuestion', 'listCandidates', 'postComment', 'readDependencyGraph', 'readInputs', 'readTicket', 'readTicketComments', 'findPublication'].includes(

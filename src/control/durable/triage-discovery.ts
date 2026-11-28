@@ -25,7 +25,7 @@ import { indexedWork } from './admission.js';
 import type { Session } from './store.js';
 import { liveTriageRequests, requestTriage, ticketTriageRequests, transitionTriageRequest } from './triage-requests.js';
 
-// Spec #68 §4-§5 (ticket #71): discovery of Triage requests. In a source with Triage on, each round lists the Tickets carrying
+// Discovery of Triage requests. In a source with Triage on, each round lists the Tickets carrying
 // `needs-triage`, re-reads each of them (and each Ticket of a live request) by ID and applies the pure rule: create a request in `queued`,
 // suspend it on a label conflict, return it to the queue, or end it `abandoned`. It only reads the tracker: no comment, label or Work.
 
@@ -213,7 +213,7 @@ export function createTriageDiscovery(deps: { session: Session; access: AccessDe
       decision.action === 'suspend'
         ? { to: 'suspended' as const, event: 'suspended', code: 'TRIAGE_LABEL_CONFLICT', labels: decision.labels }
         : decision.action === 'requeue'
-          ? // Ticket #77: a request suspended at its publication keeps its recorded Verdict; it resumes publishing and calls no model.
+          ? // A request suspended at its publication keeps its recorded Verdict; it resumes publishing and calls no model.
             request.verdict
             ? { to: 'publishing' as const, event: 'publication-resumed' }
             : { to: 'queued' as const, event: 'requeued' }
@@ -299,7 +299,7 @@ export function createTriageDiscovery(deps: { session: Session; access: AccessDe
     /** The `triage` block of the GitHub source of a repository, available or not (`needs-triage` suspends admission in both cases). */
     githubTriage: (repository: string): SourceTriage | undefined => githubSource(repository)?.triage,
     /**
-     * Spec #68 §2: a source that lost its `triage` block no longer authorizes its requests; every live one ends `abandoned`, whatever its
+     * A source that lost its `triage` block no longer authorizes its requests; every live one ends `abandoned`, whatever its
      * state, and nothing of it is published. A block that is configured but not available on this Host abandons nothing.
      */
     async sweep(): Promise<void> {

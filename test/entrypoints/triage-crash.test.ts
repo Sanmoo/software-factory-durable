@@ -1,4 +1,4 @@
-// Spec #68 TR-11 (ticket #76), layer R: the one real SIGKILL of a controller during an investigation. A real child controller starts a
+// Layer R: the one real SIGKILL of a controller during an investigation. A real child controller starts a
 // Triager attempt in the real Investigation Environment (transient unit of the user manager, production agent inside it) and is killed
 // while the session waits for the model. A new Control over the same storage stops that attempt, confirms the stop, counts the attempt as
 // spent and never reattaches to it: the request is investigated again by a new session. Without bubblewrap or the user manager this
@@ -60,7 +60,7 @@ async function provider() {
 const userMessages = (body: string) => (JSON.parse(body) as { messages: { role: string }[] }).messages.filter(message => message.role === 'user').length;
 
 test(
-  'TR-11: after a real SIGKILL of the controller during an investigation, the new Control stops the attempt, confirms it and counts it as spent, never reattaching',
+  'after a real SIGKILL of the controller during an investigation, the new Control stops the attempt, confirms it and counts it as spent, never reattaching',
   { timeout: remainingMs() },
   async t => {
     const factoryRoot = await mkdtemp(join(tmpdir(), 'ftc-'));

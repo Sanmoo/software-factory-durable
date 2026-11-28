@@ -1,4 +1,4 @@
-// Spec #68 TR-26, TR-27 and TR-28, layer R: the real mechanisms of the Investigation Environment, one scenario each. Real bubblewrap
+// Layer R: the real mechanisms of the Investigation Environment, one scenario each. Real bubblewrap
 // inside a real transient unit of the user manager. Without bubblewrap or the user manager these tests FAIL; they never skip.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,7 +76,7 @@ const cgroupProcesses = async (record: InvestigationRecord) => {
   return procs.trim().split('\n').filter(Boolean).length;
 };
 
-test('TR-26 a command inside the confinement has no network, no write outside the temporary space, no /home, no Factory root and no credential variable', async () => {
+test('a command inside the confinement has no network, no write outside the temporary space, no /home, no Factory root and no credential variable', async () => {
   const environment = await openAttempt({ memoryGiB: 2, processes: 512, commandSeconds: 120 });
   const { exec } = environment;
 
@@ -144,7 +144,7 @@ test('TR-26 a command inside the confinement has no network, no write outside th
   assert.deepEqual(await readdir(environment.root), []);
 });
 
-test('TR-28 a command past its time is killed and its error returned without ending the environment; large output is truncated with a notice', async () => {
+test('a command past its time is killed and its error returned without ending the environment; large output is truncated with a notice', async () => {
   // The injected deadline: 1 s instead of the 120 s of the installation default.
   const environment = await openAttempt({ memoryGiB: 2, processes: 512, commandSeconds: 1, outputBytes: 1000 });
   const { exec } = environment;
@@ -164,7 +164,7 @@ test('TR-28 a command past its time is killed and its error returned without end
   assert.equal(completed(await exec('echo small')).notice, undefined);
 });
 
-test('TR-27 the stop of an attempt is confirmed by the inactive unit of the same invocation with an empty cgroup', async () => {
+test('the stop of an attempt is confirmed by the inactive unit of the same invocation with an empty cgroup', async () => {
   const environment = await openAttempt({ memoryGiB: 2, processes: 512, commandSeconds: 120 });
   const { port, record, exec } = environment;
   assert.match(record.invocation ?? '', /^[0-9a-f]{32}$/);

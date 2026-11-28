@@ -16,7 +16,7 @@ import {
 } from '../../src/control/durable/triage-requests.js';
 import { ticket } from './doubles.js';
 
-// Spec #68 §4-§5 (ticket #71): the commits of the Triage request document. Later tickets of the spec move a request only through them.
+// The commits of the Triage request document. A request moves only through them.
 const source = { tracker: 'github' as const, repository: 'acme/project' };
 const authorization = { label: 'needs-triage', observedAt: '2026-11-25T00:00:00.000Z', application: { eventId: '11' } };
 async function store(t: { after(fn: () => Promise<void>): void }) {
@@ -29,7 +29,7 @@ async function store(t: { after(fn: () => Promise<void>): void }) {
   return opened.session;
 }
 
-test('TR-02: concurrent requests for one Ticket commit exactly one, and a Ticket with a Work is refused inside the commit', async t => {
+test('concurrent requests for one Ticket commit exactly one, and a Ticket with a Work is refused inside the commit', async t => {
   const session = await store(t);
   const results = await Promise.all(Array.from({ length: 20 }, () => requestTriage(session, { ticket: ticket(1), source, after: null, authorization })));
   assert.equal(results.filter(result => result.kind === 'requested').length, 1);
@@ -52,7 +52,7 @@ test('TR-02: concurrent requests for one Ticket commit exactly one, and a Ticket
   assert.deepEqual(await ticketTriageRequests(session, ticket(9)), []);
 });
 
-test('TR-06: a new request needs the evaluated latest request to be terminal and still the latest', async t => {
+test('a new request needs the evaluated latest request to be terminal and still the latest', async t => {
   const session = await store(t);
   const first = await requestTriage(session, { ticket: ticket(1), source, after: null, authorization });
   assert.equal(first.kind, 'requested');
@@ -92,7 +92,7 @@ test('a transition is revalidated in its commit, keeps the fields it does not ow
     { kind: 'not-applied', state: 'investigating' },
     'the transition table refuses a jump',
   );
-  // Back to the queue between attempts, suspended by a conflict, queued again: what was spent is still there (spec §5: saldo preservado).
+  // Back to the queue between attempts, suspended by a conflict, queued again: what was spent is still there.
   await transitionTriageRequest(session, id, { from: ['investigating'], to: 'queued', event: 'attempt-ended' });
   await transitionTriageRequest(session, id, { from: ['queued'], to: 'suspended', event: 'suspended', code: 'TRIAGE_LABEL_CONFLICT', labels: ['wontfix'] });
   await transitionTriageRequest(session, id, { from: ['suspended'], to: 'queued', event: 'requeued' });

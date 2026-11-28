@@ -26,13 +26,13 @@ export type JiraCard = {
   statusCategory: JiraStatusCategory;
   summary: string | null;
   description?: string | null;
-  /** Spec #68: the Card's label changes as its changelog reports them (`relabel` keeps it with `labels`). */
+  /** The Card's label changes as its changelog reports them (`relabel` keeps it with `labels`). */
   labelEvents?: JiraLabelEvent[];
-  /** Spec #68 ticket #78: the Card's component changes as its changelog reports them. */
+  /** The Card's component changes as its changelog reports them. */
   componentEvents?: JiraComponentEvent[];
 };
 /**
- * Spec #68 ticket #78, how one writeTriage goes wrong. `unknown-applied`/`unknown-not-applied`: no answer, applied or not. `failed`: a
+ * How one writeTriage goes wrong. `unknown-applied`/`unknown-not-applied`: no answer, applied or not. `failed`: a
  * passing refusal (rate limit), nothing applied. `forbidden`/`rejected`: Jira's 403/400, nothing applied. `retained`: accepted and never
  * applied. `anonymous`: applied, and the changelog names no author. `unmarked`: applied by the Factory's account without the request's mark.
  */
@@ -43,9 +43,9 @@ export type JiraRemote = {
   listed?: JiraTicketRef[];
   catalogue?: JiraLinkType[];
   listFailure?: { code: string; waitSeconds?: number };
-  /** Spec #68: readLabelHistory answers unavailable with this code while set. */
+  /** readLabelHistory answers unavailable with this code while set. */
   labelHistoryFailure?: string;
-  /** Spec #68 ticket #78, consumed one per writeTriage (absent = applied and accepted). */
+  /** Consumed one per writeTriage (absent = applied and accepted). */
   triageWrites?: (JiraTriageFault | undefined)[];
   /** Called after each writeTriage reached the site, before its answer: what somebody else does to the Card between two writes. */
   afterTriageWrite?: (write: JiraTriageWrite, card: JiraCard) => void;
@@ -91,7 +91,7 @@ export const card = (issueId: string, key: string, overrides: Partial<JiraCard> 
   ...overrides,
 });
 let changelogSequence = 60000;
-/** Spec #68: a person edits the Card's labels (label set and changelog together), in one changelog entry. */
+/** A person edits the Card's labels (label set and changelog together), in one changelog entry. */
 export function relabel(item: JiraCard, change: { add?: string[]; remove?: string[] }, accountId = 'acc-stranger') {
   edit(item, change, { accountId });
 }
@@ -257,7 +257,7 @@ export function jiraDoubles(remote: JiraRemote) {
         url: `${ticket.url}?focusedCommentId=${commentId}`,
       };
     },
-    // Spec #68 ticket #78: the comment or the one edit of a Triage publication, applied as the Factory's account would.
+    // The comment or the one edit of a Triage publication, applied as the Factory's account would.
     writeTriage: async (ticket, write): Promise<TriageWriteResult> => {
       calls.push({ method: 'writeTriage', args: { issueId: ticket.issueId, write } });
       const fault = remote.triageWrites?.shift();

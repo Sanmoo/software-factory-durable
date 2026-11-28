@@ -8,14 +8,14 @@ import type { TriageIntendedEffect } from '../rules/triage-verdict.js';
 import type { TriagePublisher } from './triage-publication.js';
 import { triageSourceOf } from './triage-ticket.js';
 
-// Spec #68 §8 (ticket #78): what Jira gives the publication of a Verdict on a Card. Two write units: the comment, then ONE edit with the
+// What Jira gives the publication of a Verdict on a Card. Two write units: the comment, then ONE edit with the
 // label of the outcome, the withdrawal of `needs-triage` and, when the Card has no routed component, the component the Triager
 // identified. Never a status, an assignee, a resolution or a removed component: `wontfix` only labels and comments.
 //
 // Authorship comes from the changelog. An edit is the Factory's when its entry was made by the configured account AND carries this
 // request's mark (`historyMetadata`, sent with the edit): the account alone proves nothing, because a person may use it too. An entry of
 // that account without the mark, or without an author, is an effect nobody can be named for (the operator decides). Whether Jira Cloud
-// stores and returns the mark is the real behaviour TQ-05 still has to confirm; until then this is proven against the doubles only.
+// stores and returns the mark is real behaviour still to confirm; until then this is proven against the doubles only.
 
 type JiraSource = Extract<TicketSource, { tracker: 'jira' }>;
 type Observed = {
@@ -120,7 +120,7 @@ export function jiraTriagePublisher(access: AccessDependencies): TriagePublisher
       account: account.accountId,
     };
   }
-  /** Spec §8, "Rota no Jira": Jira refused the edit that carried the component, so `ready-for-agent` is not applied. */
+  /** Jira refused the edit that carried the component, so `ready-for-agent` is not applied. */
   function componentRefused(request: TriageRequest, write: JiraTriageWrite, result: { kind: 'failed' | 'unknown'; code: string }) {
     const componentId = write.kind === 'edit' ? write.addComponents[0] : undefined;
     if (result.kind !== 'failed' || !componentId || !refusals.has(result.code)) return {};

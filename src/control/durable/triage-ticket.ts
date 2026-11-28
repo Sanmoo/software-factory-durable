@@ -5,7 +5,7 @@ import type { TriagePromptBlockers, TriagePromptComment, TriagePromptTicket } fr
 import { triageCandidates, type TriageCandidate, type VerdictContext } from '../rules/triage-verdict.js';
 import { jiraLinkTypesOf, visibleBlockers } from './jira-evaluation.js';
 
-// Spec #68 §7 (ticket #75): what the Control reads of a Ticket for the first prompt of its Triager. Read-only; every comment is taken,
+// What the Control reads of a Ticket for the first prompt of its Triager. Read-only; every comment is taken,
 // with what the origin says of its author (never the filtered selection a Builder receives). A text that cannot be read completely is
 // `unavailable`: no attempt starts on a guess. The blockers are context only, so an unreadable blocker read is stated, not fatal.
 
@@ -24,7 +24,7 @@ type TriageSubjectRead = { kind: 'observed'; subject: TriageSubject } | { kind: 
 const unavailable = (code: string): TriageSubjectRead => ({ kind: 'unavailable', code });
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-/** The open issues that block this one, from the native blocked_by graph; the Triage never waits for them (spec §4.4). */
+/** The open issues that block this one, from the native blocked_by graph; the Triage never waits for them. */
 async function githubBlockers(access: AccessDependencies, ticket: GitHubTicketRef): Promise<TriagePromptBlockers> {
   try {
     const graph = await access.tracker.readDependencyGraph(ticket);

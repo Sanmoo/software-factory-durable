@@ -10,8 +10,8 @@ import { applyLabel, remoteIssue, scope, type RemoteIssue } from './doubles.js';
 import { card, jiraSource, relabel } from './jira-doubles.js';
 import { call, firstPrompt, hang, trackerWrites, triageWorld, unavailable, type ModelTurn } from './triage-investigation-fixture.js';
 
-// Spec #68 §5 (ticket #76): what bounds an investigation. Real Control, real Triager session under a scripted provider, the Investigation
-// Environment in process, the investigation clock moved by hand. The real crash of the controller (TR-11) is triage-crash.test.ts.
+// What bounds an investigation. Real Control, real Triager session under a scripted provider, the Investigation
+// Environment in process, the investigation clock moved by hand. The real crash of the controller is triage-crash.test.ts.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const githubSource: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
 function triageIssue(number: number, overrides: Partial<RemoteIssue> = {}): RemoteIssue {
@@ -38,7 +38,7 @@ function gated(turn: ModelTurn) {
   return { turn: (async body => (await opened, turn(body))) as ModelTurn, open };
 }
 
-test('TR-07: three requests of two sources and capacity 1 are investigated one at a time in global arrival order, and no Slot is consumed', async t => {
+test('three requests of two sources and capacity 1 are investigated one at a time in global arrival order, and no Slot is consumed', async t => {
   const gates = [gated(conclude), gated(conclude), gated(conclude)];
   // The one Slot of the installation is held by a Work whose Builder is running.
   const execution = budgetDoubles([{ kind: 'hang' }]);
@@ -65,7 +65,7 @@ test('TR-07: three requests of two sources and capacity 1 are investigated one a
     await w.poll();
     const view = await w.view();
     assert.deepEqual(
-      // A recorded Verdict is published by the next round (ticket #77): an issue's request is then `concluded`, a Card's still `publishing`.
+      // A recorded Verdict is published by the next round: an issue's request is then `concluded`, a Card's still `publishing`.
       view.requests.map(request => (request.state === 'concluded' ? 'publishing' : request.state)),
       ['publishing', 'publishing', 'publishing'].fill('investigating', turn, turn + 1).fill('queued', turn + 1),
       `round ${turn + 1}: one investigation, in arrival order`,
@@ -88,7 +88,7 @@ test('TR-07: three requests of two sources and capacity 1 are investigated one a
   assert.deepEqual([await slots(), await works()], [{ capacity: 1, held: 1 }, 1], 'no Slot and no Work came from the Triage');
 });
 
-test('TR-08 (clock): the investigation time running out ends the attempt and the request with the clock code; no second attempt starts', async t => {
+test('clock: the investigation time running out ends the attempt and the request with the clock code; no second attempt starts', async t => {
   const w = await triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script: [() => hang, conclude] });
   await w.start();
   await untilHolds('the session to ask the model', () => w.bodies.length === 1);
@@ -108,7 +108,7 @@ test('TR-08 (clock): the investigation time running out ends the attempt and the
   assert.deepEqual([failed.verdict, githubWrites(w)], [undefined, []]);
 });
 
-test('TR-08 (queue and restart): the queue spends nothing, a restart of the Control gives nothing back, and the next attempt gets only the time left', async t => {
+test('queue and restart: the queue spends nothing, a restart of the Control gives nothing back, and the next attempt gets only the time left', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
     sources: [githubSource],
@@ -147,7 +147,7 @@ test('TR-08 (queue and restart): the queue spends nothing, a restart of the Cont
   assert.deepEqual(githubWrites(w), []);
 });
 
-test('TR-08 (triager-v1 and attempts): 48 model requests or 160 tool calls end the attempt with the model budget code; the second attempt is the last', async t => {
+test('triager-v1 and attempts: 48 model requests or 160 tool calls end the attempt with the model budget code; the second attempt is the last', async t => {
   const invalid = { name: 'request_clone', arguments: { repository: 'acme/elsewhere' } };
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },
@@ -178,7 +178,7 @@ test('TR-08 (triager-v1 and attempts): 48 model requests or 160 tool calls end t
   assert.deepEqual([failed.verdict, githubWrites(w)], [undefined, []]);
 });
 
-test('TR-09: an attempt ended with balance is retried only after its stop is confirmed, in a new session; until then its unit is retained with an Impediment', async t => {
+test('an attempt ended with balance is retried only after its stop is confirmed, in a new session; until then its unit is retained with an Impediment', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
     sources: [githubSource],
@@ -239,7 +239,7 @@ test('TR-09: an attempt ended with balance is retried only after its stop is con
   assert.deepEqual(githubWrites(w), []);
 });
 
-test('TR-10 (GitHub): provider failures in every attempt end the request `failed`, seen by the operator only: nothing is written to the Ticket', async t => {
+test('GitHub: provider failures in every attempt end the request `failed`, seen by the operator only: nothing is written to the Ticket', async t => {
   const issue = triageIssue(7);
   const w = await triageWorld(t, { github: { issues: [issue], pulls: {} }, sources: [githubSource], script: [() => unavailable, () => unavailable, conclude] });
   await w.start();
@@ -262,7 +262,7 @@ test('TR-10 (GitHub): provider failures in every attempt end the request `failed
   assert.deepEqual((await w.view()).impediments, [], '`failed` is no Impediment');
 });
 
-test('TR-10 (Jira): the clock running out without a Verdict ends the request `failed`: nothing is written to the Card', async t => {
+test('Jira: the clock running out without a Verdict ends the request `failed`: nothing is written to the Card', async t => {
   const item = triageCard('81017', 'PAG-42');
   const w = await triageWorld(t, { jira: { cards: [item] }, sources: [jiraSource({ triage })], script: [() => hang] });
   await w.start();
@@ -293,7 +293,7 @@ async function asKilled(w: World, triage_request_id: string) {
   }
 }
 
-test('TR-11 (clock): an attempt a dead Control left open is charged up to its latest recorded instant, not the time the Control was down', async t => {
+test('clock: an attempt a dead Control left open is charged up to its latest recorded instant, not the time the Control was down', async t => {
   const first = gated(() => call('request_clone', { repository: 'acme/project' }));
   const w = await triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script: [first.turn, () => hang, conclude] });
   await w.start();
@@ -317,7 +317,7 @@ test('TR-11 (clock): an attempt a dead Control left open is charged up to its la
   assert.match(firstPrompt(w.bodies[2]!), /## Remaining investigation time\n\n13 minutes\n/);
 });
 
-test('TR-11 (clock): with no instant after its start in the records, the interrupted attempt is charged up to the instant the new Control ended it', async t => {
+test('clock: with no instant after its start in the records, the interrupted attempt is charged up to the instant the new Control ended it', async t => {
   const w = await triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script: [() => hang, conclude] });
   await w.start();
   await untilHolds('the session to ask the model', () => w.bodies.length === 1);

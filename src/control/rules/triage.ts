@@ -1,7 +1,7 @@
-// Spec #68 §4-§5 (ticket #71): pure rules of the Triage request from `needs-triage` up to `queued`. No I/O, clock, storage or tracker
+// Pure rules of the Triage request from `needs-triage` up to `queued`. No I/O, clock, storage or tracker
 // types: callers pass the observed facts. A decision here never writes to the tracker and never creates a Work.
 
-/** The seven states of a Triage request (spec §5). There is no retry state: between attempts the request is `queued` again. */
+/** The seven states of a Triage request. There is no retry state: between attempts the request is `queued` again. */
 export const triageRequestStates = ['queued', 'investigating', 'suspended', 'publishing', 'concluded', 'abandoned', 'failed'] as const;
 export type TriageRequestState = (typeof triageRequestStates)[number];
 const terminalTriageStates = ['concluded', 'abandoned', 'failed'] as const satisfies readonly TriageRequestState[];
@@ -10,7 +10,7 @@ export const isTerminalTriageState = (state: TriageRequestState) => (terminalTri
 const transitions: Record<TriageRequestState, readonly TriageRequestState[]> = {
   queued: ['investigating', 'suspended', 'abandoned', 'failed'],
   investigating: ['queued', 'publishing', 'abandoned', 'failed'],
-  // `publishing`: a request suspended with its Verdict recorded goes back to its publication, never to another investigation (#77).
+  // `publishing`: a request suspended with its Verdict recorded goes back to its publication, never to another investigation.
   suspended: ['queued', 'publishing', 'abandoned'],
   publishing: ['concluded', 'suspended', 'abandoned'],
   concluded: [],
@@ -30,7 +30,7 @@ export const triageRoles = <Block extends Omit<TriageRoles, 'admission'>>(triage
 /** GitHub label names are case-insensitive; Jira labels are case-sensitive. */
 const sameLabel = (caseSensitive: boolean) => (a: string, b: string) => (caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase());
 
-/** `needs-triage` present on a source with Triage: admission by the admission label is suspended (spec §4.3). */
+/** `needs-triage` present on a source with Triage: admission by the admission label is suspended. */
 export function suspendsAdmission(roles: Pick<TriageRoles, 'needsTriage'>, labels: readonly string[], caseSensitive: boolean): boolean {
   const same = sameLabel(caseSensitive);
   return labels.some(label => same(label, roles.needsTriage));
@@ -150,12 +150,12 @@ export const triageHoldNextStep: Record<TriageHoldCode, string> = {
 };
 
 /**
- * Ticket #75: an attempt holds Triage capacity from its start until the environment CONFIRMED its cessation, whatever became of its
+ * An attempt holds Triage capacity from its start until the environment CONFIRMED its cessation, whatever became of its
  * request (a request abandoned while investigating is terminal at once; its attempt is not over).
  */
 export const holdsTriageCapacity = (attempt: { end: { cessation: { cessationConfirmed: boolean }; attestation?: unknown } | null }) =>
   !attempt.end || !(attempt.end.cessation.cessationConfirmed || attempt.end.attestation);
-/** Ticket #75: why an attempt that ended without a recorded Verdict ended, from what its session reported. */
+/** Why an attempt that ended without a recorded Verdict ended, from what its session reported. */
 export function attemptEndCode(completion: { status: 'failure'; code: string } | { status: 'completed' | 'interrupted'; closedBy: string | null }): string {
   if (completion.status === 'failure') return completion.code;
   if (completion.closedBy === 'provider') return 'TRIAGER_PROVIDER_UNAVAILABLE';
@@ -163,7 +163,7 @@ export function attemptEndCode(completion: { status: 'failure'; code: string } |
   return completion.status === 'completed' ? 'TRIAGER_ENDED_WITHOUT_VERDICT' : 'TRIAGER_INTERRUPTED';
 }
 
-// ---- Ticket #76 (spec §5): the budget of a request, the Triage capacity and the retained capacity ----
+// ---- The budget of a request, the Triage capacity and the retained capacity ----
 /** The two installation limits of one request (`triager.investigationMinutes`, `triager.attempts`); the third axis is the model's, per attempt. */
 export type TriageBudget = { investigationMs: number; attempts: number };
 /** What the rules read of an attempt record: the investigation time it spent and how its stop was answered (`end: null` = still open). */
@@ -244,7 +244,7 @@ export type TriageImpediment = {
 /**
  * The retained capacity of a request: every ENDED attempt whose stop the environment did not confirm, whatever the state of the request.
  * Derived from the attempt records, so it opens with the unconfirmed stop and closes with the confirmation, or with the operator's
- * attestation (`triage release`, ticket #81), never apart from them.
+ * attestation (`triage release`), never apart from them.
  */
 export function triageImpediments(request: {
   triage_request_id: string;

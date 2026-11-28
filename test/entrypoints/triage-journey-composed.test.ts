@@ -17,7 +17,7 @@ import { untilHolds } from '../runner/budget.js';
 import { builderGh, githubWorld, issue } from './github-world-fixture.js';
 import { jiraHttpServer, jiraHttpWorld, jiraOrigin, type HttpCard } from './jira-http-world.js';
 
-// Spec #68 §9 and §13, TR-42 (ticket #83): the journey of one Ticket from `needs-triage` to its admitted Work, one case per origin, with
+// The journey of one Ticket from `needs-triage` to its admitted Work, one case per origin, with
 // the Control restarted between the publication of the Verdict and the discovery of the admission label.
 //
 // What runs: `config.yaml` schema 3 read by `readConfiguration`, then the PRODUCTION access composition (`composeProductionAccess`) over
@@ -147,7 +147,7 @@ function assertNoTriageTrace(subject: string, value: unknown, request: TriageReq
 const activations = (execution: ReturnType<typeof executionDoubles>) =>
   execution.calls.filter(item => item.kind === 'activate').map(item => item.detail as Activation);
 
-test('TR-42 (GitHub): a needs-triage issue is investigated, its Verdict published, and after a restart of the Control ONE Work is born by the discovery of the admission label, with nothing of the request beyond the published comment', async t => {
+test('GitHub: a needs-triage issue is investigated, its Verdict published, and after a restart of the Control ONE Work is born by the discovery of the admission label, with nothing of the request beyond the published comment', async t => {
   const human = { id: 9, login: 'human', type: 'User' };
   const tip = 'b'.repeat(40);
   const world = await githubWorld(t, {
@@ -375,7 +375,7 @@ async function cardJourney(t: Parameters<typeof triageWorld>[0]) {
   };
 }
 
-test('TR-42 (Jira): a needs-triage Card is investigated, its Verdict and route published in one comment and one edit, and after a restart of the Control ONE Work is born by the discovery of the admission label, with nothing of the request beyond the published comment', async t => {
+test('Jira: a needs-triage Card is investigated, its Verdict and route published in one comment and one edit, and after a restart of the Control ONE Work is born by the discovery of the admission label, with nothing of the request beyond the published comment', async t => {
   const { w, jira, card, remote, builders, boundary, writes } = await cardJourney(t);
 
   await w.start();
@@ -443,7 +443,7 @@ test('TR-42 (Jira): a needs-triage Card is investigated, its Verdict and route p
   assertNoTriageTrace('the pull request', remote.pulls, request, comment);
 });
 
-test('TR-42 (Jira): a Control stopped right after the edit of the Card, before reading it back, leaves ONE Work to the discovery of the next Control, which then recognises its own publication and writes nothing again', async t => {
+test('Jira: a Control stopped right after the edit of the Card, before reading it back, leaves ONE Work to the discovery of the next Control, which then recognises its own publication and writes nothing again', async t => {
   const { w, jira, card, builders, writes, onExchange } = await cardJourney(t);
   // The stop arrives when the site has answered the edit: the Card carries the admission label and the request has not recorded it.
   let stopped: Promise<void> | undefined;

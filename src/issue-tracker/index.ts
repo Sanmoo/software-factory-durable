@@ -30,7 +30,7 @@ const issueSchema = z.object({
   state_reason: z.string().nullable().optional(),
   labels: z.array(z.object({ id: z.number().int().positive().safe(), name: z.string().min(1).max(256) })),
   pull_request: z.unknown().optional(),
-  // Spec #68 §7: the text of the issue, read only by `readTicketText`; absent or null is a valid issue without it.
+  // The text of the issue, read only by `readTicketText`; absent or null is a valid issue without it.
   title: z.string().max(1024).nullable().optional(),
   body: z.string().max(262144).nullable().optional(),
 });

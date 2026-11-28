@@ -16,7 +16,7 @@ import {
 import type { ToolDefinition } from '#factory-pi';
 import { z } from 'zod';
 
-// Spec #68 §7 (ticket #79): the tools of the active MCP Profiles of a Triager session. The client runs in the agent process of the
+// The tools of the active MCP Profiles of a Triager session. The client runs in the agent process of the
 // attempt, on the Host. It is NOT the SDK's MCP extension: that one reads the operator's own agent directory unless told otherwise,
 // registers every tool of a server for codemode and tool_search whatever the session lists, and runs outside the session's Host
 // budget. Here each selected tool is one tool of the session, bound to one name of one server: no other tool of the server is

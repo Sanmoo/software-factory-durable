@@ -1,4 +1,4 @@
-// Spec #68 §13 (ticket #79): the external source of the Triage tests, a local MCP server over Streamable HTTP on port 0. It answers the
+// The external source of the Triage tests, a local MCP server over Streamable HTTP on port 0. It answers the
 // protocol itself (no SDK) and records what reached it, so "the server did not register the call" is an observation of the server.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';

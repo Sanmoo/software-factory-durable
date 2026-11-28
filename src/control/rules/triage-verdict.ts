@@ -1,8 +1,8 @@
-// Spec #68 §7-§8 (ticket #75): pure rules of the Verdict a Triager records through `concluir_triagem`, of the changes the Control intends
+// Pure rules of the Verdict a Triager records through `concluir_triagem`, of the changes the Control intends
 // from it and of the repositories a Triage may clone. No I/O, clock, storage or tracker types: nothing here writes to a tracker.
 import type { TriageRoles } from './triage.js';
 
-/** The four outcomes of a Triage (spec §8). `ready-for-agent` is published as the admission label of the destination. */
+/** The four outcomes of a Triage. `ready-for-agent` is published as the admission label of the destination. */
 const triageOutcomes = ['ready-for-agent', 'needs-info', 'ready-for-human', 'wontfix'] as const;
 export type TriageOutcome = (typeof triageOutcomes)[number];
 /** Categories of a Verdict; the Control never turns them into labels. */
@@ -53,7 +53,7 @@ function componentErrors(component: unknown, context: VerdictContext): VerdictEr
 
 /**
  * Whether what the Triager sent is a Verdict the Control records. Every error is named with what is accepted, because the session
- * receives them and corrects its call (spec §7); nothing is repaired or cut here.
+ * receives them and corrects its call; nothing is repaired or cut here.
  */
 export function validateVerdict(input: unknown, context: VerdictContext): VerdictValidation {
   const value = (input !== null && typeof input === 'object' ? input : {}) as Record<string, unknown>;
@@ -77,17 +77,17 @@ export function validateVerdict(input: unknown, context: VerdictContext): Verdic
   };
 }
 
-/** One write the Control intends on the Ticket for a recorded Verdict (spec §8, "Ordem das escritas"). */
+/** One write the Control intends on the Ticket for a recorded Verdict. */
 export type TriageIntendedChange =
   | { kind: 'comment' }
   | { kind: 'add-label'; label: string }
   | { kind: 'remove-label'; label: string }
   | { kind: 'close'; reason: 'not_planned' }
   | { kind: 'add-component'; componentId: string };
-/** Situation of an intended change (spec §10). Recorded `pending` with the Verdict; only the publication moves it. */
+/** Situation of an intended change. Recorded `pending` with the Verdict; only the publication moves it. */
 type TriageEffectStatus = 'pending' | 'confirmed' | 'no-longer-allowed' | 'ambiguous-authorship';
 /**
- * What the publication records on an intended change (ticket #77), all absent until it reaches it. `attempts`/`attemptedAt`: writes sent
+ * What the publication records on an intended change, all absent until it reaches it. `attempts`/`attemptedAt`: writes sent
  * for it, committed BEFORE each one (an effect never attempted and found present is somebody else's). `settledAt`: when it left `pending`.
  * `code`: why it is `no-longer-allowed`. `reference`: what confirmed it at the origin (the comment URL, or the id of the history event).
  */
@@ -120,7 +120,7 @@ export function intendedChanges(
 /** A repository a Triage may clone, with the Jira components that route to it (none on a GitHub source). */
 export type TriageCandidate<R> = R & { components: string[] };
 /**
- * Spec §4.5: the candidates of a GitHub issue are its own repository; those of a Card are the executable repositories of the `routes` of
+ * The candidates of a GitHub issue are its own repository; those of a Card are the executable repositories of the `routes` of
  * its source, each once. Nothing outside this list is ever cloned.
  */
 export function triageCandidates<R extends { repository: string }>(

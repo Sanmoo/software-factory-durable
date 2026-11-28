@@ -1,4 +1,4 @@
-// Spec #68 §7 (ticket #75): what the Control injects into the first prompt of a Triager, as text. Pure: the caller passes what it read.
+// What the Control injects into the first prompt of a Triager, as text. Pure: the caller passes what it read.
 // Exactly six fields; the label history, anything of an earlier attempt and the MCP tools are never among them.
 
 /** Untrusted text inside a fence longer than any run of backticks it holds, so it cannot close its own fence. */

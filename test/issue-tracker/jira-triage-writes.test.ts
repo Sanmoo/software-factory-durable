@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { createJiraHttpTransport, createJiraTracker, type JiraTicketRef } from '../../src/issue-tracker/index.js';
 import { jiraHttpWorld, jiraOrigin, type HttpCard } from '../entrypoints/jira-http-world.js';
 
-// Spec #68 §8 (ticket #78): the writes of a Triage publication on a Card and the changelog that says who made them. The adapter runs
+// The writes of a Triage publication on a Card and the changelog that says who made them. The adapter runs
 // behind the host's real transport; Jira is the stateful HTTP world, which keeps a changelog entry per edit with the `historyMetadata`
-// its caller sent. Synthetic: whether Jira Cloud stores and returns that metadata is still to be confirmed by TQ-05.
+// its caller sent. Synthetic: whether Jira Cloud stores and returns that metadata is still to be confirmed.
 const scope = { tracker: 'jira' as const, siteId: 'site-A', url: jiraOrigin, projectId: '10010', label: 'factory-ready' };
 const ref: JiraTicketRef = { tracker: 'jira', siteId: 'site-A', issueId: '81017', key: 'PAG-42', url: `${jiraOrigin}/browse/PAG-42` };
 const mark = 'software-factory:triage:3f0c';
@@ -20,7 +20,7 @@ function site(card: Partial<HttpCard> = {}) {
 }
 const edit = { kind: 'edit' as const, mark, addLabels: ['factory-ready'], removeLabels: ['needs-triage'], addComponents: ['10022'] };
 
-test('TR-15 (Jira): the edit of a Triage is one PUT of relative operations that names only labels and components', async () => {
+test('Jira: the edit of a Triage is one PUT of relative operations that names only labels and components', async () => {
   const { world, item, tracker } = site();
   const result = await tracker.writeTriage!(ref, edit);
   assert.equal(result.kind, 'accepted');
@@ -54,7 +54,7 @@ test('an edit without a component sends no `components` operation', async () => 
   assert.deepEqual(JSON.parse(world.exchanges[0]!.body!).update, { labels: [{ add: 'factory-ready' }, { remove: 'needs-triage' }] });
 });
 
-test('TR-20 (Jira): the changelog reports each label and component change with its author account and the mark of the edit', async () => {
+test('Jira: the changelog reports each label and component change with its author account and the mark of the edit', async () => {
   const { world, item, tracker } = site();
   world.edit(item, { labels: [{ add: 'urgent' }] }, { accountId: 'acc-factory' });
   world.edit(item, { components: [{ add: { id: '10021' } }] }, {});
@@ -82,7 +82,7 @@ test('TR-20 (Jira): the changelog reports each label and component change with i
   assert.equal(history.components[1]!.eventId, history.events[1]!.eventId, 'one edit is one changelog entry');
 });
 
-test('TR-17 (Jira): a refused edit is a known failure with nothing applied; a lost answer is an unknown outcome', async () => {
+test('Jira: a refused edit is a known failure with nothing applied; a lost answer is an unknown outcome', async () => {
   for (const [status, kind, code] of [
     [403, 'failed', 'JIRA_FORBIDDEN'],
     [400, 'failed', 'JIRA_REQUEST_REJECTED'],

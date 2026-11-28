@@ -1,4 +1,4 @@
-// Spec #68 §9 (ticket #74): the comments of a Ticket as the Builder receives them. Pure selection, bound and presentation; the Control
+// The comments of a Ticket as the Builder receives them. Pure selection, bound and presentation; the Control
 // reads the facts through the tracker adapters and persists the result with the Work's first Execution (version v1 of the Ticket).
 
 /** One comment selected for the Builder. `association`: `FACTORY`, a GitHub `author_association`, or `JIRA`. */
@@ -61,7 +61,7 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 /** Bytes a comment costs besides its text (header line and fence). */
 const commentOverheadBytes = 200;
 /**
- * Bound of the comments of one Ticket, in UTF-8 bytes, in both origins (tickets #77 and #78 raised it from 8,000, and from the 2,000 to
+ * Bound of the comments of one Ticket, in UTF-8 bytes, in both origins (it was raised from 8,000, and from the 2,000 to
  * 8,000 a Card had). It has to hold the largest Verdict comment a Triage publishes (a 24,000-byte Verdict text under its heading) whole,
  * with room for later comments of people: the Verdict is the only thing the Builder gets from the Triage, so it is never the part that
  * is cut. The Card's own text travels beside it under its own bound.

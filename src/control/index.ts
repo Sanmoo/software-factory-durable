@@ -49,13 +49,13 @@ export { evaluateJiraSource, evaluateJiraTicket } from './durable/jira-evaluatio
 export type { JiraCandidateEvaluation, JiraSourceEvaluation } from './durable/jira-evaluation.js';
 export type { JiraEvaluation, JiraReason, JiraReasonCode, RouteDecision } from './rules/jira-admission.js';
 export type { JiraOriginTracker } from './types.js';
-// Spec #68 (Triage): what the composition roots and the operator's side read of the Triage. The request document, its transitions and
+// Triage: what the composition roots and the operator's side read of the Triage. The request document, its transitions and
 // the pure rules stay inside this module; nothing outside it moves a request.
 export type { SourceTriage, TriagePorts, TriageDetailPorts, TriageRequest, TriageRequestsView } from './types.js';
-// Spec #68 §11 (ticket #82): the Triage requests of a storage as an upgrade reads them (`inspectStorage(...).triage`).
+// The Triage requests of a storage as an upgrade reads them (`inspectStorage(...).triage`).
 export { triageUnsettled } from './rules/triage-settlement.js';
 export type { TriageSettlement } from './rules/triage-settlement.js';
-// Spec #68 §10 (tickets #80, #81): the operator views of the Triage requests (metadata only), the explicit transcript read and the
+// The operator views of the Triage requests (metadata only), the explicit transcript read and the
 // receipt of the interventions.
 export type { TriageInterventionReceipt, TriageDetailView, TriageStatusView, TriagesView, TriageTranscriptView, TriageUsageView } from './types.js';
 // Jira ticket 05: pre-admission impediment notices (entry point for the poller, tickets 04/10) and the recoverable Jira comment desk (06/09).

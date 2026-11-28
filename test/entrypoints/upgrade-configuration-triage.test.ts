@@ -6,7 +6,7 @@ import { upgrade } from '../../src/entrypoints/controller/upgrade.js';
 import { storageWithPendingQuestion } from '../control/upgrade-fixture.js';
 import { configuration, installation } from './upgrade-fixture.js';
 
-// Spec #68 §2 and §11 (ticket #69): the real upgrade logic against an installation root with synthetic release trees and a real Control
+// The real upgrade logic against an installation root with synthetic release trees and a real Control
 // storage. A release that knows Triage keeps validating the config.yaml the operator already has; only adopting schema 3 is a change.
 const configurationTwo = configuration.replace('schemaVersion: 1', 'schemaVersion: 2') + 'ticketSources: []\n';
 const configurationThree =
@@ -22,7 +22,7 @@ async function upgraded(t: { after(fn: () => Promise<void>): void }, yaml: strin
   return { ...fixture, applied, yaml: () => readFile(join(fixture.root, 'config.yaml'), 'utf8') };
 }
 
-test('TR-55: upgrade apply accepts a schema 1 or 2 config.yaml as it is and never edits it', async t => {
+test('upgrade apply accepts a schema 1 or 2 config.yaml as it is and never edits it', async t => {
   for (const yaml of [configuration, configurationTwo]) {
     const fixture = await upgraded(t, yaml);
     assert.equal(fixture.applied.code, 'UPGRADE_COMPLETED');
@@ -34,7 +34,7 @@ test('TR-55: upgrade apply accepts a schema 1 or 2 config.yaml as it is and neve
   }
 });
 
-test('TR-55: adopting schema 3 closes the rollback by the existing configuration check, without rewriting config.yaml', async t => {
+test('adopting schema 3 closes the rollback by the existing configuration check, without rewriting config.yaml', async t => {
   const fixture = await upgraded(t, configurationThree);
   assert.equal(fixture.applied.code, 'UPGRADE_COMPLETED');
   const refused = await upgrade(fixture.context, 'rollback');

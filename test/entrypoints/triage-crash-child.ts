@@ -1,4 +1,4 @@
-// Child controller of triage-crash.test.ts (spec #68 TR-11): it investigates one Triage request in the real Investigation Environment,
+// Child controller of triage-crash.test.ts: it investigates one Triage request in the real Investigation Environment,
 // prints `INVESTIGATING <attempt> <unit>` once the attempt's invocation is recorded, then waits to be SIGKILLed. Nothing of it is stopped:
 // the unit of the attempt, with its Triager agent, outlives it.
 import { until } from '../runner/budget.js';

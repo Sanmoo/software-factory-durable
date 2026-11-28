@@ -15,7 +15,7 @@ import {
   type TriageLabelEvent,
 } from '../../src/control/rules/triage.js';
 
-// Spec #68 §4-§5 (ticket #71): pure rules of the Triage request up to `queued`. No I/O, no clock: callers pass the observed facts.
+// Pure rules of the Triage request up to `queued`. No I/O, no clock: callers pass the observed facts.
 const roles = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', admission: 'ready-for-agent' };
 const added = (eventId: string, label = 'needs-triage'): TriageLabelEvent => ({ eventId, action: 'added', label });
 const removed = (eventId: string, label = 'needs-triage'): TriageLabelEvent => ({ eventId, action: 'removed', label });
@@ -35,7 +35,7 @@ const terminal = (overrides: Partial<NonNullable<TriageEvaluationInput['latest']
   ...overrides,
 });
 
-test('TR-02: an open Ticket without Work carrying needs-triage gets a request; the label author is not a fact the rule takes', () => {
+test('an open Ticket without Work carrying needs-triage gets a request; the label author is not a fact the rule takes', () => {
   assert.deepEqual(evaluateTriage(input()), { action: 'create', application: { eventId: 'e1' } });
   assert.deepEqual(
     evaluateTriage(input({ history: { kind: 'observed', events: [] } })),
@@ -44,14 +44,14 @@ test('TR-02: an open Ticket without Work carrying needs-triage gets a request; t
   );
 });
 
-test('TR-02: a closed Ticket, one that left its source, or one with a Work in any state is never triaged', () => {
+test('a closed Ticket, one that left its source, or one with a Work in any state is never triaged', () => {
   assert.deepEqual(evaluateTriage(input({ facts: facts({ open: false }) })), { action: 'hold', code: 'TRIAGE_TICKET_NOT_OPEN' });
   assert.deepEqual(evaluateTriage(input({ facts: facts({ inSource: false }) })), { action: 'hold', code: 'TRIAGE_TICKET_LEFT_SOURCE' });
   assert.deepEqual(evaluateTriage(input({ facts: facts({ hasWork: true }) })), { action: 'hold', code: 'TRIAGE_WORK_EXISTS' });
   assert.deepEqual(evaluateTriage(input({ facts: facts({ labels: ['bug'] }) })), { action: 'none' }, 'no needs-triage, no request');
 });
 
-test('TR-03: needs-triage beside another state label is a conflict; no winner is chosen and no request is created', () => {
+test('needs-triage beside another state label is a conflict; no winner is chosen and no request is created', () => {
   for (const other of ['needs-info', 'ready-for-human', 'wontfix', 'ready-for-agent'])
     assert.deepEqual(
       evaluateTriage(input({ facts: facts({ labels: ['needs-triage', other, 'bug'] }) })),
@@ -63,13 +63,13 @@ test('TR-03: needs-triage beside another state label is a conflict; no winner is
   assert.deepEqual(stateLabelConflict(roles, ['wontfix', 'needs-info'], false), [], 'without needs-triage there is no Triage conflict');
 });
 
-test('TR-04: needs-triage present suspends admission by the admission label', () => {
+test('needs-triage present suspends admission by the admission label', () => {
   assert.equal(suspendsAdmission(roles, ['ready-for-agent', 'Needs-Triage'], false), true);
   assert.equal(suspendsAdmission(roles, ['ready-for-agent'], false), false);
   assert.equal(suspendsAdmission(roles, ['ready-for-agent', 'Needs-Triage'], true), false);
 });
 
-test('TR-03/§5: a conflict suspends a queued request, and removing only the conflicting label returns the same request to the queue', () => {
+test('a conflict suspends a queued request, and removing only the conflicting label returns the same request to the queue', () => {
   const queued = { state: 'queued' as const, endCode: null, application: { eventId: 'e1' } };
   const conflict = facts({ labels: ['needs-triage', 'wontfix'] });
   assert.deepEqual(evaluateTriage(input({ latest: queued, facts: conflict })), { action: 'suspend', labels: ['wontfix'] });
@@ -78,7 +78,7 @@ test('TR-03/§5: a conflict suspends a queued request, and removing only the con
   assert.deepEqual(evaluateTriage(input({ latest: queued })), { action: 'keep' });
 });
 
-test('TR-12/§5: a queued or suspended request ends abandoned when the Ticket closes, gains a Work, leaves the source or loses needs-triage', () => {
+test('a queued or suspended request ends abandoned when the Ticket closes, gains a Work, leaves the source or loses needs-triage', () => {
   for (const state of ['queued', 'suspended'] as const) {
     const latest = { state, endCode: null, application: null };
     assert.deepEqual(evaluateTriage(input({ latest, facts: facts({ labels: [] }) })), { action: 'abandon', code: 'NEEDS_TRIAGE_REMOVED' });
@@ -93,7 +93,7 @@ test('a request being investigated or published is not moved by discovery (its r
     assert.deepEqual(evaluateTriage(input({ latest: { state, endCode: null, application: null }, facts: facts({ labels: [] }) })), { action: 'keep' });
 });
 
-test('TR-06: after a terminal request the label still present is not a new request; only a later application is', () => {
+test('after a terminal request the label still present is not a new request; only a later application is', () => {
   assert.deepEqual(evaluateTriage(input({ latest: terminal(), history: { kind: 'not-read' } })), { action: 'read-history' });
   assert.deepEqual(
     evaluateTriage(input({ latest: terminal() })),
@@ -115,7 +115,7 @@ test('TR-06: after a terminal request the label still present is not a new reque
   });
 });
 
-test('TR-06/TR-12: a withdrawal the Control observed itself is evidence, whatever the history shows', () => {
+test('a withdrawal the Control observed itself is evidence, whatever the history shows', () => {
   const abandoned = terminal({ state: 'abandoned', endCode: 'NEEDS_TRIAGE_REMOVED' });
   assert.deepEqual(evaluateTriage(input({ latest: abandoned })), { action: 'create', application: { eventId: 'e1' } });
   assert.deepEqual(
@@ -146,7 +146,7 @@ test('latestLabelApplication is the last `added` event of the label, in the orde
   assert.equal(latestLabelApplication(events, 'wontfix', false), null);
 });
 
-test('TR-44 groundwork: seven states, no retry state; terminal states never move and every live state may be abandoned', () => {
+test('seven states, no retry state; terminal states never move and every live state may be abandoned', () => {
   for (const from of ['queued', 'investigating', 'suspended', 'publishing'] as const) assert.equal(triageTransitionAllowed(from, 'abandoned'), true, from);
   for (const from of ['concluded', 'abandoned', 'failed'] as const)
     for (const to of ['queued', 'investigating', 'suspended', 'publishing', 'concluded', 'abandoned', 'failed'] as const)
@@ -159,7 +159,7 @@ test('TR-44 groundwork: seven states, no retry state; terminal states never move
   assert.equal(triageTransitionAllowed('suspended', 'investigating'), false);
 });
 
-// ---- Ticket #76 (spec §5): capacity, the three budget axes and what becomes of a request after an attempt without a Verdict ----
+// ---- Capacity, the three budget axes and what becomes of a request after an attempt without a Verdict ----
 const budget = { investigationMs: 15 * 60_000, attempts: 2 };
 const confirmed: { cessationConfirmed: boolean; code?: string } = { cessationConfirmed: true };
 const at = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes)).toISOString();
@@ -168,7 +168,7 @@ const ended = (from: number, to: number, code = 'TRIAGER_PROVIDER_UNAVAILABLE', 
   end: { at: at(to), code, spentMs: (to - from) * 60_000, cessation },
 });
 
-test('TR-08: the balance counts only the time of the attempts, never the queue, and a recorded attempt is never given back', () => {
+test('the balance counts only the time of the attempts, never the queue, and a recorded attempt is never given back', () => {
   assert.deepEqual(triageBalance(budget, []), { attemptsLeft: 2, remainingMs: 900_000 });
   // 4 minutes investigating, then 50 minutes in the queue: only the 4 minutes are spent.
   assert.deepEqual(triageBalance(budget, [ended(0, 4)]), { attemptsLeft: 1, remainingMs: 660_000 });
@@ -178,7 +178,7 @@ test('TR-08: the balance counts only the time of the attempts, never the queue, 
   assert.deepEqual(triageBalance(budget, [ended(0, 40), ended(41, 42), ended(43, 44)]), { attemptsLeft: 0, remainingMs: 0 });
 });
 
-test('TR-08: each budget axis ends the request with its own code; an attempt that ends with balance sends it back to the queue', () => {
+test('each budget axis ends the request with its own code; an attempt that ends with balance sends it back to the queue', () => {
   // Model budget of the attempt (`triager-v1`): the attempt is spent, the next one starts only with time left.
   assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 4, 'TRIAGER_MODEL_BUDGET_EXHAUSTED')]), { to: 'queued' });
   assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 15, 'TRIAGER_MODEL_BUDGET_EXHAUSTED')]), {
@@ -195,7 +195,7 @@ test('TR-08: each budget axis ends the request with its own code; an attempt tha
   assert.deepEqual(afterAttemptWithoutVerdict({ ...budget, attempts: 3 }, [ended(0, 2), ended(3, 5)]), { to: 'queued' });
 });
 
-test('TR-09/TR-11: a transient end is retried with balance; a session the profile refuses is not; an interrupted attempt counts as spent', () => {
+test('a transient end is retried with balance; a session the profile refuses is not; an interrupted attempt counts as spent', () => {
   for (const code of ['TRIAGER_PROVIDER_UNAVAILABLE', 'TRIAGER_AGENT_EXITED', 'TRIAGER_INTERRUPTED', 'INVESTIGATION_INTERRUPTED', 'CONTROLLER_STOPPED'])
     assert.deepEqual(afterAttemptWithoutVerdict(budget, [ended(0, 1, code)]), { to: 'queued' }, code);
   for (const code of ['WORKER_MODEL_MISMATCH', 'WORKER_THINKING_LEVEL_UNSUPPORTED', 'WORKER_MODEL_UNAVAILABLE'])
@@ -206,7 +206,7 @@ test('TR-09/TR-11: a transient end is retried with balance; a session the profil
   });
 });
 
-test('TR-11: an attempt a dead Control left open is charged up to the latest instant its records show, never the time the Control was down', () => {
+test('an attempt a dead Control left open is charged up to the latest instant its records show, never the time the Control was down', () => {
   const minute = 60_000;
   // The session asked for clones at minutes 2 and 4; the new Control ended the attempt at minute 70.
   assert.equal(interruptedAttemptSpentMs({ startedAt: 0, recorded: [2 * minute, 4 * minute], endedAt: 70 * minute }), 4 * minute);
@@ -218,13 +218,13 @@ test('TR-11: an attempt a dead Control left open is charged up to the latest ins
   assert.equal(interruptedAttemptSpentMs({ startedAt: 10 * minute, recorded: [], endedAt: 9 * minute }), 0);
 });
 
-test('TR-07: free capacity goes to the queue in arrival order; a request whose earlier attempt is not confirmed stopped never starts', () => {
+test('free capacity goes to the queue in arrival order; a request whose earlier attempt is not confirmed stopped never starts', () => {
   const queue = ['a', 'b', 'c'].map(triage_request_id => ({ triage_request_id, attempts: [] as ReturnType<typeof ended>[] }));
   assert.deepEqual(triageStarts({ capacity: 1, held: 0, queue }), ['a']);
   assert.deepEqual(triageStarts({ capacity: 1, held: 1, queue }), []);
   assert.deepEqual(triageStarts({ capacity: 2, held: 0, queue }), ['a', 'b']);
   assert.deepEqual(triageStarts({ capacity: 3, held: 1, queue }), ['a', 'b']);
-  // TR-09: `a` went back to the queue while the stop of its attempt is unconfirmed: it holds a unit and is not started again.
+  // `a` went back to the queue while the stop of its attempt is unconfirmed: it holds a unit and is not started again.
   const retained = [
     { triage_request_id: 'a', attempts: [ended(0, 1, 'TRIAGER_AGENT_EXITED', { cessationConfirmed: false, code: 'INVESTIGATION_CGROUP_POPULATED' })] },
   ];
@@ -232,7 +232,7 @@ test('TR-07: free capacity goes to the queue in arrival order; a request whose e
   assert.deepEqual(triageStarts({ capacity: 1, held: 1, queue: retained }), []);
 });
 
-test('TR-09/TR-27: an attempt whose stop is not confirmed is an Impediment of retained capacity with its next step; `failed` is none', () => {
+test('an attempt whose stop is not confirmed is an Impediment of retained capacity with its next step; `failed` is none', () => {
   const held = ended(0, 1, 'TRIAGER_AGENT_EXITED', { cessationConfirmed: false, code: 'INVESTIGATION_MANAGER_UNAVAILABLE' });
   const impediments = triageImpediments({ triage_request_id: 'r1', attempts: [ended(5, 6), held, { attempt: 't1-9', end: null }] });
   assert.equal(impediments.length, 1);

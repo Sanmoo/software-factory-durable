@@ -18,7 +18,7 @@ import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { createRecords } from '../../src/records/index.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
 
-// Spec #68 §7 and §9, ticket #73 (oracle TR-36): factory-skills-v13 = v12 plus a role on every skill and prompt of the manifest (each session
+// factory-skills-v13 = v12 plus a role on every skill and prompt of the manifest (each session
 // loads only those of its role), the `triage` skill with its support document and the Triager activation prompt template, and the Builder
 // reading the Ticket comments with the precedence rule. Earlier versions are never edited.
 const v13 = builderSkillPacks['factory-skills-v13'];
@@ -27,7 +27,7 @@ const names = (entries: readonly { name: string }[]) => entries.map(entry => ent
 const builderSkills = ['alpine-diagnostics', 'code-review', 'codebase-design', 'implement', 'pr', 'tdd'];
 const triagerFiles = ['prompts/triage.md', 'skills/triage/AGENT-BRIEF.md', 'skills/triage/SKILL.md'];
 
-test('TR-36: the factory-skills-v13 manifest declares the role of every skill and prompt, and every file is hashed', async () => {
+test('the factory-skills-v13 manifest declares the role of every skill and prompt, and every file is hashed', async () => {
   const pack = await loadSkillPack(v13.directory, 'factory-skills-v13');
   assert.deepEqual([pack.id, pack.version, pack.manifest.guestDirectory], ['factory-skills-v13', '13.0.0', '/artifacts/factory/skill-pack/factory-skills-v13']);
   for (const file of pack.manifest.files)
@@ -48,7 +48,7 @@ test('TR-36: the factory-skills-v13 manifest declares the role of every skill an
   assert.match(await readFile(join(v13.directory, triage.path), 'utf8'), /^---\nname: triage\n[\s\S]*?\ndisable-model-invocation: true\n---\n/);
 });
 
-test('TR-36: a Triager session gets only `triage`, its support document and its prompt; Builder and Reviewers never get it', async () => {
+test('a Triager session gets only `triage`, its support document and its prompt; Builder and Reviewers never get it', async () => {
   const pack = await loadSkillPack(v13.directory, 'factory-skills-v13');
   const triager = skillPackForRole(pack, 'triager');
   assert.deepEqual(names(triager.skills), ['triage']);
@@ -70,7 +70,7 @@ test('TR-36: a Triager session gets only `triage`, its support document and its 
   }
 });
 
-test('TR-36: packs published before the roles belong to the Builder alone, with the Read authority they always had', async () => {
+test('packs published before the roles belong to the Builder alone, with the Read authority they always had', async () => {
   const v12 = await loadSkillPack(builderSkillPacks['factory-skills-v12'].directory, 'factory-skills-v12');
   assert.deepEqual(names(skillPackForRole(v12, 'builder').skills), builderSkills);
   assert.deepEqual(names(skillPackForRole(v12, 'builder').prompts), ['implement', 'pr']);
@@ -81,7 +81,7 @@ test('TR-36: packs published before the roles belong to the Builder alone, with 
   );
 });
 
-test('TR-36: a real Builder session on v13 resolves /implement and neither lists nor expands the Triager skill and prompt', async t => {
+test('a real Builder session on v13 resolves /implement and neither lists nor expands the Triager skill and prompt', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'factory-pack13-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const profileDirectory = join(dir, 'profile');
@@ -163,7 +163,7 @@ test('TR-36: a real Builder session on v13 resolves /implement and neither lists
   assert.doesNotMatch(triage, /You are the Factory \*\*Triager\*\*|concluir_triagem/);
 });
 
-test('TR-36: the `triage` skill covers the rules of the Triager and is never the interactive upstream skill', async () => {
+test('the `triage` skill covers the rules of the Triager and is never the interactive upstream skill', async () => {
   const skill = flat(await readFile(join(v13.directory, 'skills/triage/SKILL.md'), 'utf8'));
   for (const rule of [
     // Investigation by reading.
@@ -202,7 +202,7 @@ test('TR-36: the `triage` skill covers the rules of the Triager and is never the
     assert.ok(brief.includes(rule), rule);
 });
 
-test('TR-36: the Triager activation prompt is a template of the pack that takes only what the Control injects', async () => {
+test('the Triager activation prompt is a template of the pack that takes only what the Control injects', async () => {
   const pack = await loadSkillPack(v13.directory, 'factory-skills-v13');
   assert.deepEqual(
     [...triagerActivationFields],

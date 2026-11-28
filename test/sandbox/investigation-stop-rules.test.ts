@@ -1,4 +1,4 @@
-// Spec #68 TR-27 (unit layer): when the stop of an Investigation Environment attempt is confirmed. Pure rule, no I/O.
+// Unit layer: when the stop of an Investigation Environment attempt is confirmed. Pure rule, no I/O.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stopConfirmation, type StopFacts } from '../../src/sandbox/investigation/stop-rules.js';
@@ -12,7 +12,7 @@ const inactive: StopFacts = {
   cgroup: 'absent',
 };
 
-test('TR-27 the stop is confirmed by an inactive unit of the same invocation with an empty cgroup', () => {
+test('the stop is confirmed by an inactive unit of the same invocation with an empty cgroup', () => {
   assert.deepEqual(stopConfirmation(record, inactive), { cessationConfirmed: true, evidence: 'unit-inactive' });
   assert.deepEqual(stopConfirmation(record, { ...inactive, cgroup: 'empty' }), { cessationConfirmed: true, evidence: 'unit-inactive' });
   assert.deepEqual(stopConfirmation(record, { ...inactive, manager: { activeState: 'failed', invocation: 'a'.repeat(32), controlGroup: cgroup } }), {
@@ -21,28 +21,28 @@ test('TR-27 the stop is confirmed by an inactive unit of the same invocation wit
   });
 });
 
-test('TR-27 a unit the manager already collected (no invocation left) confirms with an empty cgroup', () => {
+test('a unit the manager already collected (no invocation left) confirms with an empty cgroup', () => {
   assert.deepEqual(stopConfirmation(record, { ...inactive, manager: { activeState: 'inactive', invocation: '', controlGroup: '' } }), {
     cessationConfirmed: true,
     evidence: 'unit-inactive',
   });
 });
 
-test('TR-27 a different Host boot confirms the stop without asking the manager', () => {
+test('a different Host boot confirms the stop without asking the manager', () => {
   assert.deepEqual(stopConfirmation(record, { ...inactive, hostBoot: 'boot-b', manager: 'unavailable', cgroup: 'unreadable' }), {
     cessationConfirmed: true,
     evidence: 'host-rebooted',
   });
 });
 
-test('TR-27 an unanswering systemd does not confirm, whatever the cgroup shows', () => {
+test('an unanswering systemd does not confirm, whatever the cgroup shows', () => {
   assert.deepEqual(stopConfirmation(record, { ...inactive, manager: 'unavailable' }), {
     cessationConfirmed: false,
     code: 'INVESTIGATION_MANAGER_UNAVAILABLE',
   });
 });
 
-test('TR-27 a divergent InvocationID does not confirm, active or inactive', () => {
+test('a divergent InvocationID does not confirm, active or inactive', () => {
   for (const activeState of ['inactive', 'failed', 'active'])
     assert.deepEqual(stopConfirmation(record, { ...inactive, manager: { activeState, invocation: 'b'.repeat(32), controlGroup: '' } }), {
       cessationConfirmed: false,
@@ -50,7 +50,7 @@ test('TR-27 a divergent InvocationID does not confirm, active or inactive', () =
     });
 });
 
-test('TR-27 an active, activating or deactivating unit does not confirm', () => {
+test('an active, activating or deactivating unit does not confirm', () => {
   for (const activeState of ['active', 'activating', 'deactivating', 'reloading', ''])
     assert.deepEqual(stopConfirmation(record, { ...inactive, manager: { activeState, invocation: 'a'.repeat(32), controlGroup: cgroup } }), {
       cessationConfirmed: false,
@@ -58,19 +58,19 @@ test('TR-27 an active, activating or deactivating unit does not confirm', () => 
     });
 });
 
-test('TR-27 an inactive unit whose cgroup still has processes, or cannot be read, does not confirm', () => {
+test('an inactive unit whose cgroup still has processes, or cannot be read, does not confirm', () => {
   assert.deepEqual(stopConfirmation(record, { ...inactive, cgroup: 'populated' }), { cessationConfirmed: false, code: 'INVESTIGATION_CGROUP_POPULATED' });
   assert.deepEqual(stopConfirmation(record, { ...inactive, cgroup: 'unreadable' }), { cessationConfirmed: false, code: 'INVESTIGATION_CGROUP_UNREADABLE' });
 });
 
-test('TR-27 a unit reported under another cgroup is not the recorded attempt', () => {
+test('a unit reported under another cgroup is not the recorded attempt', () => {
   assert.deepEqual(stopConfirmation(record, { ...inactive, manager: { activeState: 'inactive', invocation: 'a'.repeat(32), controlGroup: '/elsewhere' } }), {
     cessationConfirmed: false,
     code: 'INVESTIGATION_INVOCATION_MISMATCH',
   });
 });
 
-test('TR-27 a start whose invocation was never recorded confirms only by inactivity and an empty cgroup', () => {
+test('a start whose invocation was never recorded confirms only by inactivity and an empty cgroup', () => {
   const intent = { attempt: record.attempt, unit: record.unit, hostBoot: record.hostBoot };
   assert.deepEqual(stopConfirmation(intent, { ...inactive, manager: { activeState: 'inactive', invocation: '', controlGroup: '' } }), {
     cessationConfirmed: true,

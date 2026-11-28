@@ -720,9 +720,9 @@ export async function runWorkerProcess(bootstrap: unknown, signal: AbortSignal, 
 // Narrow standalone installation prerequisite; no arbitrary auth routing/CRUD.
 export { firstFactoryOAuthLogin } from './factory-oauth.js';
 
-// Spec #68 §7 (ticket #75): the Triager role. Host facade of one attempt and the agent the Investigation Environment runs.
+// The Triager role. Host facade of one attempt and the agent the Investigation Environment runs.
 export { createTriager, runTriagerAgent, triagerAttemptDirectory, triagerToolNames } from './triager.js';
-// Spec #68 §10 (ticket #80): the session files the attempts leave, for the transcript command, usage and retention.
+// The session files the attempts leave, for the transcript command, usage and retention.
 export { createTriagerDetails } from './triager-details.js';
 export type { McpRegistration, TriagerCompletion, TriagerConfiguration, TriagerHost } from './triager.js';
 export { triagerActivationFields, type TriagerActivation } from './skill-pack.js';

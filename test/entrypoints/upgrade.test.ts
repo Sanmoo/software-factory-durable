@@ -452,7 +452,7 @@ test('after 2→4 with a v2 config.yaml, rollback refuses on data AND configurat
   assert.equal(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256);
 });
 
-test('TR-52: `upgrade apply --migrate factory-storage-3-to-4` keeps every other document byte for byte; after the commit the rollback is refused with ROLLBACK_FORMAT_UNSUPPORTED, no Triage request stored', async t => {
+test('`upgrade apply --migrate factory-storage-3-to-4` keeps every other document byte for byte; after the commit the rollback is refused with ROLLBACK_FORMAT_UNSUPPORTED, no Triage request stored', async t => {
   const { root, context, previous, target } = await rootWithFormatThree(t);
   const before = await snapshot(root, context.storagePath);
   const bytes = storedBytesExceptInstallation(context.storagePath);

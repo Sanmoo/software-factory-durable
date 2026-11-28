@@ -3936,7 +3936,7 @@ export function createDispatcher(deps: {
     const { attemptId } = await freshEvaluation(work);
     // Jira ticket 04 (agent context): the Builder has no Jira client or token; the controller reads the Card's text now and hands it over
     // with the request. An unreadable Card never starts on a guess.
-    // Spec #68 §9: so are the comments of the Ticket, read with the Work's first Execution (v1); later Executions carry the same.
+    // So are the comments of the Ticket, read with the Work's first Execution (v1); later Executions carry the same.
     const ticketText = await ticketOf(deps.access, work);
     if (ticketText.kind !== 'observed') {
       observe(work.work_id, 'refused', ticketText.reasons);

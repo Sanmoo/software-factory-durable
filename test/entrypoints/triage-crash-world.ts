@@ -1,4 +1,4 @@
-// Spec #68 TR-11 (ticket #76): the Control of the real-crash scenario, opened the same way by the child that is killed and by the test
+// The Control of the real-crash scenario, opened the same way by the child that is killed and by the test
 // that takes the storage over. Real Control and SQLite, the REAL Investigation Environment (a transient unit of the user manager, with
 // bubblewrap for its commands) and the production Triager agent inside it; doubled only at the third-party boundary: the tracker and the
 // model provider (a local HTTP server of the test, reached by the agent from outside the confinement).

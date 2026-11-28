@@ -35,7 +35,7 @@ const hostEtc = ['ld.so.cache', 'ld.so.conf', 'ld.so.conf.d', 'alternatives'];
 export const ownEtc = ['passwd', 'group', 'nsswitch.conf'];
 
 /**
- * Spec #68 §6: the bubblewrap arguments of one command. Every namespace is new, so the network has only its own loopback; the root is
+ * The bubblewrap arguments of one command. Every namespace is new, so the network has only its own loopback; the root is
  * an empty read-only tmpfs with the Host's `/usr` and a minimal `/etc`, without `/home` and without the Factory root; the environment
  * is cleared, so no credential variable of the agent reaches the command.
  */

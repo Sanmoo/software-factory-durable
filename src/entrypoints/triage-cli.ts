@@ -1,6 +1,6 @@
-// Spec #68 §10 (ticket #80): the `factory triages` and `factory triage ...` commands. `triage <id or Ticket reference>` shows one Triage
+// The `factory triages` and `factory triage ...` commands. `triage <id or Ticket reference>` shows one Triage
 // request; every other form is `triage <subcommand> <id> ...`, one entry of `triageSubcommands`: an entry names its own flags and
-// builds its payload. Ticket #81: the interventions `cancel`, `release` and `complete`, which also take a Ticket reference.
+// builds its payload. The interventions `cancel`, `release` and `complete` also take a Ticket reference.
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -94,7 +94,7 @@ function cleanupConfirm(given: Given): TriageCommand | null {
   };
 }
 /**
- * Ticket #81: an intervention on the request named by its id or its Ticket reference. `more`: the command's own fields, or null when a
+ * An intervention on the request named by its id or its Ticket reference. `more`: the command's own fields, or null when a
  * required flag is missing or malformed.
  */
 function intervention(given: Given, operation: string, more: Payload | null): TriageCommand | null {

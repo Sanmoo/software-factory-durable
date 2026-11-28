@@ -179,7 +179,7 @@ test('the Jira token file is refused when it is not a private regular file of th
   }
 });
 
-// Spec #68 §2/§4 (ticket #71; TR-01, TR-04): the `triage` block reaches the Control only through `triageSources(effective)`.
+// The `triage` block reaches the Control only through `triageSources(effective)`.
 const v3 = `schemaVersion: 3\n${header.replace(
   '  spec: {provider: example, model: spec-model}\n',
   '  spec: {provider: example, model: spec-model}\n  triager: {provider: example, model: triager-model}\n',
@@ -210,7 +210,7 @@ async function triageInstallation(missing: ('rg' | 'bwrap')[]) {
   return { root, effective: configuration.effective };
 }
 
-test('TR-01/TR-04: a source with the triage block carries its labels to the Control; one without it carries none', async () => {
+test('a source with the triage block carries its labels to the Control; one without it carries none', async () => {
   const { root, effective } = await triageInstallation([]);
   try {
     const jira = recordingJira();
@@ -238,7 +238,7 @@ test('TR-01/TR-04: a source with the triage block carries its labels to the Cont
   }
 });
 
-test('TR-04: a Host lacking a Triage prerequisite keeps the block on the source, marked not available', async () => {
+test('a Host lacking a Triage prerequisite keeps the block on the source, marked not available', async () => {
   const { root, effective } = await triageInstallation(['rg']);
   try {
     const access = composeProductionAccess({ root, github: recordingGitHub().github, effective, jira: { transport: recordingJira().transport } });

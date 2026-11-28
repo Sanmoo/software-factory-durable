@@ -12,7 +12,7 @@ import {
 import { boundTicketComments, ticketCommentsBound } from '../../src/control/rules/ticket-comments.js';
 import { intendedChanges, verdictTextMaxBytes, type TriageIntendedEffect } from '../../src/control/rules/triage-verdict.js';
 
-// Spec #68 §8 (ticket #77): pure rules of the publication of a recorded Verdict, common to both trackers. No I/O, no clock.
+// Pure rules of the publication of a recorded Verdict, common to both trackers. No I/O, no clock.
 const roles = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', admission: 'ready-for-agent' };
 const at = '2026-11-25T12:00:00.000Z';
 const id = '0b9c6a52-3d3e-4c8f-9a51-000000000077';
@@ -41,7 +41,7 @@ const attempted = (effects: TriageIntendedEffect[], ...indexes: number[]) =>
   effects.map((effect, index) => (indexes.includes(index) ? { ...effect, attempts: 1, attemptedAt: at } : effect));
 const statuses = (effects: readonly TriageIntendedEffect[]) => effects.map(effect => effect.status);
 
-test('TR-16: a Ticket closed or with a Work on the re-read before the first write is abandoned with nothing published', () => {
+test('a Ticket closed or with a Work on the re-read before the first write is abandoned with nothing published', () => {
   const closed = step(intended(), { open: false, effects: [absent, absent, absent] }, null);
   assert.deepEqual(closed.next, { action: 'end', to: 'abandoned', code: 'TICKET_CLOSED' });
   assert.deepEqual(statuses(closed.effects), ['no-longer-allowed', 'no-longer-allowed', 'no-longer-allowed']);
@@ -54,7 +54,7 @@ test('a label conflict on the re-read before the first write suspends the reques
   assert.deepEqual(statuses(result.effects), ['pending', 'pending', 'pending']);
 });
 
-test('TR-15: the writes follow the recorded order, one unit at a time, each only after the previous one was read back', () => {
+test('the writes follow the recorded order, one unit at a time, each only after the previous one was read back', () => {
   const start = step(intended('wontfix'), { effects: [absent, absent, absent, absent] }, null);
   assert.deepEqual([start.mode, start.next], ['verdict', { action: 'write', mode: 'verdict', group: [0] }]);
   let effects = attempted(start.effects, 0);
@@ -87,13 +87,13 @@ test('a write unit of several effects (a Card: one PUT) is written and confirmed
   assert.deepEqual(result.next, { action: 'write', mode: 'verdict', group: [1, 2] });
 });
 
-test('TR-18: the pair outcome label plus needs-triage the publication itself created is not a conflict', () => {
+test('the pair outcome label plus needs-triage the publication itself created is not a conflict', () => {
   const effects = attempted(intended(), 0, 1);
   const result = step(effects, { labels: ['needs-triage', 'needs-info'], effects: [own, own, absent] });
   assert.deepEqual(result.next, { action: 'write', mode: 'verdict', group: [2] });
 });
 
-test('TR-24: a label the API accepted and the read does not show stays pending and is never taken as written', () => {
+test('a label the API accepted and the read does not show stays pending and is never taken as written', () => {
   const effects = attempted(intended(), 0, 1);
   const result = step(effects, { effects: [own, absent, absent] });
   assert.deepEqual(result.next, { action: 'write', mode: 'verdict', group: [1] });
@@ -107,13 +107,13 @@ test('an effect that is present while the history does not show who made it yet 
   assert.deepEqual(statuses(result.effects), ['confirmed', 'pending', 'pending']);
 });
 
-test('TR-20: an attempted effect present without an attributable author stops the publication with ambiguous authorship', () => {
+test('an attempted effect present without an attributable author stops the publication with ambiguous authorship', () => {
   const effects = attempted(intended(), 0, 1);
   const facts = { labels: ['needs-triage', 'needs-info'], effects: [own, { holds: true, author: 'unknown' as const }, absent] };
   const result = step(effects, facts);
   assert.deepEqual(result.next, { action: 'impediment', effects: [1] });
   assert.deepEqual(statuses(result.effects), ['confirmed', 'ambiguous-authorship', 'pending']);
-  // The operator's completion (#81) takes the ambiguous effect as the Factory's and goes on.
+  // The operator's completion takes the ambiguous effect as the Factory's and goes on.
   const completed = step(result.effects, facts, 'verdict', [1]);
   assert.deepEqual(completed.next, { action: 'write', mode: 'verdict', group: [2] });
   assert.deepEqual(statuses(completed.effects), ['confirmed', 'confirmed', 'pending']);
@@ -121,7 +121,7 @@ test('TR-20: an attempted effect present without an attributable author stops th
   assert.deepEqual(step(result.effects, facts, 'verdict', [2]).next, { action: 'impediment', effects: [1] });
 });
 
-test('TR-21: a human change between two writes marks every remaining effect as no longer allowed', () => {
+test('a human change between two writes marks every remaining effect as no longer allowed', () => {
   const afterComment = attempted(intended(), 0);
   // needs-triage withdrawn by a person after the comment.
   const withdrawn = step(afterComment, { labels: [], effects: [own, absent, { holds: true, author: 'other' }] });
@@ -151,7 +151,7 @@ test('a Work admitted by the last write does not undo a publication whose effect
   assert.deepEqual(result.next, { action: 'end', to: 'concluded', code: 'VERDICT_PUBLISHED' });
 });
 
-test('TR-13: needs-triage withdrawn before the first write leaves only the informative comment, then the request is abandoned', () => {
+test('needs-triage withdrawn before the first write leaves only the informative comment, then the request is abandoned', () => {
   const start = step(intended('wontfix'), { labels: ['ready-for-agent'], effects: [absent, absent, absent, absent] }, null);
   assert.deepEqual([start.mode, start.next], ['informative', { action: 'write', mode: 'informative', group: [0] }]);
   assert.deepEqual(statuses(start.effects), ['pending', 'no-longer-allowed', 'no-longer-allowed', 'no-longer-allowed']);
@@ -160,7 +160,7 @@ test('TR-13: needs-triage withdrawn before the first write leaves only the infor
   assert.deepEqual(statuses(done.effects), ['confirmed', 'no-longer-allowed', 'no-longer-allowed', 'no-longer-allowed']);
 });
 
-test('TR-19: a comment whose marker is there with another content is not taken as this request’s effect', () => {
+test('a comment whose marker is there with another content is not taken as this request’s effect', () => {
   const result = step(attempted(intended(), 0), { effects: [{ holds: true, author: 'unknown' }, absent, absent] });
   assert.deepEqual(result.next, { action: 'impediment', effects: [0] });
 });
@@ -177,7 +177,7 @@ const comment = (overrides: Partial<Parameters<typeof triageComment>[0]> = {}) =
     ...overrides,
   });
 
-test('TR-25: the comment carries the AI mark, the outcome, then the whole Verdict text, under the marker of the request', () => {
+test('the comment carries the AI mark, the outcome, then the whole Verdict text, under the marker of the request', () => {
   const result = comment();
   assert.equal(result.kind, 'comment');
   if (result.kind !== 'comment') return;
@@ -191,7 +191,7 @@ test('TR-25: the comment carries the AI mark, the outcome, then the whole Verdic
   assert.ok(result.body.endsWith('Observado: o total já soma os preços.\nInferido: o pedido está atendido.\nAção: nenhuma.'), 'the text is whole and last');
 });
 
-test('TR-25: a Verdict above the limit of the tracker is refused whole, never cut', () => {
+test('a Verdict above the limit of the tracker is refused whole, never cut', () => {
   const text = 'é'.repeat(verdictTextMaxBytes / 2);
   const fits = comment({ text, limit: 32767 });
   assert.ok(fits.kind === 'comment' && fits.body.endsWith(text), 'the largest recorded Verdict fits a Jira comment whole');
@@ -200,7 +200,7 @@ test('TR-25: a Verdict above the limit of the tracker is refused whole, never cu
   assert.deepEqual(large.kind === 'too-large' && [large.limit, large.characters > 33000], [32767, true]);
 });
 
-test('TR-25 (Jira): a comment with more lines than the tracker reads back is refused whole, never cut', () => {
+test('Jira: a comment with more lines than the tracker reads back is refused whole, never cut', () => {
   const text = 'a\n'.repeat(1900);
   const large = comment({ text, limit: 32767, maxLines: 1900 });
   assert.deepEqual(large.kind === 'too-large' && [large.maxLines, large.lines! > 1900], [1900, true]);
@@ -216,14 +216,14 @@ const jiraRoutes = [
 const route = (component: string | null, cardComponents: string[] | null) =>
   cardRoute({ component, cardComponents, routes: jiraRoutes, authorizedRepositories: ['acme/project', 'acme/other'] });
 
-test('TR-17: ready-for-agent stands only with a single route, and the component is added only to a Card without a routed one', () => {
+test('ready-for-agent stands only with a single route, and the component is added only to a Card without a routed one', () => {
   assert.deepEqual(route('10022', ['10099']), { kind: 'routed', addComponent: true });
   assert.deepEqual(route('10022', []), { kind: 'routed', addComponent: true });
   assert.deepEqual(route(null, ['10022', '10099']), { kind: 'routed', addComponent: false });
   assert.deepEqual(route('10023', ['10022']), { kind: 'routed', addComponent: false }, 'another component of the same repository changes nothing');
 });
 
-test('TR-17: divergent routes, no single component and unreadable components fall to needs-info with what there is to suggest', () => {
+test('divergent routes, no single component and unreadable components fall to needs-info with what there is to suggest', () => {
   const suggested = { componentId: '10022', repository: 'acme/project' };
   assert.deepEqual(route('10022', ['10021']), { kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', ...suggested });
   assert.deepEqual(route('10022', ['10022', '10021']), { kind: 'fallback', code: 'TRIAGE_ROUTE_DIVERGENT', ...suggested });
@@ -233,7 +233,7 @@ test('TR-17: divergent routes, no single component and unreadable components fal
   assert.deepEqual(route('10030', []), { kind: 'fallback', code: 'TRIAGE_COMPONENT_NOT_ROUTED', componentId: '10030', repository: null });
 });
 
-test('TR-17: the comment of a Card says what happens to its route, and the suggestion when ready-for-agent is not applied', () => {
+test('the comment of a Card says what happens to its route, and the suggestion when ready-for-agent is not applied', () => {
   const labels = { admission: 'factory-ready', needsInfo: 'needs-info' };
   const adds = comment({ route: { ...labels, kind: 'adds', componentId: '10022', repository: 'acme/project' } });
   assert.ok(adds.kind === 'comment');
@@ -269,7 +269,7 @@ test('the largest Verdict comment a Triage publishes reaches the Builder whole i
   assert.deepEqual([delivered.omitted, delivered.comments.map(item => item.cut ?? false)], [0, [false, false]]);
 });
 
-test('TR-13: the informative comment tells a recommendation from an action', () => {
+test('the informative comment tells a recommendation from an action', () => {
   const result = comment({ mode: 'informative' });
   assert.ok(result.kind === 'comment');
   if (result.kind !== 'comment') return;
@@ -279,7 +279,7 @@ test('TR-13: the informative comment tells a recommendation from an action', () 
   assert.match(result.body, /changed no label and closed nothing/);
 });
 
-test('TR-19: a comment is recognised by its content whatever the origin did to line endings and outer blanks', () => {
+test('a comment is recognised by its content whatever the origin did to line endings and outer blanks', () => {
   assert.equal(sameCommentText('a\nb\n', 'a\r\nb'), true);
   assert.equal(sameCommentText('a\nb', 'a\nc'), false);
 });

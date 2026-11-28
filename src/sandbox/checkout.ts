@@ -47,7 +47,7 @@ const metadataSchema = z.strictObject({
 /** What a mutation of the bare cache needs to know of a repository: its identity, its fetch grant and the branch fetched. */
 type CacheRequest = Pick<CheckoutRequest, 'repository' | 'repositoryId' | 'installationId' | 'base'>;
 type FetchedBase = { cache: string; home: string; gitLock: string; baseCommit: string; fetchCredentialRevocation: string };
-/** Spec #68 §6: a per-attempt copy of one candidate repository for a Triager, created under the attempt's clones directory. */
+/** A per-attempt copy of one candidate repository for a Triager, created under the attempt's clones directory. */
 export type InvestigationCloneRequest = CacheRequest & { directory: string; name: string };
 export type InvestigationCloneResult = { status: 'success'; path: string; commit: string } | { status: 'failure' | 'indeterminate'; code: string };
 
@@ -362,7 +362,7 @@ export function createCheckouts(options: {
 
   return {
     /**
-     * Spec #68 §6 (TR-30): fetches the repository's base into the Factory-exclusive bare cache with the Host's read credential and creates
+     * Fetches the repository's base into the Factory-exclusive bare cache with the Host's read credential and creates
      * `<directory>/<name>` from it. The credential is used by the one fetch and never reaches the copy, which keeps no remote.
      */
     async investigationClone(request: InvestigationCloneRequest): Promise<InvestigationCloneResult> {

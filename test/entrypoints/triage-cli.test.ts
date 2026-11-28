@@ -18,7 +18,7 @@ import { call, hang, investigationClock, triageWorld, turnTokens } from '../cont
 import { until } from '../runner/budget.js';
 import { operator } from './triage-cli-fixture.js';
 
-// Spec #68 §10 (ticket #80): what the operator sees of the Triage requests, through the REAL CLI process over the controller socket.
+// What the operator sees of the Triage requests, through the REAL CLI process over the controller socket.
 // The Control is the real one (SQLite, Triager session under a scripted provider, real session files); the trackers are the doubles.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const source: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
@@ -34,7 +34,7 @@ function triageIssue(number: number, overrides: Partial<RemoteIssue> = {}): Remo
 const conclude = (text = `Observado: o total ignora o cupom. ${verdictCanary}`) => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text });
 const events = (timeline: { event: string; code?: string }[]) => timeline.map(entry => entry.event);
 
-test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by metadata only; the canaries of the Ticket, the Verdict and the tool arguments stay out', async t => {
+test('`triages`, `triage` and `status` show each request by metadata only; the canaries of the Ticket, the Verdict and the tool arguments stay out', async t => {
   const conflicting = triageIssue(8);
   applyLabel(conflicting, 'wontfix');
   const w = await triageWorld(t, {
@@ -68,7 +68,7 @@ test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by met
   assert.deepEqual(list.capacity, { configured: 1, investigating: 1, retained: 0 });
   assert.equal(list.requests[0]!.verdict.link, w.remote.comments![7]![0]!.url, 'a published Verdict is a link to its comment');
   assert.ok(list.requests[0]!.investigation.remainingMs! <= 15 * 60_000);
-  // TR-03: the state-label conflict that keeps a Ticket without a request is visible in the CLI.
+  // The state-label conflict that keeps a Ticket without a request is visible in the CLI.
   assert.deepEqual(
     list.held.map(item => [item.ticket, item.holds.map(hold => [hold.code, hold.labels])]),
     [['acme/project#8', [['TRIAGE_LABEL_CONFLICT', ['wontfix']]]]],
@@ -117,7 +117,7 @@ test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by met
     ],
   );
 
-  // TR-45: no surface carries the content, in `--json` either; only the explicit transcript command does.
+  // No surface carries the content, in `--json` either; only the explicit transcript command does.
   const usage = await cli('usage');
   const surfaces = [listed, shown, byTicket, status, usage, await cli('triage', second.triage_request_id), await cli('list')];
   for (const surface of surfaces) for (const canary of canaries) assert.ok(!(surface.stdout + surface.stderr).includes(canary), `${canary} leaked`);
@@ -137,7 +137,7 @@ test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by met
   const verdict = (await cli('triage', 'transcript', first.triage_request_id, '--verdict')).json as TriageTranscriptView;
   assert.deepEqual([verdict.part, verdict.state, verdict.text?.includes(verdictCanary)], ['verdict', 'complete', true]);
 
-  // TR-47: the Triages have their own line, per request and in total, and are not added to the Works.
+  // The Triages have their own line, per request and in total, and are not added to the Works.
   const view = usage.json as UsageView & { triage: TriageUsageView };
   const [measured, open] = view.triage.requests;
   assert.deepEqual([measured!.ticket, measured!.attempts.length, measured!.total.measurement], ['acme/project#7', 1, 'complete']);
@@ -167,7 +167,7 @@ test('TR-44 and TR-45: `triages`, `triage` and `status` show each request by met
     assert.equal((await cli(...bad)).code, 2, bad.join(' '));
 });
 
-test('TR-44: a failed request is not an Impediment and says to remove and reapply the label; a new request shows the earlier ones of its Ticket', async t => {
+test('a failed request is not an Impediment and says to remove and reapply the label; a new request shows the earlier ones of its Ticket', async t => {
   const issue = triageIssue(7);
   const w = await triageWorld(t, {
     github: { issues: [issue], pulls: {} },
@@ -210,7 +210,7 @@ test('TR-44: a failed request is not an Impediment and says to remove and reappl
   assert.deepEqual([earlier.latest, earlier.later.map(item => item.triage_request_id)], [false, [latest.request.triage_request_id]]);
 });
 
-test('TR-46: a transcript is read only by its command; 30 days after the terminal state it and the Verdict text go, metadata and link stay; an Impediment protects it; early removal needs a plan and its confirmation', async t => {
+test('a transcript is read only by its command; 30 days after the terminal state it and the Verdict text go, metadata and link stay; an Impediment protects it; early removal needs a plan and its confirmation', async t => {
   const time = investigationClock(Date.now());
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
@@ -306,7 +306,7 @@ test('TR-46: a transcript is read only by its command; 30 days after the termina
   assert.deepEqual(Object.keys(await w.attemptFiles()), []);
 });
 
-test('TR-46: while a removal of the details is intended and not yet carried out, the transcript and the Verdict text are still read as they are, never reported as gone', async t => {
+test('while a removal of the details is intended and not yet carried out, the transcript and the Verdict text are still read as they are, never reported as gone', async t => {
   const time = investigationClock(Date.now());
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },
@@ -341,7 +341,7 @@ test('TR-46: while a removal of the details is intended and not yet carried out,
   assert.deepEqual([(await part(false)).state, (await part(true)).state, (await part(true)).text], ['expired', 'expired', null]);
 });
 
-test('TR-46: the details of a request that is not terminal are protected: the retention never takes them and an early removal is refused', async t => {
+test('the details of a request that is not terminal are protected: the retention never takes them and an early removal is refused', async t => {
   const time = investigationClock(Date.now());
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },

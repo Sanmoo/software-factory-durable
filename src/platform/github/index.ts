@@ -33,7 +33,7 @@ const permissions = {
   'repository-fetch': { metadata: 'read', contents: 'read' },
   // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
   'question-publish': { metadata: 'read', issues: 'write' },
-  // Spec #68 §8: one write of a Triage publication on its Ticket issue (a label added or removed by relative operation, or the
+  // One write of a Triage publication on its Ticket issue (a label added or removed by relative operation, or the
   // `not_planned` closing), each under its own single-use grant. Never a replacement of the label set, the body or any other field.
   'triage-publish': { metadata: 'read', issues: 'write' },
   // Ticket 15 required-checks explanation (spec §9.2), GET only: the own PR (Pull requests R), base branch tip/protection summary and
@@ -161,7 +161,7 @@ export interface GitHubAccess {
    */
   comment(scope: GitHubScope, issueNumber: number, body: string): Promise<GitHubWrite>;
   /**
-   * Spec #68 §8: one write of a Triage publication on an issue: its comment, one label added or removed by relative operation (never the
+   * One write of a Triage publication on an issue: its comment, one label added or removed by relative operation (never the
    * whole set), or the `not_planned` closing. Same guarantees as `comment`: a fresh single-use grant, never retried, `unknown` when the
    * write may have been applied.
    */

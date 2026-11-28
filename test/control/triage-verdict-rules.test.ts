@@ -3,13 +3,13 @@ import { test } from 'node:test';
 import { intendedChanges, triageCandidates, validateVerdict, verdictTextMaxBytes } from '../../src/control/rules/triage-verdict.js';
 import { triageActivation } from '../../src/control/rules/triage-prompt.js';
 
-// Spec #68 §7-§8 (ticket #75): pure rules of the Verdict a Triager records and of what its first prompt carries. No I/O, no clock.
+// Pure rules of the Verdict a Triager records and of what its first prompt carries. No I/O, no clock.
 const roles = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', admission: 'ready-for-agent' };
 const github = { tracker: 'github' as const };
 const jira = { tracker: 'jira' as const, components: ['10001', '10002'] };
 const valid = { outcome: 'needs-info', category: 'bug', text: 'Falta o passo que reproduz o erro.' };
 
-test('TR-14: a well-formed Verdict is accepted as given', () => {
+test('a well-formed Verdict is accepted as given', () => {
   assert.deepEqual(validateVerdict(valid, github), { valid: true, verdict: { ...valid, component: null } });
   assert.deepEqual(validateVerdict({ ...valid, outcome: 'ready-for-agent', component: '10002' }, jira), {
     valid: true,
@@ -18,7 +18,7 @@ test('TR-14: a well-formed Verdict is accepted as given', () => {
   assert.equal(validateVerdict({ ...valid, outcome: 'ready-for-agent' }, jira).valid, true, 'a Jira Verdict may name no component: the publication decides');
 });
 
-test('TR-14: a malformed Verdict is refused with every error named, so the session can correct it', () => {
+test('a malformed Verdict is refused with every error named, so the session can correct it', () => {
   const errors = (input: unknown, context: Parameters<typeof validateVerdict>[1] = github) => {
     const result = validateVerdict(input, context);
     return result.valid ? [] : result.errors.map(error => error.code);
@@ -41,7 +41,7 @@ test('TR-14: a malformed Verdict is refused with every error named, so the sessi
   );
 });
 
-test('TR-14: the intended changes of an accepted Verdict follow the order decided for each origin, all pending', () => {
+test('the intended changes of an accepted Verdict follow the order decided for each origin, all pending', () => {
   const kinds = (outcome: string, context: typeof github | typeof jira, component: string | null = null) =>
     intendedChanges({ outcome: outcome as 'wontfix', category: 'bug', text: 't', component }, roles, context.tracker).map(change =>
       [
@@ -73,7 +73,7 @@ test('TR-14: the intended changes of an accepted Verdict follow the order decide
   assert.deepEqual(kinds('needs-info', jira, '10002').length, 3, 'a component is only added for ready-for-agent');
 });
 
-test('TR-30: the candidates are the repository of the issue, or the repositories of the routes of the Card source', () => {
+test('the candidates are the repository of the issue, or the repositories of the routes of the Card source', () => {
   const repositories = [
     { repository: 'acme/project', repositoryId: 1, installationId: 9, base: 'main' },
     { repository: 'acme/other', repositoryId: 2, installationId: 9, base: 'trunk' },
@@ -128,7 +128,7 @@ const activationInput = (): Parameters<typeof triageActivation>[0] => ({
   remainingMs: 15 * 60_000,
 });
 
-test('TR-37: the activation carries the body and every comment with its author association, and only the six fields', () => {
+test('the activation carries the body and every comment with its author association, and only the six fields', () => {
   const activation = triageActivation(activationInput());
   assert.deepEqual(Object.keys(activation).sort(), ['builderReach', 'candidateRepositories', 'openBlockers', 'origin', 'remainingInvestigationTime', 'ticket']);
   assert.match(activation.ticket, /Title: Total errado no carrinho/);
@@ -146,7 +146,7 @@ test('TR-37: the activation carries the body and every comment with its author a
   assert.match(activation.builderReach, /acme\/project/);
 });
 
-test('TR-05/TR-37: no blocker, unreadable blockers, Jira candidates by component and a spent clock are stated, never left blank', () => {
+test('no blocker, unreadable blockers, Jira candidates by component and a spent clock are stated, never left blank', () => {
   const input = activationInput();
   assert.equal(triageActivation({ ...input, blockers: { kind: 'observed', blockers: [] } }).openBlockers, 'None observed.');
   assert.match(triageActivation({ ...input, blockers: { kind: 'unavailable', code: 'RATE_LIMITED' } }).openBlockers, /could not be read \(RATE_LIMITED\)/);

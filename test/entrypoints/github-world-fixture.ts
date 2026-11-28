@@ -64,7 +64,7 @@ export type WorldComment = {
   created_at?: string;
   updated_at?: string;
   performed_via_github_app?: { id: number } | null;
-  /** Spec #68 ticket #74: GitHub's association of the author with the repository (absent in the payload when not given). */
+  /** GitHub's association of the author with the repository (absent in the payload when not given). */
   author_association?: string;
   html_url?: string;
 };
@@ -78,7 +78,7 @@ export type World = {
   comments?: WorldComment[];
   /** POST /issues/{n}/comments: answer with this status; `created` decides whether the comment was created anyway (ambiguous 5xx). */
   postFault?: { status: number; created: boolean; headers?: Record<string, string> };
-  /** Spec #68 ticket #77: the label and closing writes answer with this status; `applied` decides whether the change happened anyway. */
+  /** The label and closing writes answer with this status; `applied` decides whether the change happened anyway. */
   triageFault?: { status: number; applied: boolean };
   /** Status of DELETE /installation/token (default 204). */
   revokeFault?: number;
@@ -192,7 +192,7 @@ export type TraceEntry = {
   credential: 'app-jwt' | 'installation';
   permissions?: Record<string, string>;
   body?: string;
-  /** Spec #68 ticket #77: the JSON body of a label or closing write. */
+  /** The JSON body of a label or closing write. */
   request?: object;
   sequence?: number;
   grant?: number;
@@ -306,7 +306,7 @@ process.exit(result.status ?? 1);
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ ...trace, status: 404 }) + '\\n');
   process.exit(1);
   }
-  // Spec #68 ticket #77: the writes of a Triage publication (a label added or removed by relative operation, the closing of an issue).
+  // The writes of a Triage publication (a label added or removed by relative operation, the closing of an issue).
   const triageWrite = (method === 'POST' && /^\\/issues\\/\\d+\\/labels$/.test(rest)) || (method === 'DELETE' && /^\\/issues\\/\\d+\\/labels\\/[^/]+$/.test(rest)) || (method === 'PATCH' && /^\\/issues\\/\\d+$/.test(rest));
   const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
   const shape = i => {

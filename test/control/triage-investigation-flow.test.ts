@@ -6,8 +6,8 @@ import { untilHolds } from '../runner/budget.js';
 import { card, jiraSource, relabel } from './jira-doubles.js';
 import { call, firstPrompt, hang, repositoryCanary, toolNames, toolResults, trackerWrites, triageWorld } from './triage-investigation-fixture.js';
 
-// Spec #68 §6-§7 (ticket #75): a `queued` Triage request is investigated by a real Triager session in the Investigation Environment (in
-// process) and reaches `publishing` with its Verdict recorded. Nothing is written to a tracker in this slice.
+// A `queued` Triage request is investigated by a real Triager session in the Investigation Environment (in
+// process) and reaches `publishing` with its Verdict recorded. Nothing is written to a tracker here.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const githubSource: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
 function triageIssue(number: number, overrides: Partial<RemoteIssue> = {}): RemoteIssue {
@@ -23,7 +23,7 @@ const triageCard = (issueId: string, key: string, overrides: Parameters<typeof c
 const verdict = { outcome: 'needs-info', category: 'bug', text: 'Falta dizer em que versão o total ficou errado.' };
 const githubWrites = (w: Awaited<ReturnType<typeof triageWorld>>) => trackerWrites(w.github.calls.map(item => item.method));
 
-test('TR-37 (GitHub) and TR-05: the first prompt carries the Ticket, every comment with its author association, origin, candidates, blockers, reach and time, and nothing else of the request', async t => {
+test('GitHub: the first prompt carries the Ticket, every comment with its author association, origin, candidates, blockers, reach and time, and nothing else of the request', async t => {
   const issue = triageIssue(7, { title: 'Total errado no carrinho', body: 'O total ignora o desconto do cupom.', blockedBy: [8] });
   // History that must NOT travel: the label was withdrawn and applied again before this request.
   applyLabel(issue, 'wontfix');
@@ -57,7 +57,11 @@ test('TR-37 (GitHub) and TR-05: the first prompt carries the Ticket, every comme
   assert.match(prompt, /Comment 3 of 3, by @factory\[bot\] \(association with the origin: FACTORY \(this Factory's own App\)\)/);
   assert.match(prompt, /## Origin\n\nGitHub issue acme\/project#7 \(https:\/\/github\.com\/acme\/project\/issues\/7\)/);
   assert.match(prompt, /## Candidate repositories \(none cloned yet\)\n\n- acme\/project \(default branch `main`\)\n/);
-  assert.match(prompt, /## Open blockers \(context only\)\n\n- acme\/project#8 \(open\): https:\/\/github\.com\/acme\/project\/issues\/8\n/, 'TR-05');
+  assert.match(
+    prompt,
+    /## Open blockers \(context only\)\n\n- acme\/project#8 \(open\): https:\/\/github\.com\/acme\/project\/issues\/8\n/,
+    'the open blockers are listed as context',
+  );
   assert.match(prompt, /## What the Builder reaches at this destination\n\nA Builder works in one of: acme\/project\./);
   assert.match(prompt, /## Remaining investigation time\n\n15 minutes\n/);
   // The pack's own text: the skill travels inside the prompt.
@@ -72,7 +76,7 @@ test('TR-37 (GitHub) and TR-05: the first prompt carries the Ticket, every comme
   assert.deepEqual(githubWrites(w), []);
 });
 
-test('TR-37 (Jira): the first prompt of a Card carries its text, every comment with what Jira says of its author, and the routed candidates', async t => {
+test('Jira: the first prompt of a Card carries its text, every comment with what Jira says of its author, and the routed candidates', async t => {
   const blocker = card('81020', 'PAG-50', { labels: [], statusCategory: 'indeterminate' });
   const item = triageCard('81017', 'PAG-42', {
     summary: 'Boleto vence no dia errado',
@@ -122,7 +126,7 @@ test('TR-37 (Jira): the first prompt of a Card carries its text, every comment w
   assert.deepEqual(trackerWrites(w.jira.methods()), []);
 });
 
-test('TR-14: an invalid Verdict returns its errors to the session; the corrected one is recorded with its intended changes before any tracker write', async t => {
+test('an invalid Verdict returns its errors to the session; the corrected one is recorded with its intended changes before any tracker write', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7, { title: 'Total errado', body: 'Detalhes.' })], pulls: {} },
     sources: [githubSource],
@@ -161,12 +165,12 @@ test('TR-14: an invalid Verdict returns its errors to the session; the corrected
   assert.deepEqual([attempt.end?.code, attempt.end?.cessation], ['VERDICT_RECORDED', { cessationConfirmed: true, evidence: 'unit-inactive' }]);
   assert.equal(attempt.skillPack?.id, 'factory-skills-v13');
   assert.deepEqual(w.environment.controls.active(), []);
-  assert.deepEqual(githubWrites(w), [], 'nothing is written to the tracker in this slice');
+  assert.deepEqual(githubWrites(w), [], 'nothing is written to the tracker');
   await w.stop();
   assert.equal(await w.verdictText(request.triage_request_id), 'O comportamento pedido já existe: o cupom é aplicado no fechamento.');
 });
 
-test('TR-14: a session that ends without an accepted Verdict records none; the request fails and nothing is written', async t => {
+test('a session that ends without an accepted Verdict records none; the request fails and nothing is written', async t => {
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7), triageIssue(9)], pulls: {} },
     sources: [githubSource],
@@ -185,7 +189,7 @@ test('TR-14: a session that ends without an accepted Verdict records none; the r
   assert.deepEqual(githubWrites(w), []);
 });
 
-test('TR-30 (GitHub): the Triager gets a clone of the candidate with history and no remote; another repository is refused', async t => {
+test('GitHub: the Triager gets a clone of the candidate with history and no remote; another repository is refused', async t => {
   let path = '';
   const w = await triageWorld(t, {
     github: { issues: [triageIssue(7)], pulls: {} },
@@ -218,7 +222,7 @@ test('TR-30 (GitHub): the Triager gets a clone of the candidate with history and
   );
 });
 
-test('TR-30 (Jira): the candidates of a Card are the repositories of its source routes; a repository outside them is refused', async t => {
+test('Jira: the candidates of a Card are the repositories of its source routes; a repository outside them is refused', async t => {
   const w = await triageWorld(t, {
     github: { issues: [], pulls: {} },
     jira: { cards: [triageCard('81017', 'PAG-42')] },
@@ -244,7 +248,7 @@ test('TR-30 (Jira): the candidates of a Card are the repositories of its source 
   );
 });
 
-test('TR-35: tracker, repository and MCP tokens marked with canaries are absent from the prompt, the shell environment and the transcript', async t => {
+test('tracker, repository and MCP tokens marked with canaries are absent from the prompt, the shell environment and the transcript', async t => {
   const canaries = {
     GH_TOKEN: 'ghs_' + 'TRIAGEtrackerCANARY',
     JIRA_API_TOKEN: 'jira-' + 'TRIAGEtrackerCANARY',
@@ -361,7 +365,7 @@ test('an agent that ends without ever reporting ends its attempt: the environmen
   assert.equal(w.bodies.length, 0);
 });
 
-test('spec #68 §5 (single queue): a Ticket that cannot be read does not hold the queue, spends nothing, keeps its place, and the operator sees its code', async t => {
+test('single queue: a Ticket that cannot be read does not hold the queue, spends nothing, keeps its place, and the operator sees its code', async t => {
   const unreadable = triageIssue(7, { textUnreadable: { code: 'GITHUB_RATE_LIMITED' } });
   const w = await triageWorld(t, {
     github: { issues: [unreadable, triageIssue(9), triageIssue(11), triageIssue(13)], pulls: {} },

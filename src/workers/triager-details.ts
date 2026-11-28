@@ -1,4 +1,4 @@
-// Spec #68 §10 (ticket #80): the local details a Triager attempt leaves under `<root>/triage/a/<attempt>`: its bootstrap (which holds the
+// The local details a Triager attempt leaves under `<root>/triage/a/<attempt>`: its bootstrap (which holds the
 // activation prompt, so the Ticket text) and its session file. Read only for the explicit transcript command and for usage; removed whole
 // by the retention or an explicit cleanup. An attempt is named by its reference, never by a path: a session an attempt left without
 // reporting it (the agent was killed) is found all the same.

@@ -77,7 +77,7 @@ test('the release manifest declares exactly the migrations and the document matr
   assert.equal(controlStorageCompatibility.documents['factory.installation'], 4);
 });
 
-test('TR-52 (rules): format 4 is format 3 with another identity plus the Triage request kind; a release that knows no Triage finds no format in it', () => {
+test('rules: format 4 is format 3 with another identity plus the Triage request kind; a release that knows no Triage finds no format in it', () => {
   const { 4: four, ...beforeTriage } = knownFormats;
   assert.deepEqual(four, {
     ...knownFormats[3],

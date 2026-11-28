@@ -6,7 +6,7 @@ import type { TicketRef } from '../../issue-tracker/index.js';
 import type { TicketText } from '../rules/continuation.js';
 import { boundTicketComments, githubTicketComments, jiraTicketComments, ticketCommentsBound, type SelectedComment } from '../rules/ticket-comments.js';
 
-// Spec #68 §9 (ticket #74): the Control reads the comments of the Ticket with its own adapters, selects and bounds them, and hands them to
+// The Control reads the comments of the Ticket with its own adapters, selects and bounds them, and hands them to
 // the Builder with the request. The Builder never fetches comments: what is not delivered here is not part of the Ticket.
 
 type Access = Pick<AccessDependencies, 'tracker' | 'trackers'>;

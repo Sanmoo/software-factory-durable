@@ -1,4 +1,4 @@
-// Spec #68 §10 (ticket #80): what the operator sees of the Triage requests, as pure views over the durable records. Metadata only:
+// What the operator sees of the Triage requests, as pure views over the durable records. Metadata only:
 // nothing here reads the Ticket, a session file or the Verdict text, so no view built here can carry them. The clock, the limits and
 // the observations are arguments.
 import type {
@@ -42,7 +42,7 @@ export type TriageViewFacts = { budget: TriageBudget | null; now: number; retent
 const dayMs = 86_400_000;
 const attemptsOf = (request: TriageRequest) => request.attempts ?? [];
 
-/** The ambiguous-authorship Impediment of a request, open only while it is still `publishing` (ticket #77). */
+/** The ambiguous-authorship Impediment of a request, open only while it is still `publishing`. */
 const authorshipImpediments = (request: TriageRequest): TriageAuthorshipImpediment[] =>
   request.state === 'publishing' && request.publication?.impediment
     ? [{ ...request.publication.impediment, scope: 'triage-request', triage_request_id: request.triage_request_id }]
@@ -282,7 +282,7 @@ export function triageDetail(request: TriageRequest, family: readonly TriageRequ
   };
 }
 
-/** Tickets the latest Triage rounds hold without a live request (state-label conflict and the like): what TR-03 shows in the CLI. */
+/** Tickets the latest Triage rounds hold without a live request (state-label conflict and the like); the CLI shows them. */
 export function triageHeld(sources: readonly TriageSourcePollView[]): TriageHeldView[] {
   return sources.flatMap(source =>
     (source.candidates ?? []).flatMap(candidate =>

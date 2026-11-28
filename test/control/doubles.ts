@@ -41,11 +41,11 @@ export type RemoteIssue = {
   reread?: Partial<TicketRef>;
   stateReason?: string | null;
   /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[];
-  /** Spec #68: the issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
+  /** The issue's label changes as its timeline reports them (`applyLabel`/`removeLabel` keep it with `labels`). */
   labelEvents?: LabelEvent[];
-  /** Spec #68 ticket #77: the closings and reopenings of the issue as its timeline reports them (`closeIssue` keeps it with `state`). */
+  /** The closings and reopenings of the issue as its timeline reports them (`closeIssue` keeps it with `state`). */
   closures?: ClosureEvent[];
-  /** Spec #68 ticket #75: the issue text as `readTicketText` reports it (absent = an issue without it). */
+  /** The issue text as `readTicketText` reports it (absent = an issue without it). */
   title?: string | null;
   body?: string | null;
   /** The text of THIS issue cannot be read (`readTicketText` answers unavailable with this), while every other read of it works. */
@@ -64,7 +64,7 @@ export type Remote = {
   baseProtection?: { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
   listFailure?: Unavailable;
   readFailure?: Unavailable;
-  /** Spec #68: readLabelHistory answers unavailable while set. */
+  /** readLabelHistory answers unavailable while set. */
   labelHistoryFailure?: Unavailable;
   publicationFailure?: Unavailable;
   /** Per-Ticket incomplete association (e.g. timeline unavailable). */
@@ -80,12 +80,12 @@ export type Remote = {
   graphThrows?: boolean;
   /** Issue comments by issue number (ascending ids). postComment appends App-bot comments here. */
   comments?: Record<number, TrackerComment[]>;
-  /** Spec #68 ticket #74: GitHub's `author_association` by author login (absent = NONE), as readTicketComments reports it. */
+  /** GitHub's `author_association` by author login (absent = NONE), as readTicketComments reports it. */
   associations?: Record<string, string>;
   /** Number of next readTicketComments calls that are incomplete (unavailable). */
   incompleteTicketComments?: number;
   /**
-   * Spec #68 ticket #77, consumed one per writeTriage (absent = applied and accepted): `unknown-applied`/`unknown-not-applied` answer an
+   * Consumed one per writeTriage (absent = applied and accepted): `unknown-applied`/`unknown-not-applied` answer an
    * unknown outcome; `failed` applies nothing; `retained` is accepted by the API and never applied; `anonymous` is applied with a history
    * event that names no author.
    */
@@ -182,13 +182,13 @@ const eventAuthor = (actor: LabelEvent['actor']) => {
   return { eventId: String(++labelEventSequence), at: new Date().toISOString(), actor, viaApp: own ? factoryAppId : null, ownApp: own };
 };
 const labelEvent = (action: LabelEvent['action'], label: string, actor: LabelEvent['actor']): LabelEvent => ({ action, label, ...eventAuthor(actor) });
-/** Spec #68: the issue is closed (state and timeline together), by a person unless another actor is given. */
+/** The issue is closed (state and timeline together), by a person unless another actor is given. */
 export function closeIssue(issue: RemoteIssue, actor: ClosureEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }, stateReason = 'completed') {
   issue.state = 'closed';
   issue.stateReason = stateReason;
   issue.closures = [...(issue.closures ?? []), { action: 'closed', ...eventAuthor(actor) }];
 }
-/** Spec #68: a person applies a label to the issue (label set and timeline together), as any account allowed to label would. */
+/** A person applies a label to the issue (label set and timeline together), as any account allowed to label would. */
 export function applyLabel(issue: RemoteIssue, name: string, actor: LabelEvent['actor'] = { id: 77, login: 'stranger', type: 'User' }) {
   if (!issue.labels.some(label => label.name === name)) issue.labels = [...issue.labels, { id: 500 + issue.labels.length, name }];
   issue.labelEvents = [...(issue.labelEvents ?? []), labelEvent('added', name, actor)];
@@ -284,7 +284,7 @@ export function githubDoubles(remote: Remote) {
           pullRequest: found.pullRequest ?? false,
         };
       }),
-    // Spec #68 ticket #75: title and body of the issue, for the Triager's first prompt.
+    // Title and body of the issue, for the Triager's first prompt.
     readTicketText: ref =>
       track(
         'readTicketText',
@@ -371,7 +371,7 @@ export function githubDoubles(remote: Remote) {
         },
         ref,
       ),
-    // Spec #68 ticket #77: one write of a Triage publication, applied to the remote as GitHub would (by the App's bot), unless a fault says otherwise.
+    // One write of a Triage publication, applied to the remote as GitHub would (by the App's bot), unless a fault says otherwise.
     writeTriage: (ref, write) =>
       track(
         'writeTriage',
@@ -395,7 +395,7 @@ export function githubDoubles(remote: Remote) {
         },
         { number: ref.number, write },
       ),
-    // Spec #68 ticket #74: every comment of the Ticket issue with the author's association and whether the Factory App performed it.
+    // Every comment of the Ticket issue with the author's association and whether the Factory App performed it.
     readTicketComments: ref =>
       track(
         'readTicketComments',

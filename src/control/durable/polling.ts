@@ -160,7 +160,7 @@ export function createPoller(deps: {
   record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>;
   /** Called after every completed polling iteration (same loop; no scheduler). */
   afterCycle?(): Promise<void>;
-  /** Spec #68 §4-§5 (ticket #71): Triage requests of the sources with a `triage` block, discovered in the same sequential rounds. */
+  /** Triage requests of the sources with a `triage` block, discovered in the same sequential rounds. */
   triage?: TriageDiscovery;
 }) {
   const { tracker, repository } = deps.access;
@@ -239,7 +239,7 @@ export function createPoller(deps: {
       source => source.tracker === 'github' && source.discover && source.repository.toLowerCase() === configured.repository.toLowerCase(),
     );
   const held = (ref: TicketRef, holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
-  /** Spec #68 §4.3: in a source with a `triage` block, `needs-triage` present suspends admission by the admission label. */
+  /** In a source with a `triage` block, `needs-triage` present suspends admission by the admission label. */
   const suspendedByTriage: Hold = {
     code: 'ADMISSION_SUSPENDED_BY_TRIAGE',
     nextStep:
@@ -254,7 +254,7 @@ export function createPoller(deps: {
     if (triage && suspendsAdmission(triage, labels, false)) return { authorized: false as const, holds: [suspendedByTriage] };
     return evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
   }
-  /** Why a Card is not a candidate: suspended by `needs-triage` (spec #68 §4.3), or its entry label is gone. Neither is commented. */
+  /** Why a Card is not a candidate: suspended by `needs-triage`, or its entry label is gone. Neither is commented. */
   const notCandidateHold = (source: JiraSource, evaluated: JiraCandidateEvaluation): Hold =>
     evaluated.suspendedByTriage
       ? suspendedByTriage
@@ -845,7 +845,7 @@ export function createPoller(deps: {
         ...(deps.triage?.views().length ? { triage: deps.triage.views() } : {}),
       };
     },
-    /** Ticket #75: the GitHub identity of an executable repository as its latest listing observed it (undefined: not observed in this run). */
+    /** The GitHub identity of an executable repository as its latest listing observed it (undefined: not observed in this run). */
     repositoryId: (repository: string) => repositoryIds.get(repository.toLowerCase()),
     /** Resolves when signalled; rejects only for durable-authority failures (never for remote observation failures). */
     async run(signal: AbortSignal): Promise<void> {

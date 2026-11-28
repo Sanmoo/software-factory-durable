@@ -1,4 +1,4 @@
-// Spec #68 §10 (ticket #81): pure rules of the operator's interventions on a Triage request (`triage cancel | release | complete`).
+// Pure rules of the operator's interventions on a Triage request (`triage cancel | release | complete`).
 // No I/O, clock or storage: the callers pass the records and what was just observed.
 import type { TriageReceiptEffect } from '../types.js';
 import type { PublicationStep } from './triage-publication.js';

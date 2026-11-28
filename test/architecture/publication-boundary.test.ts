@@ -29,7 +29,7 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   );
   for (const file of spawns) assert.doesNotMatch(file.text, /['"`]push['"`]|--force-with-lease|\bgit push\b/, `${file.path}: host git never pushes`);
   // The only Host git files: the Work checkout preparation/inspection, the release build reading the Factory's OWN source metadata, and
-  // the Sandbox's probe of the Host for the Investigation Environment (spec #68 §2), which only asks `git --version`.
+  // the Sandbox's probe of the Host for the Investigation Environment, which only asks `git --version`.
   for (const file of spawns.filter(item => /['"`](?:\/usr\/bin\/)?git['"`]\s*,/.test(item.text))) {
     assert.ok(
       ['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts', 'src/entrypoints/release-build.ts', 'src/sandbox/investigation/host.ts'].includes(
@@ -39,15 +39,15 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
     );
   }
   // The controller's GitHub client writes to an ISSUE only: the comment (a Question, or the Verdict of a Triage publication) and the
-  // three other writes of a Triage publication (spec #68 §8), each pinned below. No pulls/refs/contents writes.
+  // three other writes of a Triage publication, each pinned below. No pulls/refs/contents writes.
   // Line breaks, indentation and trailing commas are the formatter's, not what this gate asserts (sourceShape).
   const github = sourceShape(files.find(item => item.path === 'src/platform/github/index.ts')!.text);
   assert.equal((github.match(/JSON\.stringify\(\{ body \}\)/g) ?? []).length, 1, 'the only POST body is the issue comment');
   assert.doesNotMatch(github, /\/pulls['`]|\/git\/refs|PUT/, 'no PR creation/update or ref write by the controller');
-  // Spec #68 §8: the one PATCH is the `not_planned` closing of a Ticket issue by a Triage publication; never a pull request or a ref.
+  // The one PATCH is the `not_planned` closing of a Ticket issue by a Triage publication; never a pull request or a ref.
   assert.equal((github.match(/method: 'PATCH'/g) ?? []).length, 1, 'a single PATCH');
   assert.match(github, /input: JSON\.stringify\(\{ state: 'closed', state_reason: 'not_planned' \}\), method: 'PATCH'/, 'which closes an issue');
-  // Spec #68 §8: labels change by relative operation on one issue, never by replacing the set: ONE POST adds a label, ONE DELETE removes one.
+  // Labels change by relative operation on one issue, never by replacing the set: ONE POST adds a label, ONE DELETE removes one.
   assert.equal((github.match(/JSON\.stringify\(\{ labels:/g) ?? []).length, 1, 'a single label POST');
   assert.match(github, /endpoint: `\$\{issue\}\/labels`, input: JSON\.stringify\(\{ labels: \[write\.label\] \}\)/, 'which adds one label to an issue');
   assert.equal((github.match(/method: 'DELETE'/g) ?? []).length, 1, 'a single DELETE');

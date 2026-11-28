@@ -1,4 +1,4 @@
-// Spec #68 §13 (ticket #75): a Control that investigates Triage requests, for the integration tests of the Triage tickets. Real Control,
+// A Control that investigates Triage requests, for the Triage integration tests. Real Control,
 // SQLite, Triager session (the worker's own code, hosted in this process because the in-process environment only gives the shell here),
 // real git for the clones. Doubled at the third-party boundary only: the trackers, the model provider (a scripted `fetch`) and the
 // repository upstream (a local file:// repository with a credential double).
@@ -39,7 +39,7 @@ export const hang = Symbol('hang');
 /** A model request the provider answers with an error. */
 export const unavailable = Symbol('unavailable');
 export const call = (name: string, input: unknown) => [{ name, arguments: input }];
-/** What every scripted answer reports as its consumption (ticket #80: the Triages' line of `usage`). */
+/** What every scripted answer reports as its consumption (the Triages' line of `usage`). */
 export const turnTokens = { input: 11, output: 7 };
 const usage = { prompt_tokens: turnTokens.input, completion_tokens: turnTokens.output, total_tokens: turnTokens.input + turnTokens.output };
 const sse = (choices: unknown[]) =>
@@ -124,7 +124,7 @@ export function firstPrompt(body: string): string {
 }
 
 /**
- * The investigation clock of the tests (ticket #76): calendar time that only moves by `advance`, which also ends the sleeps then due. An
+ * The investigation clock of the tests: calendar time that only moves by `advance`, which also ends the sleeps then due. An
  * investigation therefore never runs out of time by itself.
  */
 export function investigationClock(start = Date.UTC(2026, 0, 1)) {
@@ -169,14 +169,14 @@ export async function triageWorld(
     execution?: ExecutionPorts;
     /** The executable repositories (default: `acme/project`, `acme/other` and `acme/third`). */
     repositories?: (typeof scope)[];
-    /** Spec §7 (ticket #79): the registered MCP servers and Profiles, and the active ones. */
+    /** The registered MCP servers and Profiles, and the active ones. */
     mcp?: McpRegistration;
     /** Private files written under `<root>/credentials` before the Control starts (name -> content). */
     credentials?: Record<string, string>;
     /** Wraps the in-process environment the Control uses (to inject what the Host would observe). */
     environment?: (port: TriagePorts['environment']) => TriagePorts['environment'];
     /**
-     * Ticket #83: the access of the Control, composed anew at every start, in place of the tracker doubles (`doubles` is what this
+     * The access of the Control, composed anew at every start, in place of the tracker doubles (`doubles` is what this
      * world would have used). A composed journey gives the production composition over the gh world or the Jira HTTP world here.
      */
     access?: (doubles: AccessDependencies) => AccessDependencies | Promise<AccessDependencies>;
@@ -350,7 +350,7 @@ export async function triageWorld(
   return {
     dir,
     root,
-    /** The Control storage of this world (ticket #82: an upgrade inspects it; a live copy of it is what a killed controller leaves). */
+    /** The Control storage of this world (an upgrade inspects it; a live copy of it is what a killed controller leaves). */
     storagePath,
     /** The Triage ports every start of the Control composes; a test changes them between two starts (another release, another pack). */
     ports,

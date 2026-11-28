@@ -15,7 +15,7 @@ import type { TriageWrite } from '../../src/issue-tracker/index.js';
 import { ended, until } from '../runner/budget.js';
 import { applyLabel, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 
-// Spec #68 TR-22 (ticket #77): the REAL crash between a tracker write and the recording of its result. A real controller child (Control +
+// The REAL crash between a tracker write and the recording of its result. A real controller child (Control +
 // Pi Durable/SQLite) is SIGKILLed after the Verdict comment reached the doubled GitHub and before anything of it was recorded; a NEW
 // Control on the same storage reads the Ticket, recognises its own comment and completes only what is missing. One scenario for the
 // mechanism; the variations (lost answers, retained writes, authorship) are in triage-publication-{rules,flow}.test.ts.
@@ -65,7 +65,7 @@ async function recordedVerdict(dir: string, remote: Remote) {
   return id;
 }
 
-test('TR-22: a controller killed between the comment write and the recording of its result; the new Control completes the publication with one comment and no model', async t => {
+test('a controller killed between the comment write and the recording of its result; the new Control completes the publication with one comment and no model', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'factory-triage-crash-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const issue = remoteIssue(7, { labels: [{ id: 91, name: 'bug' }] });

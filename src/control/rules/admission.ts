@@ -13,7 +13,7 @@ export type HoldCode =
   | 'GLOBAL_PAUSE'
   /** Jira ticket 01: the repository is not a GitHub Ticket source with discovery on (v2 `ticketSources`); existing Works are unaffected. */
   | 'SOURCE_DISCOVERY_DISABLED'
-  /** Spec #68 §4.3 (ticket #71): `needs-triage` present in a source with a `triage` block suspends admission by the admission label. */
+  /** `needs-triage` present in a source with a `triage` block suspends admission by the admission label. */
   | 'ADMISSION_SUSPENDED_BY_TRIAGE'
   /** Jira ticket 04: why a Jira candidate was not admitted (rules/jira-admission), and a destination whose GitHub identity is not observed yet. */
   | JiraReasonCode

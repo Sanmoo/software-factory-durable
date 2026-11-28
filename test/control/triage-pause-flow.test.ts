@@ -5,7 +5,7 @@ import { untilHolds } from '../runner/budget.js';
 import { applyLabel, remoteIssue, type RemoteIssue } from './doubles.js';
 import { call, firstPrompt, hang, trackerWrites, triageWorld, type ModelTurn } from './triage-investigation-fixture.js';
 
-// Spec #68 §11 (ticket #82): the Triage requests of a paused installation (TR-54) and of an installation whose release and pack changed
+// The Triage requests of a paused installation and of an installation whose release and pack changed
 // between two runs of the controller. Real Control, SQLite and Triager session under a scripted provider; GitHub is the double.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const source: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
@@ -34,7 +34,7 @@ const writes = (w: World) => trackerWrites(w.github.calls.map(item => item.metho
 const summary = (request: TriageRequest) => [request.state, request.attempts?.map(attempt => attempt.end?.code ?? 'open') ?? []];
 const comments = (w: World, issue: number) => w.remote.comments?.[issue] ?? [];
 
-test('TR-54: paused with an investigation under way, that investigation ends with its Verdict recorded; no other starts and nothing is published until the unpause', async t => {
+test('paused with an investigation under way, that investigation ends with its Verdict recorded; no other starts and nothing is published until the unpause', async t => {
   const first = gated(conclude);
   const w = await world(t, [7, 9], [first.turn, conclude]);
   await w.start();
@@ -84,7 +84,7 @@ test('TR-54: paused with an investigation under way, that investigation ends wit
   assert.equal((await w.settled(1, 'publishing')).attempts!.length, 1);
 });
 
-test('TR-54: paused with an investigation under way, that investigation runs until its time is exhausted; no other starts', async t => {
+test('paused with an investigation under way, that investigation runs until its time is exhausted; no other starts', async t => {
   const w = await world(t, [7, 9], [() => hang, conclude], { attempts: 1 });
   await w.start();
   await untilHolds('the first session to ask the model', () => w.bodies.length === 1);
@@ -108,7 +108,7 @@ function changeRelease(w: World, release: string, pack: { id: string; version: s
 }
 const nextPack = { id: 'factory-skills-next', version: '99.0.0', manifestSha256: 'e'.repeat(64) };
 
-test('spec §11 (pack change): a request with an attempt left is investigated by the new release and pack with the balance it had; each attempt records the release and pack that ran it', async t => {
+test('pack change: a request with an attempt left is investigated by the new release and pack with the balance it had; each attempt records the release and pack that ran it', async t => {
   const first = gated(() => 'I could not conclude.');
   const w = await world(t, [7], [first.turn, () => 'I could not conclude either.', conclude]);
   await w.start();
@@ -136,7 +136,7 @@ test('spec §11 (pack change): a request with an attempt left is investigated by
   assert.equal(w.bodies.length, 2, 'no third attempt under the new pack');
 });
 
-test('spec §11 (pack change): a Verdict recorded under the earlier release and pack is published as it stands, without investigating again', async t => {
+test('pack change: a Verdict recorded under the earlier release and pack is published as it stands, without investigating again', async t => {
   const w = await world(t, [7], [conclude, conclude]);
   await w.start();
   const recorded = await w.settled(0, 'publishing');

@@ -248,7 +248,7 @@ export async function withdrawActivityCredentials(
   return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
 }
 
-/** Spec #68 (ticket #71): the Triage rounds as `status` shows them: no candidate list, only how many Tickets wait for a person. */
+/** The Triage rounds as `status` shows them: no candidate list, only how many Tickets wait for a person. */
 const triageRoundsStatus = (polling: PollingView): Pick<PollingView, 'triage'> =>
   polling.triage
     ? {
@@ -259,7 +259,7 @@ const triageRoundsStatus = (polling: PollingView): Pick<PollingView, 'triage'> =
         })),
       }
     : {};
-/** Spec #68 (ticket #71): every Triage request in arrival order and the queue, metadata only. */
+/** Every Triage request in arrival order and the queue, metadata only. */
 async function triageRequestsView(session: Session, capacity: number | null): Promise<TriageRequestsView> {
   const requests = await readTriageRequests(session);
   return {
@@ -270,7 +270,7 @@ async function triageRequestsView(session: Session, capacity: number | null): Pr
     queue: requests.filter(request => request.state === 'queued').map(request => request.triage_request_id),
   };
 }
-/** Ticket #75: the investigation desk when the Triage ports, the access and the polling are all composed; a desk that does nothing otherwise. */
+/** The investigation desk when the Triage ports, the access and the polling are all composed; a desk that does nothing otherwise. */
 function triageInvestigations(
   options: { triage?: TriagePorts | undefined; access?: AccessDependencies | undefined },
   session: Session,
@@ -288,7 +288,7 @@ function triageInvestigations(
   });
 }
 /**
- * Ticket #80 (spec #68 §10): the operator's views of the Triage requests and the retention of their local details. The limits are the
+ * The operator's views of the Triage requests and the retention of their local details. The limits are the
  * Triage ports' when this Control investigates; the details follow the retention term of the Work details, on the same calendar.
  */
 function triageOperator(
@@ -308,11 +308,11 @@ function triageOperator(
     now,
     polled,
     stopped,
-    // Ticket #81: the operator's interventions, over the desks this Control composed (a command says so when its desk is not there).
+    // The operator's interventions, over the desks this Control composed (a command says so when its desk is not there).
     interventions: createTriageInterventions({ session, now, interrupt: desks.investigations.interrupt, publications: desks.publications, ports: triage }),
   });
 }
-/** Tickets #77 and #78: the publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
+/** The publication desk with the publisher of each tracker; a desk that does nothing without polling or without a source with Triage. */
 function triagePublications(
   access: AccessDependencies | undefined,
   session: Session,
@@ -350,9 +350,9 @@ export async function openControl(options: {
   polling?: PollingOptions;
   /** Execution boundaries (sandbox lifecycle, Workers activation, Builder credentials). Absent: dispatch stays closed (EXECUTION_NOT_ENABLED). */
   execution?: ExecutionPorts;
-  /** Spec #68 (ticket #75): what composes a Triager attempt. Absent: Triage requests are created and queued, never investigated. */
+  /** What composes a Triager attempt. Absent: Triage requests are created and queued, never investigated. */
   triage?: TriagePorts;
-  /** Spec #68 §10 (ticket #80): the session files of the Triager attempts, for the explicit transcript command, usage and retention.
+  /** The session files of the Triager attempts, for the explicit transcript command, usage and retention.
    * Absent: the requests are still shown (metadata), no transcript is read and no detail is removed. */
   triageDetails?: TriageDetailPorts;
 }): Promise<Control> {
@@ -514,13 +514,13 @@ export async function openControl(options: {
           limits: configuredRepository,
         })
       : undefined;
-  // Spec #68 §6-§7 (ticket #75): queued Triage requests are investigated by a Triager when the Triage ports are composed.
+  // Queued Triage requests are investigated by a Triager when the Triage ports are composed.
   const investigations = triageInvestigations(options, state, poller, () => stopped);
-  // Spec #68 §8 (ticket #77): a recorded Verdict is published on its Ticket, whether or not this run can investigate (a release that
-  // restarts with requests in `publishing` completes them). Ticket #78 adds the Jira publisher here.
+  // A recorded Verdict is published on its Ticket, whether or not this run can investigate (a release that
+  // restarts with requests in `publishing` completes them).
   const publications = triagePublications(options.access, state, poller !== undefined, () => stopped);
   // Ticket 15/16: checks and readiness after the dispatch tick (off its critical path).
-  // Spec #68 §10 (ticket #80): the operator views of the requests and the retention of their transcripts and Verdict texts.
+  // The operator views of the requests and the retention of their transcripts and Verdict texts.
   const operator = triageOperator(
     options,
     state,
@@ -1179,7 +1179,7 @@ export async function openControl(options: {
     correction: (work_id, reason) => openCorrection(state, work_id, reason, configuredRepository),
     recovery: (work_id, reason) => requestOperationalRecovery(state, work_id, reason, configuredRepository),
   });
-  // Spec #68 (ticket #71): Triage requests are read beside the Work views, never through them.
+  // Triage requests are read beside the Work views, never through them.
   const inspectWorks = control.inspect;
   const inspectRecords: Control['inspect'] = query =>
     query.kind === 'triage-requests' ? triageRequestsView(state, options.triage?.capacity ?? null) : inspectWorks(query);

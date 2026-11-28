@@ -102,7 +102,7 @@ const command = z.union([
   // Ticket 31: explicit history deletion plan and confirmation (Control revalidates eligibility and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') }),
-  // Spec #68 §10 (ticket #81): the interventions on one Triage request, named by its id or its Ticket reference.
+  // The interventions on one Triage request, named by its id or its Ticket reference.
   z.strictObject({
     request_id: requestId,
     operation: z.literal('triage-cancel'),
@@ -124,7 +124,7 @@ const command = z.union([
     impediment: z.uuid(),
     origin: z.literal('local-cli'),
   }),
-  // Spec #68 §10 (ticket #80): early removal of the details of one Triage request.
+  // Early removal of the details of one Triage request.
   z.strictObject({ request_id: requestId, operation: z.literal('triage-cleanup-plan'), triage_request_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({
     request_id: requestId,

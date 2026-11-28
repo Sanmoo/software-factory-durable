@@ -44,7 +44,7 @@ import type { Session } from './store.js';
 import { acceptOnce, isTriageIntervention } from './triage-intervention.js';
 import { readTriageRequest, readTriageRequests, readTriageVerdictText, ticketTriageRequests, triageRequests, triageVerdicts } from './triage-requests.js';
 
-// Spec #68 §10 (ticket #80): the operator's side of the Triage requests. Views (`triages`, `triage`, the sections of `status` and `usage`)
+// The operator's side of the Triage requests. Views (`triages`, `triage`, the sections of `status` and `usage`)
 // are built from the durable records only, so they are metadata by construction. Content leaves through ONE query, `triage-transcript`,
 // which reads a session file or the Verdict text on purpose. The same desk keeps those details for the retention of the Work details,
 // counted from the terminal state, and removes them early on an explicit plan and confirmation; every removal records its intent first.
@@ -100,7 +100,7 @@ export function createTriageOperator(deps: {
   /** The Triage rounds of the latest polling iteration, with their candidates. */
   polled(): TriageSourcePollView[];
   stopped(): boolean;
-  /** Ticket #81: `triage cancel | release | complete`. */
+  /** `triage cancel | release | complete`. */
   interventions: { accept(input: ControlInput): ReturnType<Control['accept']> };
 }) {
   const { session, details } = deps;
@@ -213,8 +213,8 @@ export function createTriageOperator(deps: {
     return attempts;
   };
   /**
-   * The Triages' tokens: one line per request of the page shown, and the total of EVERY request of the installation (spec §10: "por
-   * pedido e no total"), so the total never depends on the page.
+   * The Triages' tokens: one line per request of the page shown, and the total of EVERY request of the installation, so
+   * the total never depends on the page.
    */
   async function usage(query: { cursor?: number | undefined; limit?: number | undefined }, budgetBytes: number): Promise<TriageUsageView | undefined> {
     const requests = await readTriageRequests(session);
@@ -390,7 +390,7 @@ export function createTriageOperator(deps: {
       return triage ? { ...(view as UsageView), triage } : view;
     },
     /**
-     * The early removal commands and the interventions (ticket #81); `inner` accepts every other operation. A confirmed plan is carried
+     * The early removal commands and the interventions; `inner` accepts every other operation. A confirmed plan is carried
      * out once its receipt is recorded.
      */
     async accept(input: ControlInput, inner: Control['accept']): ReturnType<Control['accept']> {

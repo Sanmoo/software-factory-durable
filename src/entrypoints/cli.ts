@@ -35,7 +35,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
   const channel = await connect(endpoint, 'local-operator');
-  // `access` and `triage complete` (spec #68 §10) read or write a tracker before they answer.
+  // `access` and `triage complete` read or write a tracker before they answer.
   const timeout = setTimeout(() => channel.close(), payload.kind === 'access' || payload.operation === 'triage-complete' ? 120000 : 5000);
   try {
     await channel.send({ protocol_version: protocolVersion, controller_run_id: runId, message_id: id, reply_to: null, kind, payload });
@@ -325,7 +325,7 @@ export async function main(input: string[]): Promise<number> {
   }
   const command = args[0];
   const installation = releaseInstallationRoot();
-  // Spec #68 §10 (ticket #80): `triages` and `triage ...` have their own command table (triage-cli.ts).
+  // `triages` and `triage ...` have their own command table (triage-cli.ts).
   if (isTriageCommand(command)) return triageCommand(args, { installation, exchange });
   if (command === 'login') {
     // Strict explicit root only; never accept an auth file, provider, key, JSON

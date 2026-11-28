@@ -1,7 +1,7 @@
 import { createInvestigationEnvironment, investigationEnvironmentRoot } from '../sandbox/index.js';
 import { runTriagerAgent } from '../workers/index.js';
 
-// Spec #68 §6-§7 (ticket #75): the fixed agent of one Triager attempt. The Investigation Environment starts it as the main process of the
+// The fixed agent of one Triager attempt. The Investigation Environment starts it as the main process of the
 // attempt's unit, outside the command confinement. Its only argument is the private bootstrap file the Control wrote for the attempt; the
 // shell it hands to the session only exists inside this unit, so the stop of the unit covers every command the session ran.
 const lifetime = new AbortController();

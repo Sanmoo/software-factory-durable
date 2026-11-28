@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { triageSettlement, triageUnsettled } from '../../src/control/rules/triage-settlement.js';
 
-// Spec #68 §11 (ticket #82): what an upgrade reads of the Triage requests of a storage, from metadata only. Pure rule.
+// What an upgrade reads of the Triage requests of a storage, from metadata only. Pure rule.
 const confirmed = { end: { cessation: { cessationConfirmed: true } } };
 const stopUnconfirmed = { end: { cessation: { cessationConfirmed: false } } };
 const open = { end: null };
 
-test('TR-53: an investigation under way, an unconfirmed stop and a retained unit are unsettled; a queue and a pending publication are not', () => {
+test('an investigation under way, an unconfirmed stop and a retained unit are unsettled; a queue and a pending publication are not', () => {
   const settlement = triageSettlement([
     { state: 'queued' },
     { state: 'queued', attempts: [{ attempt: 't2-1', ...confirmed }] },
@@ -34,7 +34,7 @@ test('TR-53: an investigation under way, an unconfirmed stop and a retained unit
   });
 });
 
-test('TR-53: a storage without Triage requests, or with settled ones only, has nothing unsettled', () => {
+test('a storage without Triage requests, or with settled ones only, has nothing unsettled', () => {
   assert.deepEqual(triageSettlement([]), {
     requests: { queued: 0, suspended: 0, investigating: 0, stopUnconfirmed: 0, publishing: 0, ended: 0 },
     capacity: { investigating: 0, retained: 0 },
@@ -43,7 +43,7 @@ test('TR-53: a storage without Triage requests, or with settled ones only, has n
   assert.deepEqual(triageSettlement([{ state: 'failed', attempts: [{ attempt: 't1-1', ...confirmed }] }]).unsettled, []);
 });
 
-test('TR-53: a request recorded as investigating with no open attempt is still an investigation under way', () => {
+test('a request recorded as investigating with no open attempt is still an investigation under way', () => {
   const settlement = triageSettlement([{ state: 'investigating' }]);
   assert.deepEqual([settlement.requests.investigating, settlement.unsettled, triageUnsettled(settlement)], [1, [], true]);
 });

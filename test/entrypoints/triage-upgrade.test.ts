@@ -9,7 +9,7 @@ import { call, hang, triageWorld, type ModelTurn } from '../control/triage-inves
 import { untilHolds } from '../runner/budget.js';
 import { installation } from './upgrade-fixture.js';
 
-// Spec #68 §11 (ticket #82), TR-53: the real upgrade logic over storages prepared by a real Control that investigated and published Triage
+// The real upgrade logic over storages prepared by a real Control that investigated and published Triage
 // requests (scripted provider, GitHub double, in-process Investigation Environment). The storage an upgrade reads is a copy of the
 // world's: taken after a clean stop, or while the controller runs, which is what a killed controller leaves behind.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
@@ -44,13 +44,13 @@ const blocked = (result: UpgradeReport) => result.checks.filter(item => item.sta
 const triageOf = (result: UpgradeReport) => (result.storage as unknown as { triage: unknown }).triage;
 const triageCheck = (result: UpgradeReport) => result.checks.find(item => item.id === 'upgrade:triage')!;
 const settled = { investigating: 0, retained: 0 };
-/** TR-45: nothing of a Ticket, a Verdict or a session may appear in what an upgrade reports (`check`, `apply` and `status`). */
+/** Nothing of a Ticket, a Verdict or a session may appear in what an upgrade reports (`check`, `apply` and `status`). */
 function assertMetadataOnly(result: UpgradeReport) {
   const printed = JSON.stringify(result);
   for (const content of ['SEGREDO-DO-PARECER', 'TITULO-DO-TICKET', 'CORPO-DO-TICKET', 'Observado']) assert.ok(!printed.includes(content), content);
 }
 
-test('TR-53: a queued request and a partially published Verdict do not block `upgrade apply`; check and status count them by situation', async t => {
+test('a queued request and a partially published Verdict do not block `upgrade apply`; check and status count them by situation', async t => {
   const w = await world(t, [() => call('concluir_triagem', { outcome: 'needs-info', category: 'bug', text: verdictText }), () => hang]);
   // The comment is written and confirmed; the label that follows it is refused: a partial publication.
   w.remote.triageWrites = [undefined, 'failed'];
@@ -74,7 +74,7 @@ test('TR-53: a queued request and a partially published Verdict do not block `up
   for (const result of [checked, applied, status]) assertMetadataOnly(result);
 });
 
-test('TR-53: a stop the Investigation Environment did not confirm blocks `upgrade apply`, as a request back in the queue and as a terminal one', async t => {
+test('a stop the Investigation Environment did not confirm blocks `upgrade apply`, as a request back in the queue and as a terminal one', async t => {
   // With one attempt only, the interrupted request is terminal (`failed`) and its unit of Triage capacity is retained all the same.
   for (const [attempts, state] of [
     [2, 'queued'],
@@ -112,7 +112,7 @@ test('TR-53: a stop the Investigation Environment did not confirm blocks `upgrad
   }
 });
 
-test('TR-53: an investigation under way (what a killed controller leaves) blocks `upgrade apply` until a boot reconciles it', async t => {
+test('an investigation under way (what a killed controller leaves) blocks `upgrade apply` until a boot reconciles it', async t => {
   const w = await world(t, [() => hang]);
   await w.start();
   await untilHolds('the session to ask the model', () => w.bodies.length === 1);

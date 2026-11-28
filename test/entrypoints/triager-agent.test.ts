@@ -1,4 +1,4 @@
-// Spec #68 §6-§7 (ticket #75), layer R: the production Triager agent in the real Investigation Environment, one scenario. The fixed
+// Layer R: the production Triager agent in the real Investigation Environment, one scenario. The fixed
 // `triager` entrypoint is started by a real transient unit of the user manager, reads its private bootstrap, runs a real session against
 // a scripted model provider (a local HTTP server: the agent stays outside the confinement) and runs its commands through real bubblewrap.
 // Without bubblewrap or the user manager this test FAILS; it never skips.
@@ -78,7 +78,7 @@ test(
   'the production Triager agent runs one session inside the attempt unit: a clone read through the confinement, then the Verdict',
   { timeout: remainingMs() },
   async t => {
-    // TR-35 through the real unit: the process that starts the attempt (the Control's, here the test's) holds a tracker token and an
+    // Through the real unit: the process that starts the attempt (the Control's, here the test's) holds a tracker token and an
     // MCP token in its environment, as a Host does. Neither may reach the agent's start, the confined shell, the model or the transcript.
     const held = {
       GH_TOKEN: 'ghs_' + 'TRIAGERtrackerCANARY',
@@ -204,14 +204,14 @@ test(
     assert.match(shell!, /^PATH=/m, 'the shell really printed its environment');
     assert.doesNotMatch(shell!, /TOKEN|CANARY|synthetic-key/, 'no credential variable in the shell');
     for (const secret of secrets) {
-      assert.ok(!JSON.stringify(activation.agent).includes(secret), 'TR-35: the start of the agent carries no token');
-      assert.ok(!model.bodies.join('\n').includes(secret), 'TR-35: no model request carries a token');
+      assert.ok(!JSON.stringify(activation.agent).includes(secret), 'the start of the agent carries no token');
+      assert.ok(!model.bodies.join('\n').includes(secret), 'no model request carries a token');
     }
     // The transcript stays in the attempt's private directory of the installation, and the stop of the unit is confirmed.
     assert.ok('transcript' in completion && completion.transcript);
     const transcript = await readFile(join(factoryRoot, completion.transcript), 'utf8');
     assert.match(transcript, /concluir_triagem/);
-    for (const secret of secrets) assert.ok(!transcript.includes(secret), 'TR-35: the transcript carries no token');
+    for (const secret of secrets) assert.ok(!transcript.includes(secret), 'the transcript carries no token');
     assert.deepEqual(await environment.stop(opened.record), { cessationConfirmed: true, evidence: 'unit-inactive' });
     assert.deepEqual(await environment.close(opened.record), { cessationConfirmed: true, evidence: 'unit-inactive' });
   },

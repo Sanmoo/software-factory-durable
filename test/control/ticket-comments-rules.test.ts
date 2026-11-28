@@ -11,7 +11,7 @@ import { fenced, initialPrompt } from '../../src/control/rules/continuation.js';
 import { recoveryPrompt } from '../../src/control/rules/questions.js';
 import { interruptionRecoveryPrompt } from '../../src/control/rules/recovery.js';
 
-// Spec #68 §9, ticket #74: the Ticket the Builder receives includes its comments. GitHub: only the Factory's own and those of authors with
+// The Ticket the Builder receives includes its comments. GitHub: only the Factory's own and those of authors with
 // write access to the repository; Jira: every comment of the Card. A bound cuts explicitly and keeps the most recent.
 const github = (id: number, login: string, authorAssociation: string, body: string, ownApp = false) => ({
   commentId: id,
@@ -22,7 +22,7 @@ const github = (id: number, login: string, authorAssociation: string, body: stri
   createdAt: `2026-11-20T10:00:${String(id).padStart(2, '0')}.000Z`,
 });
 
-test('TR-39 (rule): of a GitHub issue only the comments of the Factory and of OWNER, MEMBER or COLLABORATOR authors are selected', () => {
+test('rule: of a GitHub issue only the comments of the Factory and of OWNER, MEMBER or COLLABORATOR authors are selected', () => {
   const selected = githubTicketComments([
     github(1, 'dona', 'OWNER', 'from the owner'),
     github(2, 'membro', 'MEMBER', 'from a member'),
@@ -49,7 +49,7 @@ test('TR-39 (rule): of a GitHub issue only the comments of the Factory and of OW
   );
 });
 
-test('TR-39 (rule): of a Jira Card every comment is selected, in the order listed; a restricted or unreadable one is delivered without its text', () => {
+test('rule: of a Jira Card every comment is selected, in the order listed; a restricted or unreadable one is delivered without its text', () => {
   const selected = jiraTicketComments([
     { commentId: '11', authorAccountId: 'acc-a', text: 'first', createdAt: '2026-11-20T10:00:00.000+0000', restricted: false },
     { commentId: '12', authorAccountId: 'acc-b', text: 'second', createdAt: '2026-11-20T11:00:00.000+0000', restricted: false },
@@ -78,7 +78,7 @@ test('TR-39 (rule): of a Jira Card every comment is selected, in the order liste
 
 const fact = (id: number, body: string) => ({ id: String(id), author: `user-${id}`, association: 'MEMBER', createdAt: `2026-11-20T10:00:0${id}.000Z`, body });
 
-test('TR-40: comments within the bound are delivered whole, with no truncation statement', () => {
+test('comments within the bound are delivered whole, with no truncation statement', () => {
   const delivered = boundTicketComments([fact(1, 'a'), fact(2, 'b')], 8000);
   assert.deepEqual([delivered.selected, delivered.omitted, delivered.comments.length], [2, 0, 2]);
   const text = ticketCommentsLines(delivered, fenced).join('\n');
@@ -86,7 +86,7 @@ test('TR-40: comments within the bound are delivered whole, with no truncation s
   assert.doesNotMatch(text, /cut|omitted/);
 });
 
-test('TR-40: comments above the bound are cut explicitly, the most recent are kept, and a needed cut part is an inaccessible required source', () => {
+test('comments above the bound are cut explicitly, the most recent are kept, and a needed cut part is an inaccessible required source', () => {
   const delivered = boundTicketComments([fact(1, 'x'.repeat(3000)), fact(2, 'y'.repeat(3000)), fact(3, 'z'.repeat(3000)), fact(4, 'newest')], 6000);
   assert.deepEqual(
     delivered.comments.map(item => item.id),
@@ -101,7 +101,7 @@ test('TR-40: comments above the bound are cut explicitly, the most recent are ke
   assert.ok(!text.includes('x'.repeat(10)) && !text.includes('y'.repeat(10)));
 });
 
-test('TR-40: a most recent comment larger than the whole bound is shortened and marked, never dropped in silence', () => {
+test('a most recent comment larger than the whole bound is shortened and marked, never dropped in silence', () => {
   const delivered = boundTicketComments([fact(1, 'old'), fact(2, `início ${'é'.repeat(6000)}`)], 2000);
   assert.deepEqual([delivered.selected, delivered.omitted, delivered.comments.length], [2, 1, 1]);
   const [only] = delivered.comments;
@@ -114,7 +114,7 @@ test('TR-40: a most recent comment larger than the whole bound is shortened and 
   assert.ok(text.includes('inaccessible required source (blocker)'));
 });
 
-test('TR-40: one bound of the comments in both origins, large enough for a published Verdict', () => {
+test('one bound of the comments in both origins, large enough for a published Verdict', () => {
   assert.equal(ticketCommentsBound, 32000);
 });
 
@@ -136,7 +136,7 @@ const comments = {
   ...boundTicketComments([{ ...fact(1, 'Approved, but with ```five``` attempts.'), association: 'OWNER' }], 8000),
 };
 
-test('TR-39 (prompt): the first prompt of a GitHub Work carries a `Ticket comments` section, fenced as data; without comments it has none', () => {
+test('prompt: the first prompt of a GitHub Work carries a `Ticket comments` section, fenced as data; without comments it has none', () => {
   const built = initialPrompt({ ...common, reviews: true, scopeUpdates: [], ticketContent: { tracker: 'github', url: common.ticketUrl, comments } });
   assert.ok(built.kind === 'prompt');
   if (built.kind !== 'prompt') return;
@@ -157,7 +157,7 @@ test('TR-39 (prompt): the first prompt of a GitHub Work carries a `Ticket commen
   assert.ok(none.kind === 'prompt' && !none.prompt.includes('Ticket comments'));
 });
 
-test('TR-39 (prompt): every first prompt of a new session carries the same comments; a Jira Card has them inside `Ticket content`', () => {
+test('prompt: every first prompt of a new session carries the same comments; a Jira Card has them inside `Ticket content`', () => {
   const ticketContent = { tracker: 'github' as const, url: common.ticketUrl, comments };
   const recovered = recoveryPrompt({ ...common, question: null, answer: { text: 'yes', author: 'operator', origin: 'local-cli' }, ticketContent });
   assert.ok(recovered.kind === 'prompt' && recovered.prompt.includes('Ticket comments: GitHub issue') && recovered.prompt.includes('by user-1 (OWNER)'));

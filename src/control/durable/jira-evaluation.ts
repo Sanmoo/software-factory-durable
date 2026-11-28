@@ -36,7 +36,7 @@ export type JiraCandidateEvaluation = {
   blockers: JiraBlockersObservation | null;
   /** Jira ticket 04: the component IDs read (null = not read or not complete), for the admission evidence. */
   components?: string[] | null;
-  /** Spec #68 §4.3: the Card carries `needs-triage` in a source with a `triage` block, so it is no candidate for admission now. */
+  /** The Card carries `needs-triage` in a source with a `triage` block, so it is no candidate for admission now. */
   suspendedByTriage?: true;
 };
 export type JiraSourceEvaluation =
@@ -118,7 +118,7 @@ export async function evaluateJiraTicket(input: {
 
 /**
  * Whether a re-read Card is a candidate for admission from this source: in its project, with its entry label and, where the source has a
- * `triage` block (available on this Host or not), without `needs-triage` (spec #68 §4.3: no admission, no notice, nothing read further).
+ * `triage` block (available on this Host or not), without `needs-triage` (no admission, no notice, nothing read further).
  */
 function candidacyOf(source: JiraSource, observation: Extract<JiraTicketObservation, { kind: 'observed' }>) {
   if (observation.projectId !== source.projectId || !observation.labels.includes(source.label)) return 'not-candidate' as const;

@@ -10,7 +10,7 @@ import { readInstallation, requests as acceptedRequests } from './admission.js';
 import type { Session } from './store.js';
 import { readTriageRequest, readTriageRequests, ticketTriageRequests, transitionTriageRequestIn, triageRequests } from './triage-requests.js';
 
-// Spec #68 §10 (ticket #81): the operator's interventions on one Triage request, only from the local CLI: `triage cancel`, `triage
+// The operator's interventions on one Triage request, only from the local CLI: `triage cancel`, `triage
 // release` and `triage complete`. Each one is accepted once per request identity (the same identity and content returns the recorded
 // receipt, other content is a conflict), decides on the request as it is read inside the commit, and answers `not-applied` with the
 // reason when the request had already moved on by itself. None of them writes to a Ticket except `complete`, through the publication.
@@ -250,7 +250,7 @@ export function createTriageInterventions(deps: {
   async function complete(input: Input & { operation: 'triage-complete' }, id: string | undefined): Promise<Receipt> {
     const request = id ? await readTriageRequest(session, id) : undefined;
     if (!request) return receipt(input, null, 'not-applied', 'TRIAGE_REQUEST_NOT_FOUND');
-    // Read at the decision, never cached (ticket #82): a paused installation publishes nothing, and says so with its own code.
+    // Read at the decision, never cached: a paused installation publishes nothing, and says so with its own code.
     if ((await readInstallation(session)).paused) return receipt(input, request, 'not-applied', 'TRIAGE_COMPLETE_INSTALLATION_PAUSED');
     const result = (await deps.publications.complete?.(request.triage_request_id, input.impediment)) ?? notComposed;
     if (result.kind === 'completed') return completed(input, request.triage_request_id);

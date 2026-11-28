@@ -5,7 +5,7 @@ import type { JiraTriageWrite } from '../../src/issue-tracker/index.js';
 import { card, edit, jiraSource, relabel, type JiraCard, type JiraRemote } from './jira-doubles.js';
 import { call, trackerWrites, triageWorld } from './triage-investigation-fixture.js';
 
-// Spec #68 §8 (ticket #78): a recorded Verdict is published on its Jira Card. Real Control, SQLite and Triager session under a scripted
+// A recorded Verdict is published on its Jira Card. Real Control, SQLite and Triager session under a scripted
 // provider; Jira is the double, which applies each write as the Factory's account would (a changelog entry with the request's mark) and
 // can lose, refuse, retain or anonymize one. The source routes component 10022 to acme/project and 10021 to acme/other.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
@@ -51,7 +51,7 @@ for (const [outcome, label] of [
   ['ready-for-human', 'ready-for-human'],
   ['wontfix', 'wontfix'],
 ] as const)
-  test(`TR-15 (Jira): ${outcome} is published as one comment and then ONE edit, with nothing else changed on the Card`, async t => {
+  test(`Jira: ${outcome} is published as one comment and then ONE edit, with nothing else changed on the Card`, async t => {
     const { w, item } = await recorded(t, outcome);
     await w.poll();
     const request = await only(w);
@@ -74,7 +74,7 @@ for (const [outcome, label] of [
     assert.equal(writes(w).length, 2, 'a concluded request writes nothing more');
   });
 
-test('TR-17: a Card without a routed component gets the component the Triager identified in the same edit as the label', async t => {
+test('a Card without a routed component gets the component the Triager identified in the same edit as the label', async t => {
   const { w, item } = await recorded(t, 'ready-for-agent', { component: '10022', card: { components: ['10099'] } });
   await w.poll();
   const request = await only(w);
@@ -85,7 +85,7 @@ test('TR-17: a Card without a routed component gets the component the Triager id
   assert.match(comments(w)[0]!.text!, /the same edit adds the component 10022, which routes to the repository `acme\/project`/);
 });
 
-test('TR-17: a Card that already routes to the repository of the identified component is labelled with no component written', async t => {
+test('a Card that already routes to the repository of the identified component is labelled with no component written', async t => {
   const { w, item } = await recorded(t, 'ready-for-agent', { component: '10022' });
   await w.poll();
   const request = await only(w);
@@ -115,7 +115,7 @@ for (const [name, code, options, suggestion] of [
     /Suggested component: 10021, which routes to the repository `acme\/other`/,
   ],
 ] as const)
-  test(`TR-17: ready-for-agent falls to needs-info, with the suggestion in the comment, when ${name}`, async t => {
+  test(`ready-for-agent falls to needs-info, with the suggestion in the comment, when ${name}`, async t => {
     const { w, item } = await recorded(t, 'ready-for-agent', options as Recorded);
     const before = item.components === null ? null : [...item.components];
     await w.poll();
@@ -136,7 +136,7 @@ for (const [name, code, options, suggestion] of [
   });
 
 for (const fault of ['forbidden', 'rejected'] as const)
-  test(`TR-17: when Jira refuses the edit that adds the component (${fault}), needs-info is applied instead and the one comment already says so`, async t => {
+  test(`when Jira refuses the edit that adds the component (${fault}), needs-info is applied instead and the one comment already says so`, async t => {
     const options = { component: '10022', card: { components: ['10099'] }, remote: { triageWrites: [undefined, fault] } };
     const { w, item } = await recorded(t, 'ready-for-agent', options);
     await w.poll();
@@ -159,7 +159,7 @@ for (const [name, options, announced] of [
   ['the Card already had its routed component', {}, false],
   ['the edit was to add the identified component', { component: '10022', card: { components: ['10099'] } }, true],
 ] as const)
-  test(`TR-17: the route is evaluated again at the edit: a divergent component added after the comment makes ready-for-agent fall to needs-info (${name})`, async t => {
+  test(`the route is evaluated again at the edit: a divergent component added after the comment makes ready-for-agent fall to needs-info (${name})`, async t => {
     // After the comment is out somebody adds 10021, which routes to acme/other, while the Card routes (or is about to route) to acme/project.
     const { w, item } = await recorded(t, 'ready-for-agent', {
       ...(options as Recorded),
@@ -188,7 +188,7 @@ for (const [name, options, announced] of [
     assert.equal(writes(w).length, 2);
   });
 
-test('TR-17: an edit that fails for a passing reason is sent again as it was, with the component', async t => {
+test('an edit that fails for a passing reason is sent again as it was, with the component', async t => {
   const { w, item } = await recorded(t, 'ready-for-agent', { component: '10022', card: { components: [] }, remote: { triageWrites: [undefined, 'failed'] } });
   await w.poll();
   let request = await only(w);
@@ -198,7 +198,7 @@ test('TR-17: an edit that fails for a passing reason is sent again as it was, wi
   assert.deepEqual([request.state, request.verdict?.fallback, item.components], ['concluded', undefined, ['10022']]);
 });
 
-test('TR-13 (Jira): needs-triage withdrawn during the investigation leaves one informative comment and an abandoned request', async t => {
+test('Jira: needs-triage withdrawn during the investigation leaves one informative comment and an abandoned request', async t => {
   const { w, item } = await recorded(t, 'ready-for-agent', {
     component: '10022',
     card: { components: [] },
@@ -215,7 +215,7 @@ test('TR-13 (Jira): needs-triage withdrawn during the investigation leaves one i
   assert.equal(comments(w).length, 1, 'never a second comment');
 });
 
-test('TR-19 (Jira): a comment that was created without an answer is recognised on the re-read and never repeated', async t => {
+test('Jira: a comment that was created without an answer is recognised on the re-read and never repeated', async t => {
   const { w } = await recorded(t, 'needs-info', { remote: { triageWrites: ['unknown-applied'] } });
   await w.poll();
   assert.equal((await only(w)).state, 'concluded');
@@ -223,7 +223,7 @@ test('TR-19 (Jira): a comment that was created without an answer is recognised o
   assert.deepEqual(kinds(w), ['comment', 'edit +needs-info -needs-triage components:'], 'only what is missing is written');
 });
 
-test('TR-19 (Jira): a comment that was not created and got no answer is written again only after a later read shows none', async t => {
+test('Jira: a comment that was not created and got no answer is written again only after a later read shows none', async t => {
   const { w } = await recorded(t, 'needs-info', { remote: { triageWrites: ['unknown-not-applied'] } });
   await w.poll();
   let request = await only(w);
@@ -234,7 +234,7 @@ test('TR-19 (Jira): a comment that was not created and got no answer is written 
   assert.equal(comments(w).length, 1, 'never a duplicated comment');
 });
 
-test('TR-19 (Jira): an edit that was applied without an answer is recognised by the changelog as the Factory’s own and not repeated', async t => {
+test('Jira: an edit that was applied without an answer is recognised by the changelog as the Factory’s own and not repeated', async t => {
   const { w, item } = await recorded(t, 'ready-for-agent', {
     component: '10022',
     card: { components: [] },
@@ -250,7 +250,7 @@ for (const [fault, what] of [
   ['anonymous', 'a changelog entry without an author'],
   ['unmarked', 'an entry of the Factory’s account without the mark of the request'],
 ] as const)
-  test(`TR-20 (Jira): an effect present with ${what} stops the publication with an Impediment`, async t => {
+  test(`Jira: an effect present with ${what} stops the publication with an Impediment`, async t => {
     const { w, item } = await recorded(t, 'needs-info', { remote: { triageWrites: [undefined, fault] } });
     await w.poll();
     let request = await only(w);

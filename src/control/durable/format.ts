@@ -20,7 +20,7 @@ import { triageSettlement, type TriageSettlement, type TriageSettlementFacts } f
 export const currentFormat = controlStorageCompatibility.format;
 /**
  * Format → document kind → version. Jira ticket 02: format 3 differs from format 2 only by `factory.installation` v3 (its format identity) and the
- * Jira kinds, so a format-2 release refuses a storage that may hold Jira-origin state. Triage ticket #70: format 4 differs from format 3 only by
+ * Jira kinds, so a format-2 release refuses a storage that may hold Jira-origin state. Triage: format 4 differs from format 3 only by
  * `factory.installation` v4 and the Triage request kinds, so a release that knows no Triage refuses it. Format 4 is still open while Triage is
  * integrated: a later ticket adds its new kinds to the contract's `documents` (format 4 only); a kind absent from the detected format makes the
  * storage mixed.
@@ -145,7 +145,7 @@ export type StorageInspection =
       /** Durable activity evidence: Executions not settled (see rules/quiescence) and Slots held. */
       activity: { unsettled: string[]; heldSlots: number };
       /**
-       * Spec #68 §11 (ticket #82): the Triage requests by situation, the units of Triage capacity held and the attempts holding them.
+       * The Triage requests by situation, the units of Triage capacity held and the attempts holding them.
        * Metadata only (states and how attempts ended); all zero in a storage without Triage requests.
        */
       triage: TriageSettlement;

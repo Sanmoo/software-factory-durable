@@ -8,7 +8,7 @@ import { doctor } from '../../src/entrypoints/doctor.js';
 import { createInvestigationHostProbe, type InvestigationHostProbe } from '../../src/sandbox/index.js';
 import { productionModelChecks, productionProfile } from '../../src/entrypoints/release.js';
 
-// Spec #68 §2 (ticket #69): config.yaml schema 3 carries the Triage configuration; the host prerequisites decide whether it turns on.
+// config.yaml schema 3 carries the Triage configuration; the host prerequisites decide whether it turns on.
 const base = `operators: [operator-one]
 githubApp: {appId: 123, privateKeyFile: credentials/app.pem}
 sandbox: {schemaVersion: 1, profile: gondolin-qemu-alpine-dev-v1}
@@ -132,7 +132,7 @@ test('the installation `triager` block has the spec defaults and accepts each li
     assert.equal((await read(v3({ rest: `triager: ${block}\n` }))).configuration.valid, false, block);
 });
 
-test('TR-38: models.triager defaults thinkingLevel to max; `off` and an absent models.triager are refused', async () => {
+test('models.triager defaults thinkingLevel to max; `off` and an absent models.triager are refused', async () => {
   assert.deepEqual((await effective(v3())).models.triager, { provider: 'example', model: 'triager-model', thinkingLevel: 'max' });
   const configured = await effective(v3({ triager: '  triager: {provider: example, model: triager-model, thinkingLevel: high}\n' }));
   assert.equal(configured.models.triager?.thinkingLevel, 'high');
@@ -182,7 +182,7 @@ test('MCP servers and MCP Profiles are registered by id; only the profiles `tria
   assert.deepEqual((await effective(v3({ rest: `${mcp}triager: {mcpProfiles: [investigar-erros]}\n` }))).triager.mcpProfiles, ['investigar-erros']);
 });
 
-test('TR-34: a profile of an unknown server, an unknown active profile, stdio and legacy SSE are configuration errors', async () => {
+test('a profile of an unknown server, an unknown active profile, stdio and legacy SSE are configuration errors', async () => {
   const refused = async (rest: string) => (await read(v3({ rest }))).configuration.valid;
   assert.deepEqual(await refusedPaths(v3({ rest: 'mcpProfiles:\n  - {id: p, server: ausente, tools: all}\n' })), [
     'CONFIGURATION_INVALID:mcpProfiles.0.server',
@@ -224,7 +224,7 @@ test('`factory doctor` checks the token file of a registered MCP server as a cre
   assert.equal((await check())[0]?.status, 'ok');
 });
 
-test('TR-55: a schema 1 or 2 config.yaml stays valid under this release with Triage off, and is never edited', async () => {
+test('a schema 1 or 2 config.yaml stays valid under this release with Triage off, and is never edited', async () => {
   for (const version of [1, 2] as const) {
     let probed = false;
     const result = await read(older[version], async () => {
@@ -252,7 +252,7 @@ test('TR-55: a schema 1 or 2 config.yaml stays valid under this release with Tri
   }
 });
 
-test('TR-55: the Triage sections are refused in a schema 1 or 2 config.yaml (adopting them is adopting schema 3)', async () => {
+test('the Triage sections are refused in a schema 1 or 2 config.yaml (adopting them is adopting schema 3)', async () => {
   const withTriage = '  - {tracker: github, repository: equipe/payments-api, discover: true, triage: {}}\n';
   assert.equal(
     (await read(older[2].replace('  - {tracker: github, repository: equipe/payments-api, discover: true}\n', withTriage))).configuration.valid,
@@ -277,7 +277,7 @@ async function privatePath(t: { after(fn: () => Promise<void>): void }, tools: R
 }
 const everyTool = { bwrap: 0, systemctl: 0, git: 0, rg: 0 };
 
-test('TR-29: with every prerequisite on the private PATH the triage block turns on', async t => {
+test('with every prerequisite on the private PATH the triage block turns on', async t => {
   const result = await read(triaged, await privatePath(t, everyTool));
   assert.equal(result.configuration.valid, true, JSON.stringify(result.configuration));
   if (!result.configuration.valid) return;
@@ -286,7 +286,7 @@ test('TR-29: with every prerequisite on the private PATH the triage block turns 
   assert.equal(result.checks.find(check => check.id === 'triage:prerequisites')?.status, 'ok');
 });
 
-test('TR-29: without bwrap, user systemd, git or rg the triage block does not turn on and the diagnostic names what is missing', async t => {
+test('without bwrap, user systemd, git or rg the triage block does not turn on and the diagnostic names what is missing', async t => {
   for (const [absent, named] of [
     ['bwrap', 'bwrap'],
     ['systemctl', 'systemd-user'],
@@ -307,7 +307,7 @@ test('TR-29: without bwrap, user systemd, git or rg the triage block does not tu
   }
 });
 
-test('TR-29: a user systemd that does not answer and namespaces bwrap cannot create are named too', async t => {
+test('a user systemd that does not answer and namespaces bwrap cannot create are named too', async t => {
   const noSystemd = await read(triaged, await privatePath(t, { ...everyTool, systemctl: 1 }));
   assert.deepEqual(noSystemd.configuration.valid && noSystemd.configuration.effective.triage, { status: 'unavailable', missing: ['systemd-user'] });
   // The fake bwrap answers `--version` and every confinement with the same exit: here it runs, but cannot confine.
@@ -327,12 +327,12 @@ test('TR-29: a user systemd that does not answer and namespaces bwrap cannot cre
   });
 });
 
-test('TR-29: a host that is not Linux never turns Triage on', async () => {
+test('a host that is not Linux never turns Triage on', async () => {
   const probe = createInvestigationHostProbe({ platform: 'darwin', environment: { PATH: '/nonexistent' } });
   assert.deepEqual((await probe()).slice(0, 1), ['linux']);
 });
 
-test('TR-29: `factory doctor` reports the missing prerequisite and writes nothing', async t => {
+test('`factory doctor` reports the missing prerequisite and writes nothing', async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-triage-doctor-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'config.yaml'), triaged, { mode: 0o600 });

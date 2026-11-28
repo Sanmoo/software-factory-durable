@@ -9,7 +9,7 @@ import { applyLabel, remoteIssue } from './doubles.js';
 import { hostileInstruction, mcpSource } from './mcp-source-fixture.js';
 import { call, toolNames, toolResults, trackerWrites, triageWorld } from './triage-investigation-fixture.js';
 
-// Spec #68 §7 (ticket #79): the Triager session gets the tools of the active MCP Profiles through a client in its own process. The
+// The Triager session gets the tools of the active MCP Profiles through a client in its own process. The
 // Triager is the real worker under a scripted provider; the external source is a local MCP server.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const githubSource: TicketSource = { tracker: 'github', repository: 'acme/project', discover: true, triage };
@@ -33,7 +33,7 @@ const world = (t: Parameters<typeof triageWorld>[0], mcp: McpRegistration, scrip
   triageWorld(t, { github: { issues: [triageIssue(7)], pulls: {} }, sources: [githubSource], script, mcp, credentials: { 'fonte-token': `${sourceToken}\n` } });
 const sessionTools = ['bash', 'concluir_triagem', 'mcp__fonte__buscar_erros', 'mcp__fonte__consultar_trace', 'read', 'request_clone'];
 
-test('TR-31: only the tools of the active MCP Profile exist in the session; a tool outside it is refused at the call, directly, by codemode and by tool_search, and the server never sees it; no MCP of the operator is inherited', async t => {
+test('only the tools of the active MCP Profile exist in the session; a tool outside it is refused at the call, directly, by codemode and by tool_search, and the server never sees it; no MCP of the operator is inherited', async t => {
   const source = await mcpSource(t, { token: sourceToken });
   // The operator's own agent directory, with a personal MCP server: where an SDK session would look by default.
   const personal = await mcpSource(t, { tools: ['pessoal'] });
@@ -77,7 +77,7 @@ test('TR-31: only the tools of the active MCP Profile exist in the session; a to
   assert.deepEqual(trackerWrites(w.github.calls.map(item => item.method)), []);
 });
 
-test('TR-31: `tools: all` gives the whole catalogue of the server; two active profiles of one server add up; without active profiles the session has no MCP tool', async t => {
+test('`tools: all` gives the whole catalogue of the server; two active profiles of one server add up; without active profiles the session has no MCP tool', async t => {
   const source = await mcpSource(t, { token: sourceToken });
   const all = await world(t, registration(source.url, { active: ['inativo'] }), [() => call('concluir_triagem', verdict)]);
   await all.start();
@@ -103,7 +103,7 @@ test('TR-31: `tools: all` gives the whole catalogue of the server; two active pr
   assert.equal(source.methods.length, methods, 'registering activates nothing: the server is not contacted');
 });
 
-test('TR-32: an unavailable, a slow and a giant source reach the Triager as an error or a cut of that call, and the request goes on to its Verdict', async t => {
+test('an unavailable, a slow and a giant source reach the Triager as an error or a cut of that call, and the request goes on to its Verdict', async t => {
   const source = await mcpSource(t, { token: sourceToken });
   const w = await world(t, registration(source.url, { requestTimeoutMs: 300 }), [
     () => (source.mode('unavailable'), call('mcp__fonte__buscar_erros', { consulta: 'a' })),
@@ -131,7 +131,7 @@ test('TR-32: an unavailable, a slow and a giant source reach the Triager as an e
   assert.deepEqual(request.attempts![0]!.end?.toolCalls, { concluir_triagem: 1, mcp__fonte__buscar_erros: 3, mcp__fonte__consultar_trace: 1 });
 });
 
-test('TR-32: a source that is down when the session starts, or an answer over the size the client accepts, is an error of the call; the Triage is not failed', async t => {
+test('a source that is down when the session starts, or an answer over the size the client accepts, is an error of the call; the Triage is not failed', async t => {
   const source = await mcpSource(t, { token: sourceToken, giantBytes: 6 * 1024 * 1024 });
   source.mode('unavailable');
   const w = await world(t, registration(source.url, { requestTimeoutMs: 300 }), [
@@ -149,7 +149,7 @@ test('TR-32: a source that is down when the session starts, or an answer over th
   assert.ok(Buffer.byteLength(w.bodies[2]!) < 200_000, 'nothing of the oversized answer travels to the model');
 });
 
-test('TR-33: an instruction embedded in the answer of a source is delivered as data; the session has no tracker write, and a malformed Verdict is refused', async t => {
+test('an instruction embedded in the answer of a source is delivered as data; the session has no tracker write, and a malformed Verdict is refused', async t => {
   const source = await mcpSource(t, { token: sourceToken });
   source.mode('hostile');
   const w = await world(t, registration(source.url), [
@@ -172,7 +172,7 @@ test('TR-33: an instruction embedded in the answer of a source is delivered as d
   assert.deepEqual(trackerWrites(w.github.calls.map(item => item.method)), []);
 });
 
-test('TR-35 (MCP): an answer of the source that carries its own token is withheld from the model', async t => {
+test('MCP: an answer of the source that carries its own token is withheld from the model', async t => {
   const source = await mcpSource(t, { token: sourceToken, echo: sourceToken });
   const w = await world(t, registration(source.url), [() => call('mcp__fonte__buscar_erros', { consulta: 'cart' }), () => call('concluir_triagem', verdict)]);
   await w.start();

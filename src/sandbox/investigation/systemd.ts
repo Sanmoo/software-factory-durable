@@ -98,7 +98,7 @@ function unitArguments(unit: string, limits: z.infer<typeof limitsSchema>) {
     '--property=KillMode=control-group',
     '--property=SendSIGKILL=yes',
     '--property=TimeoutStopSec=5s',
-    // A command killed for memory ends alone: the attempt goes on (spec §6).
+    // A command killed for memory ends alone: the attempt goes on.
     '--property=OOMPolicy=continue',
     `--property=MemoryMax=${Math.floor(limits.memoryGiB * 1024)}M`,
     '--property=MemorySwapMax=0',
@@ -110,7 +110,7 @@ function unitArguments(unit: string, limits: z.infer<typeof limitsSchema>) {
 }
 
 /**
- * Spec #68 §6, first implementation of the port: one transient unit of the user manager per attempt holds the agent and its commands;
+ * First implementation of the port: one transient unit of the user manager per attempt holds the agent and its commands;
  * each command is a new bubblewrap. `root` is the private directory of the attempts and `factoryRoot` the installation root that no
  * command may see. `shell` is called by the process running INSIDE the unit; everything else by the Control.
  */

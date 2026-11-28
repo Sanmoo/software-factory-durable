@@ -1,4 +1,4 @@
-// Spec #68 §10 (tickets #80 and #81): the operator of a Triage world, through the REAL CLI process over the controller socket.
+// The operator of a Triage world, through the REAL CLI process over the controller socket.
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

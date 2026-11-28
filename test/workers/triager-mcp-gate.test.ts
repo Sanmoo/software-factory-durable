@@ -3,10 +3,10 @@ import { test } from 'node:test';
 import { sourceClient } from '../../src/workers/triager-mcp.js';
 import { mcpSource } from '../control/mcp-source-fixture.js';
 
-// Spec #68 §7 (ticket #79), TR-31: "a seleção de ferramentas vale na chamada". The session declares only the selected tools, so no
+// The selection of tools holds at the call. The session declares only the selected tools, so no
 // call of the model reaches a tool outside the profile (triage-mcp-profiles.test.ts: such a name is "not found"). This file drives the
 // second barrier itself, the gate of the one client every call to a server goes through, against a real local MCP server.
-test('TR-31: a call for a tool outside the active profile is refused by the client at the call (MCP_TOOL_NOT_IN_PROFILE) and never reaches the server', async t => {
+test('a call for a tool outside the active profile is refused by the client at the call (MCP_TOOL_NOT_IN_PROFILE) and never reaches the server', async t => {
   const source = await mcpSource(t);
   const stop = new AbortController();
   const client = sourceClient(
@@ -26,7 +26,7 @@ test('TR-31: a call for a tool outside the active profile is refused by the clie
   assert.deepEqual(source.calls, [{ name: 'buscar_erros', arguments: { consulta: 'cart' } }]);
 });
 
-test('TR-31: with `tools: all` the same gate lets every tool of the server through', async t => {
+test('with `tools: all` the same gate lets every tool of the server through', async t => {
   const source = await mcpSource(t);
   const stop = new AbortController();
   const client = sourceClient(

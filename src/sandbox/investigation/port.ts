@@ -1,5 +1,5 @@
 /**
- * Spec #68 §6: the port of the Investigation Environment. One environment per attempt of a Triage request, local to the Control's Host
+ * The port of the Investigation Environment. One environment per attempt of a Triage request, local to the Control's Host
  * in every installation. It never goes through `sandbox.adapter` nor `SandboxCapabilities`: that selector is the lifecycle of a Work's
  * environment. Types only; the first implementation is `systemd.ts` (bubblewrap inside a transient unit of the user manager).
  */
@@ -9,7 +9,7 @@ import { triageAttemptPattern } from '../../contracts/index.js';
 /** Names the attempt: lowercase letters, digits and single hyphens, at most 64. Never reused: the unit name is derived from it. */
 export type InvestigationAttemptRef = string;
 
-/** `triager.environment` of the installation (spec §2), plus the output cut of one command. */
+/** `triager.environment` of the installation, plus the output cut of one command. */
 export type InvestigationLimits = {
   memoryGiB: number;
   processes: number;
@@ -47,7 +47,7 @@ export type StopRefusal =
   | 'INVESTIGATION_CGROUP_POPULATED'
   | 'INVESTIGATION_CGROUP_UNREADABLE';
 
-/** Cessation of the whole attempt (agent and commands). Unconfirmed never frees Triage capacity (spec §5). */
+/** Cessation of the whole attempt (agent and commands). Unconfirmed never frees Triage capacity. */
 export type InvestigationStop = { cessationConfirmed: true; evidence: StopEvidence } | { cessationConfirmed: false; code: StopRefusal };
 
 export type InvestigationCommandResult =

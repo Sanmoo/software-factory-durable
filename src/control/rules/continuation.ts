@@ -207,7 +207,7 @@ export function continuationPrompt(input: {
   return { kind: 'prompt', prompt };
 }
 
-/** The comments of the Ticket the controller read and persisted with the Work's first Execution (spec #68 §9): version v1 of the Ticket. */
+/** The comments of the Ticket the controller read and persisted with the Work's first Execution: version v1 of the Ticket. */
 export type TicketCommentsText = BoundedComments & { observedAt: string; sha256: string };
 /** Jira ticket 04: the Card's text the controller read and persisted with the Execution request (the Builder has no Jira access). */
 export type JiraTicketText = {

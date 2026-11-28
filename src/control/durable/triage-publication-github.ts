@@ -6,7 +6,7 @@ import type { TriageIntendedEffect } from '../rules/triage-verdict.js';
 import type { TriagePublisher } from './triage-publication.js';
 import { triageSourceOf } from './triage-ticket.js';
 
-// Spec #68 §8 (ticket #77): what GitHub gives the publication of a Verdict on an issue. Each effect is its own write (comment, label of
+// What GitHub gives the publication of a Verdict on an issue. Each effect is its own write (comment, label of
 // the outcome, withdrawal of `needs-triage`, `not_planned` closing). A label or closing is the Factory's when the latest matching event
 // of the timeline was performed by this installation's App (`actor` + `performed_via_github_app`); the comment, when the App wrote it
 // under the request's marker with the expected content.

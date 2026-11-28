@@ -62,7 +62,7 @@ export const reviewerBudget = Object.freeze({
   providerBytes: 16 * 1024 * 1024,
   deadlineMs: reviewerBudgetV1.requestTimeoutMinutes * 60 * 1000,
 });
-/** Spec #68 §5: the budget of one attempt of a Triager (`triager-v1`). Its first prompt carries the `triage` skill and the whole Ticket
+/** The budget of one attempt of a Triager (`triager-v1`). Its first prompt carries the `triage` skill and the whole Ticket
  * with every comment, hence the larger prompt bound; same observation limits otherwise, never a billing cap. */
 export const triagerBudget = Object.freeze({
   requests: triagerBudgetV1.requests,

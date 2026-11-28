@@ -9,7 +9,7 @@ import type { ControlStatus, ListView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, scope } from './doubles.js';
 import { storageWithPendingQuestion, storedBytesExceptInstallation, storedDocuments, writeFormatThree } from './upgrade-fixture.js';
 
-// Flow level (Triage ticket #70, spec #68 §11, oracle TR-52): a REAL Control + Pi Durable + SQLite storage holding two Works, a held Slot's
+// Flow level: a REAL Control + Pi Durable + SQLite storage holding two Works, a held Slot's
 // history, a published open Question and its receipts, re-expressed as format 3 (every release that knows the Jira origin and no Triage)
 // through the public Pi Durable API. The explicit factory-storage-3-to-4 migration runs on it; then the current Control runs on the result
 // with a GitHub double that records every call. The upgrade command and the built release are in test/entrypoints (upgrade, release-upgrade).
@@ -41,7 +41,7 @@ const beforeTriage = (() => {
   return older;
 })();
 
-test('TR-52: factory-storage-3-to-4 changes only the format identity; Works, Slots, Questions and every other document stay byte for byte and no Triage request is created', async t => {
+test('factory-storage-3-to-4 changes only the format identity; Works, Slots, Questions and every other document stay byte for byte and no Triage request is created', async t => {
   const dir = await directory(t);
   const source = join(dir, 'source.sqlite'),
     path = join(dir, 'control.sqlite');
@@ -116,7 +116,7 @@ test('TR-52: factory-storage-3-to-4 changes only the format identity; Works, Slo
   assert.deepEqual(storedBytesExceptInstallation(path), bytesBefore);
 });
 
-test('TR-52: a release that knows no Triage refuses the storage in format 4, even with no Triage request stored', async t => {
+test('a release that knows no Triage refuses the storage in format 4, even with no Triage request stored', async t => {
   const dir = await directory(t);
   const source = join(dir, 'source.sqlite'),
     path = join(dir, 'control.sqlite');
@@ -137,7 +137,7 @@ test('TR-52: a release that knows no Triage refuses the storage in format 4, eve
   assert.deepEqual([storage(await inspectStorage(path)).format, storage(await inspectStorage(path)).operational], [4, 'ready']);
 });
 
-test('TR-52: after the migration the Control runs on the same Works and Question, publishes nothing and creates no Triage request', async t => {
+test('after the migration the Control runs on the same Works and Question, publishes nothing and creates no Triage request', async t => {
   const dir = await directory(t);
   const source = join(dir, 'source.sqlite'),
     path = join(dir, 'control.sqlite');

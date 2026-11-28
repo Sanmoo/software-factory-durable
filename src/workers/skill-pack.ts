@@ -16,7 +16,7 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * v10 = ticket 44: v9 plus the repository's declared environment (`.factory/environment.yaml`) already installed: never reinstalled or
  * swapped, extras the Ticket needs installed and recorded; v11 = ticket 56: v10 plus each documented gate run exactly, alone, as the last
  * command before the handoff, never inside a compound command); v12 = Jira ticket 04: v11 plus a Jira Card as Ticket from the controller's
- * `Ticket content` section (no Jira access, no `gh issue view`) and the Card reference instead of `Closes #N`; v13 = spec #68 ticket #73:
+ * `Ticket content` section (no Jira access, no `gh issue view`) and the Card reference instead of `Closes #N`; v13 = Triage:
  * v12 plus a role on every skill and prompt, the Triager's `triage` skill, support document and activation prompt template, and the
  * Builder reading the Ticket comments with the precedence between people and the Verdict). */
 const pack = <T extends string>(id: T) =>
@@ -162,7 +162,7 @@ export async function skillPackContinues(id: SkillPackId): Promise<boolean> {
   return loaded.manifest.capabilities?.continuation === true;
 }
 
-/** What the Control injects into the first prompt of a Triager (spec #68 §7); everything else in that prompt is text of the pack. */
+/** What the Control injects into the first prompt of a Triager; everything else in that prompt is text of the pack. */
 export const triagerActivationFields = ['ticket', 'origin', 'candidateRepositories', 'openBlockers', 'builderReach', 'remainingInvestigationTime'] as const;
 export type TriagerActivation = Readonly<Record<(typeof triagerActivationFields)[number], string>>;
 

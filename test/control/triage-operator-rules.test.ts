@@ -16,7 +16,7 @@ import {
 import { triageRequestStates, type TriageRequestState } from '../../src/control/rules/triage.js';
 import type { TriageAttempt, TriageRequest } from '../../src/control/types.js';
 
-// Spec #68 §10 (ticket #80): the operator views as pure rules over the request records.
+// The operator views as pure rules over the request records.
 const at = '2026-03-01T10:00:00.000Z';
 const day = 86_400_000;
 const calendar = { ms: (instant: string) => Date.parse(instant), instant: (ms: number) => new Date(ms).toISOString() };
@@ -67,7 +67,7 @@ function request(state: TriageRequestState, overrides: Partial<TriageRequest> = 
 }
 const retainedStop = { cessationConfirmed: false, code: 'INVESTIGATION_CGROUP_POPULATED' } as NonNullable<TriageAttempt['end']>['cessation'];
 
-test('TR-44: each of the seven states has its own summary and next step; none is a retry state and none is an Impediment by itself', () => {
+test('each of the seven states has its own summary and next step; none is a retry state and none is an Impediment by itself', () => {
   assert.equal(triageRequestStates.length, 7);
   for (const state of triageRequestStates) {
     const summary = triageSummary(request(state), facts);
@@ -86,7 +86,7 @@ test('TR-44: each of the seven states has its own summary and next step; none is
   assert.match(triageSummary(request('suspended'), facts).nextStep, /wontfix.*single state label/);
 });
 
-test('TR-44: `failed` tells the operator to remove and reapply the label and is never an Impediment', () => {
+test('`failed` tells the operator to remove and reapply the label and is never an Impediment', () => {
   const failed = request('failed', { attempts: [attempt(1), attempt(2)] });
   assert.deepEqual(triageRequestImpediments(failed), []);
   assert.match(triageSummary(failed, facts).nextStep, /TRIAGE_ATTEMPTS_EXHAUSTED.*not an Impediment.*remove and reapply needs-triage/);
@@ -140,7 +140,7 @@ test('a Verdict is `recorded` until its comment is confirmed, then a link; an at
   assert.ok(!JSON.stringify(detail).includes('textSha256'));
 });
 
-test('TR-46: details are protected while the request is live or has an Impediment, kept for the term after its end, then eligible; a removal is final', () => {
+test('details are protected while the request is live or has an Impediment, kept for the term after its end, then eligible; a removal is final', () => {
   const now = Date.parse(at);
   const state = (subject: TriageRequest, elapsedDays: number) =>
     triageDetailsView(subject, { now: now + elapsedDays * day, retentionDays: 30, calendar }).state;
@@ -167,7 +167,7 @@ test('a Ticket reference names the most recent request of the Ticket; an id name
   assert.equal(resolveTriageRequest([older, newer], 'acme/project#8'), undefined);
 });
 
-test('TR-47: the tokens of an attempt that cannot be measured are unavailable, never zero, and a total sums only what was measured', () => {
+test('the tokens of an attempt that cannot be measured are unavailable, never zero, and a total sums only what was measured', () => {
   const entry = {
     id: 'e',
     provider: 'p',

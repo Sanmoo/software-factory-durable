@@ -1,6 +1,6 @@
 import { holdsTriageCapacity } from './triage.js';
 
-// Spec #68 §11 (ticket #82): what an upgrade reads of the Triage requests of a storage. Pure, and from metadata only (the state of each
+// What an upgrade reads of the Triage requests of a storage. Pure, and from metadata only (the state of each
 // request and how each of its attempts ended): never a Ticket text, a Verdict or a transcript.
 
 /** The facts of one stored Triage request the settlement reads. */
@@ -47,7 +47,7 @@ export function triageSettlement(requests: readonly TriageSettlementFacts[]): Tr
 }
 
 /**
- * What blocks an upgrade (spec §11): an investigation under way, a stop not confirmed or a retained unit of Triage capacity, until a
+ * What blocks an upgrade: an investigation under way, a stop not confirmed or a retained unit of Triage capacity, until a
  * reconciling boot settles it. A queued request and a pending publication never do: the new release takes them up from the same record.
  */
 export const triageUnsettled = (settlement: TriageSettlement) =>

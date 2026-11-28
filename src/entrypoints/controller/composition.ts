@@ -176,7 +176,7 @@ export function composeProductionAccess(input: {
     dependencyRepositories: readonly { repository: string; installationId: number }[];
     operators: (string | { login: string; id?: number })[];
     ticketSources?: readonly TicketSourceConfiguration[];
-    /** Spec #68 §2: whether Triage is on in this installation (absent = off: schemas 1 and 2, and callers predating Triage). */
+    /** Whether Triage is on in this installation (absent = off: schemas 1 and 2, and callers predating Triage). */
     triage?: TriageAvailability;
   };
   /**
@@ -193,7 +193,7 @@ export function composeProductionAccess(input: {
   }));
   const configured =
     effective.ticketSources ?? effective.repositories.map(item => ({ tracker: 'github' as const, repository: item.repository, discover: true }));
-  // Spec #68 §2/§4: the `triage` block of a source, on only where `triageSources` says so. A block the Host cannot serve stays on the
+  // The `triage` block of a source, on only where `triageSources` says so. A block the Host cannot serve stays on the
   // source as not available: its requests are kept and `needs-triage` still suspends admission, but nothing is created or investigated.
   const triageOn = new Set<unknown>(triageSources({ triage: input.effective.triage ?? { status: 'off' }, ticketSources: configured }));
   const triageOf = (source: (typeof configured)[number]) =>
@@ -510,7 +510,7 @@ export async function composeProductionExecution(input: ProductionInput): Promis
 }
 
 /**
- * Spec #68 §6 (ticket #75): how the Investigation Environment starts the agent of one attempt: the fixed `triager` entrypoint of this
+ * How the Investigation Environment starts the agent of one attempt: the fixed `triager` entrypoint of this
  * release under the running Node, with the attempt's bootstrap file as its only argument. `env` is its WHOLE environment and travels on a
  * command line, so nothing secret is in it (the model credential is read from the installation's own store).
  */
@@ -523,21 +523,21 @@ export function triagerAgentStart(bootstrap: string): InvestigationAgent {
 }
 
 /**
- * Spec #68 §10 (ticket #80): the session files of the Triager attempts of this installation, composed whether or not Triage is on now,
+ * The session files of the Triager attempts of this installation, composed whether or not Triage is on now,
  * so that the transcripts of earlier requests are still read on purpose, measured and removed when their retention ends.
  */
 export const composeTriageDetails = (root: string): TriageDetailPorts => createTriagerDetails(root);
 /**
- * Spec #68 §6-§7 (ticket #75): production composition of the Triage ports, only where Triage is on. The Triager is the release's single
+ * Production composition of the Triage ports, only where Triage is on. The Triager is the release's single
  * worker profile at the configured reasoning level, activated with the same pack as the Builder; its agent is the fixed `triager`
  * entrypoint, started by the Investigation Environment with a closed environment and the attempt's bootstrap file as its only argument.
  * The candidates are cloned from the bare cache the Works use, with the Host's read credential. A `triager` role that is not exactly the
- * release profile refuses the composition, like any other role. Ticket #79: the registered MCP servers and Profiles go to the Triager with
+ * release profile refuses the composition, like any other role. The registered MCP servers and Profiles go to the Triager with
  * the active ones; the agent of each attempt reads a server's token from its file, so no token passes through here.
  */
 export async function composeProductionTriage(input: {
   root: string;
-  /** Ticket #82: the verified running release, recorded on every attempt it starts. */
+  /** The verified running release, recorded on every attempt it starts. */
   release: string;
   effective: {
     triage: TriageAvailability;

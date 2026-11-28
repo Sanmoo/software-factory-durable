@@ -414,7 +414,7 @@ export function createJiraTracker(options: {
       };
     },
     async listCandidates(scope) {
-      // A site may carry several configured listings (other projects; the needs-triage label of a source with Triage, spec #68 §4).
+      // A site may carry several configured listings (other projects; the needs-triage label of a source with Triage).
       const configured = options.scopes.find(candidate => candidate.siteId === scope.siteId && configuredAs(candidate, scope));
       if (!configured) return notConfigured(scope.siteId);
       const jql = `project = ${scope.projectId} AND labels = ${jqlString(scope.label)}`;
@@ -624,7 +624,7 @@ export function createJiraTracker(options: {
         url: `${scope.url}/browse/${ticket.key}?focusedCommentId=${created.data.id}`,
       };
     },
-    // Spec #68 §8: the comment of a Triage publication, or its one edit of the Card. Nothing but labels and components is ever named.
+    // The comment of a Triage publication, or its one edit of the Card. Nothing but labels and components is ever named.
     async writeTriage(ticket, write): Promise<TriageWriteResult> {
       if (write.kind === 'comment') {
         const posted = await tracker.publishComment(ticket, { lines: write.lines });

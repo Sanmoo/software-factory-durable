@@ -1,4 +1,4 @@
-// Spec #68 §13: the Investigation Environment port in process, for every test that is not about the real mechanism (TR-09 and the
+// The Investigation Environment port in process, for every test that is not about the real mechanism (the
 // Control flows). No bubblewrap and no systemd: the agent is an ordinary child process and each command an ordinary `/bin/sh -c` in the
 // attempt's temporary directory, with the same time and output bounds as the real port. It confines NOTHING; the confinement itself is
 // proved only by test/sandbox/investigation-environment.test.ts. The state lives in the instance: keep one instance across a simulated

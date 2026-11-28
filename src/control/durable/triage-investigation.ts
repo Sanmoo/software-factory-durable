@@ -29,12 +29,12 @@ import {
 } from './triage-requests.js';
 import { readTriageSubject, type TriageSubject } from './triage-ticket.js';
 
-// Spec #68 §6-§7 (ticket #75): one request from `queued` to a recorded Verdict (`publishing`). An attempt STARTS at the commit that moves
+// One request from `queued` to a recorded Verdict (`publishing`). An attempt STARTS at the commit that moves
 // the request to `investigating` with the environment's intent, and ENDS at the commit that sets `attempt.end` after the environment
 // answered the stop. In between, the Triager session of that attempt asks for clones and records the Verdict through this desk, which
 // validates both. Nothing here writes to a tracker: the intended changes are recorded with the Verdict for the publication.
 //
-// Spec #68 §5 (ticket #76): what bounds it. At most `capacity` attempts hold a unit of Triage capacity (never a Slot), taken by the queue
+// What bounds it. At most `capacity` attempts hold a unit of Triage capacity (never a Slot), taken by the queue
 // in arrival order. A request spends investigation time only while an attempt of it runs, and its attempts; both are read from the durable
 // attempt records, so a restart gives nothing back. An attempt without a Verdict sends the request back to the queue for a NEW session
 // while it has balance, and to `failed` otherwise. An attempt another process left open is never reattached: it is stopped and spent. A
@@ -75,7 +75,7 @@ export function createTriageInvestigations(deps: {
   const { session, ports } = deps;
   /** Attempts whose session this process is running (memory only); every other open attempt belongs to an earlier process. */
   const running = new Map<string, Promise<void>>();
-  /** How the operator's cancellation interrupts each of them (ticket #81). */
+  /** How the operator's cancellation interrupts each of them. */
   const halts = new Map<string, () => Promise<void>>();
   const clock = ports.clock ?? systemClock;
   const budget = { investigationMs: ports.investigationMinutes * 60_000, attempts: ports.attempts };
@@ -111,7 +111,7 @@ export function createTriageInvestigations(deps: {
     );
   }
   /**
-   * An attempt another process left open (spec §6: never reattached). It is charged what its record shows it consumed, not the span no
+   * An attempt another process left open (never reattached). It is charged what its record shows it consumed, not the span no
    * Control was running; a record with no instant after the start bounds nothing and is charged up to this end (`interruptedAttemptSpentMs`).
    */
   const endInterrupted = (triage_request_id: string, attempt: TriageAttempt) =>
@@ -230,7 +230,7 @@ export function createTriageInvestigations(deps: {
   /** Why a running attempt is being stopped from outside its session, if it is: the clock ran out, or the operator cancelled the request. */
   type Halt = { due(): boolean; code(): string };
   /**
-   * The two outside stops of one running attempt: its clock, and the operator's cancellation of its request (ticket #81), which stops
+   * The two outside stops of one running attempt: its clock, and the operator's cancellation of its request, which stops
    * the environment the same way. A stop asked while the environment was starting named no invocation and is asked again once it is open.
    */
   function attemptHalt(attempt: string, deadline: Deadline, stop: () => Promise<unknown>): Halt {
@@ -358,14 +358,14 @@ export function createTriageInvestigations(deps: {
 
   /**
    * What other processes left behind, at every pass (so at every start and every reconciliation). An attempt left open is never
-   * reattached (spec §6): it is stopped, confirmed when possible, and spent, and its request retries only with balance. An ended attempt
+   * reattached: it is stopped, confirmed when possible, and spent, and its request retries only with balance. An ended attempt
    * whose stop was not confirmed is asked again until it is.
    */
   async function reconcile(requests: readonly TriageRequest[]) {
     let changed = false;
     for (const request of requests)
       for (const attempt of request.attempts ?? []) {
-        // An attempt the operator attested as over (ticket #81) holds no unit, and its stop is still asked until the Host confirms it.
+        // An attempt the operator attested as over holds no unit, and its stop is still asked until the Host confirms it.
         if (running.has(attempt.attempt) || attempt.end?.cessation.cessationConfirmed) continue;
         changed = true;
         if (attempt.end) await confirmStop(request.triage_request_id, attempt);
@@ -387,7 +387,7 @@ export function createTriageInvestigations(deps: {
       const held = requests.reduce((sum, request) => sum + (request.attempts?.filter(holdsTriageCapacity).length ?? 0), 0);
       await startQueued(held);
     },
-    /** Controller stop: every running attempt is ended with its cessation observed, and counts as spent (spec §11). */
+    /** Controller stop: every running attempt is ended with its cessation observed, and counts as spent. */
     async stop() {
       const requests = await readTriageRequests(session);
       for (const request of requests)
@@ -396,7 +396,7 @@ export function createTriageInvestigations(deps: {
       await Promise.allSettled([...running.values()]);
     },
     /**
-     * The operator cancelled the request (ticket #81): its attempt running here is stopped, and ends as any other, with what the
+     * The operator cancelled the request: its attempt running here is stopped, and ends as any other, with what the
      * environment answers to the stop. Resolves once that attempt has ended; an attempt of another process is left to the next pass.
      */
     async interrupt(triage_request_id: string) {

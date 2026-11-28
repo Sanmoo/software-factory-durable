@@ -4,7 +4,7 @@ import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { createIssueTracker, type TicketRef } from '../../src/issue-tracker/index.js';
 import { crossReferenced, githubWorld, issue, worldScope, type World } from './github-world-fixture.js';
 
-// Spec #68 §4.6 (ticket #71; TR-06): the label changes of an issue, from its timeline, are the origin's evidence that needs-triage was
+// The label changes of an issue, from its timeline, are the origin's evidence that needs-triage was
 // withdrawn and applied again. I-local: real adapter, issuer and gh transport over the local world; not evidence of the real boundary.
 async function compose(t: Parameters<typeof githubWorld>[0], world: World) {
   const fixture = await githubWorld(t, world);
@@ -31,7 +31,7 @@ const labelEvent = (id: number, event: 'labeled' | 'unlabeled', name: string, ex
   ...extra,
 });
 
-test('TR-06: readLabelHistory reports every label change of the timeline in order, with who made it, under a read-only grant', async t => {
+test('readLabelHistory reports every label change of the timeline in order, with who made it, under a read-only grant', async t => {
   const world = await compose(t, {
     issues: [
       issue(3, {

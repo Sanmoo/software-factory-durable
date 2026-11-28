@@ -1,4 +1,4 @@
-// Spec #68 §13: the in-process Investigation Environment port the Control and worker tests compose. It keeps the port's contract
+// The in-process Investigation Environment port the Control and worker tests compose. It keeps the port's contract
 // (bounds per command, stop confirmation, directories removed at the end) without the real mechanisms.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

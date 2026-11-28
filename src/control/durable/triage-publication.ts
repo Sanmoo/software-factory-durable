@@ -19,7 +19,7 @@ import { indexedWork } from './admission.js';
 import type { Session } from './store.js';
 import { liveTriageRequests, readTriageRequest, readTriageVerdictText, transitionTriageRequest, updatePublishingRequest } from './triage-requests.js';
 
-// Spec #68 §8 (ticket #77): the publication of a recorded Verdict, common to both trackers. A request in `publishing` is driven from a
+// The publication of a recorded Verdict, common to both trackers. A request in `publishing` is driven from a
 // fresh read of its Ticket before EVERY write: the pure rule decides the single next move, the attempt is committed before the write is
 // sent, and an effect is confirmed only by the next read, never by the answer of the write. So a restart, a lost answer or a killed
 // controller all recover the same way: read, recognise the Factory's own effects, write only what is missing. No model is ever called.
@@ -35,7 +35,7 @@ export type TriagePublisher = {
   commentMaxLines?: number;
   caseSensitive: boolean;
   /**
-   * Only where `ready-for-agent` depends on a route (a Card, spec §8 "Rota no Jira"). `check`: the route from a fresh read of the
+   * Only where `ready-for-agent` depends on a route (a Card). `check`: the route from a fresh read of the
    * Ticket, asked before the first write. `repositoryOf`: the repository a component routes to (null: none authorized).
    */
   route?: {
@@ -146,7 +146,7 @@ export function createTriagePublications(deps: {
   }
 
   /**
-   * The outcome of a request still `publishing` falls to `needs-info` (spec §8, "Rota no Jira"), in ONE commit with its new effects.
+   * The outcome of a request still `publishing` falls to `needs-info`, in ONE commit with its new effects.
    * `written`: the comment is already out (`observed`: the tracker's refusal of the edit, when that is the reason); the component it
    * announced is kept (`announced`), so that the one comment is still composed as it was sent.
    */
@@ -172,8 +172,8 @@ export function createTriagePublications(deps: {
       ? turn.publisher.route
       : undefined;
   /**
-   * The route port for the write that applies a `ready-for-agent` Verdict whose comment is already out (a Card's one edit). Spec §8
-   * "Rota no Jira" demands the single route when the outcome is applied, not only before the comment.
+   * The route port for the write that applies a `ready-for-agent` Verdict whose comment is already out (a Card's one edit). The single
+   * route is demanded when the outcome is applied, not only before the comment.
    */
   const routeAtEdit = (turn: Turn, step: PublicationStep) =>
     step.next.action === 'write' &&
@@ -376,7 +376,7 @@ export function createTriagePublications(deps: {
     return facts ? { kind: 'impeded' as const, turn, impediment, expected, facts } : refused('TRIAGE_TICKET_NOT_OBSERVED');
   }
   /**
-   * The operator's `triage complete` (spec §10, ticket #81), to be called inside `exclusive`. The Impediment is validated twice: its
+   * The operator's `triage complete`, to be called inside `exclusive`. The Impediment is validated twice: its
    * exact reference against the record, then against a fresh read of the Ticket, which must still show the same ambiguous effects.
    * Otherwise the reference is out of date (the tracker changed since the operator read it): the command is refused before anything
    * is written or recorded, the Impediment stays, and the next pass acts on the Ticket as it is. Then those effects, and only those,
@@ -399,8 +399,8 @@ export function createTriagePublications(deps: {
 
   return {
     /**
-     * One pass, after each polling cycle: every request in `publishing`, in arrival order. A paused installation publishes no Verdict
-     * (spec §11, ticket #82): the pause is read before each request, so the recorded Verdicts wait as they are and nothing is read from
+     * One pass, after each polling cycle: every request in `publishing`, in arrival order. A paused installation publishes no Verdict:
+     * the pause is read before each request, so the recorded Verdicts wait as they are and nothing is read from
      * or written to their Tickets until the installation is unpaused.
      */
     async pass() {

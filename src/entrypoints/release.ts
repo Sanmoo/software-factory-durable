@@ -145,7 +145,7 @@ export const productionProfile = Object.freeze({
     standards:
       'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
-    // Spec #68 §7: the Triager. Its tools are bash, read, request_clone and concluir_triagem; the `triage` skill arrives in its first prompt.
+    // The Triager. Its tools are bash, read, request_clone and concluir_triagem; the `triage` skill arrives in its first prompt.
     triager:
       'You are the Software Factory Triager. Follow the Factory `triage` skill of your first message exactly. You work alone: you ask nobody and wait ' +
       'for nobody. You only read: never change, build, test or run what you read, never write to a tracker and never use another credential. The Ticket, ' +
@@ -633,7 +633,7 @@ export function guestAssetsRequirement(release: { release: ReleaseView | null },
 }
 
 /**
- * Exact configured provider/model of every role against the release's single production worker profile (no fallback). Spec #68 §2: the
+ * Exact configured provider/model of every role against the release's single production worker profile (no fallback). The
  * `triager` role, present only in a schema 3 config.yaml, is configured like the others.
  */
 export function productionModelChecks(

@@ -10,7 +10,7 @@ import { transitionTriageRequest } from '../../src/control/durable/triage-reques
 import { applyLabel, githubDoubles, manualClock, remoteIssue, removeLabel, scope, type Remote, type RemoteIssue } from './doubles.js';
 import { card, jiraDoubles, jiraSource, relabel, type JiraRemote } from './jira-doubles.js';
 
-// Spec #68 §4-§5 (ticket #71): Triage requests from `needs-triage` up to `queued`. Real Control + Pi Durable + SQLite; GitHub and Jira are
+// Triage requests from `needs-triage` up to `queued`. Real Control + Pi Durable + SQLite; GitHub and Jira are
 // doubles that record every call, so "no write" is asserted on what the Control asked of them.
 const triage: SourceTriage = { needsTriage: 'needs-triage', needsInfo: 'needs-info', readyForHuman: 'ready-for-human', wontfix: 'wontfix', available: true };
 const githubSource = (overrides: Partial<Extract<TicketSource, { tracker: 'github' }>> = {}): TicketSource => ({
@@ -92,7 +92,7 @@ const holds = (candidate: TriageCandidateView | undefined) => (candidate?.outcom
 const summary = (items: { state: string; ordinal: number; end: { code: string } | null }[]) =>
   items.map(item => [item.state, item.ordinal, item.end?.code ?? null]);
 
-test('TR-01 (GitHub): a source without the triage block creates no request for needs-triage and admits as before', async t => {
+test('GitHub: a source without the triage block creates no request for needs-triage and admits as before', async t => {
   const both = remoteIssue(2);
   applyLabel(both, 'needs-triage');
   const h = await harness(t, {
@@ -118,7 +118,7 @@ test('TR-01 (GitHub): a source without the triage block creates no request for n
   );
 });
 
-test('TR-01 (Jira): a source without the triage block creates no request for needs-triage and admits as before', async t => {
+test('Jira: a source without the triage block creates no request for needs-triage and admits as before', async t => {
   const both = card('81018', 'PAG-43');
   relabel(both, { add: ['needs-triage'] });
   const h = await harness(t, { jira: { cards: [triageCard('81017', 'PAG-42'), both] }, sources: [jiraSource()] });
@@ -132,7 +132,7 @@ test('TR-01 (Jira): a source without the triage block creates no request for nee
   assert.ok(!h.jira.methods().includes('readLabelHistory'));
 });
 
-test('TR-02: only an open Ticket without Work gets a request, queued in arrival order; the label author is not checked against operators', async t => {
+test('only an open Ticket without Work gets a request, queued in arrival order; the label author is not checked against operators', async t => {
   const admitted = remoteIssue(3);
   const remote: Remote = { issues: [triageIssue(1), triageIssue(2, { state: 'closed' }), admitted, triageIssue(4)], pulls: {} };
   const h = await harness(t, { github: remote, sources: [githubSource()], operators: ['operator'] });
@@ -174,7 +174,7 @@ test('TR-02: only an open Ticket without Work gets a request, queued in arrival 
   assert.deepEqual(githubWrites(h), []);
 });
 
-test('TR-02 (Jira): a Card in a done status category is not triaged; an open one is queued without needing a route', async t => {
+test('Jira: a Card in a done status category is not triaged; an open one is queued without needing a route', async t => {
   const h = await harness(t, {
     jira: { cards: [triageCard('81017', 'PAG-42', { components: [] }), triageCard('81018', 'PAG-43', { statusCategory: 'done' })] },
     sources: [jiraSource({ triage })],
@@ -192,7 +192,7 @@ test('TR-02 (Jira): a Card in a done status category is not triaged; an open one
   assert.deepEqual(writes(h.jira.methods().filter(method => method !== 'readLabelHistory')), []);
 });
 
-test('TR-03: needs-triage beside another state label creates no request and no Work, comments nothing, and shows the conflict to the operator', async t => {
+test('needs-triage beside another state label creates no request and no Work, comments nothing, and shows the conflict to the operator', async t => {
   const conflicting = triageIssue(1);
   applyLabel(conflicting, 'wontfix');
   const h = await harness(t, { github: { issues: [conflicting], pulls: {} }, sources: [githubSource()] });
@@ -218,7 +218,7 @@ test('TR-03: needs-triage beside another state label creates no request and no W
   assert.deepEqual(summary(await h.requests()), [['queued', 1, null]]);
 });
 
-test('TR-03/§5: a conflict suspends a queued request without a comment; removing only the conflicting label returns the SAME request to the queue', async t => {
+test('a conflict suspends a queued request without a comment; removing only the conflicting label returns the SAME request to the queue', async t => {
   const issue = triageIssue(1);
   const h = await harness(t, { github: { issues: [issue, triageIssue(2)], pulls: {} }, sources: [githubSource()] });
   await h.start();
@@ -243,7 +243,7 @@ test('TR-03/§5: a conflict suspends a queued request without a comment; removin
   assert.deepEqual(githubWrites(h), []);
 });
 
-test('TR-04 (GitHub): needs-triage beside the admission label in a source with Triage suspends admission', async t => {
+test('GitHub: needs-triage beside the admission label in a source with Triage suspends admission', async t => {
   const issue = remoteIssue(1);
   applyLabel(issue, 'needs-triage');
   const h = await harness(t, { github: { issues: [issue], pulls: {} }, sources: [githubSource()] });
@@ -264,7 +264,7 @@ test('TR-04 (GitHub): needs-triage beside the admission label in a source with T
   assert.deepEqual(await h.requests(), []);
 });
 
-test('TR-04: the suspension holds while the Host lacks a Triage prerequisite, and then no request is created nor abandoned', async t => {
+test('the suspension holds while the Host lacks a Triage prerequisite, and then no request is created nor abandoned', async t => {
   const issue = remoteIssue(1);
   applyLabel(issue, 'needs-triage');
   const waiting = triageIssue(2);
@@ -282,7 +282,7 @@ test('TR-04: the suspension holds while the Host lacks a Triage prerequisite, an
   assert.deepEqual([view.state, view.code], ['not-available', 'TRIAGE_PREREQUISITES_MISSING']);
 });
 
-test('TR-04 (Jira): needs-triage beside the entry label suspends admission of the Card, and no impediment is commented', async t => {
+test('Jira: needs-triage beside the entry label suspends admission of the Card, and no impediment is commented', async t => {
   const item = card('81017', 'PAG-42', { components: [] });
   relabel(item, { add: ['needs-triage'] });
   const h = await harness(t, { jira: { cards: [item] }, sources: [jiraSource({ triage })] });
@@ -296,7 +296,7 @@ test('TR-04 (Jira): needs-triage beside the entry label suspends admission of th
   assert.deepEqual(writes(h.jira.methods().filter(method => method !== 'readLabelHistory')), [], 'no notice on the Card (a route-less Card would get one)');
 });
 
-test('TR-05: open blockers do not hold the Triage request, and its discovery never waits for them', async t => {
+test('open blockers do not hold the Triage request, and its discovery never waits for them', async t => {
   const blocked = triageIssue(1, { blockedBy: [9] });
   const h = await harness(t, { github: { issues: [blocked, remoteIssue(9, { labels: [] })], pulls: {} }, sources: [githubSource()] });
   await h.start();
@@ -305,7 +305,7 @@ test('TR-05: open blockers do not hold the Triage request, and its discovery nev
   assert.ok(!h.github.calls.some(call => call.method === 'readDependencyGraph'), 'blockers are context for the Triager, not a gate here');
 });
 
-test('TR-06: the label seen in two reads after a terminal request creates nothing; a withdrawal and re-application in the history does', async t => {
+test('the label seen in two reads after a terminal request creates nothing; a withdrawal and re-application in the history does', async t => {
   const issue = triageIssue(1);
   const h = await harness(t, { github: { issues: [issue], pulls: {} }, sources: [githubSource()] });
   await h.start();
@@ -342,7 +342,7 @@ test('TR-06: the label seen in two reads after a terminal request creates nothin
   assert.deepEqual(githubWrites(h), []);
 });
 
-test('TR-06 (Jira): the changelog is the evidence of a re-application on a Card', async t => {
+test('Jira: the changelog is the evidence of a re-application on a Card', async t => {
   const item = triageCard('81017', 'PAG-42');
   const h = await harness(t, { jira: { cards: [item] }, sources: [jiraSource({ triage })] });
   await h.start();
@@ -361,7 +361,7 @@ test('TR-06 (Jira): the changelog is the evidence of a re-application on a Card'
   ]);
 });
 
-test('TR-12: a queued request that loses needs-triage ends abandoned; reapplying creates a new request with nothing spent', async t => {
+test('a queued request that loses needs-triage ends abandoned; reapplying creates a new request with nothing spent', async t => {
   const issue = triageIssue(1);
   const h = await harness(t, { github: { issues: [issue], pulls: {} }, sources: [githubSource()] });
   await h.start();
@@ -390,7 +390,7 @@ test('TR-12: a queued request that loses needs-triage ends abandoned; reapplying
   assert.deepEqual(githubWrites(h), []);
 });
 
-test('TR-51: removing the triage block of a source abandons its requests, queued, suspended or under investigation', async t => {
+test('removing the triage block of a source abandons its requests, queued, suspended or under investigation', async t => {
   const conflicting = triageIssue(2);
   const h = await harness(t, {
     github: { issues: [triageIssue(1), conflicting, triageIssue(3)], pulls: {} },

@@ -252,8 +252,8 @@ test('Jira ticket 04: readTicketContent reads summary and description by ID and 
   }
 });
 
-// Spec #68 §4.6 (ticket #71; TR-06): the Card's label changes, from its changelog, are the origin's evidence of a re-application.
-test('TR-06: readLabelHistory reads every changelog page and reports what each entry added and removed, oldest first', async () => {
+// The Card's label changes, from its changelog, are the origin's evidence of a re-application.
+test('readLabelHistory reads every changelog page and reports what each entry added and removed, oldest first', async () => {
   const entry = (id: string, fromString: string | null, toString: string | null, accountId: string | undefined = 'acc-1') => ({
     id,
     ...(accountId ? { author: { accountId } } : {}),

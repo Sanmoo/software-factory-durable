@@ -14,7 +14,7 @@ export type { McpRegistration } from './triager-mcp.js';
 export type { TriagerHost } from './triager-tools.js';
 export { triagerToolNames } from './triager-tools.js';
 
-// Spec #68 §7 (ticket #75): the Host side of one Triager attempt and the agent process it talks to. The agent runs inside the attempt's
+// The Host side of one Triager attempt and the agent process it talks to. The agent runs inside the attempt's
 // Investigation Environment unit, outside the command confinement; it is started by the environment, never forked by the Control, so its
 // bootstrap is a private file and its tool calls travel over a private socket of the attempt. Nothing secret is on a command line.
 
@@ -68,7 +68,7 @@ export type TriagerConfiguration = {
   root: string;
   profile: Profile;
   skillPack: SkillPackId;
-  /** Spec §7: the registered MCP servers and Profiles and the active ones (none: the sessions have no MCP tool). */
+  /** The registered MCP servers and Profiles and the active ones (none: the sessions have no MCP tool). */
   mcp?: McpRegistration;
   /** The agent start for a bootstrap file: the fixed Triager entrypoint in production. */
   agent(bootstrap: string): InvestigationAgent;
